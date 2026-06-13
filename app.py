@@ -48,6 +48,12 @@ CFG = {
     "competitive_bucket_size": 6,
     "list_cap": 20,
     "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
+    # Long-tail sourcing
+    "use_suggestions": True,           # pull keyword_suggestions for longer phrases
+    "longtail_min_words": 4,           # >= this many words qualifies as long-tail
+    "longtail_prefixes": ["how","what","why","when","where","which","who","best",
+                          "affordable","cheap","near","cost","top","is","can","do"],
+    "longtail_target": 10,             # how many long-tails to keep in the list
 }
 
 def r50(x):
@@ -71,6 +77,39 @@ def loc_string(markets, state):
         return f"{state},United States"
     return "United States"
 
+def is_longtail(kw):
+    """A keyword qualifies as long-tail if it's long or question/intent-shaped."""
+    words = kw.split()
+    if len(words) >= CFG["longtail_min_words"]:
+        return True
+    if words and words[0].lower() in CFG["longtail_prefixes"]:
+        return True
+    return False
+
+def fetch_suggestions(seeds, markets, state):
+    """keyword_suggestions returns queries CONTAINING the seed — structurally
+    longer than keyword_ideas. One call per seed; failures are non-fatal."""
+    out = []
+    if not CFG["use_suggestions"]:
+        return out
+    loc = loc_string(markets, state)
+    for s in seeds[:6]:   # cap seeds to keep call count bounded
+        try:
+            payload = [{"keyword": s, "location_name": loc,
+                        "language_code": "en", "limit": 200}]
+            data = dfs_post("/keywords_data/google_ads/keyword_suggestions/live", payload)
+            res = (data["tasks"][0]["result"] or [])
+            for block in res:
+                for it in (block.get("items") or []):
+                    kw = it.get("keyword")
+                    if kw:
+                        ki = it.get("keyword_info") or {}
+                        out.append({"keyword": kw,
+                                    "volume": ki.get("search_volume") or 0})
+        except Exception:
+            continue
+    return out
+
 # ---------------------------------------------------------------------------
 # STAGE 1 — keyword list
 # ---------------------------------------------------------------------------
@@ -91,6 +130,9 @@ def stage1_keyword_list(seeds, markets, state, brand):
     raw = [{"keyword": it["keyword"], "volume": it.get("search_volume") or 0}
            for it in items]
 
+    # Add keyword_suggestions (longer, seed-containing phrases) into the pool
+    raw += fetch_suggestions(seeds, markets, state)
+
     seed_tokens = {t.lower() for s in seeds for t in s.split()}
     brand_l = (brand or "").lower()
     kept = []
@@ -108,11 +150,21 @@ def stage1_keyword_list(seeds, markets, state, brand):
 
     kept.sort(key=lambda r: r["volume"], reverse=True)
     with_vol = [r for r in kept if r["volume"] > 0]
+
+    # HEAD buckets (Ultra / Competitive): short, high-volume commercial terms.
+    head_pool = [r for r in with_vol if not is_longtail(r["keyword"])]
     u, c = CFG["ultra_bucket_size"], CFG["competitive_bucket_size"]
-    ultra       = with_vol[:u]
-    competitive = with_vol[u:u + c]
+    ultra       = head_pool[:u]
+    competitive = head_pool[u:u + c]
     head_kws    = {r["keyword"] for r in ultra + competitive}
-    long_tail   = [r for r in kept if r["keyword"] not in head_kws]
+
+    # LONG-TAIL bucket: explicitly long / question-shaped phrases, deduped,
+    # not already used as a head term. Longer phrases preferred.
+    lt_candidates = [r for r in kept
+                     if is_longtail(r["keyword"]) and r["keyword"] not in head_kws]
+    # prefer more words, then higher volume
+    lt_candidates.sort(key=lambda r: (len(r["keyword"].split()), r["volume"]), reverse=True)
+    long_tail = lt_candidates[:CFG["longtail_target"]]
 
     full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
     fs = {r["keyword"] for r in full}
@@ -241,11 +293,40 @@ def quote():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
 
+    # Fold PAA questions into the long-tail bucket (they're real long-tail queries
+    # Google confirms users ask). Keep existing long-tails first, then top up with
+    # PAA until we hit the target, deduping against everything already in the list.
+    used = {r["keyword"].lower() for r in s1["ultra"] + s1["competitive"] + s1["long_tail"]}
+    longtail = [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["long_tail"]]
+    for q in r3["paa_pool"]:
+        if len(longtail) >= CFG["longtail_target"]:
+            break
+        ql = q.lower()
+        if ql not in used:
+            used.add(ql)
+            longtail.append({"kw": q, "vol": 0})   # PAA has no volume figure
+
+    # Build the exportable keyword table: keyword / rank / competitiveness
+    rank_map = {t["keyword"]: t["position"] for t in r3["table"]}
+    def comp_label(kw, tier):
+        return tier
+    export_rows = []
+    for r in s1["ultra"]:
+        pos = rank_map.get(r["keyword"]); export_rows.append(
+            {"kw": r["keyword"], "rank": pos if pos is not None else "Not Found", "comp": "Ultra Competitive"})
+    for r in s1["competitive"]:
+        pos = rank_map.get(r["keyword"]); export_rows.append(
+            {"kw": r["keyword"], "rank": pos if pos is not None else "Not Found", "comp": "Competitive"})
+    for lt in longtail:
+        pos = rank_map.get(lt["kw"])
+        export_rows.append(
+            {"kw": lt["kw"], "rank": pos if pos is not None else "Not Found", "comp": "Long Tail"})
+
     return jsonify({
         "stage1": {
             "ultra":       [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["ultra"]],
             "competitive": [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["competitive"]],
-            "long_tail":   [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["long_tail"]],
+            "long_tail":   longtail,
             "count": len(s1["all"]),
         },
         "stage3a": {"adder": m3["adder"], "score": m3["median_score"]},
@@ -264,7 +345,24 @@ def quote():
             "addon_per_market": p["addon_per_market"], "addon_markets": addon,
             "band": band,
         },
+        "export_rows": export_rows,
     })
+
+@app.route("/export.csv", methods=["POST"])
+def export_csv():
+    """Stateless CSV: frontend posts back the rows it already has."""
+    import csv, io
+    d = request.get_json(force=True)
+    rows = d.get("rows", [])
+    client = (d.get("client") or "client").replace(" ", "_")
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Keyword", "Current Google Rank", "Competitiveness"])
+    for r in rows:
+        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", "")])
+    from flask import Response
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={client}_keywords.csv"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

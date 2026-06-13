@@ -211,6 +211,8 @@ $('go').addEventListener('click',async()=>{
 function renderErr(msg){$('out').innerHTML=`<div class="err">${msg}</div>`;}
 
 function renderQuote(d){
+  window._exportRows = d.export_rows || [];
+  window._exportClient = (document.getElementById('brand').value || 'client');
   const s4=d.stage4, s3a=d.stage3a, s3b=d.stage3b, s1=d.stage1;
   const t=s4.tiers;
   const kwlist=arr=>arr.length?`<ul>${arr.map(x=>`<li>${x.kw} <span class="nf">(${x.vol})</span></li>`).join('')}</ul>`:'<p class="nf">—</p>';
@@ -245,12 +247,27 @@ function renderQuote(d){
       <div><h4>Competitive</h4>${kwlist(s1.competitive)}</div>
       <div><h4>Long Tail</h4>${kwlist(s1.long_tail)}</div>
     </div>
-    <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Ranking table</h4>
+    <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Ranking table
+      <button id="csvbtn" style="float:right;background:var(--atlas);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;text-transform:none;letter-spacing:0">⬇ Download CSV</button>
+    </h4>
     <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${tableRows}</tbody></table>
     <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Long-tail pool (PAA)</h4>
     ${paa}
     <div class="note">Generated quote — route to a human for final manual check before sending. Anchors use the spring geo-scope ladder; the $3,950 June-floor question is still open.</div>
   `;
+  // wire the CSV download
+  const csvbtn=document.getElementById('csvbtn');
+  if(csvbtn){
+    csvbtn.onclick=async()=>{
+      const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
+      const blob=await res.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+  }
 }
 </script>
 </body>
