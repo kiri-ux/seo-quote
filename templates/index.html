@@ -137,6 +137,17 @@
     <div id="steps" class="hidden" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
   </div>
 </div>
+
+<!-- ============ CONFIG REVIEW (Brendan) ============ -->
+<div class="card" style="margin-top:24px">
+  <h2 style="cursor:pointer;user-select:none" id="cfgToggle">⚙ Pricing config — review &amp; tweak <span id="cfgChevron" style="font-weight:400;color:var(--muted)">▸ click to expand</span></h2>
+  <div id="cfgBody" class="hidden">
+    <p class="why" style="margin-bottom:16px">Every number the pricing engine uses, grouped by the step it affects. Edit any value and click <b>Apply</b> to update the live session, then re-run a quote to see the effect. Changes last until the app restarts (they don't overwrite the code defaults) — note what works and we'll bake it in.</p>
+    <div id="cfgFields" style="font-size:13px"></div>
+    <button class="btn" id="cfgApply" style="margin-top:16px;max-width:200px">Apply changes</button>
+    <span id="cfgStatus" style="margin-left:12px;font-size:13px;color:var(--muted)"></span>
+  </div>
+</div>
 </div>
 
 <script>
@@ -369,6 +380,76 @@ async function runStep4(){
     renderStep4(p);
   }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
 }
+// ---- config review panel (Brendan) ----
+$('cfgToggle').addEventListener('click', async()=>{
+  const body=$('cfgBody'), chev=$('cfgChevron');
+  const open=body.classList.toggle('hidden')===false;
+  chev.textContent = open ? '▾ click to collapse' : '▸ click to expand';
+  if(open && !body.dataset.loaded){ await loadConfig(); body.dataset.loaded='1'; }
+});
+
+function cfgRow(label, id, val, note){
+  return `<div style="display:flex;align-items:center;gap:10px;margin:5px 0">
+    <label style="flex:1;margin:0;font-weight:400">${label}${note?` <span class="nf">${note}</span>`:''}</label>
+    <input type="text" id="${id}" value="${val}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
+  </div>`;
+}
+function cfgGroup(title, rows){
+  return `<div style="margin:14px 0 6px"><div class="sec" style="margin:0 0 6px">${title}</div>${rows}</div>`;
+}
+
+async function loadConfig(){
+  let c;
+  try{ c=await (await fetch('/api/config')).json(); }
+  catch(e){ $('cfgFields').innerHTML=`<div class="err">Couldn't load config: ${e.message}</div>`; return; }
+  const ga=c.geo_anchor, ca=c.competitive_adder, bb=c.bid_score_breaks;
+  $('cfgFields').innerHTML =
+    cfgGroup('Step 1 · keyword buckets', 
+      cfgRow('Ultra-competitive bucket size','cf_ultra',c.ultra_bucket_size)+
+      cfgRow('Competitive bucket size','cf_comp',c.competitive_bucket_size)+
+      cfgRow('Long-tail target count','cf_lt',c.longtail_target)) +
+    cfgGroup('Step 2 · competition (hard cost)',
+      cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'under this → +$0')+
+      cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'over this → top adder')+
+      cfgRow('Adder · score 1','cf_add1',ca['1'],'hard cost')+
+      cfgRow('Adder · score 2','cf_add2',ca['2'],'hard cost')) +
+    cfgGroup('Step 3 · zero-ranking',
+      cfgRow('Zero-ranking bonus ($)','cf_zero',c.zero_ranking_bonus,'hard cost')+
+      cfgRow('Top-N positions checked','cf_topn',c.zero_ranking_top_n)+
+      cfgRow('Ranking fraction threshold','cf_frac',c.zero_ranking_frac,'e.g. 0.10 = under 10%')) +
+    cfgGroup('Step 4 · pricing (hard-cost anchors)',
+      cfgRow('Single City','cf_ga_single',ga.single_city)+
+      cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
+      cfgRow('Non-contiguous region','cf_ga_noncontig',ga.non_contiguous_region)+
+      cfgRow('Statewide','cf_ga_state',ga.statewide)+
+      cfgRow('Nationwide','cf_ga_nation',ga.nationwide)+
+      cfgRow('Step ratio','cf_step',c.step_ratio,'0.38 = 38%')+
+      cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
+      cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'× tier price')+
+      cfgRow('Default markup (%)','cf_markup',c.default_markup_pct));
+}
+
+$('cfgApply').addEventListener('click', async()=>{
+  const v=id=>$(id).value;
+  const payload={
+    geo_anchor:{single_city:v('cf_ga_single'),contiguous_region:v('cf_ga_contig'),
+      non_contiguous_region:v('cf_ga_noncontig'),statewide:v('cf_ga_state'),nationwide:v('cf_ga_nation')},
+    competitive_adder:{1:v('cf_add1'),2:v('cf_add2')},
+    bid_score_breaks:[v('cf_break1'),v('cf_break2')],
+    zero_ranking_bonus:v('cf_zero'), zero_ranking_top_n:v('cf_topn'), zero_ranking_frac:v('cf_frac'),
+    step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
+    default_markup_pct:v('cf_markup'), ultra_bucket_size:v('cf_ultra'),
+    competitive_bucket_size:v('cf_comp'), longtail_target:v('cf_lt'),
+  };
+  $('cfgStatus').textContent='Applying…';
+  try{
+    const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    $('cfgStatus').textContent = r.ok ? '✓ Applied — re-run a quote to see the effect.' : ('Error: '+(d.error||''));
+    // sync the markup field on the form to the new default
+    if(r.ok && $('markup')) $('markup').value=v('cf_markup');
+  }catch(e){ $('cfgStatus').textContent='Error: '+e.message; }
+});
 </script>
 </body>
 </html>

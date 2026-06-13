@@ -45,7 +45,8 @@ CFG = {
     "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
     "zero_ranking_top_n": 50,
     "zero_ranking_frac": 0.10,
-    "step_ratio": 0.40,
+    "step_ratio": 0.38,                       # June proposals: 38% step (was 0.40)
+    "client_floor": 3950,                     # min client base price (June floor)
     "addon_market_ratio": 0.42,
     "ultra_bucket_size": 3,
     "competitive_bucket_size": 6,
@@ -383,14 +384,30 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None):
     base = anchor + adder + (CFG["zero_ranking_bonus"] if zero_ranking else 0)
     step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
-    client = {k: r50(v * m) for k, v in hard.items()}      # marked-up, $50 rounded
+
+    # Client price = hard × markup, then apply the client floor to the BASE.
+    # If the floor lifts the base, rebuild the client ladder from the floored
+    # base (using the same step ratio) so the tiers stay consistent.
+    client_base = r50(base * m)
+    floor = CFG.get("client_floor", 0)
+    floored = False
+    if floor and client_base < floor:
+        client_base = floor
+        floored = True
+        cstep = r50(client_base * CFG["step_ratio"])
+        client = {"base": client_base,
+                  "intermediate": client_base + cstep,
+                  "advanced": client_base + 2*cstep}
+    else:
+        client = {k: r50(v * m) for k, v in hard.items()}
+
     hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
-    client_addon = {k: r50(v * m) for k, v in hard_addon.items()}
-    return {"anchor": anchor, "base": base, "step": step,
+    client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
+    return {"anchor": anchor, "base": base, "step": step, "floored": floored,
+            "client_floor": floor,
             "hard_tiers": hard, "client_tiers": client,
             "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
             "markup_pct": markup_pct, "addon_markets": addon_markets,
-            # legacy keys (kept so older callers don't break)
             "tiers": client, "addon_per_market": client_addon}
 
 # ---------------------------------------------------------------------------
@@ -669,6 +686,51 @@ def api_price():
                     "hard_addon_per_market": p["hard_addon_per_market"],
                     "client_addon_per_market": p["client_addon_per_market"],
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    """Expose the tunable pricing constants for the review panel."""
+    return jsonify({
+        "geo_anchor": CFG["geo_anchor"],
+        "competitive_adder": CFG["competitive_adder"],
+        "bid_score_breaks": CFG["bid_score_breaks"],
+        "zero_ranking_bonus": CFG["zero_ranking_bonus"],
+        "zero_ranking_top_n": CFG["zero_ranking_top_n"],
+        "zero_ranking_frac": CFG["zero_ranking_frac"],
+        "step_ratio": CFG["step_ratio"],
+        "client_floor": CFG["client_floor"],
+        "addon_market_ratio": CFG["addon_market_ratio"],
+        "default_markup_pct": CFG["default_markup_pct"],
+        "ultra_bucket_size": CFG["ultra_bucket_size"],
+        "competitive_bucket_size": CFG["competitive_bucket_size"],
+        "longtail_target": CFG["longtail_target"],
+    })
+
+@app.route("/api/config", methods=["POST"])
+def api_config_set():
+    """Apply edited constants to the running session (not persisted to disk —
+    a restart reverts to the file defaults). Lets Brendan tune and re-quote live."""
+    d = request.get_json(force=True)
+    try:
+        if "geo_anchor" in d:
+            for k, v in d["geo_anchor"].items():
+                if k in CFG["geo_anchor"]:
+                    CFG["geo_anchor"][k] = int(v)
+        if "competitive_adder" in d:
+            for k, v in d["competitive_adder"].items():
+                CFG["competitive_adder"][int(k)] = int(v)
+        if "bid_score_breaks" in d:
+            CFG["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
+        for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
+                            ("zero_ranking_frac", float), ("step_ratio", float),
+                            ("client_floor", int), ("addon_market_ratio", float),
+                            ("default_markup_pct", float), ("ultra_bucket_size", int),
+                            ("competitive_bucket_size", int), ("longtail_target", int)]:
+            if key in d and d[key] not in (None, ""):
+                CFG[key] = caster(d[key])
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": f"Invalid value: {e}"}), 400
+    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
