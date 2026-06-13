@@ -236,23 +236,50 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
     kept.sort(key=lambda r: r["volume"], reverse=True)
     with_vol = [r for r in kept if r["volume"] > 0]
 
-    # HEAD buckets (Ultra / Competitive): short, high-volume commercial terms.
-    head_pool = [r for r in with_vol if not is_longtail(r["keyword"])]
-
-    # For geo-scoped clients (markets present), the proposal table is built from
-    # GEO-MODIFIED head terms ("therapist san diego"), not bare national terms
-    # ("therapist"), which a local site can't realistically rank for. Prefer
-    # local head terms; fall back to bare terms only if too few local ones exist.
-    if markets:
-        mkt_tokens = {t.lower() for m in markets for t in m.split()}
-        is_local = lambda r: bool(mkt_tokens & set(r["keyword"].lower().split()))
-        local_heads    = [r for r in head_pool if is_local(r)]
-        nonlocal_heads = [r for r in head_pool if not is_local(r)]
-        head_pool = local_heads + nonlocal_heads   # locals first, bare as backfill
-
     u, c = CFG["ultra_bucket_size"], CFG["competitive_bucket_size"]
-    ultra       = head_pool[:u]
-    competitive = head_pool[u:u + c]
+    n_head = u + c
+
+    if markets:
+        # GEO-SCOPED: head terms are seed × market combinations ("adhd treatment
+        # san diego") — the form the proposals actually use. We build these
+        # directly from the crossing rather than relying on the API to return
+        # them (it strips geo and inflates bare national terms). Volume is looked
+        # up where available but NOT required, since local terms often report low
+        # or zero volume in keyword tools yet are exactly what we rank/quote on.
+        vol_lookup = {r["keyword"].lower(): r["volume"] for r in kept}
+        geo_heads, seen_h = [], set()
+        # (a) direct seed × market crossings
+        seed_phrases = list(seeds)
+        # (b) plus the API's related head terms, geo-modified — this is what gives
+        # the proposal its variety ("adhd therapy san diego", "couples therapy
+        # san diego") beyond the literal seeds the partner typed.
+        related = [r["keyword"] for r in with_vol
+                   if not is_longtail(r["keyword"])
+                   and not any(m.lower() in r["keyword"].lower() for m in markets)]
+        seed_phrases += related[:25]
+        for s in seed_phrases:
+            for m in markets:
+                kw = f"{s} {m}".strip()
+                kl = kw.lower()
+                if kl in seen_h or (brand_l and brand_l in kl):
+                    continue
+                seen_h.add(kl)
+                # rank these by the volume of their BARE form (local volume is
+                # usually unreported, but bare volume signals term importance)
+                bare_vol = vol_lookup.get(s.lower(), 0)
+                geo_heads.append({"keyword": kw, "volume": bare_vol, "src": "geo"})
+        # strongest terms first (by bare-form volume)
+        geo_heads.sort(key=lambda r: r["volume"], reverse=True)
+        # backfill with bare high-volume terms only if we don't have enough geo heads
+        bare_backfill = [r for r in with_vol if not is_longtail(r["keyword"])
+                         and r["keyword"].lower() not in seen_h]
+        head_ordered = geo_heads + bare_backfill
+    else:
+        # NATIONAL: no geo modifier; rank bare head terms by volume.
+        head_ordered = [r for r in with_vol if not is_longtail(r["keyword"])]
+
+    ultra       = head_ordered[:u]
+    competitive = head_ordered[u:u + c]
     head_kws    = {r["keyword"] for r in ultra + competitive}
 
     # LONG-TAIL bucket: explicitly long / question-shaped phrases, deduped,

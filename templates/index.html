@@ -251,9 +251,9 @@ async function runStep2(){
     ST.adder=m.adder; ST.score=m.score;
     panel('p2',`
       <h4 class="sec">Step 2 · Competition</h4>
-      <div class="why">Measures how hard this market is to win, using Google's own top-of-page bid data on the head terms. Higher bids mean more advertiser demand and a tougher SERP — which maps to the competitive adder (+$0 / +$200 / +$400) on top of the base anchor. This is the "how competitive is the vertical" lever, priced from data instead of a guess.</div>
+      <div class="why">Measures how hard this market is to win, using Google's own top-of-page bid data on the head terms. Higher bids mean more advertiser demand and a tougher SERP — which maps to the competitive adder (+$0 / +$150 / +$300 hard cost) on top of the base anchor. These are internal hard-cost figures; the client markup is applied at Step 4.</div>
       <div class="calc">median head-term bid score <code>${m.score}</code> →
-        competitive adder <code>+${money(m.adder)}</code></div>
+        competitive adder <code>+${money(m.adder)}</code> <span class="nf">(hard cost)</span></div>
       ${stepBtn('step3','3 · Check rankings')}`);
     $('step3').addEventListener('click', runStep3);
   }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
@@ -266,7 +266,7 @@ async function runStep3(){
   const BATCH=4;
   ST.table=[]; ST.paa=[]; ST.ranked=0; ST.total=all.length;
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
-    <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$500.</div>
+    <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$400 (hard cost).</div>
     <div class="calc" id="rkprog">Checking 0/${all.length}…</div>`);
   try{
     for(let i=0;i<all.length;i+=BATCH){
@@ -288,9 +288,9 @@ async function runStep3(){
     const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
     panel('p3',`
       <h4 class="sec">Step 3 · Rankings</h4>
-      <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$500.</div>
+      <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$400 (hard cost).</div>
       <div class="calc">zero-ranking
-        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES +$500':'NO'}</span>
+        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES +$400':'NO'}</span>
         — ${ST.ranked}/${ST.total} rank in top 50 (${frac}%)</div>
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`);
