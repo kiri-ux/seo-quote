@@ -16,6 +16,7 @@ Local run:
     -> http://localhost:5000
 """
 import os, json, base64, statistics
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from flask import Flask, render_template, request, jsonify
 
@@ -46,6 +47,7 @@ CFG = {
     "ultra_bucket_size": 3,
     "competitive_bucket_size": 6,
     "list_cap": 20,
+    "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
 }
 
 def r50(x):
@@ -144,30 +146,49 @@ def stage3_metrics(head, markets, state):
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
 # ---------------------------------------------------------------------------
+def _serp_one(kw, domain_dom, markets, state, brand, top_n):
+    """One keyword's SERP call. Returns (position_or_None, [paa questions])."""
+    payload = [{"keyword": kw, "location_name": loc_string(markets, state),
+                "language_code": "en", "depth": 100}]
+    data = dfs_post("/serp/google/organic/live/advanced", payload)
+    res = (data["tasks"][0]["result"] or [{}])[0]
+    items = res.get("items", []) or []
+    pos, paa = None, []
+    for it in items:
+        if it.get("type") == "organic" and domain_dom and domain_dom in (it.get("domain") or ""):
+            if pos is None:
+                pos = it.get("rank_absolute")
+        if it.get("type") == "people_also_ask":
+            for el in it.get("items", []):
+                q = el.get("title")
+                if q and (brand or "").lower() not in q.lower():
+                    paa.append(q)
+    return pos, paa
+
 def stage3_rankcheck(all_kws, domain, markets, state, brand):
-    table, paa, ranked = [], [], 0
     top_n = CFG["zero_ranking_top_n"]
     dom = (domain or "").replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
-    for r in all_kws:
-        kw = r["keyword"]
-        payload = [{"keyword": kw, "location_name": loc_string(markets, state),
-                    "language_code": "en", "depth": 100}]
-        data = dfs_post("/serp/google/organic/live/advanced", payload)
-        res = (data["tasks"][0]["result"] or [{}])[0]
-        items = res.get("items", []) or []
-        pos = None
-        for it in items:
-            if it.get("type") == "organic" and dom and dom in (it.get("domain") or ""):
-                pos = it.get("rank_absolute"); break
-            if it.get("type") == "people_also_ask":
-                for el in it.get("items", []):
-                    q = el.get("title")
-                    if q and (brand or "").lower() not in q.lower():
-                        paa.append(q)
+    kws = [r["keyword"] for r in all_kws]
+
+    # Fire SERP calls in parallel; keep results aligned to input order.
+    results = [None] * len(kws)
+    with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
+        futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n): i
+                for i, kw in enumerate(kws)}
+        for fut in futs:
+            i = futs[fut]
+            try:
+                results[i] = fut.result()
+            except Exception:
+                results[i] = (None, [])   # one bad keyword shouldn't sink the quote
+
+    table, paa, ranked = [], [], 0
+    for kw, (pos, qs) in zip(kws, results):
         table.append({"keyword": kw, "position": pos})
+        paa.extend(qs)
         if pos is not None and pos <= top_n:
             ranked += 1
-    n = len(all_kws) or 1
+    n = len(kws) or 1
     frac = ranked / n
     return {"table": table, "ranked": ranked, "frac": frac,
             "zero_ranking": frac < CFG["zero_ranking_frac"],

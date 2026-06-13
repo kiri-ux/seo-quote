@@ -193,7 +193,15 @@ $('go').addEventListener('click',async()=>{
   $('out').innerHTML='<p style="color:var(--muted)">Running keyword pull → rank check → pricing… (live API, ~10-30s)</p>';
   try{
     const res=await fetch('/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const data=await res.json();
+    const text=await res.text();
+    let data;
+    try{ data=JSON.parse(text); }
+    catch(_){
+      renderErr(res.status>=500
+        ? `Server returned a ${res.status} (likely a timeout pulling live data). Re-run — the second run is usually faster — or try fewer keywords.`
+        : `Unexpected response (${res.status}). ${text.slice(0,120)}`);
+      btn.disabled=false; btn.textContent='Generate Quote'; return;
+    }
     if(!res.ok){renderErr(data.error||'Request failed.');}
     else renderQuote(data);
   }catch(e){renderErr('Network error: '+e.message);}
