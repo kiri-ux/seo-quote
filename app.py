@@ -50,6 +50,8 @@ CFG = {
     "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
     # Long-tail sourcing
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
+    "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
+    "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
     "longtail_min_words": 4,           # >= this many words qualifies as long-tail
     "longtail_prefixes": ["how","what","why","when","where","which","who","best",
                           "affordable","cheap","near","cost","top","is","can","do"],
@@ -117,10 +119,36 @@ def fetch_suggestions(seeds, markets, state):
             out.extend(rows)
     return out
 
+def fetch_keywords_for_site(domain, markets, state):
+    """Labs 'Keywords For Site' — keywords relevant to the client's domain,
+    derived from the site's content/category. Supplements partner seeds for
+    established sites; returns little (harmlessly) for brand-new/zero-ranking
+    sites, which is why it's additive, not a replacement. One call. Non-fatal."""
+    if not CFG["use_site_keywords"] or not domain:
+        return []
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    if not dom:
+        return []
+    try:
+        payload = [{"target": dom, "location_name": loc_string(markets, state),
+                    "language_code": "en", "limit": CFG["site_keywords_limit"]}]
+        data = dfs_post("/dataforseo_labs/google/keywords_for_site/live", payload)
+        res = (data["tasks"][0]["result"] or [])
+        rows = []
+        for block in res:
+            for it in (block.get("items") or []):
+                kw = it.get("keyword")
+                if kw:
+                    ki = it.get("keyword_info") or {}
+                    rows.append({"keyword": kw, "volume": ki.get("search_volume") or 0})
+        return rows
+    except Exception:
+        return []
+
 # ---------------------------------------------------------------------------
 # STAGE 1 — keyword list
 # ---------------------------------------------------------------------------
-def stage1_keyword_list(seeds, markets, state, brand):
+def stage1_keyword_list(seeds, markets, state, brand, domain=""):
     crossed = []
     for s in seeds:
         crossed.append(s)
@@ -134,11 +162,15 @@ def stage1_keyword_list(seeds, markets, state, brand):
                 "language_code": "en"}]
     data = dfs_post("/keywords_data/google_ads/keywords_for_keywords/live", payload)
     items = (data["tasks"][0]["result"] or [])
-    raw = [{"keyword": it["keyword"], "volume": it.get("search_volume") or 0}
+    raw = [{"keyword": it["keyword"], "volume": it.get("search_volume") or 0, "src": "ideas"}
            for it in items]
 
     # Add keyword_suggestions (longer, seed-containing phrases) into the pool
-    raw += fetch_suggestions(seeds, markets, state)
+    for r in fetch_suggestions(seeds, markets, state):
+        r["src"] = "suggest"; raw.append(r)
+    # Add keywords_for_site (terms relevant to the client's domain) into the pool
+    for r in fetch_keywords_for_site(domain, markets, state):
+        r["src"] = "site"; raw.append(r)
 
     seed_tokens = {t.lower() for s in seeds for t in s.split()}
     brand_l = (brand or "").lower()
@@ -151,7 +183,10 @@ def stage1_keyword_list(seeds, markets, state, brand):
         seen.add(kw)
         if brand_l and brand_l in kw:
             continue
-        if seed_tokens and not (seed_tokens & set(kw.split())):
+        # Seed-token relevance filter applies to seed-derived sources only.
+        # Site keywords come from the client's own domain and are on-topic by
+        # construction, so they bypass it (but still drop the brand name above).
+        if r.get("src") != "site" and seed_tokens and not (seed_tokens & set(kw.split())):
             continue
         kept.append(r)
 
@@ -455,10 +490,11 @@ def api_keywords():
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state   = (d.get("state") or "").strip()
     brand   = (d.get("brand") or "").strip()
+    domain  = (d.get("domain") or "").strip()
     if not seeds:
         return jsonify({"error": "At least one keyword/vertical is required."}), 400
     try:
-        s1 = stage1_keyword_list(seeds, markets, state, brand)
+        s1 = stage1_keyword_list(seeds, markets, state, brand, domain)
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}. Check funds / credentials."}), 502
     except Exception as e:
