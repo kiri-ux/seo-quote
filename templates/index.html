@@ -118,11 +118,14 @@
     <div class="help">Cities / regions / state the keywords should target. At least one entry required (except Nationwide). Type and press comma/Enter.</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
 
-    <label>State <span style="font-weight:400;color:var(--muted)">(for keyword + SERP location)</span></label>
-    <input type="text" id="state" placeholder="Tennessee">
+    <input type="hidden" id="state" value="">
 
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
     <input type="text" id="addon" placeholder="0" value="0">
+
+    <label>Client markup <span style="font-weight:400;color:var(--muted)">(% on top of hard cost)</span></label>
+    <div class="help">Internal pricing starts at hard cost; the client price is hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
+    <input type="text" id="markup" placeholder="35" value="35">
 
     <button class="btn" id="step1">1 · Build keyword list</button>
   </div>
@@ -191,6 +194,7 @@ function collectInputs(){
     domain: stores.sites[0]||'', keywords: stores.kw, brand: $('brand').value,
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
     addon_markets: parseInt($('addon').value||'0',10),
+    markup_pct: parseFloat($('markup').value||'35'),
   };
 }
 
@@ -295,44 +299,74 @@ async function runStep3(){
 }
 
 // ---------- STEP 4 ----------
+function renderStep4(p){
+  // build export rows
+  const exp=[]
+    .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive'})))
+    .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive'})))
+    .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail'})));
+  window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
+  const h=p.hard_tiers, c=p.client_tiers;
+  let addon='';
+  if(p.addon_markets>0){
+    const ha=p.hard_addon_per_market, ca=p.client_addon_per_market;
+    addon=`<div class="calc"><b>Add-on markets (${p.addon_markets}):</b><br>
+      hard cost — Base ${money(ha.base)} · Int ${money(ha.intermediate)} · Adv ${money(ha.advanced)} (each/mo)<br>
+      client — Base ${money(ca.base)} · Int ${money(ca.intermediate)} · Adv ${money(ca.advanced)} (each/mo)</div>`;
+  }
+  panel('p4',`
+    <h4 class="sec">Step 4 · Price</h4>
+    <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
+
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)</div>
+    <div class="tiers">
+      <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${money(h.base)}</div><div class="mo">/month</div></div>
+      <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div></div>
+      <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${money(h.advanced)}</div><div class="mo">/month</div></div>
+    </div>
+    <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
+      + adder <code>+${money(p.adder)}</code> + zero-ranking <code>+${money(p.zero_bonus)}</code>
+      = <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (40%)</div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--atlas);font-weight:600">Client price · markup</span>
+      <input type="text" id="markup_live" value="${p.markup_pct}" style="width:56px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
+      <span style="color:var(--muted);font-size:13px">%</span>
+    </div>
+    <div class="tiers">
+      <div class="tier"><div class="name">Base</div><div class="price">${money(c.base)}</div><div class="mo">/month</div></div>
+      <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(c.intermediate)}</div><div class="mo">/month</div></div>
+      <div class="tier"><div class="name">Advanced</div><div class="price">${money(c.advanced)}</div><div class="mo">/month</div></div>
+    </div>
+    ${addon}
+    <button id="csvbtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
+    <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
+  // live markup recompute (re-hits /api/price; pure math, instant)
+  $('markup_live').addEventListener('change', async()=>{
+    const mk=parseFloat($('markup_live').value||'35');
+    try{
+      const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
+        zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk});
+      renderStep4(np);
+    }catch(e){ /* keep current */ }
+  });
+  $('csvbtn').onclick=async()=>{
+    const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
+    const blob=await res.blob(); const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url;
+    a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+}
+
 async function runStep4(){
   $('step4').disabled=true; $('step4').textContent='Pricing…';
   try{
     const p=await postJSON('/api/price',{
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
-      addon_markets:ST.inputs.addon_markets});
-    const t=p.tiers;
-    // build export rows
-    const exp=[]
-      .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive'})))
-      .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive'})))
-      .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail'})));
-    window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
-    let addon='';
-    if(p.addon_markets>0){addon=`<div class="calc"><b>Add-on markets (${p.addon_markets}):</b>
-      Base ${money(p.addon_per_market.base)} · Int ${money(p.addon_per_market.intermediate)} · Adv ${money(p.addon_per_market.advanced)} — each/mo per market</div>`;}
-    panel('p4',`
-      <h4 class="sec">Step 4 · Price</h4>
-      <div class="why">Assembles the quote: geo anchor (from the scope dropdown) + the competitive adder (Step 2) + the zero-ranking modifier (Step 3) sets the base, then a fixed 40% step builds the Intermediate and Advanced tiers. Every number above is shown so you can see exactly what drove the price.</div>
-      <div class="tiers">
-        <div class="tier"><div class="name">Base</div><div class="price">${money(t.base)}</div><div class="mo">/month</div></div>
-        <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(t.intermediate)}</div><div class="mo">/month</div></div>
-        <div class="tier"><div class="name">Advanced</div><div class="price">${money(t.advanced)}</div><div class="mo">/month</div></div>
-      </div>
-      <div class="calc"><b>Base build:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
-        + adder <code>+${money(p.adder)}</code> + zero-ranking <code>+${money(p.zero_bonus)}</code>
-        = <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (40%)</div>
-      ${addon}
-      <button id="csvbtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
-      <div class="note">Generated quote — route to a human for final manual check before sending. Spring geo-scope ladder; $3,950 June-floor question still open.</div>`);
-    $('csvbtn').onclick=async()=>{
-      const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
-      const blob=await res.blob(); const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url;
-      a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    };
+      addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct});
+    renderStep4(p);
   }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
 }
 </script>
