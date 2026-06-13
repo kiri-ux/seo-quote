@@ -66,6 +66,8 @@
   .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
   .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
   .paa{font-size:12.5px;color:var(--ink)} .paa li{margin:2px 0}
+  .sec{margin:18px 0 8px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .why{font-size:12.5px;color:var(--muted);margin:-2px 0 10px;line-height:1.45;border-left:2px solid var(--line);padding-left:10px}
 </style>
 </head>
 <body>
@@ -122,13 +124,14 @@
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
     <input type="text" id="addon" placeholder="0" value="0">
 
-    <button class="btn" id="go">Generate Quote</button>
+    <button class="btn" id="step1">1 · Build keyword list</button>
   </div>
 
   <!-- ============ RESULTS ============ -->
   <div class="card">
     <h2>Quote</h2>
-    <div id="out"><p style="color:var(--muted);font-size:14px">Fill in the form and generate a quote. The tool pulls live keyword + ranking data from DataForSEO, then prices using the spring geo-scope ladder.</p></div>
+    <div id="out"><p style="color:var(--muted);font-size:14px">Fill in the form, then step through the pipeline. Each step makes its own short live call to DataForSEO and reveals its result here — keyword list, competition score, rankings, then price.</p></div>
+    <div id="steps" class="hidden" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
   </div>
 </div>
 </div>
@@ -170,104 +173,167 @@ pastseo.addEventListener('change',()=>{
   document.getElementById('pastseo_detail_wrap').classList.toggle('hidden',!pastseo.checked);
 });
 
-// ---- submit ----
+
+// ---- stepped live flow ----
 const $=id=>document.getElementById(id);
 function money(n){return '$'+n.toLocaleString();}
-$('go').addEventListener('click',async()=>{
-  // flush any unsubmitted text
-  ['sites_in','kw_in','geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
-  const scope=$('geo_scope').value;
-  if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return;}
-  if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return;}
-
-  const payload={
-    domain: stores.sites[0]||'',
-    keywords: stores.kw,
-    brand: $('brand').value,
-    geo_scope: scope,
-    geo_values: stores.geo,
-    state: $('state').value,
-    addon_markets: parseInt($('addon').value||'0',10),
-  };
-  const btn=$('go'); btn.disabled=true; btn.textContent='Pulling live data…';
-  $('out').innerHTML='<p style="color:var(--muted)">Running keyword pull → rank check → pricing… (live API, ~10-30s)</p>';
-  try{
-    const res=await fetch('/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const text=await res.text();
-    let data;
-    try{ data=JSON.parse(text); }
-    catch(_){
-      renderErr(res.status>=500
-        ? `Server returned a ${res.status} (likely a timeout pulling live data). Re-run — the second run is usually faster — or try fewer keywords.`
-        : `Unexpected response (${res.status}). ${text.slice(0,120)}`);
-      btn.disabled=false; btn.textContent='Generate Quote'; return;
-    }
-    if(!res.ok){renderErr(data.error||'Request failed.');}
-    else renderQuote(data);
-  }catch(e){renderErr('Network error: '+e.message);}
-  btn.disabled=false; btn.textContent='Generate Quote';
-});
-
 function renderErr(msg){$('out').innerHTML=`<div class="err">${msg}</div>`;}
 
-function renderQuote(d){
-  window._exportRows = d.export_rows || [];
-  window._exportClient = (document.getElementById('brand').value || 'client');
-  const s4=d.stage4, s3a=d.stage3a, s3b=d.stage3b, s1=d.stage1;
-  const t=s4.tiers;
-  const kwlist=arr=>arr.length?`<ul>${arr.map(x=>`<li>${x.kw} <span class="nf">(${x.vol})</span></li>`).join('')}</ul>`:'<p class="nf">—</p>';
-  let addon='';
-  if(s4.addon_markets>0){
-    addon=`<div class="calc"><b>Add-on markets (${s4.addon_markets}):</b>
-      Base ${money(s4.addon_per_market.base)}/mo · Int ${money(s4.addon_per_market.intermediate)}/mo · Adv ${money(s4.addon_per_market.advanced)}/mo — each, per market</div>`;
-  }
-  const tableRows=s3b.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
-  const paa=s3b.paa.length?`<ul class="paa">${s3b.paa.map(q=>`<li>${q}</li>`).join('')}</ul>`:'<p class="nf">No PAA harvested.</p>';
+const ST = {inputs:null, kw:null, adder:null, score:null,
+            table:[], paa:[], ranked:0, total:0, zero:null, longtail:null};
 
-  $('out').innerHTML=`
-    <div class="tiers">
-      <div class="tier"><div class="name">Base</div><div class="price">${money(t.base)}</div><div class="mo">/month</div></div>
-      <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(t.intermediate)}</div><div class="mo">/month</div></div>
-      <div class="tier"><div class="name">Advanced</div><div class="price">${money(t.advanced)}</div><div class="mo">/month</div></div>
-    </div>
-    <div class="calc">
-      <b>Base build:</b> anchor <code>${money(s4.anchor)}</code> ${s4.band}
-      + competitive adder <code>+${money(s4.adder)}</code> (bid score ${s3a.score})
-      + zero-ranking <code>+${money(s4.zero_bonus)}</code>
-      = <b>${money(s4.base)}</b> &nbsp;·&nbsp; step <code>${money(s4.step)}</code> (40%)
-    </div>
-    ${addon}
-    <div class="calc">
-      <b>Zero-ranking flag:</b>
-      <span class="flag ${s3b.zero_ranking?'on':'off'}">${s3b.zero_ranking?'YES +$500':'NO'}</span>
-      &nbsp; ${s3b.ranked}/${s3b.total} keywords rank in top 50 (${s3b.frac}%)
-    </div>
-    <div class="kwcols">
-      <div><h4>Ultra Competitive</h4>${kwlist(s1.ultra)}</div>
-      <div><h4>Competitive</h4>${kwlist(s1.competitive)}</div>
-      <div><h4>Long Tail</h4>${kwlist(s1.long_tail)}</div>
-    </div>
-    <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Ranking table
-      <button id="csvbtn" style="float:right;background:var(--atlas);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;text-transform:none;letter-spacing:0">⬇ Download CSV</button>
-    </h4>
-    <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${tableRows}</tbody></table>
-    <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Long-tail pool (PAA)</h4>
-    ${paa}
-    <div class="note">Generated quote — route to a human for final manual check before sending. Anchors use the spring geo-scope ladder; the $3,950 June-floor question is still open.</div>
-  `;
-  // wire the CSV download
-  const csvbtn=document.getElementById('csvbtn');
-  if(csvbtn){
-    csvbtn.onclick=async()=>{
+function collectInputs(){
+  ['sites_in','kw_in','geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
+  const scope=$('geo_scope').value;
+  if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return null;}
+  if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return null;}
+  return {
+    domain: stores.sites[0]||'', keywords: stores.kw, brand: $('brand').value,
+    geo_scope: scope, geo_values: stores.geo, state: $('state').value,
+    addon_markets: parseInt($('addon').value||'0',10),
+  };
+}
+
+async function postJSON(url, body){
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const text=await res.text();
+  let data; try{data=JSON.parse(text);}catch(_){throw new Error(`Server ${res.status} (timeout or non-JSON).`);}
+  if(!res.ok) throw new Error(data.error||`Request failed (${res.status}).`);
+  return data;
+}
+
+// progressive panel: each step appends/updates its own block by id
+function panel(id, html){
+  let el=$(id);
+  if(!el){ el=document.createElement('div'); el.id=id; $('out').appendChild(el); }
+  el.innerHTML=html;
+}
+function stepBtn(id, label, disabled){
+  return `<button class="btn" id="${id}" style="margin-top:10px" ${disabled?'disabled':''}>${label}</button>`;
+}
+function kwlist(arr){return arr.length?`<ul>${arr.map(x=>`<li>${x.kw}${x.vol?` <span class="nf">(${x.vol})</span>`:''}</li>`).join('')}</ul>`:'<p class="nf">—</p>';}
+
+// ---------- STEP 1 ----------
+$('step1').addEventListener('click', async()=>{
+  const inp=collectInputs(); if(!inp) return;
+  ST.inputs=inp;
+  $('out').innerHTML='';
+  $('step1').disabled=true; $('step1').textContent='Building keyword list…';
+  panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
+  try{
+    const kw=await postJSON('/api/keywords',{
+      keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand});
+    ST.kw=kw;
+    panel('p1',`
+      <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span></h4>
+      <div class="why">Builds the terms this client should rank for — seeds crossed with their markets, expanded with related and question-style searches, then split into Ultra Competitive / Competitive / Long Tail. This list is the input to every step that follows, and the competitive tiers feed the proposal's keyword table.</div>
+      <div class="kwcols">
+        <div><h4>Ultra Competitive</h4>${kwlist(kw.ultra)}</div>
+        <div><h4>Competitive</h4>${kwlist(kw.competitive)}</div>
+        <div><h4>Long Tail</h4>${kwlist(kw.long_tail)}</div>
+      </div>
+      ${stepBtn('step2','2 · Score competition')}`);
+    $('step2').addEventListener('click', runStep2);
+  }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
+  $('step1').disabled=false; $('step1').textContent='1 · Build keyword list';
+});
+
+// ---------- STEP 2 ----------
+async function runStep2(){
+  $('step2').disabled=true; $('step2').textContent='Scoring…';
+  try{
+    const m=await postJSON('/api/metrics',{
+      head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
+    ST.adder=m.adder; ST.score=m.score;
+    panel('p2',`
+      <h4 class="sec">Step 2 · Competition</h4>
+      <div class="why">Measures how hard this market is to win, using Google's own top-of-page bid data on the head terms. Higher bids mean more advertiser demand and a tougher SERP — which maps to the competitive adder (+$0 / +$200 / +$400) on top of the base anchor. This is the "how competitive is the vertical" lever, priced from data instead of a guess.</div>
+      <div class="calc">median head-term bid score <code>${m.score}</code> →
+        competitive adder <code>+${money(m.adder)}</code></div>
+      ${stepBtn('step3','3 · Check rankings')}`);
+    $('step3').addEventListener('click', runStep3);
+  }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
+}
+
+// ---------- STEP 3 (batched) ----------
+async function runStep3(){
+  $('step3').disabled=true;
+  const all=ST.kw.all.map(r=>r.kw);
+  const BATCH=4;
+  ST.table=[]; ST.paa=[]; ST.ranked=0; ST.total=all.length;
+  panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
+    <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$500.</div>
+    <div class="calc" id="rkprog">Checking 0/${all.length}…</div>`);
+  try{
+    for(let i=0;i<all.length;i+=BATCH){
+      const batch=all.slice(i,i+BATCH);
+      const r=await postJSON('/api/rankings',{
+        batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
+        state:ST.inputs.state, brand:ST.inputs.brand});
+      r.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; });
+      ST.paa.push(...r.paa);
+      $('rkprog').textContent=`Checking ${Math.min(i+BATCH,all.length)}/${all.length}…`;
+    }
+    const frac=ST.total?Math.round(ST.ranked/ST.total*100):0;
+    ST.zero = (ST.ranked/(ST.total||1)) < 0.10;
+    // fold PAA into long-tail (dedupe vs existing)
+    const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
+    ST.longtail=[...ST.kw.long_tail];
+    for(const q of ST.paa){ if(ST.longtail.length>=10) break;
+      if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
+    const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
+    panel('p3',`
+      <h4 class="sec">Step 3 · Rankings</h4>
+      <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$500.</div>
+      <div class="calc">zero-ranking
+        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES +$500':'NO'}</span>
+        — ${ST.ranked}/${ST.total} rank in top 50 (${frac}%)</div>
+      <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
+      ${stepBtn('step4','4 · Price it')}`);
+    $('step4').addEventListener('click', runStep4);
+  }catch(e){ panel('p3',`<div class="err">${e.message} (mid-batch — re-click Check rankings to retry)</div>`); $('step3').disabled=false; }
+}
+
+// ---------- STEP 4 ----------
+async function runStep4(){
+  $('step4').disabled=true; $('step4').textContent='Pricing…';
+  try{
+    const p=await postJSON('/api/price',{
+      band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
+      addon_markets:ST.inputs.addon_markets});
+    const t=p.tiers;
+    // build export rows
+    const exp=[]
+      .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive'})))
+      .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive'})))
+      .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail'})));
+    window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
+    let addon='';
+    if(p.addon_markets>0){addon=`<div class="calc"><b>Add-on markets (${p.addon_markets}):</b>
+      Base ${money(p.addon_per_market.base)} · Int ${money(p.addon_per_market.intermediate)} · Adv ${money(p.addon_per_market.advanced)} — each/mo per market</div>`;}
+    panel('p4',`
+      <h4 class="sec">Step 4 · Price</h4>
+      <div class="why">Assembles the quote: geo anchor (from the scope dropdown) + the competitive adder (Step 2) + the zero-ranking modifier (Step 3) sets the base, then a fixed 40% step builds the Intermediate and Advanced tiers. Every number above is shown so you can see exactly what drove the price.</div>
+      <div class="tiers">
+        <div class="tier"><div class="name">Base</div><div class="price">${money(t.base)}</div><div class="mo">/month</div></div>
+        <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(t.intermediate)}</div><div class="mo">/month</div></div>
+        <div class="tier"><div class="name">Advanced</div><div class="price">${money(t.advanced)}</div><div class="mo">/month</div></div>
+      </div>
+      <div class="calc"><b>Base build:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
+        + adder <code>+${money(p.adder)}</code> + zero-ranking <code>+${money(p.zero_bonus)}</code>
+        = <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (40%)</div>
+      ${addon}
+      <button id="csvbtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
+      <div class="note">Generated quote — route to a human for final manual check before sending. Spring geo-scope ladder; $3,950 June-floor question still open.</div>`);
+    $('csvbtn').onclick=async()=>{
       const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
-      const blob=await res.blob();
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a');
-      a.href=url; a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
+      const blob=await res.blob(); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url;
+      a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     };
-  }
+  }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
 }
 </script>
 </body>

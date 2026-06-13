@@ -274,6 +274,71 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0):
 def index():
     return render_template("index.html")
 
+DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
+    """Realistic sample data — no DataForSEO calls. Deterministic per input so
+    the demo feels responsive to what the partner typed. Cannot time out."""
+    market = markets[0] if markets else ""
+
+    # Head terms: seed + market variants, descending volume
+    head_terms = []
+    for s in seeds:
+        if market:
+            head_terms.append(f"{s} {market}".strip())
+        head_terms.append(s)
+    seen = set(); head_terms = [h for h in head_terms if not (h in seen or seen.add(h))]
+    ultra, comp = [], []
+    for i, h in enumerate(head_terms):
+        vol = max(40, 620 - i * 55)
+        (ultra if i < 3 else comp).append({"kw": h, "vol": vol})
+    comp = comp[:6]
+
+    # Long-tail: question-shaped, longer phrases
+    templates = ["how much does {s} cost in {m}", "best {s} near me",
+                 "what to look for in {s} in {m}", "affordable {s} for adults in {m}",
+                 "is {s} covered by insurance in {m}"]
+    longtail = []
+    for s in seeds:
+        for t in templates:
+            kw = t.format(s=s, m=market or "your area").replace("  ", " ").strip()
+            longtail.append({"kw": kw, "vol": 0})
+    longtail = longtail[:10]
+
+    # Ranking table: mostly Not Found (zero-ranking demo), one ranked deep
+    all_rows = ultra + comp + longtail
+    table = []
+    for i, r in enumerate(all_rows):
+        pos = 54 if i == len(all_rows) - 1 else "Not Found"
+        table.append({"kw": r["kw"], "pos": pos})
+    ranked, total = 0, len(all_rows)   # 0 in top 50 -> zero-ranking fires
+    zero_ranking = True
+    adder, score = 400, 2              # high-competition sample
+
+    base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
+    step = r50(base * CFG["step_ratio"])
+    tiers = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
+    addon_per = {k: r50(v * CFG["addon_market_ratio"]) for k, v in tiers.items()}
+
+    export_rows = (
+        [{"kw": r["kw"], "rank": "Not Found", "comp": "Ultra Competitive"} for r in ultra] +
+        [{"kw": r["kw"], "rank": "Not Found", "comp": "Competitive"} for r in comp] +
+        [{"kw": r["kw"], "rank": "Not Found", "comp": "Long Tail"} for r in longtail])
+
+    return {
+        "demo": True,
+        "stage1": {"ultra": ultra, "competitive": comp, "long_tail": longtail, "count": total},
+        "stage3a": {"adder": adder, "score": score},
+        "stage3b": {"ranked": ranked, "total": total, "frac": 0,
+                    "zero_ranking": zero_ranking,
+                    "paa": [r["kw"] for r in longtail[:6]], "table": table},
+        "stage4": {"anchor": CFG["geo_anchor"][band], "adder": adder,
+                   "zero_bonus": CFG["zero_ranking_bonus"], "base": base,
+                   "step": step, "tiers": tiers, "addon_per_market": addon_per,
+                   "addon_markets": addon, "band": band},
+        "export_rows": export_rows,
+    }
+
 @app.route("/quote", methods=["POST"])
 def quote():
     d = request.get_json(force=True)
@@ -290,6 +355,10 @@ def quote():
     if band not in CFG["geo_anchor"]:
         return jsonify({"error": f"Unknown geo scope '{band}'."}), 400
 
+    # DEMO_MODE: serve sample data instantly, no API calls, cannot time out.
+    if DEMO_MODE:
+        return jsonify(mock_pipeline(seeds, markets, state, domain, brand, band, addon))
+
     try:
         s1 = stage1_keyword_list(seeds, markets, state, brand)
         if not s1["all"]:
@@ -298,9 +367,9 @@ def quote():
         r3 = stage3_rankcheck(s1["all"], domain, markets, state, brand)
         p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon)
     except requests.HTTPError as e:
-        return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD."}), 502
+        return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
-        return jsonify({"error": f"Unexpected error: {e}"}), 500
+        return jsonify({"error": f"Unexpected error: {e}. Set DEMO_MODE=1 to run on sample data."}), 500
 
     # Fold PAA questions into the long-tail bucket (they're real long-tail queries
     # Google confirms users ask). Keep existing long-tails first, then top up with
@@ -372,6 +441,103 @@ def export_csv():
     from flask import Response
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={client}_keywords.csv"})
+
+# ===========================================================================
+# STEPPED LIVE ENDPOINTS — each is its own short request so nothing times out.
+# The frontend calls them in sequence and holds state between steps.
+# ===========================================================================
+
+@app.route("/api/keywords", methods=["POST"])
+def api_keywords():
+    """Step 1 — build + bucket the keyword list. One ideas call + parallel suggestions."""
+    d = request.get_json(force=True)
+    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = (d.get("state") or "").strip()
+    brand   = (d.get("brand") or "").strip()
+    if not seeds:
+        return jsonify({"error": "At least one keyword/vertical is required."}), 400
+    try:
+        s1 = stage1_keyword_list(seeds, markets, state, brand)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}. Check funds / credentials."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    if not s1["all"]:
+        return jsonify({"error": "No keywords returned — try broader seeds or check market/state."}), 400
+    conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"]} for r in L]
+    return jsonify({
+        "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
+        "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
+        "all": conv(s1["all"]),
+    })
+
+@app.route("/api/metrics", methods=["POST"])
+def api_metrics():
+    """Step 2 — competitive adder from head-term bids. One search_volume call."""
+    d = request.get_json(force=True)
+    head    = [{"keyword": k} for k in d.get("head", [])]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = (d.get("state") or "").strip()
+    try:
+        m3 = stage3_metrics(head, markets, state)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    return jsonify({"adder": m3["adder"], "score": m3["median_score"]})
+
+@app.route("/api/rankings", methods=["POST"])
+def api_rankings():
+    """Step 3 — rank-check ONE small batch of keywords (frontend loops batches).
+    Each call is short: a few parallel SERP lookups."""
+    d = request.get_json(force=True)
+    batch   = d.get("batch", [])
+    domain  = (d.get("domain") or "").strip()
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = (d.get("state") or "").strip()
+    brand   = (d.get("brand") or "").strip()
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    top_n = CFG["zero_ranking_top_n"]
+    results, paa = [], []
+    try:
+        with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
+            futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n): kw for kw in batch}
+            done = {}
+            for fut in futs:
+                kw = futs[fut]
+                try:
+                    pos, qs = fut.result()
+                except Exception:
+                    pos, qs = None, []
+                done[kw] = (pos, qs)
+        for kw in batch:
+            pos, qs = done.get(kw, (None, []))
+            results.append({"kw": kw, "pos": pos if pos is not None else "Not Found",
+                            "ranked_top": (pos is not None and pos <= top_n)})
+            paa.extend(qs)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    return jsonify({"results": results, "paa": list(dict.fromkeys(paa))})
+
+@app.route("/api/price", methods=["POST"])
+def api_price():
+    """Step 4 — pure pricing math, instant."""
+    d = request.get_json(force=True)
+    band = d.get("band", "single_city")
+    if band not in CFG["geo_anchor"]:
+        return jsonify({"error": f"Unknown geo scope '{band}'."}), 400
+    adder = int(d.get("adder", 0) or 0)
+    zero  = bool(d.get("zero_ranking", False))
+    addon = int(d.get("addon_markets", 0) or 0)
+    p = stage4_price(band, adder, zero, addon)
+    return jsonify({"anchor": p["anchor"], "adder": adder,
+                    "zero_bonus": CFG["zero_ranking_bonus"] if zero else 0,
+                    "base": p["base"], "step": p["step"], "tiers": p["tiers"],
+                    "addon_per_market": p["addon_per_market"], "addon_markets": addon,
+                    "band": band})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
