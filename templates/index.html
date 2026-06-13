@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>adtini · SEO Quote Tool</title>
+<style>
+  :root{
+    --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
+    --parchment:#F6F1E7; --ink:#1a2231; --muted:#6b7686; --line:#dfe4ec;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--parchment);color:var(--ink);line-height:1.5}
+  header{background:var(--atlas);color:#fff;padding:22px 28px}
+  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
+  header span{opacity:.7;font-size:13px}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:840px){.grid{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px}
+  .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
+  label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
+  .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
+  input[type=text],textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);
+    border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+  textarea{min-height:58px;resize:vertical}
+  .pillbox{display:flex;flex-wrap:wrap;gap:6px;padding:7px;border:1px solid var(--line);
+    border-radius:8px;background:#fff;min-height:42px;align-items:center;cursor:text}
+  .pillbox input{border:none;outline:none;flex:1;min-width:120px;padding:4px;font-size:14px}
+  .pill{background:var(--velocity);color:#fff;padding:3px 9px;border-radius:20px;font-size:12.5px;
+    display:inline-flex;align-items:center;gap:6px}
+  .pill b{cursor:pointer;opacity:.8;font-weight:700}
+  .geo-pill{background:var(--atlas)}
+  .toggle-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .switch{position:relative;width:44px;height:24px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:#c7cedb;border-radius:24px;transition:.2s;cursor:pointer}
+  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .switch input:checked + .slider{background:var(--velocity)}
+  .switch input:checked + .slider:before{transform:translateX(20px)}
+  .btn{margin-top:22px;width:100%;background:var(--gold);color:#3a2c08;border:none;padding:13px;
+    border-radius:9px;font-size:15px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.55;cursor:wait}
+  .hidden{display:none}
+  /* results */
+  #out{margin-top:24px}
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:6px 0 20px}
+  .tier{border:1px solid var(--line);border-radius:11px;padding:18px;text-align:center;background:#fff}
+  .tier.mid{border-color:var(--velocity);box-shadow:0 0 0 2px rgba(55,138,221,.15)}
+  .tier .name{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .tier .price{font-size:26px;font-weight:700;color:var(--atlas);margin:6px 0 2px}
+  .tier .mo{font-size:12px;color:var(--muted)}
+  .calc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13.5px;margin-bottom:16px}
+  .calc code{background:var(--parchment);padding:1px 6px;border-radius:5px}
+  .kwcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:13px}
+  @media(max-width:700px){.kwcols{grid-template-columns:1fr}}
+  .kwcols h4{margin:0 0 6px;font-size:12px;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px}
+  .kwcols ul{margin:0;padding-left:16px} .kwcols li{margin:2px 0}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase}
+  .nf{color:var(--muted)}
+  .flag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:600}
+  .flag.on{background:#fde8c8;color:#7a5410} .flag.off{background:#e3eee3;color:#2f6b34}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
+  .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
+  .paa{font-size:12.5px;color:var(--ink)} .paa li{margin:2px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO</span></h1>
+</header>
+
+<div class="wrap">
+<div class="grid">
+  <!-- ============ FORM ============ -->
+  <div class="card">
+    <h2>Product Details</h2>
+
+    <label>Website(s) needing SEO</label>
+    <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
+    <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
+
+    <label>Keyword / Vertical Focus</label>
+    <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
+    <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
+
+    <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
+    <input type="text" id="brand" placeholder="VersAbility">
+
+    <label>Has done SEO in the past</label>
+    <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
+    <div class="toggle-row">
+      <span class="switch"><input type="checkbox" id="pastseo"><span class="slider"></span></span>
+      <span id="pastseo_lbl">No</span>
+    </div>
+    <div id="pastseo_detail_wrap" class="hidden">
+      <label>Past SEO details</label>
+      <div class="help">What went right or wrong in their past SEO campaigns?</div>
+      <textarea id="pastseo_detail"></textarea>
+    </div>
+
+    <label>Geo scope</label>
+    <div class="help">Where the client needs to be <i>found</i> in search — not necessarily where they're located. Usually matches their service area; when it doesn't, go with where customers search (a one-city tourism bureau targeting "things to do in kansas" is Statewide, not Single City).</div>
+    <select id="geo_scope">
+      <option value="single_city">Single City</option>
+      <option value="contiguous_region">Contiguous region</option>
+      <option value="non_contiguous_region">Non-contiguous region</option>
+      <option value="statewide">Statewide</option>
+      <option value="nationwide">Nationwide</option>
+    </select>
+
+    <label>Geographic targeting areas</label>
+    <div class="help">Cities / regions / state the keywords should target. At least one entry required (except Nationwide). Type and press comma/Enter.</div>
+    <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
+
+    <label>State <span style="font-weight:400;color:var(--muted)">(for keyword + SERP location)</span></label>
+    <input type="text" id="state" placeholder="Tennessee">
+
+    <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
+    <input type="text" id="addon" placeholder="0" value="0">
+
+    <button class="btn" id="go">Generate Quote</button>
+  </div>
+
+  <!-- ============ RESULTS ============ -->
+  <div class="card">
+    <h2>Quote</h2>
+    <div id="out"><p style="color:var(--muted);font-size:14px">Fill in the form and generate a quote. The tool pulls live keyword + ranking data from DataForSEO, then prices using the spring geo-scope ladder.</p></div>
+  </div>
+</div>
+</div>
+
+<script>
+// ---- pill inputs ----
+const stores = {sites:[], kw:[], geo:[]};
+function wirePills(key, inputId){
+  const box = document.querySelector(`.pillbox[data-for="${key}"]`);
+  const input = document.getElementById(inputId);
+  function render(){
+    box.querySelectorAll('.pill').forEach(p=>p.remove());
+    stores[key].forEach((v,i)=>{
+      const el=document.createElement('span');
+      el.className='pill'+(key==='geo'?' geo-pill':'');
+      el.innerHTML=`${v} <b data-i="${i}">×</b>`;
+      el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();};
+      box.insertBefore(el,input);
+    });
+  }
+  function commit(){
+    const parts=input.value.split(',').map(s=>s.trim()).filter(Boolean);
+    parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
+    input.value=''; render();
+  }
+  input.addEventListener('keydown',e=>{
+    if(e.key===','||e.key==='Enter'){e.preventDefault();commit();}
+    else if(e.key==='Backspace'&&!input.value&&stores[key].length){stores[key].pop();render();}
+  });
+  input.addEventListener('blur',commit);
+  box.addEventListener('click',()=>input.focus());
+}
+wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in');
+
+// ---- toggle ----
+const pastseo=document.getElementById('pastseo');
+pastseo.addEventListener('change',()=>{
+  document.getElementById('pastseo_lbl').textContent=pastseo.checked?'Yes':'No';
+  document.getElementById('pastseo_detail_wrap').classList.toggle('hidden',!pastseo.checked);
+});
+
+// ---- submit ----
+const $=id=>document.getElementById(id);
+function money(n){return '$'+n.toLocaleString();}
+$('go').addEventListener('click',async()=>{
+  // flush any unsubmitted text
+  ['sites_in','kw_in','geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
+  const scope=$('geo_scope').value;
+  if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return;}
+  if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return;}
+
+  const payload={
+    domain: stores.sites[0]||'',
+    keywords: stores.kw,
+    brand: $('brand').value,
+    geo_scope: scope,
+    geo_values: stores.geo,
+    state: $('state').value,
+    addon_markets: parseInt($('addon').value||'0',10),
+  };
+  const btn=$('go'); btn.disabled=true; btn.textContent='Pulling live data…';
+  $('out').innerHTML='<p style="color:var(--muted)">Running keyword pull → rank check → pricing… (live API, ~10-30s)</p>';
+  try{
+    const res=await fetch('/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok){renderErr(data.error||'Request failed.');}
+    else renderQuote(data);
+  }catch(e){renderErr('Network error: '+e.message);}
+  btn.disabled=false; btn.textContent='Generate Quote';
+});
+
+function renderErr(msg){$('out').innerHTML=`<div class="err">${msg}</div>`;}
+
+function renderQuote(d){
+  const s4=d.stage4, s3a=d.stage3a, s3b=d.stage3b, s1=d.stage1;
+  const t=s4.tiers;
+  const kwlist=arr=>arr.length?`<ul>${arr.map(x=>`<li>${x.kw} <span class="nf">(${x.vol})</span></li>`).join('')}</ul>`:'<p class="nf">—</p>';
+  let addon='';
+  if(s4.addon_markets>0){
+    addon=`<div class="calc"><b>Add-on markets (${s4.addon_markets}):</b>
+      Base ${money(s4.addon_per_market.base)}/mo · Int ${money(s4.addon_per_market.intermediate)}/mo · Adv ${money(s4.addon_per_market.advanced)}/mo — each, per market</div>`;
+  }
+  const tableRows=s3b.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
+  const paa=s3b.paa.length?`<ul class="paa">${s3b.paa.map(q=>`<li>${q}</li>`).join('')}</ul>`:'<p class="nf">No PAA harvested.</p>';
+
+  $('out').innerHTML=`
+    <div class="tiers">
+      <div class="tier"><div class="name">Base</div><div class="price">${money(t.base)}</div><div class="mo">/month</div></div>
+      <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(t.intermediate)}</div><div class="mo">/month</div></div>
+      <div class="tier"><div class="name">Advanced</div><div class="price">${money(t.advanced)}</div><div class="mo">/month</div></div>
+    </div>
+    <div class="calc">
+      <b>Base build:</b> anchor <code>${money(s4.anchor)}</code> ${s4.band}
+      + competitive adder <code>+${money(s4.adder)}</code> (bid score ${s3a.score})
+      + zero-ranking <code>+${money(s4.zero_bonus)}</code>
+      = <b>${money(s4.base)}</b> &nbsp;·&nbsp; step <code>${money(s4.step)}</code> (40%)
+    </div>
+    ${addon}
+    <div class="calc">
+      <b>Zero-ranking flag:</b>
+      <span class="flag ${s3b.zero_ranking?'on':'off'}">${s3b.zero_ranking?'YES +$500':'NO'}</span>
+      &nbsp; ${s3b.ranked}/${s3b.total} keywords rank in top 50 (${s3b.frac}%)
+    </div>
+    <div class="kwcols">
+      <div><h4>Ultra Competitive</h4>${kwlist(s1.ultra)}</div>
+      <div><h4>Competitive</h4>${kwlist(s1.competitive)}</div>
+      <div><h4>Long Tail</h4>${kwlist(s1.long_tail)}</div>
+    </div>
+    <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Ranking table</h4>
+    <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${tableRows}</tbody></table>
+    <h4 style="margin:22px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px">Long-tail pool (PAA)</h4>
+    ${paa}
+    <div class="note">Generated quote — route to a human for final manual check before sending. Anchors use the spring geo-scope ladder; the $3,950 June-floor question is still open.</div>
+  `;
+}
+</script>
+</body>
+</html>
