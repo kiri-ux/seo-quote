@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --timeout 120
+    startCommand: gunicorn app:app --timeout 300 --workers 1 --threads 4
     envVars:
       - key: DFS_LOGIN
         sync: false

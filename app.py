@@ -54,6 +54,7 @@ CFG = {
     "longtail_prefixes": ["how","what","why","when","where","which","who","best",
                           "affordable","cheap","near","cost","top","is","can","do"],
     "longtail_target": 10,             # how many long-tails to keep in the list
+    "rank_check_cap": 16,              # max keywords sent to the SERP rank check (timeout guard)
 }
 
 def r50(x):
@@ -88,26 +89,32 @@ def is_longtail(kw):
 
 def fetch_suggestions(seeds, markets, state):
     """keyword_suggestions returns queries CONTAINING the seed — structurally
-    longer than keyword_ideas. One call per seed; failures are non-fatal."""
+    longer than keyword_ideas. Calls run in parallel; failures are non-fatal."""
     out = []
     if not CFG["use_suggestions"]:
         return out
     loc = loc_string(markets, state)
-    for s in seeds[:6]:   # cap seeds to keep call count bounded
+
+    def one(s):
         try:
             payload = [{"keyword": s, "location_name": loc,
-                        "language_code": "en", "limit": 200}]
+                        "language_code": "en", "limit": 150}]
             data = dfs_post("/keywords_data/google_ads/keyword_suggestions/live", payload)
             res = (data["tasks"][0]["result"] or [])
+            rows = []
             for block in res:
                 for it in (block.get("items") or []):
                     kw = it.get("keyword")
                     if kw:
                         ki = it.get("keyword_info") or {}
-                        out.append({"keyword": kw,
-                                    "volume": ki.get("search_volume") or 0})
+                        rows.append({"keyword": kw, "volume": ki.get("search_volume") or 0})
+            return rows
         except Exception:
-            continue
+            return []
+
+    with ThreadPoolExecutor(max_workers=min(len(seeds), CFG["rank_check_workers"]) or 1) as ex:
+        for rows in ex.map(one, seeds[:6]):
+            out.extend(rows)
     return out
 
 # ---------------------------------------------------------------------------
@@ -220,7 +227,9 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n):
 def stage3_rankcheck(all_kws, domain, markets, state, brand):
     top_n = CFG["zero_ranking_top_n"]
     dom = (domain or "").replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
-    kws = [r["keyword"] for r in all_kws]
+    # Cap the number of SERP calls to stay under the platform timeout.
+    capped = all_kws[:CFG["rank_check_cap"]]
+    kws = [r["keyword"] for r in capped]
 
     # Fire SERP calls in parallel; keep results aligned to input order.
     results = [None] * len(kws)
