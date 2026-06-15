@@ -253,8 +253,11 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
         seed_phrases = list(seeds)
         # (b) plus the API's related head terms, geo-modified — this is what gives
         # the proposal its variety ("adhd therapy san diego", "couples therapy
-        # san diego") beyond the literal seeds the partner typed.
-        related = [r["keyword"] for r in with_vol
+        # san diego") beyond the literal seeds. Drawn from the FULL candidate pool
+        # (not volume-filtered) so sparse/niche verticals — where local terms
+        # report little or no volume — still build a full list instead of
+        # collapsing to the bare seeds. (This is the Versability case.)
+        related = [r["keyword"] for r in kept
                    if not is_longtail(r["keyword"])
                    and not any(m.lower() in r["keyword"].lower() for m in markets)]
         seed_phrases += related[:25]
@@ -271,8 +274,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
                 geo_heads.append({"keyword": kw, "volume": bare_vol, "src": "geo"})
         # strongest terms first (by bare-form volume)
         geo_heads.sort(key=lambda r: r["volume"], reverse=True)
-        # backfill with bare high-volume terms only if we don't have enough geo heads
-        bare_backfill = [r for r in with_vol if not is_longtail(r["keyword"])
+        # backfill with any remaining bare terms (volume or not) if still short
+        bare_backfill = [r for r in kept if not is_longtail(r["keyword"])
                          and r["keyword"].lower() not in seen_h]
         head_ordered = geo_heads + bare_backfill
     else:
@@ -290,6 +293,26 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
     # prefer more words, then higher volume
     lt_candidates.sort(key=lambda r: (len(r["keyword"].split()), r["volume"]), reverse=True)
     long_tail = lt_candidates[:CFG["longtail_target"]]
+
+    # Backfill: if the API returned few real long-tails (common in local/niche
+    # verticals), generate question-form long-tails from the seeds + market so
+    # the bucket is never empty at Step 1. PAA harvested in Step 3 will add more.
+    if len(long_tail) < CFG["longtail_target"]:
+        seen_lt = {r["keyword"].lower() for r in long_tail} | {k.lower() for k in head_kws}
+        mkt = markets[0] if markets else ""
+        templates = ["how much does {s} cost{inm}", "best {s} near me",
+                     "what to look for in {s}{inm}", "affordable {s} for adults{inm}",
+                     "is {s} covered by insurance{inm}", "how to find a good {s}{inm}"]
+        for s in seeds:
+            for t in templates:
+                if len(long_tail) >= CFG["longtail_target"]:
+                    break
+                kw = t.format(s=s, inm=(f" in {mkt}" if mkt else "")).strip()
+                kl = kw.lower()
+                if kl in seen_lt or (brand_l and brand_l in kl):
+                    continue
+                seen_lt.add(kl)
+                long_tail.append({"keyword": kw, "volume": 0, "src": "gen"})
 
     full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
     fs = {r["keyword"] for r in full}
@@ -610,11 +633,18 @@ def api_keywords():
     if not s1["all"]:
         return jsonify({"error": "No keywords returned — try broader seeds or check market/state."}), 400
     conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"]} for r in L]
-    return jsonify({
+    resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
         "all": conv(s1["all"]),
-    })
+    }
+    # Thin-list guard: sparse/niche verticals or too few seeds produce a short
+    # list. Flag it so the partner can add more seed terms for a fuller table.
+    if len(s1["all"]) < 6 or len(s1["competitive"]) == 0:
+        resp["thin_warning"] = ("Only a few keywords came back — this vertical may "
+            "be low-volume, or try adding more seed terms (e.g. related services) "
+            "for a fuller keyword table like the proposals.")
+    return jsonify(resp)
 
 @app.route("/api/metrics", methods=["POST"])
 def api_metrics():
