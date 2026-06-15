@@ -368,31 +368,62 @@ def fetch_keyword_difficulty(kws, markets, state):
     except Exception as e:
         return {}, str(e)[:80]
 
+def _strip_markets(kw, markets):
+    """Remove a trailing market modifier so we can look up bid/difficulty data,
+    which the APIs key to the bare term ('adhd treatment'), not the geo form
+    ('adhd treatment san diego')."""
+    k = kw
+    for m in sorted(markets, key=len, reverse=True):
+        if m and k.lower().endswith(" " + m.lower()):
+            k = k[: -(len(m) + 1)].strip()
+            break
+    return k
+
 def stage3_metrics(head, markets, state):
-    kws = [r["keyword"] for r in head]
-    if not kws:
+    geo_kws = [r["keyword"] for r in head]
+    if not geo_kws:
         return {"adder": 0, "median_score": 0, "bids": {}, "cpc": {}, "kd": {}}
-    payload = [{"keywords": kws,
+    # Map each geo head term -> its bare form; query metrics on the bare forms
+    # (which have real bid/difficulty data), then attribute results to both keys.
+    bare_of = {g: _strip_markets(g, markets) for g in geo_kws}
+    bare_unique = list(dict.fromkeys(bare_of.values()))
+
+    payload = [{"keywords": bare_unique,
                 "location_name": loc_string(markets, state),
                 "language_code": "en"}]
     data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
     items = (data["tasks"][0]["result"] or [])
-    bids = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
-    cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
-    kd, kd_err = fetch_keyword_difficulty(kws, markets, state)
-    kd_vals = [v for v in kd.values() if isinstance(v, (int, float))]
+    bare_bid = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
+    bare_cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
+    bare_kd, kd_err = fetch_keyword_difficulty(bare_unique, markets, state)
+
+    # Attribute to both the geo key (for the table) and the bare key.
+    bids, cpc, kd = {}, {}, {}
+    for g in geo_kws:
+        b = bare_of[g]
+        if bare_bid.get(b):  bids[g] = bare_bid[b]; bids[b] = bare_bid[b]
+        if bare_cpc.get(b):  cpc[g]  = bare_cpc[b]; cpc[b]  = bare_cpc[b]
+        if bare_kd.get(b) is not None: kd[g] = bare_kd[b]; kd[b] = bare_kd[b]
+
+    kd_vals = [v for v in {bare_of[g]: kd.get(g) for g in geo_kws}.values()
+               if isinstance(v, (int, float))]
     median_kd = int(statistics.median(kd_vals)) if kd_vals else None
+
     lo, hi = CFG["bid_score_breaks"]
-    scores = [2 if bids.get(k, 0) >= hi else 1 if bids.get(k, 0) >= lo else 0 for k in kws]
+    # Score only on head terms that returned bid data (don't let missing data
+    # count as 0 and drag the median down).
+    have_bid = [bids.get(g, 0) for g in geo_kws if bids.get(g, 0)]
+    scores = [2 if b >= hi else 1 if b >= lo else 0 for b in have_bid]
     median_score = int(statistics.median(scores)) if scores else 0
-    # Bid distribution so the panel can show what the score is derived from
-    bid_vals = [bids.get(k, 0) for k in kws if bids.get(k, 0)]
+    # Bid distribution so the panel can show what the score is derived from.
+    # Use unique bare-term bids (the actual data points the score is built on).
+    bid_vals = [v for v in bare_bid.values() if v]
     bid_stats = None
     if bid_vals:
         bid_stats = {"median": round(statistics.median(bid_vals), 2),
                      "min": round(min(bid_vals), 2),
                      "max": round(max(bid_vals), 2),
-                     "n": len(bid_vals), "n_total": len(kws)}
+                     "n": len(bid_vals), "n_total": len(bare_unique)}
     return {"adder": CFG["competitive_adder"][median_score],
             "median_score": median_score, "bids": bids, "cpc": cpc,
             "bid_stats": bid_stats, "breaks": [lo, hi],
