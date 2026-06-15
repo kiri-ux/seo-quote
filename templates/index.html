@@ -239,20 +239,69 @@ $('step1').addEventListener('click', async()=>{
     const kw=await postJSON('/api/keywords',{
       keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand, domain:inp.domain});
     ST.kw=kw;
-    panel('p1',`
-      <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span></h4>
-      ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
-      <div class="why">Builds the terms this client should rank for — seeds crossed with their markets, expanded with related and question-style searches, plus keywords pulled from the client's own website, then split into Ultra Competitive / Competitive / Long Tail. This list is the input to every step that follows, and the competitive tiers feed the proposal's keyword table.</div>
-      <div class="kwcols">
-        <div><h4>Ultra Competitive</h4>${kwlist(kw.ultra)}</div>
-        <div><h4>Competitive</h4>${kwlist(kw.competitive)}</div>
-        <div><h4>Long Tail</h4>${kwlist(kw.long_tail)}</div>
-      </div>
-      ${stepBtn('step2','2 · Score competition')}`);
-    $('step2').addEventListener('click', runStep2);
+    renderStep1();
   }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
   $('step1').disabled=false; $('step1').textContent='1 · Build keyword list';
 });
+
+// Editable keyword list: removable chips per bucket + manual add. Step 2 reads
+// from ST.kw, so edits here flow through to scoring, rankings, and the table.
+function kwBucket(title, bucketKey){
+  const arr=ST.kw[bucketKey]||[];
+  const items=arr.map((x,i)=>`<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
+      <span style="flex:1">${x.kw}</span>
+      <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700;line-height:1.2">×</b>
+    </li>`).join('');
+  return `<div>
+    <h4>${title}</h4>
+    <ul style="list-style:none;padding:0;margin:0 0 6px">${items||'<li class="nf">—</li>'}</ul>
+    <div style="display:flex;gap:4px">
+      <input type="text" class="kwadd" data-bucket="${bucketKey}" placeholder="add term…"
+        style="flex:1;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px">
+    </div>
+  </div>`;
+}
+
+function renderStep1(){
+  const kw=ST.kw;
+  panel('p1',`
+    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span></h4>
+    ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
+    <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. Edits here flow through to scoring, rankings, and the proposal table.</div>
+    <div class="kwcols">
+      ${kwBucket('Ultra Competitive','ultra')}
+      ${kwBucket('Competitive','competitive')}
+      ${kwBucket('Long Tail','long_tail')}
+    </div>
+    ${stepBtn('step2','2 · Score competition')}`);
+  // wire removes
+  document.querySelectorAll('.kwrm').forEach(b=>{
+    b.onclick=()=>{
+      const bk=b.dataset.bucket, i=+b.dataset.i;
+      const removed=ST.kw[bk][i];
+      ST.kw[bk].splice(i,1);
+      ST.kw.all=ST.kw.all.filter(x=>x.kw!==removed.kw);
+      if(ST.kw.head) ST.kw.head=ST.kw.head.filter(x=>x.kw!==removed.kw);
+      renderStep1();
+    };
+  });
+  // wire adds (Enter to add to that bucket)
+  document.querySelectorAll('.kwadd').forEach(inp=>{
+    inp.onkeydown=e=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        const bk=inp.dataset.bucket, v=inp.value.trim();
+        if(!v) return;
+        const row={kw:v,vol:0};
+        ST.kw[bk].push(row);
+        ST.kw.all.push(row);
+        if((bk==='ultra'||bk==='competitive') && ST.kw.head) ST.kw.head.push(row);
+        inp.value=''; renderStep1();
+      }
+    };
+  });
+  $('step2').addEventListener('click', runStep2);
+}
 
 // ---------- STEP 2 ----------
 async function runStep2(){

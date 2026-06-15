@@ -222,6 +222,15 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
 
     seed_tokens = {t.lower() for s in seeds for t in s.split()}
     brand_l = (brand or "").lower()
+    # Connector words that signal a stitched-together / garbled phrase rather
+    # than a real search query ("adhd and therapy", "treatment or counseling").
+    CONNECTORS = {"and", "or", "&", "vs", "with"}
+    def is_junk(kw):
+        toks = kw.split()
+        for i, t in enumerate(toks):
+            if 0 < i < len(toks) - 1 and t in CONNECTORS:
+                return True
+        return False
     kept = []
     seen = set()
     for r in raw:
@@ -230,6 +239,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
             continue
         seen.add(kw)
         if brand_l and brand_l in kw:
+            continue
+        if is_junk(kw):
             continue
         # Seed-token relevance filter applies to seed-derived sources only.
         # Site keywords come from the client's own domain and are on-topic by
@@ -261,9 +272,17 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
         # (not volume-filtered) so sparse/niche verticals — where local terms
         # report little or no volume — still build a full list instead of
         # collapsing to the bare seeds. (This is the Versability case.)
+        # Related expansion terms must share a SUBSTANTIVE seed token (length >= 4)
+        # with the seeds. This drops loose API associations and garbled near-words
+        # like "add therapy" (the seed was "adhd treatment" — "add" is only 3 chars
+        # and isn't a seed word) while keeping real expansions ("adhd therapy").
+        seed_long_tokens = {t.lower() for s in seeds for t in s.split() if len(t) >= 4}
+        def shares_substantive_seed(kw):
+            return bool(seed_long_tokens & set(kw.lower().split()))
         related = [r["keyword"] for r in kept
                    if not is_longtail(r["keyword"])
-                   and not any(m.lower() in r["keyword"].lower() for m in markets)]
+                   and not any(m.lower() in r["keyword"].lower() for m in markets)
+                   and shares_substantive_seed(r["keyword"])]
         seed_phrases += related[:25]
         for s in seed_phrases:
             for m in markets:
