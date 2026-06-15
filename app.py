@@ -32,11 +32,14 @@ CFG = {
     # Non-contiguous shares the $2,950 (multi-region) anchor with statewide.
     # HARD COST anchors = CEIL50(0.65 × former client anchor). All internal
     # calculations start from hard cost; client price = hard × (1 + markup).
+    # HARD COST anchors = CEIL50(client anchor / 1.35). Client anchors blended
+    # from the spring ladder uplifted toward the June ~$3,950 pricing. No floor —
+    # the raised bases carry the new pricing level directly.
     "geo_anchor": {
-        "single_city":          1100,
-        "contiguous_region":    1700,
-        "non_contiguous_region":2200,
-        "statewide":            2200,
+        "single_city":          1650,
+        "contiguous_region":    2350,
+        "non_contiguous_region":2600,
+        "statewide":            2600,
         "nationwide":           3150,
     },
     "competitive_adder": {0: 0, 1: 150, 2: 300},   # hard cost (CEIL50 of 200/400 ÷ 1.35)
@@ -45,8 +48,8 @@ CFG = {
     "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
     "zero_ranking_top_n": 50,
     "zero_ranking_frac": 0.10,
-    "step_ratio": 0.38,                       # June proposals: 38% step (was 0.40)
-    "client_floor": 3950,                     # min client base price (June floor)
+    "step_ratio": 0.38,                       # June proposals: 38% step
+    "client_floor": 0,                        # no floor — raised anchors carry pricing
     "addon_market_ratio": 0.42,
     "ultra_bucket_size": 3,
     "competitive_bucket_size": 6,
@@ -330,18 +333,20 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
 def stage3_metrics(head, markets, state):
     kws = [r["keyword"] for r in head]
     if not kws:
-        return {"adder": 0, "median_score": 0, "bids": {}}
+        return {"adder": 0, "median_score": 0, "bids": {}, "cpc": {}}
     payload = [{"keywords": kws,
                 "location_name": loc_string(markets, state),
                 "language_code": "en"}]
     data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
     items = (data["tasks"][0]["result"] or [])
     bids = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
+    # CPC estimate per keyword (falls back to top-of-page bid if cpc is null)
+    cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
     lo, hi = CFG["bid_score_breaks"]
     scores = [2 if bids.get(k, 0) >= hi else 1 if bids.get(k, 0) >= lo else 0 for k in kws]
     median_score = int(statistics.median(scores)) if scores else 0
     return {"adder": CFG["competitive_adder"][median_score],
-            "median_score": median_score, "bids": bids}
+            "median_score": median_score, "bids": bids, "cpc": cpc}
 
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
@@ -601,9 +606,11 @@ def export_csv():
     client = (d.get("client") or "client").replace(" ", "_")
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Keyword", "Current Google Rank", "Competitiveness"])
+    w.writerow(["Keyword", "Current Google Rank", "Competitiveness", "Est. CPC"])
     for r in rows:
-        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", "")])
+        cpc = r.get("cpc", "")
+        cpc_str = f"${cpc:.2f}" if isinstance(cpc, (int, float)) and cpc else ""
+        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", ""), cpc_str])
     from flask import Response
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={client}_keywords.csv"})
@@ -659,7 +666,8 @@ def api_metrics():
         return jsonify({"error": f"DataForSEO error: {e}."}), 502
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
-    return jsonify({"adder": m3["adder"], "score": m3["median_score"]})
+    return jsonify({"adder": m3["adder"], "score": m3["median_score"],
+                    "cpc": m3.get("cpc", {})})
 
 @app.route("/api/rankings", methods=["POST"])
 def api_rankings():
