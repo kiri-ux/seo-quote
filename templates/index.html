@@ -15,7 +15,7 @@
   header{background:var(--atlas);color:#fff;padding:22px 28px}
   header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
   header span{opacity:.7;font-size:13px}
-  .wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
   .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px}
@@ -260,12 +260,16 @@ async function runStep2(){
   try{
     const m=await postJSON('/api/metrics',{
       head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
-    ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{};
+    ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
+    const kdLine = (m.median_kd!=null)
+      ? `<div class="calc">median keyword difficulty <code>${m.median_kd}</code><span class="nf">/100 (organic ranking difficulty — informational, not yet driving price)</span></div>`
+      : `<div class="calc nf">keyword difficulty unavailable (Labs endpoint may not be on this account plan)</div>`;
     panel('p2',`
       <h4 class="sec">Step 2 · Competition</h4>
-      <div class="why">Measures how hard this market is to win, using Google's own top-of-page bid data on the head terms. Higher bids mean more advertiser demand and a tougher SERP — which maps to the competitive adder (+$0 / +$150 / +$300 hard cost) on top of the base anchor. These are internal hard-cost figures; the client markup is applied at Step 4.</div>
+      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is currently driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison — to evaluate whether it's a better driver than bids, check which one tracks the proposals' Ultra/Competitive labels.</div>
       <div class="calc">median head-term bid score <code>${m.score}</code> →
-        competitive adder <code>+${money(m.adder)}</code> <span class="nf">(hard cost)</span></div>
+        competitive adder <code>+${money(m.adder)}</code> <span class="nf">(hard cost — drives price)</span></div>
+      ${kdLine}
       ${stepBtn('step3','3 · Check rankings')}`);
     $('step3').addEventListener('click', runStep3);
   }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
@@ -313,11 +317,12 @@ async function runStep3(){
 // ---------- STEP 4 ----------
 function renderStep4(p){
   const cpcOf=kw=>(ST.cpc&&ST.cpc[kw])?ST.cpc[kw]:'';
-  // build export rows (CPC available for head terms from Step 2)
+  const kdOf=kw=>(ST.kd&&ST.kd[kw]!=null)?ST.kd[kw]:'';
+  // build export rows (CPC + difficulty available for head terms from Step 2)
   const exp=[]
-    .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive',cpc:cpcOf(r.kw)})))
-    .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive',cpc:cpcOf(r.kw)})))
-    .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail',cpc:cpcOf(r.kw)})));
+    .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
+    .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
+    .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})));
   window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
   const h=p.hard_tiers, c=p.client_tiers;
   let addon='';
@@ -354,12 +359,13 @@ function renderStep4(p){
     ${addon}
     <h4 class="sec" style="margin-top:18px">Keyword table</h4>
     <table style="font-size:12.5px">
-      <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
+      <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th><th>Difficulty</th></tr></thead>
       <tbody>${exp.map(r=>`<tr>
         <td>${r.kw}</td>
         <td class="${r.rank==='Not Found'?'nf':''}">${r.rank}</td>
         <td>${r.comp}</td>
         <td>${r.cpc?('$'+Number(r.cpc).toFixed(2)):'<span class="nf">—</span>'}</td>
+        <td>${r.kd!==''&&r.kd!=null?(r.kd+'/100'):'<span class="nf">—</span>'}</td>
       </tr>`).join('')}</tbody>
     </table>
     <button id="csvbtn" style="margin-top:12px;background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>

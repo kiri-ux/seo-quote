@@ -330,10 +330,32 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
 # ---------------------------------------------------------------------------
 # STAGE 3a — metrics -> competitive adder
 # ---------------------------------------------------------------------------
+def fetch_keyword_difficulty(kws, markets, state):
+    """Labs bulk keyword difficulty (1-100 organic ranking difficulty). Separate
+    call from the Google Ads bid data. Non-fatal: returns {} if unavailable so
+    CPC-based scoring still works."""
+    if not kws:
+        return {}
+    try:
+        payload = [{"keywords": kws[:1000],
+                    "location_name": loc_string(markets, state),
+                    "language_code": "en"}]
+        data = dfs_post("/dataforseo_labs/google/bulk_keyword_difficulty/live", payload)
+        res = (data["tasks"][0]["result"] or [])
+        kd = {}
+        for block in res:
+            for it in (block.get("items") or []):
+                k = it.get("keyword")
+                if k is not None:
+                    kd[k] = it.get("keyword_difficulty")
+        return kd
+    except Exception:
+        return {}
+
 def stage3_metrics(head, markets, state):
     kws = [r["keyword"] for r in head]
     if not kws:
-        return {"adder": 0, "median_score": 0, "bids": {}, "cpc": {}}
+        return {"adder": 0, "median_score": 0, "bids": {}, "cpc": {}, "kd": {}}
     payload = [{"keywords": kws,
                 "location_name": loc_string(markets, state),
                 "language_code": "en"}]
@@ -342,11 +364,17 @@ def stage3_metrics(head, markets, state):
     bids = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
     # CPC estimate per keyword (falls back to top-of-page bid if cpc is null)
     cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
+    # Keyword difficulty (organic ranking difficulty, 1-100) — informational for now
+    kd = fetch_keyword_difficulty(kws, markets, state)
+    # Median difficulty, for comparison against the bid-based score
+    kd_vals = [v for v in kd.values() if isinstance(v, (int, float))]
+    median_kd = int(statistics.median(kd_vals)) if kd_vals else None
     lo, hi = CFG["bid_score_breaks"]
     scores = [2 if bids.get(k, 0) >= hi else 1 if bids.get(k, 0) >= lo else 0 for k in kws]
     median_score = int(statistics.median(scores)) if scores else 0
     return {"adder": CFG["competitive_adder"][median_score],
-            "median_score": median_score, "bids": bids, "cpc": cpc}
+            "median_score": median_score, "bids": bids, "cpc": cpc,
+            "kd": kd, "median_kd": median_kd}
 
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
@@ -606,11 +634,13 @@ def export_csv():
     client = (d.get("client") or "client").replace(" ", "_")
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Keyword", "Current Google Rank", "Competitiveness", "Est. CPC"])
+    w.writerow(["Keyword", "Current Google Rank", "Competitiveness", "Est. CPC", "Keyword Difficulty"])
     for r in rows:
         cpc = r.get("cpc", "")
         cpc_str = f"${cpc:.2f}" if isinstance(cpc, (int, float)) and cpc else ""
-        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", ""), cpc_str])
+        kd = r.get("kd", "")
+        kd_str = f"{kd}/100" if isinstance(kd, (int, float)) else ""
+        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", ""), cpc_str, kd_str])
     from flask import Response
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={client}_keywords.csv"})
@@ -667,7 +697,8 @@ def api_metrics():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     return jsonify({"adder": m3["adder"], "score": m3["median_score"],
-                    "cpc": m3.get("cpc", {})})
+                    "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
+                    "median_kd": m3.get("median_kd")})
 
 @app.route("/api/rankings", methods=["POST"])
 def api_rankings():
