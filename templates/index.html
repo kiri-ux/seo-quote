@@ -339,7 +339,7 @@ function renderStep4(p){
     </div>
     <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
       + adder <code>+${money(p.adder)}</code> + zero-ranking <code>+${money(p.zero_bonus)}</code>
-      = <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (40%)</div>
+      = <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
 
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
       <span style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--atlas);font-weight:600">Client price · markup</span>
@@ -352,7 +352,17 @@ function renderStep4(p){
       <div class="tier"><div class="name">Advanced</div><div class="price">${money(c.advanced)}</div><div class="mo">/month</div></div>
     </div>
     ${addon}
-    <button id="csvbtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
+    <h4 class="sec" style="margin-top:18px">Keyword table</h4>
+    <table style="font-size:12.5px">
+      <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
+      <tbody>${exp.map(r=>`<tr>
+        <td>${r.kw}</td>
+        <td class="${r.rank==='Not Found'?'nf':''}">${r.rank}</td>
+        <td>${r.comp}</td>
+        <td>${r.cpc?('$'+Number(r.cpc).toFixed(2)):'<span class="nf">—</span>'}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <button id="csvbtn" style="margin-top:12px;background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
     <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
   // live markup recompute (re-hits /api/price; pure math, instant)
   $('markup_live').addEventListener('change', async()=>{
@@ -406,10 +416,6 @@ async function loadConfig(){
   catch(e){ $('cfgFields').innerHTML=`<div class="err">Couldn't load config: ${e.message}</div>`; return; }
   const ga=c.geo_anchor, ca=c.competitive_adder, bb=c.bid_score_breaks;
   $('cfgFields').innerHTML =
-    cfgGroup('Step 1 · keyword buckets', 
-      cfgRow('Ultra-competitive bucket size','cf_ultra',c.ultra_bucket_size)+
-      cfgRow('Competitive bucket size','cf_comp',c.competitive_bucket_size)+
-      cfgRow('Long-tail target count','cf_lt',c.longtail_target)) +
     cfgGroup('Step 2 · competition (hard cost)',
       cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'under this → +$0')+
       cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'over this → top adder')+
@@ -440,8 +446,7 @@ $('cfgApply').addEventListener('click', async()=>{
     bid_score_breaks:[v('cf_break1'),v('cf_break2')],
     zero_ranking_bonus:v('cf_zero'), zero_ranking_top_n:v('cf_topn'), zero_ranking_frac:v('cf_frac'),
     step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
-    default_markup_pct:v('cf_markup'), ultra_bucket_size:v('cf_ultra'),
-    competitive_bucket_size:v('cf_comp'), longtail_target:v('cf_lt'),
+    default_markup_pct:v('cf_markup'),
   };
   $('cfgStatus').textContent='Applying…';
   try{
