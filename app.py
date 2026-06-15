@@ -177,7 +177,8 @@ def fetch_keywords_for_site(domain, markets, state):
     if not dom:
         return []
     try:
-        payload = [{"target": dom, "location_name": loc_string(markets, state),
+        # Labs endpoint: use numeric location_code (2840 = US), not location_name.
+        payload = [{"target": dom, "location_code": 2840,
                     "language_code": "en", "limit": CFG["site_keywords_limit"]}]
         data = dfs_post("/dataforseo_labs/google/keywords_for_site/live", payload)
         res = (data["tasks"][0]["result"] or [])
@@ -337,8 +338,11 @@ def fetch_keyword_difficulty(kws, markets, state):
     if not kws:
         return {}, None
     try:
+        # Labs endpoints want a numeric location_code, not location_name (which
+        # the Google Ads endpoints use). 2840 = United States. Keyword difficulty
+        # is a national-level organic metric, so country-level is appropriate.
         payload = [{"keywords": kws[:1000],
-                    "location_name": loc_string(markets, state),
+                    "location_code": 2840,
                     "language_code": "en"}]
         data = dfs_post("/dataforseo_labs/google/bulk_keyword_difficulty/live", payload)
         task = (data.get("tasks") or [{}])[0]
