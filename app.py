@@ -332,25 +332,37 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
 # ---------------------------------------------------------------------------
 def fetch_keyword_difficulty(kws, markets, state):
     """Labs bulk keyword difficulty (1-100 organic ranking difficulty). Separate
-    call from the Google Ads bid data. Non-fatal: returns {} if unavailable so
-    CPC-based scoring still works."""
+    call from the Google Ads bid data. Returns (kd_map, error_or_None) so the
+    caller can surface why it's empty instead of silently failing."""
     if not kws:
-        return {}
+        return {}, None
     try:
         payload = [{"keywords": kws[:1000],
                     "location_name": loc_string(markets, state),
                     "language_code": "en"}]
         data = dfs_post("/dataforseo_labs/google/bulk_keyword_difficulty/live", payload)
-        res = (data["tasks"][0]["result"] or [])
+        task = (data.get("tasks") or [{}])[0]
+        # surface API-level errors (auth, plan, balance) explicitly
+        if task.get("status_code") not in (20000, None) and not task.get("result"):
+            return {}, f"{task.get('status_code')}: {task.get('status_message')}"
+        res = task.get("result") or []
         kd = {}
         for block in res:
             for it in (block.get("items") or []):
                 k = it.get("keyword")
-                if k is not None:
-                    kd[k] = it.get("keyword_difficulty")
-        return kd
-    except Exception:
-        return {}
+                if k is None:
+                    continue
+                # difficulty can appear as a top-level field or nested
+                v = it.get("keyword_difficulty")
+                if v is None:
+                    v = (it.get("keyword_properties") or {}).get("keyword_difficulty")
+                if v is not None:
+                    kd[k] = v
+        return kd, None
+    except requests.HTTPError as e:
+        return {}, f"HTTP {e.response.status_code if e.response else '?'}"
+    except Exception as e:
+        return {}, str(e)[:80]
 
 def stage3_metrics(head, markets, state):
     kws = [r["keyword"] for r in head]
@@ -362,19 +374,25 @@ def stage3_metrics(head, markets, state):
     data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
     items = (data["tasks"][0]["result"] or [])
     bids = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
-    # CPC estimate per keyword (falls back to top-of-page bid if cpc is null)
     cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
-    # Keyword difficulty (organic ranking difficulty, 1-100) — informational for now
-    kd = fetch_keyword_difficulty(kws, markets, state)
-    # Median difficulty, for comparison against the bid-based score
+    kd, kd_err = fetch_keyword_difficulty(kws, markets, state)
     kd_vals = [v for v in kd.values() if isinstance(v, (int, float))]
     median_kd = int(statistics.median(kd_vals)) if kd_vals else None
     lo, hi = CFG["bid_score_breaks"]
     scores = [2 if bids.get(k, 0) >= hi else 1 if bids.get(k, 0) >= lo else 0 for k in kws]
     median_score = int(statistics.median(scores)) if scores else 0
+    # Bid distribution so the panel can show what the score is derived from
+    bid_vals = [bids.get(k, 0) for k in kws if bids.get(k, 0)]
+    bid_stats = None
+    if bid_vals:
+        bid_stats = {"median": round(statistics.median(bid_vals), 2),
+                     "min": round(min(bid_vals), 2),
+                     "max": round(max(bid_vals), 2),
+                     "n": len(bid_vals), "n_total": len(kws)}
     return {"adder": CFG["competitive_adder"][median_score],
             "median_score": median_score, "bids": bids, "cpc": cpc,
-            "kd": kd, "median_kd": median_kd}
+            "bid_stats": bid_stats, "breaks": [lo, hi],
+            "kd": kd, "median_kd": median_kd, "kd_error": kd_err}
 
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
@@ -698,7 +716,8 @@ def api_metrics():
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     return jsonify({"adder": m3["adder"], "score": m3["median_score"],
                     "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
-                    "median_kd": m3.get("median_kd")})
+                    "median_kd": m3.get("median_kd"), "kd_error": m3.get("kd_error"),
+                    "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
 
 @app.route("/api/rankings", methods=["POST"])
 def api_rankings():

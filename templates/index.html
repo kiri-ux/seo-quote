@@ -263,10 +263,15 @@ async function runStep2(){
     ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
     const kdLine = (m.median_kd!=null)
       ? `<div class="calc">median keyword difficulty <code>${m.median_kd}</code><span class="nf">/100 (organic ranking difficulty — informational, not yet driving price)</span></div>`
-      : `<div class="calc nf">keyword difficulty unavailable (Labs endpoint may not be on this account plan)</div>`;
+      : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
+    const bs=m.bid_stats, br=m.breaks||[5,15];
+    const bidLine = bs
+      ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data; breaks at $${br[0]}/$${br[1]})</span></div>`
+      : `<div class="calc nf">no bid data returned for the head terms (low-volume vertical)</div>`;
     panel('p2',`
       <h4 class="sec">Step 2 · Competition</h4>
       <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is currently driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison — to evaluate whether it's a better driver than bids, check which one tracks the proposals' Ultra/Competitive labels.</div>
+      ${bidLine}
       <div class="calc">median head-term bid score <code>${m.score}</code> →
         competitive adder <code>+${money(m.adder)}</code> <span class="nf">(hard cost — drives price)</span></div>
       ${kdLine}
