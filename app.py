@@ -918,7 +918,10 @@ def api_serp_queue():
         task_id = task.get("id")
         if not task_id:
             return jsonify({"error": f"Task not created: {task.get('status_message')}"}), 502
-        return jsonify({"task_id": task_id, "keyword": keyword, "device": device})
+        # pass display params through so the fetch step can size the screenshot
+        return jsonify({"task_id": task_id, "keyword": keyword, "device": device,
+                        "width": d.get("width"), "height": d.get("height"),
+                        "scale": d.get("scale")})
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}"}), 502
     except Exception as e:
@@ -935,8 +938,13 @@ def api_serp_fetch():
     keyword = d.get("keyword", "")
     if not task_id:
         return jsonify({"error": "No task_id."}), 400
+    # build screenshot params, including optional sizing
+    shot = {"task_id": task_id, "browser_preset": device}
+    if d.get("width"):  shot["browser_screen_width"]  = int(d["width"])
+    if d.get("height"): shot["browser_screen_height"] = int(d["height"])
+    if d.get("scale"):  shot["browser_screen_scale_factor"] = float(d["scale"])
     try:
-        sc = dfs_post("/serp/screenshot", [{"task_id": task_id, "browser_preset": device}])
+        sc = dfs_post("/serp/screenshot", [shot])
         try:
             image_url = sc["tasks"][0]["result"][0]["items"][0]["image"]
         except (KeyError, IndexError, TypeError):

@@ -479,16 +479,22 @@ function renderStep4(p){
       <span style="width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--atlas);border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite"></span>
       ${msg}</div>`; };
     spin(`Queuing live SERP for “${kw}”…`);
+    // Fixed landscape capture sized for the proposal slide frame. Width kept
+    // narrow (~1100) so Google's results column fills the frame and the mostly-
+    // empty right rail is cropped out; height keeps a landscape (~16:9) ratio.
+    const sz={device:'desktop',width:1100,height:620,scale:2};
     try{
       // Step A — queue (quick)
       const q=await postJSON('/api/serp_queue',{
-        keyword:kw, geo_values:ST.inputs.geo_values, state:ST.inputs.state});
+        keyword:kw, geo_values:ST.inputs.geo_values, state:ST.inputs.state,
+        device:sz.device, width:sz.width, height:sz.height, scale:sz.scale});
       // Step B — poll the fetch until the screenshot is ready (each call short)
       let done=null;
       for(let i=0;i<20;i++){            // up to ~60s of polling
         spin(`Capturing live SERP for “${kw}” — ${(i*3)}s… (usually 15-30s)`);
         await new Promise(r=>setTimeout(r,3000));
-        const f=await postJSON('/api/serp_fetch',{task_id:q.task_id, device:q.device, keyword:kw});
+        const f=await postJSON('/api/serp_fetch',{task_id:q.task_id, device:q.device, keyword:kw,
+          width:q.width, height:q.height, scale:q.scale});
         if(f.ready && f.data_url){ done=f; break; }
       }
       if(!done){ out.innerHTML=`<div class="err">SERP still processing after 60s — click Generate to retry.</div>`; }
