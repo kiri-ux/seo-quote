@@ -67,6 +67,7 @@
   .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
   .paa{font-size:12.5px;color:var(--ink)} .paa li{margin:2px 0}
   .sec{margin:18px 0 8px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
   .why{font-size:12.5px;color:var(--muted);margin:-2px 0 10px;line-height:1.45;border-left:2px solid var(--line);padding-left:10px}
 </style>
 </head>
@@ -423,6 +424,15 @@ function renderStep4(p){
       </tr>`).join('')}</tbody>
     </table>
     <button id="csvbtn" style="margin-top:12px;background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
+
+    <h4 class="sec" style="margin-top:20px">SERP screenshot <span class="nf">(for the proposal)</span></h4>
+    <div class="why">Captures a live Google results page for a head term — ideal for showing a prospect they're absent from page 1 while competitors rank. The recommended term is a "Not Found", high-competition, local keyword; change it if you like, then generate.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select id="serpPhrase" style="flex:1;min-width:240px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px"></select>
+      <button id="serpBtn" style="background:var(--velocity,#378ADD);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📸 Generate SERP</button>
+    </div>
+    <div id="serpOut" style="margin-top:12px"></div>
+
     <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
   // live markup recompute (re-hits /api/price; pure math, instant)
   $('markup_live').addEventListener('change', async()=>{
@@ -440,6 +450,46 @@ function renderStep4(p){
     const a=document.createElement('a'); a.href=url;
     a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
+  // ---- SERP screenshot: populate the phrase picker with an auto-recommendation ----
+  (async ()=>{
+    const head=[...ST.kw.ultra.map(r=>({kw:r.kw,comp:'Ultra'})),
+                ...ST.kw.competitive.map(r=>({kw:r.kw,comp:'Competitive'}))];
+    const ranks={}; ST.table.forEach(r=>{ranks[r.kw]=r.pos;});
+    let rec=null;
+    try{
+      const rr=await postJSON('/api/serp_recommend',{head, ranks, geo_values:ST.inputs.geo_values});
+      rec=rr.recommended;
+    }catch(e){ /* fall back to first head term */ }
+    const sel=$('serpPhrase'); if(!sel) return;
+    head.forEach(h=>{
+      const o=document.createElement('option'); o.value=h.kw;
+      o.textContent=h.kw+(ranks[h.kw]==='Not Found'?'  (Not Found)':''); 
+      if(h.kw===rec) o.selected=true;
+      sel.appendChild(o);
+    });
+  })();
+
+  $('serpBtn').onclick=async()=>{
+    const kw=$('serpPhrase').value;
+    const out=$('serpOut'), btn=$('serpBtn');
+    btn.disabled=true; btn.textContent='Generating…';
+    out.innerHTML=`<div class="calc" style="display:flex;align-items:center;gap:10px">
+      <span class="spinner" style="width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--atlas);border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite"></span>
+      Capturing live SERP for “${kw}” — this takes ~15-20 seconds…</div>`;
+    try{
+      const r=await postJSON('/api/serp_screenshot',{
+        keyword:kw, geo_values:ST.inputs.geo_values, state:ST.inputs.state});
+      out.innerHTML=`
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${r.keyword}”:</div>
+        <img src="${r.data_url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
+        <div style="margin-top:8px"><a id="serpDl" href="${r.data_url}" download="serp_${kw.replace(/ /g,'_')}.png"
+          style="font-size:12.5px;color:var(--atlas);font-weight:600">⬇ Download image for the proposal</a></div>`;
+    }catch(e){
+      out.innerHTML=`<div class="err">${e.message}</div>`;
+    }
+    btn.disabled=false; btn.textContent='📸 Generate SERP';
   };
 }
 

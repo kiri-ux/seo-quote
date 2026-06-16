@@ -15,7 +15,7 @@ Local run:
     DFS_LOGIN=... DFS_PASSWORD=... python app.py
     -> http://localhost:5000
 """
-import os, json, base64, statistics
+import os, json, base64, statistics, time
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from flask import Flask, render_template, request, jsonify
@@ -873,6 +873,92 @@ def api_config_set():
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"Invalid value: {e}"}), 400
     return jsonify({"ok": True})
+
+@app.route("/api/serp_recommend", methods=["POST"])
+def api_serp_recommend():
+    """Pick the most persuasive head term to screenshot for a proposal:
+    prefer a 'Not Found' term, then most competitive, then geo-modified."""
+    d = request.get_json(force=True)
+    head = d.get("head", [])          # [{"kw":..., "comp":"Ultra"/"Competitive"}]
+    ranks = d.get("ranks", {})        # {kw: "Not Found" | position}
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    def is_geo(kw):
+        return any(m.lower() in kw.lower() for m in markets)
+    def not_found(kw):
+        r = ranks.get(kw, "Not Found")
+        return r == "Not Found" or r is None
+    def score(item):
+        kw = item.get("kw", "")
+        comp_rank = 2 if item.get("comp", "").lower().startswith("ultra") else 1
+        return (1 if not_found(kw) else 0,   # absent first
+                comp_rank,                    # most competitive
+                1 if is_geo(kw) else 0)       # geo-modified
+    if not head:
+        return jsonify({"recommended": None, "options": []})
+    ordered = sorted(head, key=score, reverse=True)
+    return jsonify({"recommended": ordered[0]["kw"],
+                    "options": [h["kw"] for h in head]})
+
+@app.route("/api/serp_screenshot", methods=["POST"])
+def api_serp_screenshot():
+    """Two-step SERP screenshot: queue a SERP task, poll until ready, fetch the
+    page image. Returns the image as a data URL so the browser can show it
+    inline (and the URL won't expire on the client)."""
+    d = request.get_json(force=True)
+    keyword = (d.get("keyword") or "").strip()
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    device  = d.get("device", "desktop")
+    if not keyword:
+        return jsonify({"error": "No keyword provided."}), 400
+    try:
+        # Step 1 — queue the SERP task
+        tp = dfs_post("/serp/google/organic/task_post", [{
+            "keyword": keyword, "location_name": loc_string(markets, state),
+            "language_code": "en", "device": device}])
+        task = (tp.get("tasks") or [{}])[0]
+        task_id = task.get("id")
+        if not task_id:
+            return jsonify({"error": f"Task not created: {task.get('status_message')}"}), 502
+
+        # Step 2 — poll tasks_ready until our task shows up (or timeout)
+        ready = False
+        for _ in range(10):                      # up to ~20s
+            time.sleep(2)
+            rr = dfs_post("/serp/google/organic/tasks_ready", [])
+            ids = []
+            for t in (rr.get("tasks") or []):
+                for it in (t.get("result") or []):
+                    if it.get("id"):
+                        ids.append(it["id"])
+            if task_id in ids:
+                ready = True
+                break
+        # (even if not confirmed ready, try the screenshot — it often works)
+
+        # Step 3 — request the screenshot for that task_id
+        sc = dfs_post("/serp/screenshot", [{"task_id": task_id,
+                                            "browser_preset": device}])
+        try:
+            image_url = sc["tasks"][0]["result"][0]["items"][0]["image"]
+        except (KeyError, IndexError, TypeError):
+            msg = (sc.get("tasks") or [{}])[0].get("status_message", "no image")
+            hint = "" if ready else " (task may still be processing — try again)"
+            return jsonify({"error": f"No screenshot returned: {msg}{hint}"}), 502
+
+        # Download the image (auth required) and inline it as a data URL
+        login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
+        tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
+        img = requests.get(image_url, headers={"Authorization": f"Basic {tok}"}, timeout=60)
+        img.raise_for_status()
+        b64 = base64.b64encode(img.content).decode()
+        return jsonify({"keyword": keyword,
+                        "data_url": f"data:image/png;base64,{b64}",
+                        "source_url": image_url})
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
