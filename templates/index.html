@@ -475,17 +475,30 @@ function renderStep4(p){
     const kw=$('serpPhrase').value;
     const out=$('serpOut'), btn=$('serpBtn');
     btn.disabled=true; btn.textContent='Generating…';
-    out.innerHTML=`<div class="calc" style="display:flex;align-items:center;gap:10px">
-      <span class="spinner" style="width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--atlas);border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite"></span>
-      Capturing live SERP for “${kw}” — this takes ~15-20 seconds…</div>`;
+    const spin=(msg)=>{ out.innerHTML=`<div class="calc" style="display:flex;align-items:center;gap:10px">
+      <span style="width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--atlas);border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite"></span>
+      ${msg}</div>`; };
+    spin(`Queuing live SERP for “${kw}”…`);
     try{
-      const r=await postJSON('/api/serp_screenshot',{
+      // Step A — queue (quick)
+      const q=await postJSON('/api/serp_queue',{
         keyword:kw, geo_values:ST.inputs.geo_values, state:ST.inputs.state});
-      out.innerHTML=`
-        <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${r.keyword}”:</div>
-        <img src="${r.data_url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
-        <div style="margin-top:8px"><a id="serpDl" href="${r.data_url}" download="serp_${kw.replace(/ /g,'_')}.png"
-          style="font-size:12.5px;color:var(--atlas);font-weight:600">⬇ Download image for the proposal</a></div>`;
+      // Step B — poll the fetch until the screenshot is ready (each call short)
+      let done=null;
+      for(let i=0;i<20;i++){            // up to ~60s of polling
+        spin(`Capturing live SERP for “${kw}” — ${(i*3)}s… (usually 15-30s)`);
+        await new Promise(r=>setTimeout(r,3000));
+        const f=await postJSON('/api/serp_fetch',{task_id:q.task_id, device:q.device, keyword:kw});
+        if(f.ready && f.data_url){ done=f; break; }
+      }
+      if(!done){ out.innerHTML=`<div class="err">SERP still processing after 60s — click Generate to retry.</div>`; }
+      else{
+        out.innerHTML=`
+          <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${done.keyword}”:</div>
+          <img src="${done.data_url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
+          <div style="margin-top:8px"><a href="${done.data_url}" download="serp_${kw.replace(/ /g,'_')}.png"
+            style="font-size:12.5px;color:var(--atlas);font-weight:600">⬇ Download image for the proposal</a></div>`;
+      }
     }catch(e){
       out.innerHTML=`<div class="err">${e.message}</div>`;
     }

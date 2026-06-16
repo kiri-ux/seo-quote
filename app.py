@@ -899,11 +899,10 @@ def api_serp_recommend():
     return jsonify({"recommended": ordered[0]["kw"],
                     "options": [h["kw"] for h in head]})
 
-@app.route("/api/serp_screenshot", methods=["POST"])
-def api_serp_screenshot():
-    """Two-step SERP screenshot: queue a SERP task, poll until ready, fetch the
-    page image. Returns the image as a data URL so the browser can show it
-    inline (and the URL won't expire on the client)."""
+@app.route("/api/serp_queue", methods=["POST"])
+def api_serp_queue():
+    """Step A — queue the SERP task and return immediately with the task_id.
+    Short request (no waiting). The frontend then polls /api/serp_fetch."""
     d = request.get_json(force=True)
     keyword = (d.get("keyword") or "").strip()
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
@@ -912,7 +911,6 @@ def api_serp_screenshot():
     if not keyword:
         return jsonify({"error": "No keyword provided."}), 400
     try:
-        # Step 1 — queue the SERP task
         tp = dfs_post("/serp/google/organic/task_post", [{
             "keyword": keyword, "location_name": loc_string(markets, state),
             "language_code": "en", "device": device}])
@@ -920,43 +918,43 @@ def api_serp_screenshot():
         task_id = task.get("id")
         if not task_id:
             return jsonify({"error": f"Task not created: {task.get('status_message')}"}), 502
+        return jsonify({"task_id": task_id, "keyword": keyword, "device": device})
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
-        # Step 2 — poll tasks_ready until our task shows up (or timeout)
-        ready = False
-        for _ in range(10):                      # up to ~20s
-            time.sleep(2)
-            rr = dfs_post("/serp/google/organic/tasks_ready", [])
-            ids = []
-            for t in (rr.get("tasks") or []):
-                for it in (t.get("result") or []):
-                    if it.get("id"):
-                        ids.append(it["id"])
-            if task_id in ids:
-                ready = True
-                break
-        # (even if not confirmed ready, try the screenshot — it often works)
-
-        # Step 3 — request the screenshot for that task_id
-        sc = dfs_post("/serp/screenshot", [{"task_id": task_id,
-                                            "browser_preset": device}])
+@app.route("/api/serp_fetch", methods=["POST"])
+def api_serp_fetch():
+    """Step B — try to fetch the screenshot for a queued task_id. Returns the
+    image if ready, or {ready:false} if still processing. Frontend polls this.
+    Each call is short, so no request-timeout risk."""
+    d = request.get_json(force=True)
+    task_id = (d.get("task_id") or "").strip()
+    device  = d.get("device", "desktop")
+    keyword = d.get("keyword", "")
+    if not task_id:
+        return jsonify({"error": "No task_id."}), 400
+    try:
+        sc = dfs_post("/serp/screenshot", [{"task_id": task_id, "browser_preset": device}])
         try:
             image_url = sc["tasks"][0]["result"][0]["items"][0]["image"]
         except (KeyError, IndexError, TypeError):
-            msg = (sc.get("tasks") or [{}])[0].get("status_message", "no image")
-            hint = "" if ready else " (task may still be processing — try again)"
-            return jsonify({"error": f"No screenshot returned: {msg}{hint}"}), 502
-
-        # Download the image (auth required) and inline it as a data URL
+            image_url = None
+        if not image_url:
+            msg = (sc.get("tasks") or [{}])[0].get("status_message", "")
+            return jsonify({"ready": False, "status": msg})
         login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
         tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
         img = requests.get(image_url, headers={"Authorization": f"Basic {tok}"}, timeout=60)
         img.raise_for_status()
         b64 = base64.b64encode(img.content).decode()
-        return jsonify({"keyword": keyword,
-                        "data_url": f"data:image/png;base64,{b64}",
-                        "source_url": image_url})
+        return jsonify({"ready": True, "keyword": keyword,
+                        "data_url": f"data:image/png;base64,{b64}"})
     except requests.HTTPError as e:
-        return jsonify({"error": f"DataForSEO error: {e}"}), 502
+        # screenshot endpoint returns an error while the task is still running;
+        # treat as not-ready rather than a hard failure so the poll continues
+        return jsonify({"ready": False, "status": f"processing ({e})"})
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
 
