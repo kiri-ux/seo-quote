@@ -250,7 +250,7 @@ $('step1').addEventListener('click', async()=>{
 function kwBucket(title, bucketKey){
   const arr=ST.kw[bucketKey]||[];
   const items=arr.map((x,i)=>`<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
-      <span style="flex:1">${x.kw}</span>
+      <span style="flex:1">${x.kw}${x.vol?` <span class="nf">(${Number(x.vol).toLocaleString()})</span>`:''}</span>
       <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700;line-height:1.2">×</b>
     </li>`).join('');
   return `<div>
