@@ -93,6 +93,10 @@
     <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
     <input type="text" id="brand" placeholder="VersAbility">
 
+    <label>Business description <span style="font-weight:400;color:var(--muted)">(optional — helps AI exclude off-target terms)</span></label>
+    <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
+    <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+
     <label>Has done SEO in the past</label>
     <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
     <div class="toggle-row">
@@ -204,6 +208,7 @@ function collectInputs(){
   if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return null;}
   return {
     domain: stores.sites[0]||'', keywords: stores.kw, brand: $('brand').value,
+    business_desc: $('business_desc').value,
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
     addon_markets: parseInt($('addon').value||'0',10),
     markup_pct: parseFloat($('markup').value||'35'),
@@ -238,7 +243,8 @@ $('step1').addEventListener('click', async()=>{
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
   try{
     const kw=await postJSON('/api/keywords',{
-      keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand, domain:inp.domain});
+      keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
+      domain:inp.domain, business_desc:inp.business_desc});
     ST.kw=kw;
     renderStep1();
   }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
@@ -249,10 +255,16 @@ $('step1').addEventListener('click', async()=>{
 // from ST.kw, so edits here flow through to scoring, rankings, and the table.
 function kwBucket(title, bucketKey){
   const arr=ST.kw[bucketKey]||[];
-  const items=arr.map((x,i)=>`<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
-      <span style="flex:1">${x.kw}${x.vol?` <span class="nf">(${Number(x.vol).toLocaleString()})</span>`:''}</span>
+  const items=arr.map((x,i)=>{
+    const added = x.origin==='added';
+    const dot = added
+      ? `<span title="Added by AI" style="color:var(--velocity,#378ADD);font-weight:700;margin-right:3px">✦</span>`
+      : '';
+    return `<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
+      <span style="flex:1${added?';color:#1c5fa8':''}">${dot}${x.kw}${x.vol?` <span class="nf">(${Number(x.vol).toLocaleString()})</span>`:''}</span>
       <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700;line-height:1.2">×</b>
-    </li>`).join('');
+    </li>`;
+  }).join('');
   return `<div>
     <h4>${title}</h4>
     <ul style="list-style:none;padding:0;margin:0 0 6px">${items||'<li class="nf">—</li>'}</ul>
@@ -268,7 +280,8 @@ function renderStep1(){
   panel('p1',`
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
-    <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. Edits here flow through to scoring, rankings, and the proposal table.</div>
+    ${kw.business_desc?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
+    <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">
       ${kwBucket('Ultra Competitive','ultra')}
       ${kwBucket('Competitive','competitive')}

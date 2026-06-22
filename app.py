@@ -193,6 +193,76 @@ def fetch_keywords_for_site(domain, markets, state):
     except Exception:
         return []
 
+def fetch_site_pages(domain, limit=60):
+    """Pull the client's page structure as readable topics — the names of the
+    pages they've built, which map directly to their service taxonomy and are
+    strong SEO keyword fuel. Tries sitemap.xml first (fast, standard); falls back
+    to the DataForSEO On-Page API if there's no usable sitemap. Returns a list of
+    short topic strings. Non-fatal: [] on any failure."""
+    if not domain:
+        return []
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    if not dom:
+        return []
+
+    def slug_to_topic(url):
+        path = url.split("//", 1)[-1]
+        path = path.split("/", 1)[1] if "/" in path else ""
+        path = path.strip("/").split("?")[0].split("#")[0]
+        if not path:
+            return ""
+        seg = [s for s in path.split("/") if s and not s.endswith((".xml", ".jpg", ".png", ".pdf", ".css", ".js"))]
+        if not seg:
+            return ""
+        topic = seg[-1].replace("-", " ").replace("_", " ").replace(".html", "").strip()
+        if len(topic) < 3 or topic.isdigit():
+            return ""
+        if topic.lower() in {"index", "home", "page", "blog", "category", "tag"}:
+            return ""
+        return topic
+
+    pages, seen = [], set()
+    import re
+    for sm in (f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml"):
+        try:
+            r = requests.get(sm, timeout=12, headers={"User-Agent": "Mozilla/5.0 (SEO-quote-tool)"})
+            if r.status_code != 200 or "<" not in r.text:
+                continue
+            locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", r.text, re.I)
+            if locs and all(l.lower().endswith(".xml") for l in locs[:3]):
+                child_locs = []
+                for child in locs[:5]:
+                    try:
+                        cr = requests.get(child, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                        child_locs += re.findall(r"<loc>\s*(.*?)\s*</loc>", cr.text, re.I)
+                    except Exception:
+                        pass
+                locs = child_locs or locs
+            for url in locs:
+                t = slug_to_topic(url)
+                if t and t.lower() not in seen:
+                    seen.add(t.lower()); pages.append(t)
+                if len(pages) >= limit:
+                    break
+            if pages:
+                return pages[:limit]
+        except Exception:
+            continue
+
+    try:
+        payload = [{"url": f"https://{dom}", "max_crawl_pages": limit}]
+        data = dfs_post("/on_page/instant_pages", payload)
+        res = (data["tasks"][0]["result"] or [])
+        for block in res:
+            for it in (block.get("items") or []):
+                t = slug_to_topic(it.get("url") or "")
+                if t and t.lower() not in seen:
+                    seen.add(t.lower()); pages.append(t)
+        return pages[:limit]
+    except Exception:
+        return pages[:limit]
+
+
 def fetch_exact_volume(keywords, markets, state):
     """Exact-match search volume. The Google Ads keywords_for_keywords endpoint
     we use to GENERATE terms returns GROUPED (broad) volumes that merge similar
@@ -222,44 +292,85 @@ def fetch_exact_volume(keywords, markets, state):
     except Exception:
         return {}
 
-def claude_refine_keywords(seeds, markets, brand, domain, candidates, site_terms):
+def infer_business(domain, seeds, site_terms):
+    """Infer a short description of what the client's business does (and doesn't),
+    from its domain + site keywords, so Claude can exclude off-target terms
+    (e.g. 'medication' for a therapy practice that doesn't prescribe). Returns a
+    short string, or '' if unavailable. Uses Claude; non-fatal."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not (domain or site_terms):
+        return ""
+    site_list = [s["keyword"] for s in site_terms][:40]
+    prompt = f"""Based on this client's website and the keywords their site ranks for, write ONE sentence describing what the business does and, importantly, what related services it does NOT offer (for SEO targeting).
+
+WEBSITE: {domain or "(none)"}
+SERVICES/VERTICAL: {", ".join(seeds)}
+KEYWORDS FROM THEIR SITE: {json.dumps(site_list, ensure_ascii=False)}
+
+Example output: "A therapy and counseling practice providing talk therapy for mental health conditions; does NOT prescribe medication or offer psychiatric drug treatment."
+
+Return ONLY the one-sentence description, no preamble."""
+    try:
+        resp = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 200, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=40)
+        resp.raise_for_status()
+        body = resp.json()
+        return "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+    except Exception:
+        return ""
+
+def claude_refine_keywords(seeds, markets, brand, domain, candidates, site_terms,
+                           business_desc="", site_pages=None):
     """Claude pass over the API-generated candidates: removes junk/garbled/off-topic
-    terms, folds in terms related to the client's site, and flags which terms would
-    genuinely help the client's SEO — returning a cleaned, bucketed list.
-    Non-fatal: returns None if no API key or any failure, so the caller falls back
-    to the rules-based list. Low temperature for near-deterministic output."""
+    terms (using the business description to exclude irrelevant services), folds in
+    site-related opportunities, buckets by difficulty, and tags each term's origin
+    ('kept' from the candidates, or 'added' by Claude) so the UI can show what AI did.
+    Non-fatal: returns None on no key / failure, so the caller falls back to rules."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return None
     cand_terms = [c["keyword"] for c in candidates][:120]
     site_list  = [s["keyword"] for s in site_terms][:40]
+    pages_list = [p for p in (site_pages or [])][:60]
+    cand_lower = {c.lower() for c in cand_terms}
     mkt = ", ".join(markets) if markets else "national (no specific city)"
-    prompt = f"""You are refining an SEO keyword list for a client proposal.
+    biz = business_desc or "(not provided — infer from the vertical and website)"
+    pages_block = (json.dumps(pages_list, ensure_ascii=False) if pages_list
+                   else "(no page structure available)")
+    prompt = f"""You are an SEO strategist refining a keyword list for a client proposal. Be strict about relevance to THIS specific business.
 
+WHAT THE BUSINESS DOES (and does not do): {biz}
 CLIENT VERTICAL / SERVICES: {", ".join(seeds)}
 TARGET MARKET(S): {mkt}
 CLIENT BRAND (exclude any keyword containing this): {brand or "(none given)"}
 CLIENT WEBSITE: {domain or "(none given)"}
 
-CANDIDATE KEYWORDS (from a keyword API — may contain junk, garbled terms, near-duplicates, and off-topic results):
+THE CLIENT'S ACTUAL WEBSITE PAGES (their real service taxonomy — each page is a topic they offer and should rank for):
+{pages_block}
+
+CANDIDATE KEYWORDS (from a keyword API — contain junk, garbled terms, near-duplicates, and OFF-TARGET terms for services this business does not offer):
 {json.dumps(cand_terms, ensure_ascii=False)}
 
-KEYWORDS PULLED FROM THE CLIENT'S OWN WEBSITE:
+KEYWORDS THE SITE ALREADY RANKS FOR:
 {json.dumps(site_list, ensure_ascii=False)}
 
-YOUR TASK:
-1. Remove garbled or nonsensical terms (e.g. "adhd and therapy", "add therapy" when the vertical is "adhd treatment"), near-duplicates, and anything off-topic or containing the brand name.
-2. Keep terms that are REAL searches a prospective customer would type, relevant to the vertical and market.
-3. From the client's own website keywords, fold in any that represent genuine SEO opportunities for this vertical/market.
-4. Where the market is local, keep the city modifier on local-intent terms (e.g. "adhd treatment san diego").
-5. Sort the final keywords into three buckets by ranking difficulty:
-   - "ultra": the most competitive head terms (hardest to rank, highest value)
-   - "competitive": moderately competitive head terms
-   - "long_tail": longer, lower-competition, often question-style phrases
-6. Do NOT invent search volumes or metrics — only return the keyword strings. Only include real, searchable terms.
+RULES:
+1. EXCLUDE terms for services the business does NOT offer, per the description above. (Example: a therapy practice that does not prescribe drugs should NOT have "medication", "prescription", or "over the counter" keywords.)
+2. EXCLUDE garbled/nonsensical terms ("adhd and therapy", "add therapy" when the vertical is "adhd treatment"), near-duplicates, and brand terms.
+3. KEEP real searches a prospective customer of THIS business would type.
+4. USE THE WEBSITE PAGES as your primary guide to what this business actually offers. For each real service page, ensure there is a strong head keyword targeting it (geo-modified where the market is local). These page-derived keywords are high-priority SEO opportunities — ADD any that the candidate list missed.
+5. ADD other high-value keywords this business should target that the candidate list missed, consistent with their pages and services.
+6. Keep the city modifier on local-intent terms where the market is local.
+7. Bucket by ranking difficulty: "ultra" (hardest/highest value head terms), "competitive" (moderate head terms), "long_tail" (longer/question-style).
+8. Do NOT invent search volumes. Only real, searchable terms.
 
-Return ONLY valid JSON, no prose, in exactly this shape:
-{{"ultra": ["..."], "competitive": ["..."], "long_tail": ["..."]}}"""
+Return ONLY valid JSON in exactly this shape — each item is [keyword, origin] where origin is "kept" (was in the candidate list) or "added" (you added it, e.g. from the pages):
+{{"ultra": [["keyword","kept"], ...], "competitive": [["keyword","added"], ...], "long_tail": [["keyword","kept"], ...]}}"""
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -268,7 +379,7 @@ Return ONLY valid JSON, no prose, in exactly this shape:
                      "content-type": "application/json"},
             data=json.dumps({
                 "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
-                "max_tokens": 2000,
+                "max_tokens": 2500,
                 "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}],
             }), timeout=60)
@@ -276,26 +387,39 @@ Return ONLY valid JSON, no prose, in exactly this shape:
         body = resp.json()
         text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text")
         text = text.strip()
-        # strip code fences if present
         if text.startswith("```"):
             text = text.split("```", 2)[1]
             if text.startswith("json"):
                 text = text[4:]
         parsed = json.loads(text.strip())
-        # normalize to the row shape used downstream
         def rows(key):
-            return [{"keyword": k.strip(), "volume": 0, "src": "claude"}
-                    for k in parsed.get(key, []) if isinstance(k, str) and k.strip()]
+            out = []
+            for item in parsed.get(key, []):
+                if isinstance(item, list) and item:
+                    kw = str(item[0]).strip()
+                    origin = item[1] if len(item) > 1 else "kept"
+                elif isinstance(item, str):
+                    kw = item.strip(); origin = "kept"
+                else:
+                    continue
+                if not kw:
+                    continue
+                # trust the model's tag but sanity-check against the candidate set
+                if origin not in ("kept", "added"):
+                    origin = "added" if kw.lower() not in cand_lower else "kept"
+                out.append({"keyword": kw, "volume": 0, "src": "claude", "origin": origin})
+            return out
         return {"ultra": rows("ultra"), "competitive": rows("competitive"),
                 "long_tail": rows("long_tail")}
     except Exception:
         return None
 
 
+
 # ---------------------------------------------------------------------------
 # STAGE 1 — keyword list
 # ---------------------------------------------------------------------------
-def stage1_keyword_list(seeds, markets, state, brand, domain=""):
+def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc=""):
     crossed = []
     for s in seeds:
         crossed.append(s)
@@ -441,8 +565,14 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
     # and rebuckets by competitiveness. Falls back to the rules-based buckets
     # above if there's no API key or the call fails.
     site_terms = [r for r in raw if r.get("src") == "site"]
+    # Pull the client's page structure (sitemap → On-Page fallback) as keyword
+    # fuel — their pages are their real service taxonomy.
+    site_pages = fetch_site_pages(domain)
+    # Business context: use the manual description if given, else infer from site.
+    biz = business_desc.strip() if business_desc else infer_business(domain, seeds, site_terms)
     refined = claude_refine_keywords(seeds, markets, brand, domain,
-                                     ultra + competitive + long_tail, site_terms)
+                                     ultra + competitive + long_tail, site_terms,
+                                     business_desc=biz, site_pages=site_pages)
     used_claude = False
     if refined and (refined["ultra"] or refined["competitive"]):
         ultra       = refined["ultra"][:CFG["ultra_bucket_size"]] or ultra
@@ -472,6 +602,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
         "head":        [r for r in (ultra + competitive) if r["keyword"] in fs],
         "all":         full,
         "refined_by_ai": used_claude,
+        "business_desc": biz if used_claude else "",
+        "site_pages_found": len(site_pages),
     }
 
 # ---------------------------------------------------------------------------
@@ -858,21 +990,25 @@ def api_keywords():
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
     domain  = (d.get("domain") or "").strip()
+    business_desc = (d.get("business_desc") or "").strip()
     if not seeds:
         return jsonify({"error": "At least one keyword/vertical is required."}), 400
     try:
-        s1 = stage1_keyword_list(seeds, markets, state, brand, domain)
+        s1 = stage1_keyword_list(seeds, markets, state, brand, domain, business_desc)
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}. Check funds / credentials."}), 502
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     if not s1["all"]:
         return jsonify({"error": "No keywords returned — try broader seeds or check market/state."}), 400
-    conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"]} for r in L]
+    conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                       "origin": r.get("origin", "")} for r in L]
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
+        "business_desc": s1.get("business_desc", ""),
+        "site_pages_found": s1.get("site_pages_found", 0),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short
     # list. Flag it so the partner can add more seed terms for a fuller table.
