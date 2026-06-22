@@ -807,7 +807,7 @@ def _tier_uplift(value, tiers):
     return 0
 
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
-                 pct_not_ranking=None, total_volume=None):
+                 pct_not_ranking=None, total_volume=None, base_override=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
@@ -816,22 +816,30 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # Base before % uplifts = anchor + competitive adder (flat $).
     base_pre = anchor + adder
 
-    # --- Brendan #5: tiered zero-ranking uplift (% of head terms not ranking) ---
+    # --- tiered zero-ranking uplift (% of head terms not ranking) ---
     zr_uplift = 0
     if pct_not_ranking is not None:
         zr_uplift = _tier_uplift(pct_not_ranking, CFG.get("zero_ranking_tiers", []))
     elif zero_ranking:
-        # fallback if caller only passed the old boolean: treat as top tier
         zr_uplift = CFG.get("zero_ranking_tiers", [[0, 0]])[0][1]
 
-    # --- Brendan #4: volume-based uplift (total monthly search volume) ---
+    # --- volume-based uplift (total monthly search volume) ---
     vol_uplift = 0
     if total_volume is not None:
         vol_uplift = _tier_uplift(total_volume, CFG.get("volume_tiers", []))
 
-    # Apply both uplifts to the pre-uplift base, round to $50.
-    total_uplift = (zr_uplift + vol_uplift) / 100.0
-    base = r50(base_pre * (1.0 + total_uplift))
+    # MANUAL OVERRIDE: for niche clients the formula doesn't fit, the reviewer can
+    # set the hard base directly. The whole ladder (tiers, markup, add-ons) then
+    # recomputes from that number, so everything stays consistent. When set, the
+    # anchor + uplift math is bypassed.
+    manual_base = base_override is not None and str(base_override) != ""
+    if manual_base:
+        base = r50(float(base_override))
+        zr_uplift = vol_uplift = 0           # uplifts don't apply to a manual base
+    else:
+        total_uplift = (zr_uplift + vol_uplift) / 100.0
+        base = r50(base_pre * (1.0 + total_uplift))
+
     step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
 
@@ -851,7 +859,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
     client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
-            "floored": floored, "client_floor": floor,
+            "floored": floored, "client_floor": floor, "manual_base": manual_base,
             "zero_ranking_uplift_pct": zr_uplift, "volume_uplift_pct": vol_uplift,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
@@ -1149,10 +1157,13 @@ def api_price():
     pct_not_ranking = float(pct_not_ranking) if pct_not_ranking not in (None, "") else None
     total_volume = d.get("total_volume", None)
     total_volume = int(total_volume) if total_volume not in (None, "") else None
+    base_override = d.get("base_override", None)
+    base_override = base_override if base_override not in (None, "") else None
     p = stage4_price(band, adder, zero, addon, markup,
-                     pct_not_ranking=pct_not_ranking, total_volume=total_volume)
+                     pct_not_ranking=pct_not_ranking, total_volume=total_volume,
+                     base_override=base_override)
     return jsonify({"anchor": p["anchor"], "adder": adder,
-                    "base_pre_uplift": p["base_pre_uplift"],
+                    "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
                     "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
                     "volume_uplift_pct": p["volume_uplift_pct"],
                     "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
@@ -1257,7 +1268,7 @@ def api_serp_queue():
     try:
         tp = dfs_post("/serp/google/organic/task_post", [{
             "keyword": keyword, "location_name": loc_string(markets, state),
-            "language_code": "en", "device": device}])
+            "language_code": "en", "device": device, "priority": 2}])
         task = (tp.get("tasks") or [{}])[0]
         task_id = task.get("id")
         if not task_id:

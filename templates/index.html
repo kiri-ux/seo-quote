@@ -389,6 +389,29 @@ async function runStep3(){
 }
 
 // ---------- STEP 4 ----------
+// Crop a (tall) screenshot to a clean landscape frame: keep full width, take the
+// top slice at the target aspect ratio, paint onto white so any transparent/dark
+// gaps read as a clean white proposal image. Returns a PNG data URL.
+function cropLandscape(dataUrl, ratio){
+  return new Promise((resolve)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const w=img.naturalWidth;
+      const cropH=Math.round(w/ratio);
+      const h=Math.min(cropH, img.naturalHeight);
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img, 0, 0, w, h, 0, 0, w, h);
+      try{ resolve(canvas.toDataURL('image/png')); }
+      catch(e){ resolve(dataUrl); }
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
+
 function renderStep4(p){
   const cpcOf=kw=>(ST.cpc&&ST.cpc[kw])?ST.cpc[kw]:'';
   const kdOf=kw=>(ST.kd&&ST.kd[kw]!=null)?ST.kd[kw]:'';
@@ -422,6 +445,15 @@ function renderStep4(p){
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not ranking)</span>`:''}
       <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
 
+    <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:10px 0">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12.5px;font-weight:600">Manual hard-base override</span>
+        <input type="text" id="base_override" value="${p.manual_base?p.base:''}" placeholder="e.g. 4000"
+          style="width:90px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
+        <button id="base_apply" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Apply</button>
+        ${p.manual_base?`<button id="base_clear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Clear</button> <span style="color:#1c5fa8;font-size:12px">✓ manual base active — tiers & markup recomputed from it</span>`:'<span class="nf" style="font-size:12px">for niche clients the formula doesn\u2019t fit — sets the hard base directly; everything else recomputes</span>'}
+      </div>
+    </div>
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
       <span style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--atlas);font-weight:600">Client price · markup</span>
       <input type="text" id="markup_live" value="${p.markup_pct}" style="width:56px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
@@ -461,10 +493,25 @@ function renderStep4(p){
     try{
       const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
-        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol});
+        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
+        base_override:ST.baseOverride||''});
       renderStep4(np);
     }catch(e){ /* keep current */ }
   });
+  // manual hard-base override
+  const applyBase=async(val)=>{
+    ST.baseOverride = val;
+    const mk=parseFloat($('markup_live').value||'35');
+    try{
+      const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
+        zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
+        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
+        base_override:val||''});
+      renderStep4(np);
+    }catch(e){ /* keep current */ }
+  };
+  $('base_apply').onclick=()=>applyBase($('base_override').value.trim());
+  if($('base_clear')) $('base_clear').onclick=()=>applyBase('');
   $('csvbtn').onclick=async()=>{
     const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
@@ -512,19 +559,23 @@ function renderStep4(p){
         device:sz.device, width:sz.width, height:sz.height, scale:sz.scale});
       // Step B — poll the fetch until the screenshot is ready (each call short)
       let done=null;
-      for(let i=0;i<20;i++){            // up to ~60s of polling
-        spin(`Capturing live SERP for “${kw}” — ${(i*3)}s… (usually 15-30s)`);
+      for(let i=0;i<40;i++){            // up to ~120s of polling (queue can be slow)
+        spin(`Capturing live SERP for “${kw}” — ${(i*3)}s… (usually 20-40s, can take longer)`);
         await new Promise(r=>setTimeout(r,3000));
         const f=await postJSON('/api/serp_fetch',{task_id:q.task_id, device:q.device, keyword:kw,
           width:q.width, height:q.height, scale:q.scale});
         if(f.ready && f.data_url){ done=f; break; }
       }
-      if(!done){ out.innerHTML=`<div class="err">SERP still processing after 60s — click Generate to retry.</div>`; }
+      if(!done){ out.innerHTML=`<div class="err">SERP didn't finish in 2 minutes — DataForSEO's queue may be busy. Click Generate to retry (often works on a second try).</div>`; }
       else{
+        // Crop to a clean landscape frame: take the top portion of the capture
+        // (local pack + top competitors), at a 16:9 ratio, on a white background.
+        // Done client-side via canvas so there's no server image dependency.
+        const cropped = await cropLandscape(done.data_url, 16/9);
         out.innerHTML=`
           <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${done.keyword}”:</div>
-          <img src="${done.data_url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
-          <div style="margin-top:8px"><a href="${done.data_url}" download="serp_${kw.replace(/ /g,'_')}.png"
+          <img src="${cropped}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
+          <div style="margin-top:8px"><a href="${cropped}" download="serp_${kw.replace(/ /g,'_')}.png"
             style="font-size:12.5px;color:var(--atlas);font-weight:600">⬇ Download image for the proposal</a></div>`;
       }
     }catch(e){
@@ -536,6 +587,7 @@ function renderStep4(p){
 
 async function runStep4(){
   $('step4').disabled=true; $('step4').textContent='Pricing…';
+  ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
   // Brendan #4/#5 inputs: total head-term volume, and % of terms NOT ranking.
   const totalVol = (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
   const pctNotRanking = ST.total ? Math.round((1 - ST.ranked/ST.total)*100) : 0;
