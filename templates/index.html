@@ -22,6 +22,12 @@
   .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
   label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
   .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
+  .tierhelp{font-size:12px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
+  .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
+  .tiertext{font-size:13px;color:#333}
+  .tierin{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;
+    font-size:13px;font-family:inherit;text-align:right}
+  .tierin-sm{width:60px}
   input[type=text],textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);
     border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
   textarea{min-height:58px;resize:vertical}
@@ -560,16 +566,28 @@ function cfgGroup(title, rows){
   return `<div style="margin:14px 0 6px"><div class="sec" style="margin:0 0 6px">${title}</div>${rows}</div>`;
 }
 
-// Tier helpers: [[70,30],[60,20]] <-> "70:30, 60:20"
-function tiersToStr(tiers){
-  return (tiers||[]).map(t=>`${t[0]}:${t[1]}`).join(', ');
+// Tier rows: render each [threshold, uplift] as a readable sentence with two
+// separate number inputs, instead of a cryptic "70:30" string.
+function tierRows(tiers, idPrefix, lead, midUnit, tailUnit){
+  // lead: text before threshold; midUnit: between the two inputs; tailUnit: after
+  return (tiers||[]).map((t,i)=>`
+    <div class="tierrow">
+      <span class="tiertext">${lead}</span>
+      <input type="number" id="${idPrefix}_t${i}" value="${t[0]}" class="tierin">
+      <span class="tiertext">${midUnit}</span>
+      <input type="number" id="${idPrefix}_u${i}" value="${t[1]}" class="tierin tierin-sm">
+      <span class="tiertext">${tailUnit}</span>
+    </div>`).join('');
 }
-function strToTiers(s){
-  return (s||'').split(',').map(p=>p.trim()).filter(Boolean).map(p=>{
-    const [a,b]=p.split(':').map(x=>parseFloat(x.trim()));
-    return [a,b];
-  }).filter(t=>!isNaN(t[0])&&!isNaN(t[1]))
-    .sort((a,b)=>b[0]-a[0]);  // keep high-to-low so first-match-wins holds
+function readTierRows(idPrefix){
+  const out=[];
+  for(let i=0;i<10;i++){
+    const tEl=$(`${idPrefix}_t${i}`), uEl=$(`${idPrefix}_u${i}`);
+    if(!tEl||!uEl) break;
+    const t=parseFloat(tEl.value), u=parseFloat(uEl.value);
+    if(!isNaN(t)&&!isNaN(u)) out.push([t,u]);
+  }
+  return out.sort((a,b)=>b[0]-a[0]);
 }
 
 async function loadConfig(){
@@ -583,11 +601,13 @@ async function loadConfig(){
       cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'over this → top adder')+
       cfgRow('Adder · score 1','cf_add1',ca['1'],'hard cost')+
       cfgRow('Adder · score 2','cf_add2',ca['2'],'hard cost')) +
-    cfgGroup('Step 3 · zero-ranking (tiered % uplift)',
-      cfgRow('Top-N positions checked','cf_topn',c.zero_ranking_top_n)+
-      cfgRow('Zero-ranking tiers','cf_zrtiers',tiersToStr(c.zero_ranking_tiers),'% not ranking : uplift % — e.g. 70:30, 60:20, 50:12')) +
-    cfgGroup('Step 4 · volume-based pricing (Brendan #4)',
-      cfgRow('Volume tiers','cf_voltiers',tiersToStr(c.volume_tiers),'total monthly volume : uplift % — e.g. 100000:45, 50000:30, 20000:18, 5000:8')) +
+    cfgGroup('Step 3 · zero-ranking uplift',
+      `<div class="tierhelp">When a share of the client's keywords aren't ranking, add a percentage to the price. Higher share not ranking → bigger uplift.</div>`+
+      tierRows(c.zero_ranking_tiers,'cf_zr','If at least','% of terms aren\u2019t ranking → add','% to price')+
+      cfgRow('Positions checked (top-N)','cf_topn',c.zero_ranking_top_n,'a term counts as "ranking" if it appears in the top N results')) +
+    cfgGroup('Step 4 · volume-based pricing',
+      `<div class="tierhelp">Higher total monthly search volume means more competition and work, so add a percentage to the price. Higher volume → bigger uplift.</div>`+
+      tierRows(c.volume_tiers,'cf_vol','If at least','total monthly searches → add','% to price')) +
     cfgGroup('Step 4 · pricing (hard-cost anchors)',
       cfgRow('Single City','cf_ga_single',ga.single_city)+
       cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
@@ -608,8 +628,8 @@ $('cfgApply').addEventListener('click', async()=>{
     competitive_adder:{1:v('cf_add1'),2:v('cf_add2')},
     bid_score_breaks:[v('cf_break1'),v('cf_break2')],
     zero_ranking_top_n:v('cf_topn'),
-    zero_ranking_tiers:strToTiers(v('cf_zrtiers')),
-    volume_tiers:strToTiers(v('cf_voltiers')),
+    zero_ranking_tiers:readTierRows('cf_zr'),
+    volume_tiers:readTierRows('cf_vol'),
     step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
     default_markup_pct:v('cf_markup'),
   };
