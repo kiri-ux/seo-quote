@@ -292,6 +292,11 @@ Return ONLY valid JSON, no prose, in exactly this shape:
         return None
 
 
+# ---------------------------------------------------------------------------
+# STAGE 1 — keyword list
+# ---------------------------------------------------------------------------
+def stage1_keyword_list(seeds, markets, state, brand, domain=""):
+    crossed = []
     for s in seeds:
         crossed.append(s)
         for m in markets:
