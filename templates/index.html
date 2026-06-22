@@ -411,8 +411,10 @@ function renderStep4(p){
       <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${money(h.advanced)}</div><div class="mo">/month</div></div>
     </div>
     <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
-      + adder <code>+${money(p.adder)}</code> + zero-ranking <code>+${money(p.zero_bonus)}</code>
-      = <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
+      + competitive adder <code>+${money(p.adder)}</code> = <code>${money(p.base_pre_uplift)}</code>
+      ${p.volume_uplift_pct?`<br>+ volume uplift <code>+${p.volume_uplift_pct}%</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches)</span>`:''}
+      ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not ranking)</span>`:''}
+      <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
 
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
       <span style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--atlas);font-weight:600">Client price · markup</span>
@@ -452,7 +454,8 @@ function renderStep4(p){
     const mk=parseFloat($('markup_live').value||'35');
     try{
       const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
-        zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk});
+        zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
+        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol});
       renderStep4(np);
     }catch(e){ /* keep current */ }
   });
@@ -527,10 +530,15 @@ function renderStep4(p){
 
 async function runStep4(){
   $('step4').disabled=true; $('step4').textContent='Pricing…';
+  // Brendan #4/#5 inputs: total head-term volume, and % of terms NOT ranking.
+  const totalVol = (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
+  const pctNotRanking = ST.total ? Math.round((1 - ST.ranked/ST.total)*100) : 0;
+  ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
     const p=await postJSON('/api/price',{
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
-      addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct});
+      addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
+      pct_not_ranking:pctNotRanking, total_volume:totalVol});
     renderStep4(p);
   }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
 }

@@ -44,10 +44,27 @@ CFG = {
     },
     "competitive_adder": {0: 0, 1: 150, 2: 300},   # hard cost (CEIL50 of 200/400 ÷ 1.35)
     "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2
-    "zero_ranking_bonus": 400,                # hard cost (CEIL50 of 500 ÷ 1.35)
+    "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
     "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
     "zero_ranking_top_n": 50,
     "zero_ranking_frac": 0.10,
+    # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
+    # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
+    # Evaluated high-to-low; first threshold met wins. Replaces the flat bonus.
+    "zero_ranking_tiers": [
+        [70, 30],   # 70%+ not ranking -> +30%
+        [60, 20],   # 60-70% -> +20%
+        [50, 12],   # 50-60% -> +12%
+    ],
+    # --- Brendan #4: VOLUME-based pricing. Total monthly search volume across the
+    # head terms maps to a % uplift on the hard base (more volume = more
+    # competition/work). Each tier: [min_total_volume, uplift_pct]. High-to-low.
+    "volume_tiers": [
+        [100000, 45],   # 100k+ -> +45%
+        [50000,  30],   # 50k-100k -> +30%
+        [20000,  18],   # 20k-50k -> +18%
+        [5000,   8],    # 5k-20k -> +8%
+    ],
     "step_ratio": 0.38,                       # June proposals: 38% step
     "client_floor": 0,                        # no floor — raised anchors carry pricing
     "addon_market_ratio": 0.42,
@@ -193,7 +210,7 @@ def fetch_keywords_for_site(domain, markets, state):
     except Exception:
         return []
 
-def fetch_site_pages(domain, limit=60):
+def fetch_site_pages(domain, limit=30):
     """Pull the client's page structure as readable topics — the names of the
     pages they've built, which map directly to their service taxonomy and are
     strong SEO keyword fuel. Tries sitemap.xml first (fast, standard); falls back
@@ -223,7 +240,7 @@ def fetch_site_pages(domain, limit=60):
 
     pages, seen = [], set()
     import re
-    deadline = time.time() + 8          # hard cap: sitemap work gets <= 8s total
+    deadline = time.time() + 5          # hard cap: sitemap work gets <= 5s total
     for sm in (f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml"):
         if time.time() > deadline:
             break
@@ -776,18 +793,43 @@ def stage3_rankcheck(all_kws, domain, markets, state, brand):
 # ---------------------------------------------------------------------------
 # STAGE 4 — pricing
 # ---------------------------------------------------------------------------
-def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None):
+def _tier_uplift(value, tiers):
+    """Given a value and a list of [threshold, uplift_pct] sorted high-to-low,
+    return the uplift_pct of the first threshold the value meets (else 0)."""
+    for thresh, uplift in tiers:
+        if value >= thresh:
+            return uplift
+    return 0
+
+def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
+                 pct_not_ranking=None, total_volume=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
     anchor = CFG["geo_anchor"][band]                       # hard cost
-    base = anchor + adder + (CFG["zero_ranking_bonus"] if zero_ranking else 0)
+
+    # Base before % uplifts = anchor + competitive adder (flat $).
+    base_pre = anchor + adder
+
+    # --- Brendan #5: tiered zero-ranking uplift (% of head terms not ranking) ---
+    zr_uplift = 0
+    if pct_not_ranking is not None:
+        zr_uplift = _tier_uplift(pct_not_ranking, CFG.get("zero_ranking_tiers", []))
+    elif zero_ranking:
+        # fallback if caller only passed the old boolean: treat as top tier
+        zr_uplift = CFG.get("zero_ranking_tiers", [[0, 0]])[0][1]
+
+    # --- Brendan #4: volume-based uplift (total monthly search volume) ---
+    vol_uplift = 0
+    if total_volume is not None:
+        vol_uplift = _tier_uplift(total_volume, CFG.get("volume_tiers", []))
+
+    # Apply both uplifts to the pre-uplift base, round to $50.
+    total_uplift = (zr_uplift + vol_uplift) / 100.0
+    base = r50(base_pre * (1.0 + total_uplift))
     step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
 
-    # Client price = hard × markup, then apply the client floor to the BASE.
-    # If the floor lifts the base, rebuild the client ladder from the floored
-    # base (using the same step ratio) so the tiers stay consistent.
     client_base = r50(base * m)
     floor = CFG.get("client_floor", 0)
     floored = False
@@ -803,8 +845,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None):
 
     hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
     client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
-    return {"anchor": anchor, "base": base, "step": step, "floored": floored,
-            "client_floor": floor,
+    return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "floored": floored, "client_floor": floor,
+            "zero_ranking_uplift_pct": zr_uplift, "volume_uplift_pct": vol_uplift,
+            "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
             "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
             "markup_pct": markup_pct, "addon_markets": addon_markets,
@@ -1096,9 +1140,17 @@ def api_price():
     addon = int(d.get("addon_markets", 0) or 0)
     markup = d.get("markup_pct", None)
     markup = float(markup) if markup not in (None, "") else None
-    p = stage4_price(band, adder, zero, addon, markup)
+    pct_not_ranking = d.get("pct_not_ranking", None)
+    pct_not_ranking = float(pct_not_ranking) if pct_not_ranking not in (None, "") else None
+    total_volume = d.get("total_volume", None)
+    total_volume = int(total_volume) if total_volume not in (None, "") else None
+    p = stage4_price(band, adder, zero, addon, markup,
+                     pct_not_ranking=pct_not_ranking, total_volume=total_volume)
     return jsonify({"anchor": p["anchor"], "adder": adder,
-                    "zero_bonus": CFG["zero_ranking_bonus"] if zero else 0,
+                    "base_pre_uplift": p["base_pre_uplift"],
+                    "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
+                    "volume_uplift_pct": p["volume_uplift_pct"],
+                    "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
                     "base": p["base"], "step": p["step"],
                     "hard_tiers": p["hard_tiers"], "client_tiers": p["client_tiers"],
                     "hard_addon_per_market": p["hard_addon_per_market"],
@@ -1115,6 +1167,8 @@ def api_config_get():
         "zero_ranking_bonus": CFG["zero_ranking_bonus"],
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
         "zero_ranking_frac": CFG["zero_ranking_frac"],
+        "zero_ranking_tiers": CFG.get("zero_ranking_tiers", []),
+        "volume_tiers": CFG.get("volume_tiers", []),
         "step_ratio": CFG["step_ratio"],
         "client_floor": CFG["client_floor"],
         "addon_market_ratio": CFG["addon_market_ratio"],
