@@ -560,6 +560,18 @@ function cfgGroup(title, rows){
   return `<div style="margin:14px 0 6px"><div class="sec" style="margin:0 0 6px">${title}</div>${rows}</div>`;
 }
 
+// Tier helpers: [[70,30],[60,20]] <-> "70:30, 60:20"
+function tiersToStr(tiers){
+  return (tiers||[]).map(t=>`${t[0]}:${t[1]}`).join(', ');
+}
+function strToTiers(s){
+  return (s||'').split(',').map(p=>p.trim()).filter(Boolean).map(p=>{
+    const [a,b]=p.split(':').map(x=>parseFloat(x.trim()));
+    return [a,b];
+  }).filter(t=>!isNaN(t[0])&&!isNaN(t[1]))
+    .sort((a,b)=>b[0]-a[0]);  // keep high-to-low so first-match-wins holds
+}
+
 async function loadConfig(){
   let c;
   try{ c=await (await fetch('/api/config')).json(); }
@@ -571,10 +583,11 @@ async function loadConfig(){
       cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'over this → top adder')+
       cfgRow('Adder · score 1','cf_add1',ca['1'],'hard cost')+
       cfgRow('Adder · score 2','cf_add2',ca['2'],'hard cost')) +
-    cfgGroup('Step 3 · zero-ranking',
-      cfgRow('Zero-ranking bonus ($)','cf_zero',c.zero_ranking_bonus,'hard cost')+
+    cfgGroup('Step 3 · zero-ranking (tiered % uplift)',
       cfgRow('Top-N positions checked','cf_topn',c.zero_ranking_top_n)+
-      cfgRow('Ranking fraction threshold','cf_frac',c.zero_ranking_frac,'e.g. 0.10 = under 10%')) +
+      cfgRow('Zero-ranking tiers','cf_zrtiers',tiersToStr(c.zero_ranking_tiers),'% not ranking : uplift % — e.g. 70:30, 60:20, 50:12')) +
+    cfgGroup('Step 4 · volume-based pricing (Brendan #4)',
+      cfgRow('Volume tiers','cf_voltiers',tiersToStr(c.volume_tiers),'total monthly volume : uplift % — e.g. 100000:45, 50000:30, 20000:18, 5000:8')) +
     cfgGroup('Step 4 · pricing (hard-cost anchors)',
       cfgRow('Single City','cf_ga_single',ga.single_city)+
       cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
@@ -594,7 +607,9 @@ $('cfgApply').addEventListener('click', async()=>{
       non_contiguous_region:v('cf_ga_noncontig'),statewide:v('cf_ga_state'),nationwide:v('cf_ga_nation')},
     competitive_adder:{1:v('cf_add1'),2:v('cf_add2')},
     bid_score_breaks:[v('cf_break1'),v('cf_break2')],
-    zero_ranking_bonus:v('cf_zero'), zero_ranking_top_n:v('cf_topn'), zero_ranking_frac:v('cf_frac'),
+    zero_ranking_top_n:v('cf_topn'),
+    zero_ranking_tiers:strToTiers(v('cf_zrtiers')),
+    volume_tiers:strToTiers(v('cf_voltiers')),
     step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
     default_markup_pct:v('cf_markup'),
   };

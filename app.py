@@ -51,19 +51,24 @@ CFG = {
     # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
     # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
     # Evaluated high-to-low; first threshold met wins. Replaces the flat bonus.
+    # Calibrated against Serene Health (84% not ranking -> +14%, which with the
+    # volume uplift reproduces the real $3,950/$5,450/$6,950 proposal).
     "zero_ranking_tiers": [
-        [70, 30],   # 70%+ not ranking -> +30%
-        [60, 20],   # 60-70% -> +20%
-        [50, 12],   # 50-60% -> +12%
+        [80, 14],   # 80%+ not ranking -> +14%
+        [65, 9],    # 65-80% -> +9%
+        [50, 5],    # 50-65% -> +5%
     ],
     # --- Brendan #4: VOLUME-based pricing. Total monthly search volume across the
     # head terms maps to a % uplift on the hard base (more volume = more
     # competition/work). Each tier: [min_total_volume, uplift_pct]. High-to-low.
+    # NOTE: Brendan's 100k example wants a big jump at the top; these reproduce
+    # Serene Health (15k vol -> +4%) while still escalating hard for huge-volume
+    # clients. Calibrate the upper tiers with Brendan against a 100k example.
     "volume_tiers": [
-        [100000, 45],   # 100k+ -> +45%
-        [50000,  30],   # 50k-100k -> +30%
-        [20000,  18],   # 20k-50k -> +18%
-        [5000,   8],    # 5k-20k -> +8%
+        [100000, 30],   # 100k+ -> +30%
+        [50000,  20],   # 50k-100k -> +20%
+        [20000,  12],   # 20k-50k -> +12%
+        [5000,   4],    # 5k-20k -> +4%
     ],
     "step_ratio": 0.38,                       # June proposals: 38% step
     "client_floor": 0,                        # no floor — raised anchors carry pricing
@@ -1193,6 +1198,15 @@ def api_config_set():
                 CFG["competitive_adder"][int(k)] = int(v)
         if "bid_score_breaks" in d:
             CFG["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
+        # Tier arrays: [[threshold, uplift_pct], ...] — validate and sort high-to-low.
+        for tkey in ("zero_ranking_tiers", "volume_tiers"):
+            if tkey in d and isinstance(d[tkey], list):
+                tiers = []
+                for pair in d[tkey]:
+                    if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                        tiers.append([float(pair[0]), float(pair[1])])
+                tiers.sort(key=lambda t: t[0], reverse=True)
+                CFG[tkey] = tiers
         for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),
                             ("client_floor", int), ("addon_market_ratio", float),
