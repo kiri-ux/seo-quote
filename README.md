@@ -31,9 +31,11 @@ All tunable numbers live in the `CFG` block at the top of `app.py`.
 
 1. Push this folder to a GitHub repo.
 2. Render → New → Web Service → connect the repo (it reads `render.yaml`).
-3. Set two environment variables in the Render dashboard:
+3. Set environment variables in the Render dashboard:
    - `DFS_LOGIN` — your DataForSEO account email
    - `DFS_PASSWORD` — your DataForSEO **API password** (Dashboard → API Access,
+   - `ANTHROPIC_API_KEY` — your Anthropic API key (enables the Claude keyword-refinement pass; if omitted, the tool falls back to the rules-based keyword list)
+   - `CLAUDE_MODEL` — optional; the model to use (defaults to `claude-sonnet-4-6`)
      not your portal login password)
 4. Deploy. Free plan is fine for a demo (cold-starts after idle).
 

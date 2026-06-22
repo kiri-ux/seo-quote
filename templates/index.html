@@ -266,7 +266,7 @@ function kwBucket(title, bucketKey){
 function renderStep1(){
   const kw=ST.kw;
   panel('p1',`
-    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span></h4>
+    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">

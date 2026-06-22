@@ -193,11 +193,105 @@ def fetch_keywords_for_site(domain, markets, state):
     except Exception:
         return []
 
-# ---------------------------------------------------------------------------
-# STAGE 1 — keyword list
-# ---------------------------------------------------------------------------
-def stage1_keyword_list(seeds, markets, state, brand, domain=""):
-    crossed = []
+def fetch_exact_volume(keywords, markets, state):
+    """Exact-match search volume. The Google Ads keywords_for_keywords endpoint
+    we use to GENERATE terms returns GROUPED (broad) volumes that merge similar
+    terms — which is why the numbers looked inflated/off. For the FINAL list we
+    re-pull volume from the Labs keyword database, which returns per-term exact
+    volume. Returns {keyword_lower: volume}. Non-fatal: {} on any failure."""
+    if not keywords:
+        return {}
+    out = {}
+    # Labs endpoint takes numeric location_code; use the city if known, else US.
+    loc_code = 2840
+    try:
+        # batch up to 1000 per call
+        for i in range(0, len(keywords), 1000):
+            chunk = keywords[i:i+1000]
+            payload = [{"keywords": [k.lower() for k in chunk],
+                        "location_code": loc_code, "language_code": "en"}]
+            data = dfs_post("/dataforseo_labs/google/keyword_overview/live", payload)
+            res = (data["tasks"][0]["result"] or [])
+            for block in res:
+                for it in (block.get("items") or []):
+                    kw = (it.get("keyword") or "").lower()
+                    ki = it.get("keyword_info") or {}
+                    if kw:
+                        out[kw] = ki.get("search_volume") or 0
+        return out
+    except Exception:
+        return {}
+
+def claude_refine_keywords(seeds, markets, brand, domain, candidates, site_terms):
+    """Claude pass over the API-generated candidates: removes junk/garbled/off-topic
+    terms, folds in terms related to the client's site, and flags which terms would
+    genuinely help the client's SEO — returning a cleaned, bucketed list.
+    Non-fatal: returns None if no API key or any failure, so the caller falls back
+    to the rules-based list. Low temperature for near-deterministic output."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    cand_terms = [c["keyword"] for c in candidates][:120]
+    site_list  = [s["keyword"] for s in site_terms][:40]
+    mkt = ", ".join(markets) if markets else "national (no specific city)"
+    prompt = f"""You are refining an SEO keyword list for a client proposal.
+
+CLIENT VERTICAL / SERVICES: {", ".join(seeds)}
+TARGET MARKET(S): {mkt}
+CLIENT BRAND (exclude any keyword containing this): {brand or "(none given)"}
+CLIENT WEBSITE: {domain or "(none given)"}
+
+CANDIDATE KEYWORDS (from a keyword API — may contain junk, garbled terms, near-duplicates, and off-topic results):
+{json.dumps(cand_terms, ensure_ascii=False)}
+
+KEYWORDS PULLED FROM THE CLIENT'S OWN WEBSITE:
+{json.dumps(site_list, ensure_ascii=False)}
+
+YOUR TASK:
+1. Remove garbled or nonsensical terms (e.g. "adhd and therapy", "add therapy" when the vertical is "adhd treatment"), near-duplicates, and anything off-topic or containing the brand name.
+2. Keep terms that are REAL searches a prospective customer would type, relevant to the vertical and market.
+3. From the client's own website keywords, fold in any that represent genuine SEO opportunities for this vertical/market.
+4. Where the market is local, keep the city modifier on local-intent terms (e.g. "adhd treatment san diego").
+5. Sort the final keywords into three buckets by ranking difficulty:
+   - "ultra": the most competitive head terms (hardest to rank, highest value)
+   - "competitive": moderately competitive head terms
+   - "long_tail": longer, lower-competition, often question-style phrases
+6. Do NOT invent search volumes or metrics — only return the keyword strings. Only include real, searchable terms.
+
+Return ONLY valid JSON, no prose, in exactly this shape:
+{{"ultra": ["..."], "competitive": ["..."], "long_tail": ["..."]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 2000,
+                "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}],
+            }), timeout=60)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text")
+        text = text.strip()
+        # strip code fences if present
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+        parsed = json.loads(text.strip())
+        # normalize to the row shape used downstream
+        def rows(key):
+            return [{"keyword": k.strip(), "volume": 0, "src": "claude"}
+                    for k in parsed.get(key, []) if isinstance(k, str) and k.strip()]
+        return {"ultra": rows("ultra"), "competitive": rows("competitive"),
+                "long_tail": rows("long_tail")}
+    except Exception:
+        return None
+
+
     for s in seeds:
         crossed.append(s)
         for m in markets:
@@ -337,7 +431,34 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
                 seen_lt.add(kl)
                 long_tail.append({"keyword": kw, "volume": 0, "src": "gen"})
 
+    # ---- Claude refinement pass (Option 2: API generates, Claude refines) ----
+    # Cleans junk/garbled/duplicate terms, folds in site-related opportunities,
+    # and rebuckets by competitiveness. Falls back to the rules-based buckets
+    # above if there's no API key or the call fails.
+    site_terms = [r for r in raw if r.get("src") == "site"]
+    refined = claude_refine_keywords(seeds, markets, brand, domain,
+                                     ultra + competitive + long_tail, site_terms)
+    used_claude = False
+    if refined and (refined["ultra"] or refined["competitive"]):
+        ultra       = refined["ultra"][:CFG["ultra_bucket_size"]] or ultra
+        competitive = refined["competitive"][:CFG["competitive_bucket_size"]] or competitive
+        if refined["long_tail"]:
+            long_tail = refined["long_tail"][:CFG["longtail_target"]]
+        used_claude = True
+
     full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
+
+    # ---- Exact-match volume (Brendan #2) ----
+    # The generation endpoint returns grouped/broad volumes. Re-pull EXACT-match
+    # per-term volume for the final list from the Labs keyword database, and
+    # overwrite the displayed volume so the numbers are accurate.
+    exact = fetch_exact_volume([r["keyword"] for r in full], markets, state)
+    if exact:
+        for r in full:
+            v = exact.get(r["keyword"].lower())
+            if v is not None:
+                r["volume"] = v
+
     fs = {r["keyword"] for r in full}
     return {
         "ultra":       [r for r in ultra if r["keyword"] in fs],
@@ -345,6 +466,7 @@ def stage1_keyword_list(seeds, markets, state, brand, domain=""):
         "long_tail":   [r for r in long_tail if r["keyword"] in fs],
         "head":        [r for r in (ultra + competitive) if r["keyword"] in fs],
         "all":         full,
+        "refined_by_ai": used_claude,
     }
 
 # ---------------------------------------------------------------------------
@@ -745,7 +867,7 @@ def api_keywords():
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
-        "all": conv(s1["all"]),
+        "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short
     # list. Flag it so the partner can add more seed terms for a fuller table.
