@@ -223,17 +223,22 @@ def fetch_site_pages(domain, limit=60):
 
     pages, seen = [], set()
     import re
+    deadline = time.time() + 8          # hard cap: sitemap work gets <= 8s total
     for sm in (f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml"):
+        if time.time() > deadline:
+            break
         try:
-            r = requests.get(sm, timeout=12, headers={"User-Agent": "Mozilla/5.0 (SEO-quote-tool)"})
+            r = requests.get(sm, timeout=5, headers={"User-Agent": "Mozilla/5.0 (SEO-quote-tool)"})
             if r.status_code != 200 or "<" not in r.text:
                 continue
             locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", r.text, re.I)
             if locs and all(l.lower().endswith(".xml") for l in locs[:3]):
                 child_locs = []
-                for child in locs[:5]:
+                for child in locs[:2]:          # at most 2 child sitemaps
+                    if time.time() > deadline:
+                        break
                     try:
-                        cr = requests.get(child, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                        cr = requests.get(child, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
                         child_locs += re.findall(r"<loc>\s*(.*?)\s*</loc>", cr.text, re.I)
                     except Exception:
                         pass
@@ -249,6 +254,9 @@ def fetch_site_pages(domain, limit=60):
         except Exception:
             continue
 
+    # On-Page fallback only if we have time budget left
+    if time.time() > deadline:
+        return pages[:limit]
     try:
         payload = [{"url": f"https://{dom}", "max_crawl_pages": limit}]
         data = dfs_post("/on_page/instant_pages", payload)
@@ -316,7 +324,7 @@ Return ONLY the one-sentence description, no preamble."""
                      "content-type": "application/json"},
             data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
                 "max_tokens": 200, "temperature": 0,
-                "messages": [{"role": "user", "content": prompt}]}), timeout=40)
+                "messages": [{"role": "user", "content": prompt}]}), timeout=20)
         resp.raise_for_status()
         body = resp.json()
         return "".join(b.get("text", "") for b in body.get("content", [])
@@ -339,7 +347,7 @@ def claude_refine_keywords(seeds, markets, brand, domain, candidates, site_terms
     pages_list = [p for p in (site_pages or [])][:60]
     cand_lower = {c.lower() for c in cand_terms}
     mkt = ", ".join(markets) if markets else "national (no specific city)"
-    biz = business_desc or "(not provided — infer from the vertical and website)"
+    biz = business_desc or "(NOT PROVIDED — infer it yourself from the vertical, website, pages, and site keywords below, and return it in the 'business' field)"
     pages_block = (json.dumps(pages_list, ensure_ascii=False) if pages_list
                    else "(no page structure available)")
     prompt = f"""You are an SEO strategist refining a keyword list for a client proposal. Be strict about relevance to THIS specific business.
@@ -360,17 +368,17 @@ KEYWORDS THE SITE ALREADY RANKS FOR:
 {json.dumps(site_list, ensure_ascii=False)}
 
 RULES:
-1. EXCLUDE terms for services the business does NOT offer, per the description above. (Example: a therapy practice that does not prescribe drugs should NOT have "medication", "prescription", or "over the counter" keywords.)
+1. EXCLUDE terms for services the business does NOT offer. (Example: a therapy practice that does not prescribe drugs should NOT have "medication", "prescription", or "over the counter" keywords.)
 2. EXCLUDE garbled/nonsensical terms ("adhd and therapy", "add therapy" when the vertical is "adhd treatment"), near-duplicates, and brand terms.
 3. KEEP real searches a prospective customer of THIS business would type.
-4. USE THE WEBSITE PAGES as your primary guide to what this business actually offers. For each real service page, ensure there is a strong head keyword targeting it (geo-modified where the market is local). These page-derived keywords are high-priority SEO opportunities — ADD any that the candidate list missed.
-5. ADD other high-value keywords this business should target that the candidate list missed, consistent with their pages and services.
+4. USE THE WEBSITE PAGES as your primary guide to what this business actually offers. For each real service page, ensure there is a strong head keyword targeting it (geo-modified where local). ADD any the candidate list missed — these are high-priority SEO opportunities.
+5. ADD other high-value keywords this business should target, consistent with their pages and services.
 6. Keep the city modifier on local-intent terms where the market is local.
-7. Bucket by ranking difficulty: "ultra" (hardest/highest value head terms), "competitive" (moderate head terms), "long_tail" (longer/question-style).
+7. Bucket by ranking difficulty: "ultra" (hardest/highest value), "competitive" (moderate), "long_tail" (longer/question-style).
 8. Do NOT invent search volumes. Only real, searchable terms.
 
-Return ONLY valid JSON in exactly this shape — each item is [keyword, origin] where origin is "kept" (was in the candidate list) or "added" (you added it, e.g. from the pages):
-{{"ultra": [["keyword","kept"], ...], "competitive": [["keyword","added"], ...], "long_tail": [["keyword","kept"], ...]}}"""
+Return ONLY valid JSON in exactly this shape. Each keyword item is [keyword, origin] where origin is "kept" or "added". The "business" field is your one-sentence read of what the business does and does not offer:
+{{"business": "one sentence", "ultra": [["keyword","kept"], ...], "competitive": [["keyword","added"], ...], "long_tail": [["keyword","kept"], ...]}}"""
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -382,7 +390,7 @@ Return ONLY valid JSON in exactly this shape — each item is [keyword, origin] 
                 "max_tokens": 2500,
                 "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}],
-            }), timeout=60)
+            }), timeout=30)
         resp.raise_for_status()
         body = resp.json()
         text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text")
@@ -410,7 +418,8 @@ Return ONLY valid JSON in exactly this shape — each item is [keyword, origin] 
                 out.append({"keyword": kw, "volume": 0, "src": "claude", "origin": origin})
             return out
         return {"ultra": rows("ultra"), "competitive": rows("competitive"),
-                "long_tail": rows("long_tail")}
+                "long_tail": rows("long_tail"),
+                "business": (parsed.get("business") or "").strip()}
     except Exception:
         return None
 
@@ -566,20 +575,24 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     # above if there's no API key or the call fails.
     site_terms = [r for r in raw if r.get("src") == "site"]
     # Pull the client's page structure (sitemap → On-Page fallback) as keyword
-    # fuel — their pages are their real service taxonomy.
+    # fuel — their pages are their real service taxonomy. Time-bounded internally.
     site_pages = fetch_site_pages(domain)
-    # Business context: use the manual description if given, else infer from site.
-    biz = business_desc.strip() if business_desc else infer_business(domain, seeds, site_terms)
+    # Business context: use the manual description if given; otherwise let the
+    # single refine call infer it inline (avoids a second Claude round-trip that
+    # was pushing Step 1 past the request timeout).
+    biz = business_desc.strip() if business_desc else ""
     refined = claude_refine_keywords(seeds, markets, brand, domain,
                                      ultra + competitive + long_tail, site_terms,
                                      business_desc=biz, site_pages=site_pages)
     used_claude = False
+    biz_out = biz
     if refined and (refined["ultra"] or refined["competitive"]):
         ultra       = refined["ultra"][:CFG["ultra_bucket_size"]] or ultra
         competitive = refined["competitive"][:CFG["competitive_bucket_size"]] or competitive
         if refined["long_tail"]:
             long_tail = refined["long_tail"][:CFG["longtail_target"]]
         used_claude = True
+        biz_out = biz or refined.get("business", "")
 
     full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
 
@@ -602,7 +615,7 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
         "head":        [r for r in (ultra + competitive) if r["keyword"] in fs],
         "all":         full,
         "refined_by_ai": used_claude,
-        "business_desc": biz if used_claude else "",
+        "business_desc": biz_out if used_claude else "",
         "site_pages_found": len(site_pages),
     }
 
