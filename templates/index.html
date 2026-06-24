@@ -441,7 +441,7 @@ function renderStep4(p){
     </div>
     <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
       + competitive adder <code>+${money(p.adder)}</code> = <code>${money(p.base_pre_uplift)}</code>
-      ${p.volume_uplift_pct?`<br>+ volume uplift <code>+${p.volume_uplift_pct}%</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches)</span>`:''}
+      ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not ranking)</span>`:''}
       <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
 
@@ -642,6 +642,34 @@ function readTierRows(idPrefix){
   return out.sort((a,b)=>b[0]-a[0]);
 }
 
+// Volume brackets: [[lo, hi, $/search], ...]. hi may be null (open-ended top band).
+function volBracketRows(brackets){
+  return (brackets||[]).map((b,i)=>{
+    const hi = (b[1]===null||b[1]===undefined) ? '' : b[1];
+    const openTop = (b[1]===null||b[1]===undefined);
+    return `<div class="tierrow">
+      <span class="tiertext">From</span>
+      <input type="number" id="cf_vb_lo${i}" value="${b[0]}" class="tierin">
+      <span class="tiertext">to</span>
+      <input type="number" id="cf_vb_hi${i}" value="${hi}" placeholder="${openTop?'∞ (top)':''}" class="tierin">
+      <span class="tiertext">searches → add $</span>
+      <input type="number" step="0.01" id="cf_vb_rate${i}" value="${b[2]}" class="tierin tierin-sm">
+      <span class="tiertext">per search</span>
+    </div>`;
+  }).join('');
+}
+function readVolBrackets(){
+  const out=[];
+  for(let i=0;i<12;i++){
+    const lo=$(`cf_vb_lo${i}`), hi=$(`cf_vb_hi${i}`), rate=$(`cf_vb_rate${i}`);
+    if(!lo||!hi||!rate) break;
+    const L=parseFloat(lo.value), R=parseFloat(rate.value);
+    const H = hi.value.trim()===''? null : parseFloat(hi.value);
+    if(!isNaN(L)&&!isNaN(R)) out.push([L,H,R]);
+  }
+  return out.sort((a,b)=>a[0]-b[0]);
+}
+
 async function loadConfig(){
   let c;
   try{ c=await (await fetch('/api/config')).json(); }
@@ -658,8 +686,9 @@ async function loadConfig(){
       tierRows(c.zero_ranking_tiers,'cf_zr','If at least','% of terms aren\u2019t ranking → add','% to price')+
       cfgRow('Positions checked (top-N)','cf_topn',c.zero_ranking_top_n,'a term counts as "ranking" if it appears in the top N results')) +
     cfgGroup('Step 4 · volume-based pricing',
-      `<div class="tierhelp">Higher total monthly search volume means more competition and work, so add a percentage to the price. Higher volume → bigger uplift.</div>`+
-      tierRows(c.volume_tiers,'cf_vol','If at least','total monthly searches → add','% to price')) +
+      `<div class="tierhelp">The base price assumes a normalized search volume. Above that baseline, add a fixed $ per additional monthly search, at a declining rate per band (like tax brackets). Edit the bands and rates to calibrate.</div>`+
+      cfgRow('Normalized baseline (searches)','cf_volfree',c.vol_free_below,'volume at/below this adds nothing — the base already covers it')+
+      volBracketRows(c.volume_brackets)) +
     cfgGroup('Step 4 · pricing (hard-cost anchors)',
       cfgRow('Single City','cf_ga_single',ga.single_city)+
       cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
@@ -681,7 +710,8 @@ $('cfgApply').addEventListener('click', async()=>{
     bid_score_breaks:[v('cf_break1'),v('cf_break2')],
     zero_ranking_top_n:v('cf_topn'),
     zero_ranking_tiers:readTierRows('cf_zr'),
-    volume_tiers:readTierRows('cf_vol'),
+    vol_free_below:v('cf_volfree'),
+    volume_brackets:readVolBrackets(),
     step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
     default_markup_pct:v('cf_markup'),
   };

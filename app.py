@@ -58,17 +58,22 @@ CFG = {
         [65, 9],    # 65-80% -> +9%
         [50, 5],    # 50-65% -> +5%
     ],
-    # --- Brendan #4: VOLUME-based pricing. Total monthly search volume across the
-    # head terms maps to a % uplift on the hard base (more volume = more
-    # competition/work). Each tier: [min_total_volume, uplift_pct]. High-to-low.
-    # NOTE: Brendan's 100k example wants a big jump at the top; these reproduce
-    # Serene Health (15k vol -> +4%) while still escalating hard for huge-volume
-    # clients. Calibrate the upper tiers with Brendan against a 100k example.
-    "volume_tiers": [
-        [100000, 30],   # 100k+ -> +30%
-        [50000,  20],   # 50k-100k -> +20%
-        [20000,  12],   # 20k-50k -> +12%
-        [5000,   4],    # 5k-20k -> +4%
+    # --- VOLUME-based pricing (fixed $ per additional search, declining marginal
+    # rate, like tax brackets). Base price assumes a "normalized" volume up to
+    # vol_free_below. Above that, each bracket adds $/search for volume WITHIN that
+    # bracket; brackets stack. Each: [lo, hi, dollars_per_search]. Open-ended top
+    # bracket uses hi = null. Added to the hard base. Admin-editable.
+    # NOTE: rates are the lever to calibrate. Brendan's example used $0.50/search,
+    # but that produces very large adds (a 15k client would gain ~$2,600 on the hard
+    # base, roughly doubling the quote). These starting rates (~$0.05-0.08) keep a
+    # normal-volume client near its real proposal while still escalating hard for
+    # 100k+ clients. Tune live; no high-volume proposals exist to fit against.
+    "vol_free_below": 10000,            # normalized: base already covers this
+    "volume_brackets": [
+        [10000, 20000, 0.08],
+        [20000, 35000, 0.05],
+        [35000, 50000, 0.04],
+        [50000, None,  0.03],           # open-ended top bracket so it keeps escalating
     ],
     "step_ratio": 0.38,                       # June proposals: 38% step
     "client_floor": 0,                        # no floor — raised anchors carry pricing
@@ -806,6 +811,22 @@ def _tier_uplift(value, tiers):
             return uplift
     return 0
 
+def _volume_dollar_add(total_volume, free_below, brackets):
+    """Fixed $ added for search volume above a normalized baseline, using a
+    declining marginal rate (tax-bracket style). Each bracket [lo, hi, rate]
+    charges 'rate' $/search for the volume that falls within [lo, hi]; a hi of
+    None means open-ended. Returns total $ added (0 if at/below the baseline)."""
+    if not total_volume or total_volume <= free_below:
+        return 0
+    add = 0.0
+    for b in brackets:
+        lo, hi, rate = b[0], b[1], b[2]
+        if total_volume > lo:
+            top = total_volume if hi is None else min(total_volume, hi)
+            band = max(0, top - lo)
+            add += band * rate
+    return add
+
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None):
     if markup_pct is None:
@@ -813,8 +834,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     m = 1.0 + (markup_pct / 100.0)
     anchor = CFG["geo_anchor"][band]                       # hard cost
 
-    # Base before % uplifts = anchor + competitive adder (flat $).
-    base_pre = anchor + adder
+    # --- volume-based add: fixed $ for volume above the normalized baseline ---
+    vol_add = 0
+    if total_volume is not None:
+        vol_add = _volume_dollar_add(total_volume, CFG.get("vol_free_below", 10000),
+                                     CFG.get("volume_brackets", []))
+
+    # Base before % uplift = anchor + competitive adder + volume $ add.
+    base_pre = anchor + adder + vol_add
 
     # --- tiered zero-ranking uplift (% of head terms not ranking) ---
     zr_uplift = 0
@@ -823,22 +850,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     elif zero_ranking:
         zr_uplift = CFG.get("zero_ranking_tiers", [[0, 0]])[0][1]
 
-    # --- volume-based uplift (total monthly search volume) ---
-    vol_uplift = 0
-    if total_volume is not None:
-        vol_uplift = _tier_uplift(total_volume, CFG.get("volume_tiers", []))
-
-    # MANUAL OVERRIDE: for niche clients the formula doesn't fit, the reviewer can
-    # set the hard base directly. The whole ladder (tiers, markup, add-ons) then
-    # recomputes from that number, so everything stays consistent. When set, the
-    # anchor + uplift math is bypassed.
+    # MANUAL OVERRIDE: set the hard base directly; the ladder recomputes from it.
     manual_base = base_override is not None and str(base_override) != ""
     if manual_base:
         base = r50(float(base_override))
-        zr_uplift = vol_uplift = 0           # uplifts don't apply to a manual base
+        zr_uplift = 0; vol_add = 0
     else:
-        total_uplift = (zr_uplift + vol_uplift) / 100.0
-        base = r50(base_pre * (1.0 + total_uplift))
+        base = r50(base_pre * (1.0 + zr_uplift / 100.0))
 
     step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
@@ -860,7 +878,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "floored": floored, "client_floor": floor, "manual_base": manual_base,
-            "zero_ranking_uplift_pct": zr_uplift, "volume_uplift_pct": vol_uplift,
+            "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
             "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
@@ -1165,7 +1183,7 @@ def api_price():
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
                     "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
-                    "volume_uplift_pct": p["volume_uplift_pct"],
+                    "volume_add": p["volume_add"],
                     "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
                     "base": p["base"], "step": p["step"],
                     "hard_tiers": p["hard_tiers"], "client_tiers": p["client_tiers"],
@@ -1184,7 +1202,8 @@ def api_config_get():
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
         "zero_ranking_frac": CFG["zero_ranking_frac"],
         "zero_ranking_tiers": CFG.get("zero_ranking_tiers", []),
-        "volume_tiers": CFG.get("volume_tiers", []),
+        "vol_free_below": CFG.get("vol_free_below", 10000),
+        "volume_brackets": CFG.get("volume_brackets", []),
         "step_ratio": CFG["step_ratio"],
         "client_floor": CFG["client_floor"],
         "addon_market_ratio": CFG["addon_market_ratio"],
@@ -1209,15 +1228,27 @@ def api_config_set():
                 CFG["competitive_adder"][int(k)] = int(v)
         if "bid_score_breaks" in d:
             CFG["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
-        # Tier arrays: [[threshold, uplift_pct], ...] — validate and sort high-to-low.
-        for tkey in ("zero_ranking_tiers", "volume_tiers"):
-            if tkey in d and isinstance(d[tkey], list):
-                tiers = []
-                for pair in d[tkey]:
-                    if isinstance(pair, (list, tuple)) and len(pair) == 2:
-                        tiers.append([float(pair[0]), float(pair[1])])
-                tiers.sort(key=lambda t: t[0], reverse=True)
-                CFG[tkey] = tiers
+        # zero_ranking_tiers: [[pct_not_ranking, uplift_pct], ...] sorted high-to-low
+        if "zero_ranking_tiers" in d and isinstance(d["zero_ranking_tiers"], list):
+            tiers = []
+            for pair in d["zero_ranking_tiers"]:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    tiers.append([float(pair[0]), float(pair[1])])
+            tiers.sort(key=lambda t: t[0], reverse=True)
+            CFG["zero_ranking_tiers"] = tiers
+        # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
+        if "volume_brackets" in d and isinstance(d["volume_brackets"], list):
+            brs = []
+            for b in d["volume_brackets"]:
+                if isinstance(b, (list, tuple)) and len(b) >= 3:
+                    lo = float(b[0])
+                    hi = None if b[1] in (None, "", "null") else float(b[1])
+                    rate = float(b[2])
+                    brs.append([lo, hi, rate])
+            brs.sort(key=lambda x: x[0])
+            CFG["volume_brackets"] = brs
+        if "vol_free_below" in d and d["vol_free_below"] not in (None, ""):
+            CFG["vol_free_below"] = float(d["vol_free_below"])
         for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),
                             ("client_floor", int), ("addon_market_ratio", float),
