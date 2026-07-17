@@ -1454,7 +1454,14 @@ def api_serp_fetch():
 # ---------------------------------------------------------------------------
 @app.route("/api/quotes/status")
 def api_quotes_status():
-    return jsonify({"enabled": storage.enabled()})
+    # Diagnostic detail so "saving is off" isn't a black box: report whether the
+    # URL is present and whether the Postgres driver imported.
+    return jsonify({
+        "enabled": storage.enabled(),
+        "has_database_url": bool(os.environ.get("DATABASE_URL", "")),
+        "driver_installed": getattr(storage, "_HAVE_DRIVER", False),
+        "detail": storage.status_detail(),
+    })
 
 @app.route("/api/quotes", methods=["GET"])
 def api_quotes_list():

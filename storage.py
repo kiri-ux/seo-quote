@@ -25,8 +25,36 @@ def enabled():
     return bool(DATABASE_URL) and _HAVE_DRIVER
 
 
+def _normalized_url():
+    """Render sometimes provides 'postgres://'; some psycopg2 builds/SQLAlchemy
+    prefer 'postgresql://'. psycopg2 accepts both, but normalize to be safe."""
+    u = DATABASE_URL
+    if u.startswith("postgres://"):
+        u = "postgresql://" + u[len("postgres://"):]
+    return u
+
+
+def status_detail():
+    """Human-readable reason saving is on/off — surfaced in the status endpoint so
+    a misconfiguration isn't a silent black box."""
+    if not DATABASE_URL:
+        return "No DATABASE_URL set — attach a Postgres instance in Render."
+    if not _HAVE_DRIVER:
+        return ("DATABASE_URL is set, but the psycopg2 driver isn't installed — "
+                "the build may not have picked up requirements.txt (needs "
+                "psycopg2-binary). Redeploy after confirming requirements.txt deployed.")
+    # both present — try an actual connection so we surface real errors (bad host,
+    # SSL, wrong creds, DB still spinning up, etc.)
+    try:
+        conn = psycopg2.connect(_normalized_url(), connect_timeout=6)
+        conn.close()
+        return "Connected to Postgres — saving enabled."
+    except Exception as e:
+        return f"DATABASE_URL and driver present, but connection failed: {e}"
+
+
 def _conn():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(_normalized_url())
 
 
 def init_db():
