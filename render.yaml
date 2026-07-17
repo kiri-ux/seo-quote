@@ -6,6 +6,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --timeout 300 --workers 1 --threads 4
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
       - key: DFS_LOGIN
         sync: false
       - key: DFS_PASSWORD
