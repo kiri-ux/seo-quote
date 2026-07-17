@@ -42,8 +42,18 @@ CFG = {
         "statewide":            2600,
         "nationwide":           3150,
     },
-    "competitive_adder": {0: 0, 1: 150, 2: 300},   # hard cost (CEIL50 of 200/400 ÷ 1.35)
-    "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2
+    "competitive_adder": {0: 0, 1: 150, 2: 300},   # FLAT fallback (used when no bid data)
+    "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2 (for the fallback)
+    # --- CPC-scaled competitive adder ---
+    # The competitive adder scales with the median top-of-page bid (CPC), because
+    # CPC is the market's own measure of how valuable a click is: high-CPC verticals
+    # (e.g. insurance ~$150) mean ranking organically replaces huge ad spend, so the
+    # SEO is worth more. adder = median_cpc × cpc_adder_mult, rounded to $50, capped.
+    # When there's NO bid data, fall back to the flat score buckets above.
+    "cpc_adder_enabled": True,
+    "cpc_adder_mult": 3.0,                     # $ of hard-cost adder per $1 of median CPC
+    "cpc_adder_cap": 1500,                     # max adder (hard cost) so a freak CPC can't explode price
+    "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
     "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
     "zero_ranking_top_n": 50,
@@ -597,16 +607,32 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
                 long_tail.append({"keyword": kw, "volume": 0, "src": "gen"})
 
     # ---- Claude refinement pass (Option 2: API generates, Claude refines) ----
-    # Cleans junk/garbled/duplicate terms, folds in site-related opportunities,
-    # and rebuckets by competitiveness. Falls back to the rules-based buckets
-    # above if there's no API key or the call fails.
     site_terms = [r for r in raw if r.get("src") == "site"]
-    # Pull the client's page structure (sitemap → On-Page fallback) as keyword
-    # fuel — their pages are their real service taxonomy. Time-bounded internally.
+    # BUILD stops here (fast: keyword API + rules only). The Claude refinement and
+    # exact-match volume run in a SEPARATE request (stage1b_refine) so neither
+    # half can exceed the platform request timeout on heavy verticals.
+    full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
+    fs = {r["keyword"] for r in full}
+    return {
+        "ultra":       [r for r in ultra if r["keyword"] in fs],
+        "competitive": [r for r in competitive if r["keyword"] in fs],
+        "long_tail":   [r for r in long_tail if r["keyword"] in fs],
+        "head":        [r for r in (ultra + competitive) if r["keyword"] in fs],
+        "all":         full,
+        "refined_by_ai": False,
+        "business_desc": "",
+        "site_pages_found": 0,
+        "site_terms":  [r["keyword"] for r in site_terms],   # passed to refine step
+    }
+
+def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
+                   ultra, competitive, long_tail, site_terms_kw):
+    """Second half of Step 1, run as its own request: reads the sitemap, runs the
+    Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
+    from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
+    the list build."""
+    site_terms = [{"keyword": k} for k in (site_terms_kw or [])]
     site_pages = fetch_site_pages(domain)
-    # Business context: use the manual description if given; otherwise let the
-    # single refine call infer it inline (avoids a second Claude round-trip that
-    # was pushing Step 1 past the request timeout).
     biz = business_desc.strip() if business_desc else ""
     refined = claude_refine_keywords(seeds, markets, brand, domain,
                                      ultra + competitive + long_tail, site_terms,
@@ -623,10 +649,6 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
 
     full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
 
-    # ---- Exact-match volume (Brendan #2) ----
-    # The generation endpoint returns grouped/broad volumes. Re-pull EXACT-match
-    # per-term volume for the final list from the Labs keyword database, and
-    # overwrite the displayed volume so the numbers are accurate.
     exact = fetch_exact_volume([r["keyword"] for r in full], markets, state)
     if exact:
         for r in full:
@@ -742,7 +764,26 @@ def stage3_metrics(head, markets, state):
                      "min": round(min(bid_vals), 2),
                      "max": round(max(bid_vals), 2),
                      "n": len(bid_vals), "n_total": len(bare_unique)}
-    return {"adder": CFG["competitive_adder"][median_score],
+    # Competitive adder: prefer CPC-scaled (adder tracks median bid = click value),
+    # fall back to the flat score buckets when there's no bid data to scale on.
+    flat_adder = CFG["competitive_adder"][median_score]
+    adder = flat_adder
+    adder_basis = "flat"
+    cpc_used = None
+    if CFG.get("cpc_adder_enabled") and bid_stats and bid_stats["median"]:
+        med_cpc = bid_stats["median"]
+        cpc_used = med_cpc
+        free = CFG.get("cpc_adder_free_below", 5.0)
+        if med_cpc > free:
+            raw = med_cpc * CFG.get("cpc_adder_mult", 3.0)
+            capped = min(raw, CFG.get("cpc_adder_cap", 1500))
+            adder = int(round(capped / 50.0) * 50)
+            adder_basis = "cpc"
+        else:
+            adder = 0
+            adder_basis = "cpc"
+    return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
+            "flat_adder": flat_adder,
             "median_score": median_score, "bids": bids, "cpc": cpc,
             "bid_stats": bid_stats, "breaks": [lo, hi],
             "kd": kd, "median_kd": median_kd, "kd_error": kd_err}
@@ -1097,6 +1138,7 @@ def api_keywords():
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
+        "site_terms": s1.get("site_terms", []),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short
     # list. Flag it so the partner can add more seed terms for a fuller table.
@@ -1105,6 +1147,48 @@ def api_keywords():
             "be low-volume, or try adding more seed terms (e.g. related services) "
             "for a fuller keyword table like the proposals.")
     return jsonify(resp)
+
+@app.route("/api/refine", methods=["POST"])
+def api_refine():
+    """Step 1b — AI refinement + exact-match volume, run as a SEPARATE request so
+    a heavy Claude call can't time out the list build. Takes the buckets the build
+    step returned (plus any user edits) and returns the refined, volume-corrected
+    list. Non-fatal: on any failure, returns the input list unchanged so the flow
+    continues with the rules-based buckets."""
+    d = request.get_json(force=True)
+    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    brand   = (d.get("brand") or "").strip()
+    domain  = (d.get("domain") or "").strip()
+    business_desc = (d.get("business_desc") or "").strip()
+    site_terms_kw = d.get("site_terms", [])
+    # rebuild bucket rows from what the frontend sends back (kw + vol)
+    def rows(key):
+        return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
+                for x in d.get(key, []) if x.get("kw")]
+    ultra, competitive, long_tail = rows("ultra"), rows("competitive"), rows("long_tail")
+    try:
+        s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
+                            ultra, competitive, long_tail, site_terms_kw)
+    except Exception as e:
+        # graceful: hand back the unrefined list so the pipeline still works
+        conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
+        return jsonify({"ultra": conv0(ultra), "competitive": conv0(competitive),
+                        "long_tail": conv0(long_tail),
+                        "head": conv0(ultra + competitive),
+                        "all": conv0(ultra + competitive + long_tail),
+                        "refined_by_ai": False, "business_desc": "",
+                        "site_pages_found": 0, "refine_error": str(e)})
+    conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                       "origin": r.get("origin", "")} for r in L]
+    return jsonify({
+        "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
+        "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
+        "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
+        "business_desc": s1.get("business_desc", ""),
+        "site_pages_found": s1.get("site_pages_found", 0),
+    })
 
 @app.route("/api/metrics", methods=["POST"])
 def api_metrics():
@@ -1120,6 +1204,8 @@ def api_metrics():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     return jsonify({"adder": m3["adder"], "score": m3["median_score"],
+                    "adder_basis": m3.get("adder_basis"), "cpc_used": m3.get("cpc_used"),
+                    "flat_adder": m3.get("flat_adder"),
                     "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
                     "median_kd": m3.get("median_kd"), "kd_error": m3.get("kd_error"),
                     "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
@@ -1198,6 +1284,10 @@ def api_config_get():
         "geo_anchor": CFG["geo_anchor"],
         "competitive_adder": CFG["competitive_adder"],
         "bid_score_breaks": CFG["bid_score_breaks"],
+        "cpc_adder_enabled": CFG.get("cpc_adder_enabled", True),
+        "cpc_adder_mult": CFG.get("cpc_adder_mult", 3.0),
+        "cpc_adder_cap": CFG.get("cpc_adder_cap", 1500),
+        "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
         "zero_ranking_bonus": CFG["zero_ranking_bonus"],
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
         "zero_ranking_frac": CFG["zero_ranking_frac"],
@@ -1249,11 +1339,15 @@ def api_config_set():
             CFG["volume_brackets"] = brs
         if "vol_free_below" in d and d["vol_free_below"] not in (None, ""):
             CFG["vol_free_below"] = float(d["vol_free_below"])
+        if "cpc_adder_enabled" in d:
+            CFG["cpc_adder_enabled"] = bool(d["cpc_adder_enabled"])
         for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),
                             ("client_floor", int), ("addon_market_ratio", float),
                             ("default_markup_pct", float), ("ultra_bucket_size", int),
-                            ("competitive_bucket_size", int), ("longtail_target", int)]:
+                            ("competitive_bucket_size", int), ("longtail_target", int),
+                            ("cpc_adder_mult", float), ("cpc_adder_cap", int),
+                            ("cpc_adder_free_below", float)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
     except (ValueError, TypeError) as e:

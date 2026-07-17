@@ -253,6 +253,23 @@ $('step1').addEventListener('click', async()=>{
       domain:inp.domain, business_desc:inp.business_desc});
     ST.kw=kw;
     renderStep1();
+    // Step 1b — AI refinement runs as its OWN request so it can't time out the
+    // build. Show the list immediately, then refine it in place.
+    if(kw.all && kw.all.length){
+      const note=document.createElement('div');
+      note.id='refiningNote';
+      note.style.cssText='margin-top:8px;font-size:12.5px;color:var(--velocity,#378ADD);display:flex;align-items:center;gap:8px';
+      note.innerHTML=`<span style="width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--velocity,#378ADD);border-radius:50%;display:inline-block;animation:spin .8s linear infinite"></span> Refining with AI — cleaning off-target terms, reading the site, correcting volume…`;
+      const p1=$('p1'); if(p1) p1.appendChild(note);
+      try{
+        const ref=await postJSON('/api/refine',{
+          keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
+          domain:inp.domain, business_desc:inp.business_desc,
+          ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
+          site_terms:kw.site_terms||[]});
+        if(ref && ref.all){ ST.kw=ref; renderStep1(); }
+      }catch(e){ const n=$('refiningNote'); if(n) n.remove(); /* keep unrefined list */ }
+    }
   }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
   $('step1').disabled=false; $('step1').textContent='1 · Build keyword list';
 });
@@ -341,8 +358,9 @@ async function runStep2(){
       <h4 class="sec">Step 2 · Competition</h4>
       <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is currently driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison — to evaluate whether it's a better driver than bids, check which one tracks the proposals' Ultra/Competitive labels.</div>
       ${bidLine}
-      <div class="calc">median head-term bid score <code>${m.score}</code> →
-        competitive adder <code>+${money(m.adder)}</code> <span class="nf">(hard cost — drives price)</span></div>
+      <div class="calc">${m.adder_basis==='cpc'
+        ? `median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
+        : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
       ${kdLine}
       ${stepBtn('step3','3 · Check rankings')}`);
     $('step3').addEventListener('click', runStep3);
@@ -677,10 +695,14 @@ async function loadConfig(){
   const ga=c.geo_anchor, ca=c.competitive_adder, bb=c.bid_score_breaks;
   $('cfgFields').innerHTML =
     cfgGroup('Step 2 · competition (hard cost)',
-      cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'under this → +$0')+
-      cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'over this → top adder')+
-      cfgRow('Adder · score 1','cf_add1',ca['1'],'hard cost')+
-      cfgRow('Adder · score 2','cf_add2',ca['2'],'hard cost')) +
+      `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
+      cfgRow('CPC multiplier','cf_cpcmult',c.cpc_adder_mult,'$ of adder per $1 of median CPC (e.g. 3 → a $150 CPC adds $450)')+
+      cfgRow('CPC adder cap ($)','cf_cpccap',c.cpc_adder_cap,'max adder so a freak CPC can\u2019t explode the price')+
+      cfgRow('CPC free-below ($)','cf_cpcfree',c.cpc_adder_free_below,'CPC at/below this adds nothing')+
+      cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'flat fallback: under this → +$0')+
+      cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'flat fallback: over this → top adder')+
+      cfgRow('Adder · score 1','cf_add1',ca['1'],'flat fallback')+
+      cfgRow('Adder · score 2','cf_add2',ca['2'],'flat fallback')) +
     cfgGroup('Step 3 · zero-ranking uplift',
       `<div class="tierhelp">When a share of the client's keywords aren't ranking, add a percentage to the price. Higher share not ranking → bigger uplift.</div>`+
       tierRows(c.zero_ranking_tiers,'cf_zr','If at least','% of terms aren\u2019t ranking → add','% to price')+
@@ -708,6 +730,7 @@ $('cfgApply').addEventListener('click', async()=>{
       non_contiguous_region:v('cf_ga_noncontig'),statewide:v('cf_ga_state'),nationwide:v('cf_ga_nation')},
     competitive_adder:{1:v('cf_add1'),2:v('cf_add2')},
     bid_score_breaks:[v('cf_break1'),v('cf_break2')],
+    cpc_adder_mult:v('cf_cpcmult'), cpc_adder_cap:v('cf_cpccap'), cpc_adder_free_below:v('cf_cpcfree'),
     zero_ranking_top_n:v('cf_topn'),
     zero_ranking_tiers:readTierRows('cf_zr'),
     vol_free_below:v('cf_volfree'),
