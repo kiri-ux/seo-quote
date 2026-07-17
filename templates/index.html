@@ -95,6 +95,7 @@
 <div id="savedBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:40"></div>
 
 <div class="wrap">
+<div id="saveStatusBar" style="margin-bottom:14px;padding:9px 14px;border-radius:9px;font-size:12.5px;display:flex;align-items:center;gap:8px">Checking save status…</div>
 <div class="grid">
   <!-- ============ FORM ============ -->
   <div class="card">
@@ -554,6 +555,7 @@ function renderStep4(p){
     <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
   renderSaveRow();
   wireCompare(c);
+  scheduleAutoSave();
   // live markup recompute (re-hits /api/price; pure math, instant)
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
@@ -808,7 +810,19 @@ let SAVE_DETAIL = '';
     SAVE_ENABLED = !!s.enabled;
     SAVE_DETAIL = s.detail || '';
   }catch(e){ SAVE_ENABLED=false; SAVE_DETAIL='Could not reach the status endpoint.'; }
+  renderSaveStatusBar();
 })();
+
+function renderSaveStatusBar(){
+  const bar=$('saveStatusBar'); if(!bar) return;
+  if(SAVE_ENABLED){
+    bar.style.background='#e8f5ec'; bar.style.border='1px solid #b6e0c2'; bar.style.color='#2a7a4a';
+    bar.innerHTML='✓ Saving is on — quotes auto-save when priced, and you can reload them anytime.';
+  }else{
+    bar.style.background='#fdf1d8'; bar.style.border='1px solid #e8c98a'; bar.style.color='#7a5410';
+    bar.innerHTML='⚠ Saving is OFF — '+escapeHtml(SAVE_DETAIL||'attach a Postgres database in Render.')+' Quotes will NOT be saved until this is fixed.';
+  }
+}
 
 // Build a full, restorable snapshot of the current quote.
 function snapshotQuote(){
@@ -828,6 +842,7 @@ function snapshotQuote(){
 
 // Restore a snapshot back into ST and re-render every step.
 function restoreQuote(p){
+  SUPPRESS_AUTOSAVE=true;   // don't auto-save just from loading a saved quote
   ST.inputs=p.inputs; ST.kw=p.kw; ST.adder=p.adder; ST.score=p.score;
   ST.adder_basis=p.adder_basis; ST.cpc_used=p.cpc_used;
   ST.table=p.table||[]; ST.paa=p.paa||[]; ST.ranked=p.ranked||0; ST.total=p.total||0;
@@ -849,6 +864,8 @@ function restoreQuote(p){
   }
   // Step 4 — pricing
   if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){} }
+  // re-enable auto-save shortly after the load settles
+  setTimeout(()=>{ SUPPRESS_AUTOSAVE=false; }, 1500);
 }
 
 // push saved inputs back into the visible form fields + pill stores
@@ -902,6 +919,42 @@ function wireCompare(c){
   recompute();
 }
 
+// Auto-save: once a quote is priced, persist it automatically (create once, then
+// update in place). Debounced so markup/override tweaks don't spam saves.
+let AUTOSAVE_TIMER=null;
+let SUPPRESS_AUTOSAVE=false;   // set briefly when loading a saved quote
+function scheduleAutoSave(){
+  if(!SAVE_ENABLED || SUPPRESS_AUTOSAVE) return;
+  if(AUTOSAVE_TIMER) clearTimeout(AUTOSAVE_TIMER);
+  AUTOSAVE_TIMER=setTimeout(autoSave, 1200);
+}
+async function autoSave(){
+  if(!SAVE_ENABLED || !ST.pricing) return;
+  const brand=(ST.inputs&&ST.inputs.brand)?ST.inputs.brand:'';
+  const today=new Date().toISOString().slice(0,10);
+  const name = CURRENT_QUOTE_NAME || (brand?`${brand} — ${today}`:today);
+  const client = brand;
+  const payload=snapshotQuote();
+  try{
+    let r;
+    if(CURRENT_QUOTE_ID!=null){
+      r=await postJSON('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
+    }else{
+      r=await postJSON('/api/quotes', {payload, name, client});
+      CURRENT_QUOTE_ID=r.id;
+    }
+    CURRENT_QUOTE_NAME=name;
+    flashAutoSaved();
+    renderSaveRow();
+  }catch(e){ /* silent; manual Save still available */ }
+}
+function flashAutoSaved(){
+  const bar=$('saveStatusBar'); if(!bar||!SAVE_ENABLED) return;
+  const t=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  bar.style.background='#e8f5ec'; bar.style.border='1px solid #b6e0c2'; bar.style.color='#2a7a4a';
+  bar.innerHTML=`✓ Auto-saved “${escapeHtml(CURRENT_QUOTE_NAME)}” at ${t}. Reload anytime from 📁 Saved quotes.`;
+}
+
 function renderSaveRow(){
   const row=$('saveRow'); if(!row) return;
   if(!SAVE_ENABLED){
@@ -923,7 +976,7 @@ function renderSaveRow(){
       <button id="saveBtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">${editing?'💾 Update':'💾 Save'}</button>
       ${editing?`<button id="saveNewBtn" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:8px 12px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Save as new</button>`:''}
     </div>
-    ${editing?`<div class="nf" style="font-size:11.5px;margin-top:5px">Editing saved quote #${CURRENT_QUOTE_ID}. Updating snapshots the current version to history first.</div>`:''}
+    ${editing?`<div class="nf" style="font-size:11.5px;margin-top:5px">✓ Auto-saving as “${escapeHtml(CURRENT_QUOTE_NAME)}” (quote #${CURRENT_QUOTE_ID}). Rename above and hit Update, or Save as new to branch a copy. Each update snapshots the prior version to history.</div>`:`<div class="nf" style="font-size:11.5px;margin-top:5px">This quote auto-saves once priced. You can also name & save it manually here.</div>`}
     <div id="saveMsg" style="font-size:12px;margin-top:6px"></div>`;
   $('saveBtn').onclick=()=>doSave(editing?'update':'new');
   if($('saveNewBtn')) $('saveNewBtn').onclick=()=>doSave('new');
