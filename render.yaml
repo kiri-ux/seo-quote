@@ -12,3 +12,7 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # DATABASE_URL is set automatically by Render when you attach a Postgres
+      # instance. Optional — without it, the tool runs fine and saving is disabled.
+      - key: DATABASE_URL
+        sync: false

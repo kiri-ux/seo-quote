@@ -12,7 +12,7 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     background:var(--parchment);color:var(--ink);line-height:1.5}
-  header{background:var(--atlas);color:#fff;padding:22px 28px}
+  header{background:var(--atlas);color:#fff;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
   header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
   header span{opacity:.7;font-size:13px}
   .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
@@ -80,7 +80,19 @@
 <body>
 <header>
   <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO</span></h1>
+  <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
+
+<!-- Saved quotes drawer -->
+<div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:50;overflow-y:auto;padding:20px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <h2 style="margin:0;color:var(--atlas);font-size:15px">Saved quotes</h2>
+    <button id="savedClose" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">×</button>
+  </div>
+  <input type="text" id="savedSearch" placeholder="Search by name or client…" style="width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:12px">
+  <div id="savedList"></div>
+</div>
+<div id="savedBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:40"></div>
 
 <div class="wrap">
 <div class="grid">
@@ -221,8 +233,8 @@ function collectInputs(){
   };
 }
 
-async function postJSON(url, body){
-  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+async function postJSON(url, body, method){
+  const res=await fetch(url,{method:method||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const text=await res.text();
   let data; try{data=JSON.parse(text);}catch(_){throw new Error(`Server ${res.status} (timeout or non-JSON).`);}
   if(!res.ok) throw new Error(data.error||`Request failed (${res.status}).`);
@@ -341,30 +353,49 @@ function renderStep1(){
 }
 
 // ---------- STEP 2 ----------
+function step2Html(m){
+  const kdLine = (m.median_kd!=null)
+    ? `<div class="calc">median keyword difficulty <code>${m.median_kd}</code><span class="nf">/100 (organic ranking difficulty — informational, not yet driving price)</span></div>`
+    : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
+  const bs=m.bid_stats, br=m.breaks||[5,15];
+  const bidLine = bs
+    ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data; breaks at $${br[0]}/$${br[1]})</span></div>`
+    : `<div class="calc nf">no bid data returned for the head terms (low-volume vertical)</div>`;
+  return `
+      <h4 class="sec">Step 2 · Competition</h4>
+      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison.</div>
+      ${bidLine}
+      <div class="calc">${m.adder_basis==='cpc'
+        ? `median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
+        : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
+      ${kdLine}
+      ${stepBtn('step3','3 · Check rankings')}`;
+}
+
 async function runStep2(){
   $('step2').disabled=true; $('step2').textContent='Scoring…';
   try{
     const m=await postJSON('/api/metrics',{
       head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
     ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
-    const kdLine = (m.median_kd!=null)
-      ? `<div class="calc">median keyword difficulty <code>${m.median_kd}</code><span class="nf">/100 (organic ranking difficulty — informational, not yet driving price)</span></div>`
-      : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
-    const bs=m.bid_stats, br=m.breaks||[5,15];
-    const bidLine = bs
-      ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data; breaks at $${br[0]}/$${br[1]})</span></div>`
-      : `<div class="calc nf">no bid data returned for the head terms (low-volume vertical)</div>`;
-    panel('p2',`
-      <h4 class="sec">Step 2 · Competition</h4>
-      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is currently driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison — to evaluate whether it's a better driver than bids, check which one tracks the proposals' Ultra/Competitive labels.</div>
-      ${bidLine}
-      <div class="calc">${m.adder_basis==='cpc'
-        ? `median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
-        : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
-      ${kdLine}
-      ${stepBtn('step3','3 · Check rankings')}`);
+    ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
+    ST._m2=m;   // keep for save/restore
+    panel('p2', step2Html(m));
     $('step3').addEventListener('click', runStep3);
   }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
+}
+
+function step3Html(){
+  const frac=ST.total?Math.round(ST.ranked/ST.total*100):0;
+  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
+  return `
+      <h4 class="sec">Step 3 · Rankings</h4>
+      <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch.</div>
+      <div class="calc">zero-ranking
+        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
+        — ${ST.ranked}/${ST.total} rank in top 50 (${frac}%)</div>
+      <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
+      ${stepBtn('step4','4 · Price it')}`;
 }
 
 // ---------- STEP 3 (batched) ----------
@@ -374,7 +405,7 @@ async function runStep3(){
   const BATCH=4;
   ST.table=[]; ST.paa=[]; ST.ranked=0; ST.total=all.length;
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
-    <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$400 (hard cost).</div>
+    <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out.</div>
     <div class="calc" id="rkprog">Checking 0/${all.length}…</div>`);
   try{
     for(let i=0;i<all.length;i+=BATCH){
@@ -386,22 +417,12 @@ async function runStep3(){
       ST.paa.push(...r.paa);
       $('rkprog').textContent=`Checking ${Math.min(i+BATCH,all.length)}/${all.length}…`;
     }
-    const frac=ST.total?Math.round(ST.ranked/ST.total*100):0;
     ST.zero = (ST.ranked/(ST.total||1)) < 0.10;
-    // fold PAA into long-tail (dedupe vs existing)
     const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
     ST.longtail=[...ST.kw.long_tail];
     for(const q of ST.paa){ if(ST.longtail.length>=10) break;
       if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
-    const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
-    panel('p3',`
-      <h4 class="sec">Step 3 · Rankings</h4>
-      <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch, which adds +$400 (hard cost).</div>
-      <div class="calc">zero-ranking
-        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES +$400':'NO'}</span>
-        — ${ST.ranked}/${ST.total} rank in top 50 (${frac}%)</div>
-      <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
-      ${stepBtn('step4','4 · Price it')}`);
+    panel('p3', step3Html());
     $('step4').addEventListener('click', runStep4);
   }catch(e){ panel('p3',`<div class="err">${e.message} (mid-batch — re-click Check rankings to retry)</div>`); $('step3').disabled=false; }
 }
@@ -431,6 +452,7 @@ function cropLandscape(dataUrl, ratio){
 }
 
 function renderStep4(p){
+  ST.pricing = p;   // keep the latest pricing so the whole quote can be saved
   const cpcOf=kw=>(ST.cpc&&ST.cpc[kw])?ST.cpc[kw]:'';
   const kdOf=kw=>(ST.kd&&ST.kd[kw]!=null)?ST.kd[kw]:'';
   // build export rows (CPC + difficulty available for head terms from Step 2)
@@ -504,7 +526,10 @@ function renderStep4(p){
     </div>
     <div id="serpOut" style="margin-top:12px"></div>
 
+    <div id="saveRow" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"></div>
+
     <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
+  renderSaveRow();
   // live markup recompute (re-hits /api/price; pure math, instant)
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
@@ -747,6 +772,202 @@ $('cfgApply').addEventListener('click', async()=>{
     if(r.ok && $('markup')) $('markup').value=v('cf_markup');
   }catch(e){ $('cfgStatus').textContent='Error: '+e.message; }
 });
+// ===================== SAVED QUOTES (persistence + version history) =========
+let SAVE_ENABLED = false;
+let CURRENT_QUOTE_ID = null;     // set when a saved quote is loaded/edited
+let CURRENT_QUOTE_NAME = '';
+
+(async function initSaved(){
+  try{
+    const s = await (await fetch('/api/quotes/status')).json();
+    SAVE_ENABLED = !!s.enabled;
+  }catch(e){ SAVE_ENABLED=false; }
+})();
+
+// Build a full, restorable snapshot of the current quote.
+function snapshotQuote(){
+  return {
+    schema: 1,
+    inputs: ST.inputs, kw: ST.kw, adder: ST.adder, score: ST.score,
+    adder_basis: ST.adder_basis, cpc_used: ST.cpc_used,
+    table: ST.table, paa: ST.paa, ranked: ST.ranked, total: ST.total,
+    zero: ST.zero, longtail: ST.longtail, cpc: ST.cpc, kd: ST.kd,
+    m2: ST._m2 || null,
+    pricing: ST.pricing,
+    totalVol: ST.totalVol, pctNotRanking: ST.pctNotRanking,
+    baseOverride: ST.baseOverride||''
+  };
+}
+
+// Restore a snapshot back into ST and re-render every step.
+function restoreQuote(p){
+  ST.inputs=p.inputs; ST.kw=p.kw; ST.adder=p.adder; ST.score=p.score;
+  ST.adder_basis=p.adder_basis; ST.cpc_used=p.cpc_used;
+  ST.table=p.table||[]; ST.paa=p.paa||[]; ST.ranked=p.ranked||0; ST.total=p.total||0;
+  ST.zero=p.zero; ST.longtail=p.longtail; ST.cpc=p.cpc||{}; ST.kd=p.kd||{};
+  ST.pricing=p.pricing; ST.totalVol=p.totalVol; ST.pctNotRanking=p.pctNotRanking;
+  ST.baseOverride=p.baseOverride||'';
+  if(p.inputs){ try{ reflectInputs(p.inputs); }catch(e){} }
+  // Step 1 — keyword list
+  if(ST.kw){ try{ renderStep1(); }catch(e){} }
+  // Step 2 — competition summary (rebuild from saved metrics)
+  if(p.m2){ ST._m2=p.m2; try{ panel('p2', step2Html(p.m2)); $('step3')&&$('step3').addEventListener('click',runStep3); }catch(e){} }
+  else if(ST.adder!=null){
+    try{ panel('p2', step2Html({adder:ST.adder, score:ST.score, adder_basis:ST.adder_basis, cpc_used:ST.cpc_used})); }catch(e){}
+  }
+  // Step 3 — rankings table (rebuild from saved ST)
+  if(ST.table && ST.table.length){
+    try{ panel('p3', step3Html()); $('step4')&&$('step4').addEventListener('click',runStep4); }catch(e){}
+  }
+  // Step 4 — pricing
+  if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){} }
+}
+
+// push saved inputs back into the visible form fields + pill stores
+function reflectInputs(inp){
+  if(!inp) return;
+  const setPills=(store, arr, renderId)=>{ store.length=0; (arr||[]).forEach(x=>store.push(x)); };
+  if(typeof stores!=='undefined'){
+    if(inp.sites){ stores.sites.length=0; inp.sites.forEach(s=>stores.sites.push(s)); }
+    stores.kw.length=0; (inp.keywords||[]).forEach(k=>stores.kw.push(k));
+    stores.geo.length=0; (inp.geo_values||[]).forEach(g=>stores.geo.push(g));
+    if(typeof renderPills==='function'){ try{renderPills();}catch(e){} }
+  }
+  if($('brand')) $('brand').value = inp.brand||'';
+  if($('business_desc')) $('business_desc').value = inp.business_desc||'';
+  if($('geo_scope')) $('geo_scope').value = inp.geo_scope||'single_city';
+  if($('markup_live')) {}
+}
+
+function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
+
+function renderSaveRow(){
+  const row=$('saveRow'); if(!row) return;
+  if(!SAVE_ENABLED){
+    row.innerHTML=`<div class="nf" style="font-size:12px">💾 Saving is off — attach a Postgres database in Render to save & reload quotes.</div>`;
+    return;
+  }
+  const editing = CURRENT_QUOTE_ID!=null;
+  row.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="saveName" placeholder="Quote name" value="${editing?escapeHtml(CURRENT_QUOTE_NAME):''}"
+        style="flex:1;min-width:150px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px">
+      <input type="text" id="saveClient" placeholder="Client (optional)" value="${(ST.inputs&&ST.inputs.brand)?escapeHtml(ST.inputs.brand):''}"
+        style="flex:1;min-width:130px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px">
+      <button id="saveBtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">${editing?'💾 Update':'💾 Save'}</button>
+      ${editing?`<button id="saveNewBtn" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:8px 12px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Save as new</button>`:''}
+    </div>
+    ${editing?`<div class="nf" style="font-size:11.5px;margin-top:5px">Editing saved quote #${CURRENT_QUOTE_ID}. Updating snapshots the current version to history first.</div>`:''}
+    <div id="saveMsg" style="font-size:12px;margin-top:6px"></div>`;
+  $('saveBtn').onclick=()=>doSave(editing?'update':'new');
+  if($('saveNewBtn')) $('saveNewBtn').onclick=()=>doSave('new');
+}
+
+async function doSave(mode){
+  const name=($('saveName').value||'').trim();
+  const client=($('saveClient').value||'').trim();
+  const msg=$('saveMsg');
+  if(!name){ msg.innerHTML='<span style="color:#b04a4a">Give the quote a name.</span>'; return; }
+  const payload=snapshotQuote();
+  try{
+    let r;
+    if(mode==='update' && CURRENT_QUOTE_ID!=null){
+      r=await postJSON('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
+    }else{
+      r=await postJSON('/api/quotes', {payload, name, client});
+      CURRENT_QUOTE_ID=r.id;
+    }
+    CURRENT_QUOTE_NAME=name;
+    msg.innerHTML='<span style="color:#2a7a4a">Saved ✓</span>';
+    renderSaveRow();
+  }catch(e){ msg.innerHTML='<span style="color:#b04a4a">'+e.message+'</span>'; }
+}
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---- Saved quotes drawer ----
+$('savedBtn').onclick=()=>openSaved();
+$('savedClose').onclick=closeSaved;
+$('savedBackdrop').onclick=closeSaved;
+$('savedSearch').addEventListener('input', ()=>loadSavedList($('savedSearch').value));
+
+function openSaved(){ $('savedPanel').style.display='block'; $('savedBackdrop').style.display='block'; loadSavedList(''); }
+function closeSaved(){ $('savedPanel').style.display='none'; $('savedBackdrop').style.display='none'; }
+
+async function loadSavedList(q){
+  const list=$('savedList');
+  if(!SAVE_ENABLED){ list.innerHTML='<div class="nf" style="font-size:12.5px">Saving is off. Attach a Postgres database in Render to enable saving and reloading quotes.</div>'; return; }
+  list.innerHTML='<div class="nf">Loading…</div>';
+  try{
+    const r=await (await fetch('/api/quotes'+(q?('?q='+encodeURIComponent(q)):''))).json();
+    const qs=r.quotes||[];
+    if(!qs.length){ list.innerHTML='<div class="nf" style="font-size:12.5px">No saved quotes yet.</div>'; return; }
+    list.innerHTML=qs.map(x=>`
+      <div style="border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div style="font-weight:600;font-size:13.5px">${escapeHtml(x.name)}</div>
+          <div class="nf" style="font-size:11px">${(x.updated_at||'').slice(0,10)}</div>
+        </div>
+        ${x.client?`<div class="nf" style="font-size:12px">${escapeHtml(x.client)}</div>`:''}
+        <div style="font-size:12.5px;margin:5px 0;color:var(--atlas)">${money0(x.base)} / ${money0(x.intermediate)} / ${money0(x.advanced)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="q-load" data-id="${x.id}" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Open</button>
+          <button class="q-hist" data-id="${x.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:5px 11px;border-radius:6px;font-size:12px;cursor:pointer">History</button>
+          <button class="q-del" data-id="${x.id}" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;cursor:pointer">Delete</button>
+        </div>
+        <div id="hist-${x.id}"></div>
+      </div>`).join('');
+    list.querySelectorAll('.q-load').forEach(b=>b.onclick=()=>openQuote(b.dataset.id));
+    list.querySelectorAll('.q-hist').forEach(b=>b.onclick=()=>toggleHistory(b.dataset.id));
+    list.querySelectorAll('.q-del').forEach(b=>b.onclick=()=>delQuote(b.dataset.id));
+  }catch(e){ list.innerHTML='<div class="err">'+e.message+'</div>'; }
+}
+
+async function openQuote(id){
+  try{
+    const q=await (await fetch('/api/quotes/'+id)).json();
+    if(q.payload){ restoreQuote(q.payload); CURRENT_QUOTE_ID=q.id; CURRENT_QUOTE_NAME=q.name; renderSaveRow(); closeSaved(); }
+  }catch(e){ alert('Could not load: '+e.message); }
+}
+
+async function toggleHistory(id){
+  const box=$('hist-'+id);
+  if(box.dataset.open==='1'){ box.innerHTML=''; box.dataset.open='0'; return; }
+  box.dataset.open='1'; box.innerHTML='<div class="nf" style="font-size:12px;margin-top:6px">Loading history…</div>';
+  try{
+    const r=await (await fetch('/api/quotes/'+id+'/versions')).json();
+    const vs=r.versions||[];
+    if(!vs.length){ box.innerHTML='<div class="nf" style="font-size:11.5px;margin-top:6px">No prior versions yet — the original is the current one.</div>'; return; }
+    box.innerHTML='<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">'+
+      vs.map((v,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0">
+          <span style="font-size:11.5px">${i===0?'<b>Original</b>':'Edit '+i} · ${money0(v.base)}/${money0(v.intermediate)}/${money0(v.advanced)} <span class="nf">${(v.snapshot_at||'').slice(0,10)}</span></span>
+          <button class="v-load" data-vid="${v.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer">View</button>
+        </div>`).join('')+'</div>';
+    box.querySelectorAll('.v-load').forEach(b=>b.onclick=()=>loadVersion(b.dataset.vid, id));
+  }catch(e){ box.innerHTML='<div class="err">'+e.message+'</div>'; }
+}
+
+async function loadVersion(vid, quoteId){
+  try{
+    const v=await (await fetch('/api/quotes/version/'+vid)).json();
+    if(v.payload){
+      restoreQuote(v.payload);
+      // loading a historical version keeps you attached to the quote, but flags it
+      CURRENT_QUOTE_ID=quoteId; renderSaveRow();
+      const m=$('saveMsg'); if(m) m.innerHTML='<span class="nf" style="font-size:12px">Loaded a historical version — Update will save it forward as the current version.</span>';
+      closeSaved();
+    }
+  }catch(e){ alert('Could not load version: '+e.message); }
+}
+
+async function delQuote(id){
+  if(!confirm('Delete this saved quote and its history?')) return;
+  try{
+    await fetch('/api/quotes/'+id, {method:'DELETE'});
+    if(String(CURRENT_QUOTE_ID)===String(id)){ CURRENT_QUOTE_ID=null; CURRENT_QUOTE_NAME=''; renderSaveRow(); }
+    loadSavedList($('savedSearch').value);
+  }catch(e){ alert('Could not delete: '+e.message); }
+}
 </script>
 </body>
 </html>

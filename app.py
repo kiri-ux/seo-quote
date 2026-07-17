@@ -19,6 +19,7 @@ import os, json, base64, statistics, time
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from flask import Flask, render_template, request, jsonify
+import storage
 
 app = Flask(__name__)
 BASE = "https://api.dataforseo.com/v3"
@@ -1445,6 +1446,86 @@ def api_serp_fetch():
         return jsonify({"ready": False, "status": f"processing ({e})"})
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
+
+# ---------------------------------------------------------------------------
+# SAVED QUOTES — persistence with version history (like the Meta forecast tool).
+# Degrades gracefully: if no DATABASE_URL, /api/quotes/status reports disabled
+# and the UI shows "attach a database to enable" instead of the Save controls.
+# ---------------------------------------------------------------------------
+@app.route("/api/quotes/status")
+def api_quotes_status():
+    return jsonify({"enabled": storage.enabled()})
+
+@app.route("/api/quotes", methods=["GET"])
+def api_quotes_list():
+    if not storage.enabled():
+        return jsonify({"enabled": False, "quotes": []})
+    search = (request.args.get("q") or "").strip()
+    return jsonify({"enabled": True, "quotes": storage.list_quotes(search)})
+
+@app.route("/api/quotes", methods=["POST"])
+def api_quotes_save():
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled — attach a Postgres database in Render."}), 400
+    d = request.get_json(force=True)
+    name = (d.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Give the quote a name."}), 400
+    client = (d.get("client") or "").strip()
+    payload = d.get("payload") or {}
+    qid = storage.save_quote(name, client, payload)
+    return jsonify({"ok": True, "id": qid})
+
+@app.route("/api/quotes/<int:qid>", methods=["GET"])
+def api_quotes_load(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    q = storage.load_quote(qid)
+    if not q:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify(q)
+
+@app.route("/api/quotes/<int:qid>", methods=["PUT"])
+def api_quotes_update(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    d = request.get_json(force=True)
+    payload = d.get("payload") or {}
+    name = d.get("name"); client = d.get("client")
+    ok = storage.update_quote(qid, payload,
+                              name=name.strip() if isinstance(name, str) else None,
+                              client=client.strip() if isinstance(client, str) else None)
+    if not ok:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify({"ok": True, "id": qid})
+
+@app.route("/api/quotes/<int:qid>", methods=["DELETE"])
+def api_quotes_delete(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    storage.delete_quote(qid)
+    return jsonify({"ok": True})
+
+@app.route("/api/quotes/<int:qid>/versions", methods=["GET"])
+def api_quotes_versions(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    return jsonify({"versions": storage.list_versions(qid)})
+
+@app.route("/api/quotes/version/<int:vid>", methods=["GET"])
+def api_quotes_version_load(vid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    v = storage.load_version(vid)
+    if not v:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify(v)
+
+# initialize the DB tables on startup (no-op when saving isn't enabled)
+try:
+    storage.init_db()
+except Exception as _e:
+    print(f"[storage] init skipped: {_e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
