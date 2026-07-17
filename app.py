@@ -107,14 +107,14 @@ CFG = {
 def r50(x):
     return int(round(x / 50.0) * 50)
 
-def dfs_post(path, payload):
+def dfs_post(path, payload, timeout=120):
     login = os.environ.get("DFS_LOGIN", "")
     pw    = os.environ.get("DFS_PASSWORD", "")
     token = base64.b64encode(f"{login}:{pw}".encode()).decode()
     resp = requests.post(BASE + path,
                          headers={"Authorization": f"Basic {token}",
                                   "Content-Type": "application/json"},
-                         data=json.dumps(payload), timeout=120)
+                         data=json.dumps(payload), timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
@@ -793,10 +793,13 @@ def stage3_metrics(head, markets, state):
 # STAGE 3b — rank check -> table + zero-ranking + PAA
 # ---------------------------------------------------------------------------
 def _serp_one(kw, domain_dom, markets, state, brand, top_n):
-    """One keyword's SERP call. Returns (position_or_None, [paa questions])."""
+    """One keyword's SERP call. Returns (position_or_None, [paa questions]).
+    Uses depth=top_n (not 100) and a short timeout so one slow lookup can't push
+    the batch past Render's platform request limit and trigger a 502."""
+    depth = max(top_n, 20)
     payload = [{"keyword": kw, "location_name": loc_string(markets, state),
-                "language_code": "en", "depth": 100}]
-    data = dfs_post("/serp/google/organic/live/advanced", payload)
+                "language_code": "en", "depth": depth}]
+    data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=25)
     res = (data["tasks"][0]["result"] or [{}])[0]
     items = res.get("items", []) or []
     pos, paa = None, []
