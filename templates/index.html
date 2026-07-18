@@ -177,6 +177,9 @@
 <script>
 // ---- pill inputs ----
 const stores = {sites:[], kw:[], geo:[]};
+// Each pillbox's render() lives inside wirePills' closure; register them here so
+// loading a saved quote can redraw the pills after repopulating the stores.
+const PILL_RENDER = {};
 function wirePills(key, inputId){
   const box = document.querySelector(`.pillbox[data-for="${key}"]`);
   const input = document.getElementById(inputId);
@@ -190,6 +193,7 @@ function wirePills(key, inputId){
       box.insertBefore(el,input);
     });
   }
+  PILL_RENDER[key] = render;
   function commit(){
     const parts=input.value.split(',').map(s=>s.trim()).filter(Boolean);
     parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
@@ -226,7 +230,8 @@ function collectInputs(){
   if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return null;}
   if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return null;}
   return {
-    domain: stores.sites[0]||'', keywords: stores.kw, brand: $('brand').value,
+    domain: stores.sites[0]||'', sites: stores.sites.slice(),
+    keywords: stores.kw, brand: $('brand').value,
     business_desc: $('business_desc').value,
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
     addon_markets: parseInt($('addon').value||'0',10),
@@ -883,17 +888,21 @@ function restoreQuote(p){
 // push saved inputs back into the visible form fields + pill stores
 function reflectInputs(inp){
   if(!inp) return;
-  const setPills=(store, arr, renderId)=>{ store.length=0; (arr||[]).forEach(x=>store.push(x)); };
-  if(typeof stores!=='undefined'){
-    if(inp.sites){ stores.sites.length=0; inp.sites.forEach(s=>stores.sites.push(s)); }
-    stores.kw.length=0; (inp.keywords||[]).forEach(k=>stores.kw.push(k));
-    stores.geo.length=0; (inp.geo_values||[]).forEach(g=>stores.geo.push(g));
-    if(typeof renderPills==='function'){ try{renderPills();}catch(e){} }
-  }
-  if($('brand')) $('brand').value = inp.brand||'';
+  // repopulate the pill stores, then REDRAW them (the stores alone don't render)
+  const fill=(key, arr)=>{ stores[key].length=0; (arr||[]).forEach(v=>stores[key].push(v)); };
+  fill('sites', inp.sites && inp.sites.length ? inp.sites : (inp.domain?[inp.domain]:[]));
+  fill('kw',    inp.keywords);
+  fill('geo',   inp.geo_values);
+  Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
+
+  if($('brand'))         $('brand').value = inp.brand||'';
   if($('business_desc')) $('business_desc').value = inp.business_desc||'';
-  if($('geo_scope')) $('geo_scope').value = inp.geo_scope||'single_city';
-  if($('markup_live')) {}
+  if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
+  if($('state'))         $('state').value = inp.state||'';
+  if($('addon'))         $('addon').value = (inp.addon_markets!=null?inp.addon_markets:0);
+  if($('markup'))        $('markup').value = (inp.markup_pct!=null?inp.markup_pct:35);
+  // geo scope drives whether the add-on field is shown — re-run that toggle
+  if($('geo_scope')) { try{ $('geo_scope').dispatchEvent(new Event('change')); }catch(e){} }
 }
 
 function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
