@@ -57,7 +57,7 @@ CFG = {
     "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
     "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
-    "zero_ranking_top_n": 50,
+    "zero_ranking_top_n": 20,
     "zero_ranking_frac": 0.10,
     # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
     # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
@@ -794,12 +794,24 @@ def stage3_metrics(head, markets, state):
 # ---------------------------------------------------------------------------
 def _serp_one(kw, domain_dom, markets, state, brand, top_n):
     """One keyword's SERP call. Returns (position_or_None, [paa questions]).
-    Uses depth=top_n (not 100) and a short timeout so one slow lookup can't push
-    the batch past Render's platform request limit and trigger a 502."""
-    depth = max(top_n, 20)
+    Depth tracks top_n (not 100) and the timeout is short, so one slow lookup
+    can't push the batch past the platform request limit. Retries once, because
+    a transient failure would otherwise be recorded as 'Not Found' — which would
+    wrongly inflate the not-ranking percentage that drives pricing."""
+    depth = max(top_n, 10)
     payload = [{"keyword": kw, "location_name": loc_string(markets, state),
                 "language_code": "en", "depth": depth}]
-    data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=25)
+    last_err = None
+    for attempt in range(2):
+        try:
+            data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=20)
+            break
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(1)
+    else:
+        raise last_err
     res = (data["tasks"][0]["result"] or [{}])[0]
     items = res.get("items", []) or []
     pos, paa = None, []
@@ -1235,13 +1247,19 @@ def api_rankings():
                 kw = futs[fut]
                 try:
                     pos, qs = fut.result()
+                    err = False
                 except Exception:
-                    pos, qs = None, []
-                done[kw] = (pos, qs)
+                    # lookup FAILED — record it as unknown, NOT as "Not Found".
+                    # Counting a failed call as not-ranking would inflate the
+                    # zero-ranking percentage and therefore the price.
+                    pos, qs, err = None, [], True
+                done[kw] = (pos, qs, err)
         for kw in batch:
-            pos, qs = done.get(kw, (None, []))
-            results.append({"kw": kw, "pos": pos if pos is not None else "Not Found",
-                            "ranked_top": (pos is not None and pos <= top_n)})
+            pos, qs, err = done.get(kw, (None, [], True))
+            results.append({"kw": kw,
+                            "pos": ("—" if err else (pos if pos is not None else "Not Found")),
+                            "ranked_top": (not err and pos is not None and pos <= top_n),
+                            "error": err})
             paa.extend(qs)
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}."}), 502

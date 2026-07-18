@@ -387,14 +387,17 @@ async function runStep2(){
 }
 
 function step3Html(){
-  const frac=ST.total?Math.round(ST.ranked/ST.total*100):0;
-  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${r.pos==='Not Found'?'nf':''}">${r.pos}</td></tr>`).join('');
+  // Errored lookups are EXCLUDED from the denominator — a failed API call must
+  // not count as "not ranking", since that would inflate the price.
+  const checked = Math.max((ST.total||0) - (ST.errored||0), 0);
+  const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
+  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
   return `
       <h4 class="sec">Step 3 · Rankings</h4>
-      <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch.</div>
+      <div class="why">Checks where the client's site currently ranks (top ${20}) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch.</div>
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
-        — ${ST.ranked}/${ST.total} rank in top 50 (${frac}%)</div>
+        — ${ST.ranked}/${checked} rank in top 20 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`;
 }
@@ -403,8 +406,8 @@ function step3Html(){
 async function runStep3(){
   $('step3').disabled=true;
   const all=ST.kw.all.map(r=>r.kw);
-  const BATCH=4;
-  ST.table=[]; ST.paa=[]; ST.ranked=0; ST.total=all.length;
+  const BATCH=8;
+  ST.table=[]; ST.paa=[]; ST.ranked=0; ST.total=all.length; ST.errored=0;
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
     <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out.</div>
     <div class="calc" id="rkprog">Checking 0/${all.length}…</div>`);
@@ -414,11 +417,12 @@ async function runStep3(){
       const r=await postJSON('/api/rankings',{
         batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
         state:ST.inputs.state, brand:ST.inputs.brand});
-      r.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; });
+      r.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
       ST.paa.push(...r.paa);
       $('rkprog').textContent=`Checking ${Math.min(i+BATCH,all.length)}/${all.length}…`;
     }
-    ST.zero = (ST.ranked/(ST.total||1)) < 0.10;
+    const checkedOk = Math.max(ST.total - ST.errored, 0) || 1;
+    ST.zero = (ST.ranked/checkedOk) < 0.10;
     const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
     ST.longtail=[...ST.kw.long_tail];
     for(const q of ST.paa){ if(ST.longtail.length>=10) break;
@@ -659,7 +663,10 @@ async function runStep4(){
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
   // Brendan #4/#5 inputs: total head-term volume, and % of terms NOT ranking.
   const totalVol = (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
-  const pctNotRanking = ST.total ? Math.round((1 - ST.ranked/ST.total)*100) : 0;
+  // Exclude failed lookups from the denominator — a timed-out SERP call must not
+  // be treated as "not ranking", or a flaky API call would raise the price.
+  const checkedOk = Math.max((ST.total||0) - (ST.errored||0), 0);
+  const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
     const p=await postJSON('/api/price',{
