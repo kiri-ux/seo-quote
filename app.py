@@ -319,6 +319,26 @@ def fetch_site_pages(domain, limit=30):
         return pages[:limit]
 
 
+def fetch_local_volume(terms, markets, state):
+    """Search volume for bare service terms AT THE CLIENT'S MARKET (not national).
+    Uses the Google Ads endpoint because it accepts a location_name string, so we
+    can scope to the actual city/state. National volume would be wildly larger
+    than a local client's real addressable demand. Returns {term_lower: volume}."""
+    if not terms:
+        return {}
+    try:
+        payload = [{"keywords": [t.lower() for t in terms],
+                    "location_name": loc_string(markets, state),
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        task0 = (data.get("tasks") or [{}])[0]
+        items = task0.get("result") or []
+        return {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
+                for it in items}
+    except Exception:
+        return {}
+
+
 def fetch_exact_volume(keywords, markets, state):
     """Exact-match search volume. The Google Ads keywords_for_keywords endpoint
     we use to GENERATE terms returns GROUPED (broad) volumes that merge similar
@@ -431,6 +451,11 @@ RULES:
    Adjust the mix if {max_services} differs, but always include at least one long_tail and at least one ultra.
 4. long_tail means a LOWER-COMPETITION SERVICE — never a question. Do NOT produce phrases starting with how/what/why/when/where.
 5. Prefer the phrasing a customer would actually search.
+6. TIER GUIDANCE — how these tiers are actually assigned in practice (insurance example):
+   - ultra: the core high-demand money terms — "auto insurance", "car insurance", "home insurance", "insurance quotes"
+   - competitive: solid mid-demand services — "homeowners insurance", "renters insurance", "insurance agency", "insurance company"
+   - long_tail: niche or compound product lines with genuinely lower demand — "umbrella insurance", "home and auto insurance"
+   Note that a mainstream service like "renters insurance" is COMPETITIVE, not long tail. Reserve long_tail for genuinely niche lines.
 
 Return ONLY valid JSON, no prose:
 {{"services": [{{"service": "auto insurance", "tier": "ultra"}}, {{"service": "umbrella insurance", "tier": "long_tail"}}]}}"""
@@ -464,11 +489,41 @@ Return ONLY valid JSON, no prose:
         return None
 
 
+def pick_grid_cities(markets, state, limit):
+    """Choose WHICH cities go in the grid when more are supplied than the cap.
+    Taking the first N by input order picks alphabetically-early villages over
+    real metros (e.g. 'Augusta Springs' before 'Fairfax'). Instead, rank the
+    supplied cities by how much search demand they actually carry, using a
+    generic '<city>' population-proxy query, and keep the biggest.
+    Falls back to input order if the lookup fails."""
+    cities = [m.strip() for m in markets if m.strip()]
+    # drop a market that is actually the state name — it isn't a city
+    if state:
+        cities = [c for c in cities if c.lower() != state.strip().lower()]
+    if len(cities) <= limit:
+        return cities
+    try:
+        probe = [f"insurance {c.lower()}" for c in cities][:700]
+        payload = [{"keywords": probe,
+                    "location_name": loc_string(cities, state),
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        items = (data.get("tasks") or [{}])[0].get("result") or []
+        vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
+               for it in items}
+        ranked = sorted(cities,
+                        key=lambda c: vol.get(f"insurance {c.lower()}", 0),
+                        reverse=True)
+        return ranked[:limit]
+    except Exception:
+        return cities[:limit]
+
+
 def build_grid(services, markets, state):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
     city inherits it. Returns {ultra:[], competitive:[], long_tail:[]}."""
-    cities = [m.strip() for m in markets if m.strip()][:CFG["grid_max_cities"]]
+    cities = pick_grid_cities(markets, state, CFG["grid_max_cities"])
     suffix = ""
     if CFG.get("grid_state_suffix") and state:
         suffix = " " + STATE_ABBREV.get(state.strip().lower(), "")
@@ -766,15 +821,17 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                         for i, s in enumerate(seeds[:CFG["grid_max_services"]])]
         g = build_grid(services, markets, state)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
-        # Exact-match volume: geo-modified forms report ~0, so look up the BARE
-        # service term and attribute it to every city row for that service.
+        # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
+        # geo-modified forms report ~0). The same figure is shown on each city
+        # row for that service, so pricing must count it ONCE PER SERVICE — not
+        # once per row — or a 10-city grid would inflate volume 10x.
         svc_names = list(dict.fromkeys([s["service"] for s in services]))
-        exact = fetch_exact_volume(svc_names, markets, state)
-        if exact:
-            for r in full:
-                v = exact.get((r.get("service") or "").lower())
-                if v is not None:
-                    r["volume"] = v
+        vols = fetch_local_volume(svc_names, markets, state)
+        for r in full:
+            v = vols.get((r.get("service") or "").lower())
+            if v is not None:
+                r["volume"] = v
+        service_volume = {s: vols.get(s.lower(), 0) for s in svc_names}
         return {
             "ultra": g["ultra"], "competitive": g["competitive"],
             "long_tail": g["long_tail"],
@@ -785,6 +842,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "site_pages_found": len(site_pages),
             "grid": True,
             "services": services,
+            "service_volume": service_volume,
+            "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
 
     refined = claude_refine_keywords(seeds, markets, brand, domain,
@@ -1372,6 +1431,8 @@ def api_refine():
         "site_pages_found": s1.get("site_pages_found", 0),
         "grid": s1.get("grid", False),
         "services": s1.get("services", []),
+        "service_volume": s1.get("service_volume", {}),
+        "total_volume": s1.get("total_volume", None),
     })
 
 @app.route("/api/metrics", methods=["POST"])

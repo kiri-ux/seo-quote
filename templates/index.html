@@ -678,7 +678,12 @@ async function runStep4(){
   $('step4').disabled=true; $('step4').textContent='Pricing…';
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
   // Brendan #4/#5 inputs: total head-term volume, and % of terms NOT ranking.
-  const totalVol = (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
+  // In grid mode the same service volume appears on every city row, so summing
+  // rows would multiply it by the city count. Use the deduplicated per-service
+  // total the backend computed.
+  const totalVol = (ST.kw && ST.kw.total_volume != null)
+    ? Number(ST.kw.total_volume)
+    : (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
   // Exclude failed lookups from the denominator — a timed-out SERP call must not
   // be treated as "not ranking", or a flaky API call would raise the price.
   const checkedOk = Math.max((ST.total||0) - (ST.errored||0), 0);
