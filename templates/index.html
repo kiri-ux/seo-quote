@@ -361,10 +361,15 @@ function step2Html(m){
   const bs=m.bid_stats, br=m.breaks||[5,15];
   const bidLine = bs
     ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data; breaks at $${br[0]}/$${br[1]})</span></div>`
-    : `<div class="calc nf">no bid data returned for the head terms (low-volume vertical)</div>`;
+    : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
+        <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
+  const marketWarn = (m.n_markets && m.n_markets > 8)
+    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> Only the first one (<code>${m.bid_location||''}</code>) is used as the location for bid and ranking lookups — the rest only widen the keyword crossing. For a whole state, choose <b>Statewide</b> with the state as the single market instead of listing cities.</div>`
+    : '';
   return `
       <h4 class="sec">Step 2 · Competition</h4>
       <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison.</div>
+      ${marketWarn}
       ${bidLine}
       <div class="calc">${m.adder_basis==='cpc'
         ? `median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
@@ -994,6 +999,8 @@ async function doSave(mode){
   const client=($('saveClient').value||'').trim();
   const msg=$('saveMsg');
   if(!name){ msg.innerHTML='<span style="color:#b04a4a">Give the quote a name.</span>'; return; }
+  const btn=$('saveBtn'); const label=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
   const payload=snapshotQuote();
   try{
     let r;
@@ -1004,9 +1011,18 @@ async function doSave(mode){
       CURRENT_QUOTE_ID=r.id;
     }
     CURRENT_QUOTE_NAME=name;
-    msg.innerHTML='<span style="color:#2a7a4a">Saved ✓</span>';
+    const when=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const note = (r && r.unchanged)
+      ? `<span style="color:#2a7a4a">✓ Saved at ${when} — no changes since the last version, so no new history entry.</span>`
+      : `<span style="color:#2a7a4a">✓ ${mode==='update'?'Updated':'Saved'} at ${when}${(r&&r.version_saved)?' — previous version kept in History.':''}</span>`;
+    // re-render FIRST, then write the confirmation (the re-render rebuilds the
+    // row and would otherwise wipe the message immediately).
     renderSaveRow();
-  }catch(e){ msg.innerHTML='<span style="color:#b04a4a">'+e.message+'</span>'; }
+    const m2=$('saveMsg'); if(m2) m2.innerHTML=note;
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent=label; }
+    const m3=$('saveMsg'); if(m3) m3.innerHTML='<span style="color:#b04a4a">'+e.message+'</span>';
+  }
 }
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -1067,9 +1083,13 @@ async function toggleHistory(id){
     box.innerHTML='<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">'+
       vs.map((v,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0">
           <span style="font-size:11.5px">${i===0?'<b>Original</b>':'Edit '+i} · ${money0(v.base)}/${money0(v.intermediate)}/${money0(v.advanced)} <span class="nf">${(v.snapshot_at||'').slice(0,10)}</span></span>
-          <button class="v-load" data-vid="${v.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer">View</button>
+          <span style="display:flex;gap:4px">
+            <button class="v-load" data-vid="${v.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer">View</button>
+            <button class="v-del" data-vid="${v.id}" data-qid="${id}" title="Delete this version" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:3px 7px;border-radius:5px;font-size:11px;cursor:pointer">×</button>
+          </span>
         </div>`).join('')+'</div>';
     box.querySelectorAll('.v-load').forEach(b=>b.onclick=()=>loadVersion(b.dataset.vid, id));
+    box.querySelectorAll('.v-del').forEach(b=>b.onclick=()=>delVersion(b.dataset.vid, b.dataset.qid, box));
   }catch(e){ box.innerHTML='<div class="err">'+e.message+'</div>'; }
 }
 
@@ -1084,6 +1104,15 @@ async function loadVersion(vid, quoteId){
       closeSaved();
     }
   }catch(e){ alert('Could not load version: '+e.message); }
+}
+
+async function delVersion(vid, qid, box){
+  if(!confirm('Delete this history version? The quote itself is not affected.')) return;
+  try{
+    await fetch('/api/quotes/version/'+vid, {method:'DELETE'});
+    box.dataset.open='0';          // force a refresh of the history list
+    await toggleHistory(qid);
+  }catch(e){ alert('Could not delete version: '+e.message); }
 }
 
 async function delQuote(id){

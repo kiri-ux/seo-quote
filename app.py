@@ -732,8 +732,18 @@ def stage3_metrics(head, markets, state):
     payload = [{"keywords": bare_unique,
                 "location_name": loc_string(markets, state),
                 "language_code": "en"}]
-    data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
-    items = (data["tasks"][0]["result"] or [])
+    bid_err = None
+    items = []
+    try:
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        task0 = (data.get("tasks") or [{}])[0]
+        # DataForSEO reports per-task problems in status_code/status_message even
+        # on an HTTP 200, so surface those rather than silently returning nothing.
+        if task0.get("status_code") not in (20000, None):
+            bid_err = f"{task0.get('status_code')}: {task0.get('status_message')}"
+        items = (task0.get("result") or [])
+    except Exception as e:
+        bid_err = str(e)
     bare_bid = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
     bare_cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
     bare_kd, kd_err = fetch_keyword_difficulty(bare_unique, markets, state)
@@ -785,6 +795,10 @@ def stage3_metrics(head, markets, state):
             adder_basis = "cpc"
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
             "flat_adder": flat_adder,
+            "bid_error": bid_err,
+            "bid_location": loc_string(markets, state),
+            "bid_terms_queried": bare_unique[:8],
+            "n_markets": len(markets),
             "median_score": median_score, "bids": bids, "cpc": cpc,
             "bid_stats": bid_stats, "breaks": [lo, hi],
             "kd": kd, "median_kd": median_kd, "kd_error": kd_err}
@@ -1222,6 +1236,10 @@ def api_metrics():
     return jsonify({"adder": m3["adder"], "score": m3["median_score"],
                     "adder_basis": m3.get("adder_basis"), "cpc_used": m3.get("cpc_used"),
                     "flat_adder": m3.get("flat_adder"),
+                    "bid_error": m3.get("bid_error"),
+                    "bid_location": m3.get("bid_location"),
+                    "bid_terms_queried": m3.get("bid_terms_queried"),
+                    "n_markets": m3.get("n_markets"),
                     "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
                     "median_kd": m3.get("median_kd"), "kd_error": m3.get("kd_error"),
                     "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
@@ -1520,12 +1538,22 @@ def api_quotes_update(qid):
     d = request.get_json(force=True)
     payload = d.get("payload") or {}
     name = d.get("name"); client = d.get("client")
-    ok = storage.update_quote(qid, payload,
-                              name=name.strip() if isinstance(name, str) else None,
-                              client=client.strip() if isinstance(client, str) else None)
+    ok, version_saved = storage.update_quote(
+        qid, payload,
+        name=name.strip() if isinstance(name, str) else None,
+        client=client.strip() if isinstance(client, str) else None)
     if not ok:
         return jsonify({"error": "Not found."}), 404
-    return jsonify({"ok": True, "id": qid})
+    return jsonify({"ok": True, "id": qid,
+                    "version_saved": version_saved,
+                    "unchanged": not version_saved})
+
+@app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
+def api_quotes_version_delete(vid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    storage.delete_version(vid)
+    return jsonify({"ok": True})
 
 @app.route("/api/quotes/<int:qid>", methods=["DELETE"])
 def api_quotes_delete(qid):

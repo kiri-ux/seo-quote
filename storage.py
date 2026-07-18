@@ -112,20 +112,29 @@ def save_quote(name, client, payload):
 
 
 def update_quote(quote_id, payload, name=None, client=None):
-    """Update an existing quote IN PLACE, snapshotting the prior version to history
-    first so nothing is ever lost. Returns True if the quote existed."""
+    """Update an existing quote IN PLACE. Snapshots the prior version to history
+    first — but ONLY when the content actually changed, so repeated auto-saves
+    don't fill the history with identical entries.
+    Returns (found, version_saved)."""
     with _conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT payload, base, intermediate, advanced FROM quotes WHERE id=%s",
                     (quote_id,))
         row = cur.fetchone()
         if not row:
-            return False
-        # snapshot the CURRENT (about-to-be-replaced) version to history
-        cur.execute(
-            "INSERT INTO quote_versions (quote_id, payload, base, intermediate, advanced) "
-            "VALUES (%s,%s,%s,%s,%s)",
-            (quote_id, json.dumps(row[0]), row[1], row[2], row[3]))
-        # write the new version in place
+            return False, False
+        old_payload = row[0]
+        # Compare normalized JSON so ordering/whitespace differences don't count.
+        try:
+            changed = json.dumps(old_payload, sort_keys=True) != json.dumps(payload, sort_keys=True)
+        except Exception:
+            changed = True
+        version_saved = False
+        if changed:
+            cur.execute(
+                "INSERT INTO quote_versions (quote_id, payload, base, intermediate, advanced) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (quote_id, json.dumps(old_payload), row[1], row[2], row[3]))
+            version_saved = True
         b, i, a = _tiers(payload)
         sets = ["payload=%s", "base=%s", "intermediate=%s", "advanced=%s", "updated_at=now()"]
         vals = [json.dumps(payload), b, i, a]
@@ -135,6 +144,14 @@ def update_quote(quote_id, payload, name=None, client=None):
             sets.append("client=%s"); vals.append(client)
         vals.append(quote_id)
         cur.execute(f"UPDATE quotes SET {', '.join(sets)} WHERE id=%s", vals)
+        conn.commit()
+        return True, version_saved
+
+
+def delete_version(version_id):
+    """Delete a single history snapshot."""
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM quote_versions WHERE id=%s", (version_id,))
         conn.commit()
         return True
 
