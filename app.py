@@ -101,7 +101,17 @@ CFG = {
     "longtail_prefixes": ["how","what","why","when","where","which","who","best",
                           "affordable","cheap","near","cost","top","is","can","do"],
     "longtail_target": 10,             # how many long-tails to keep in the list
-    "rank_check_cap": 16,              # max keywords sent to the SERP rank check (timeout guard)
+    "rank_check_cap": 60,              # max keywords sent to the SERP rank check
+    # --- GRID MODE (matches Brendan's proposals) -----------------------------
+    # His keyword tables are a systematic SERVICE x CITY grid, with the tier
+    # assigned to the SERVICE (every city inherits it): e.g. "auto insurance" is
+    # Ultra-Competitive in all ten cities, "umbrella insurance" is Long Tail in
+    # all ten. He does NOT use question-style long-tails (2 instances across 18
+    # proposals), so the long-tail tier is just lower-competition services.
+    "grid_mode": True,
+    "grid_max_services": 4,            # services expanded from the seeds
+    "grid_max_cities": 10,             # cities crossed against each service
+    "grid_state_suffix": True,         # "auto insurance fairfax va" vs "... fairfax"
 }
 
 def r50(x):
@@ -370,8 +380,116 @@ Return ONLY the one-sentence description, no preamble."""
     except Exception:
         return ""
 
-def claude_refine_keywords(seeds, markets, brand, domain, candidates, site_terms,
-                           business_desc="", site_pages=None):
+STATE_ABBREV = {
+    "alabama":"al","alaska":"ak","arizona":"az","arkansas":"ar","california":"ca",
+    "colorado":"co","connecticut":"ct","delaware":"de","florida":"fl","georgia":"ga",
+    "hawaii":"hi","idaho":"id","illinois":"il","indiana":"in","iowa":"ia","kansas":"ks",
+    "kentucky":"ky","louisiana":"la","maine":"me","maryland":"md","massachusetts":"ma",
+    "michigan":"mi","minnesota":"mn","mississippi":"ms","missouri":"mo","montana":"mt",
+    "nebraska":"ne","nevada":"nv","new hampshire":"nh","new jersey":"nj","new mexico":"nm",
+    "new york":"ny","north carolina":"nc","north dakota":"nd","ohio":"oh","oklahoma":"ok",
+    "oregon":"or","pennsylvania":"pa","rhode island":"ri","south carolina":"sc",
+    "south dakota":"sd","tennessee":"tn","texas":"tx","utah":"ut","vermont":"vt",
+    "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
+}
+
+def claude_expand_services(seeds, business_desc, site_pages, brand, domain,
+                           candidates, max_services):
+    """Expand the partner's seed terms into the SERVICE list a proposal would
+    target, assigning a competitiveness TIER to each service (not to each
+    keyword). This mirrors how the real proposals are built: 'auto insurance' is
+    Ultra-Competitive in every city, 'umbrella insurance' is Long Tail in every
+    city. Returns [{"service":..., "tier": "ultra"|"competitive"|"long_tail"}]
+    or None on failure (caller falls back to the seeds themselves)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    pages = [p for p in (site_pages or [])][:40]
+    cands = [c.get("keyword", c) if isinstance(c, dict) else c for c in (candidates or [])][:80]
+    prompt = f"""You are an SEO strategist choosing which SERVICES a local business should target in a proposal.
+
+BUSINESS: {business_desc or "(infer from the vertical, website and pages below)"}
+SEED TERMS FROM THE PARTNER: {", ".join(seeds)}
+WEBSITE: {domain or "(none)"}
+BRAND (never include this in a service): {brand or "(none)"}
+
+THEIR ACTUAL WEBSITE PAGES (their real service taxonomy):
+{json.dumps(pages, ensure_ascii=False) if pages else "(none available)"}
+
+KEYWORDS THE SEARCH API RETURNED FOR THIS BUSINESS (evidence of real demand):
+{json.dumps(cands, ensure_ascii=False)}
+
+TASK: choose exactly {max_services} SERVICES this business should target, and assign each a competitiveness tier.
+
+RULES:
+1. A SERVICE is a short, generic service phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". It will be crossed with city names later, so do NOT include any location.
+2. Only services this business actually offers. Exclude anything they don't do.
+3. Spread across tiers so the proposal has all three. Aim for roughly:
+   - 2 "ultra"        (the biggest, most competitive money terms)
+   - 1 "competitive"  (solid mid-competition terms)
+   - 1 "long_tail"    (a genuine but lower-competition service, e.g. a niche product line)
+   Adjust the mix if {max_services} differs, but always include at least one long_tail and at least one ultra.
+4. long_tail means a LOWER-COMPETITION SERVICE — never a question. Do NOT produce phrases starting with how/what/why/when/where.
+5. Prefer the phrasing a customer would actually search.
+
+Return ONLY valid JSON, no prose:
+{{"services": [{{"service": "auto insurance", "tier": "ultra"}}, {{"service": "umbrella insurance", "tier": "long_tail"}}]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 1000, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text").strip()
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+        parsed = json.loads(text.strip())
+        out = []
+        for s in parsed.get("services", []):
+            svc = (s.get("service") or "").strip().lower()
+            tier = (s.get("tier") or "competitive").strip().lower()
+            if tier not in ("ultra", "competitive", "long_tail"):
+                tier = "competitive"
+            if svc:
+                out.append({"service": svc, "tier": tier})
+        return out[:max_services] or None
+    except Exception:
+        return None
+
+
+def build_grid(services, markets, state):
+    """Cross each SERVICE with each CITY, in the proposal format
+    ('auto insurance fairfax va'). The tier comes from the service, so every
+    city inherits it. Returns {ultra:[], competitive:[], long_tail:[]}."""
+    cities = [m.strip() for m in markets if m.strip()][:CFG["grid_max_cities"]]
+    suffix = ""
+    if CFG.get("grid_state_suffix") and state:
+        suffix = " " + STATE_ABBREV.get(state.strip().lower(), "")
+        suffix = suffix.rstrip()
+    buckets = {"ultra": [], "competitive": [], "long_tail": []}
+    for s in services:
+        svc, tier = s["service"], s["tier"]
+        if not cities:                     # nationwide: no crossing
+            buckets[tier].append({"keyword": svc, "volume": 0,
+                                  "src": "grid", "origin": "added", "service": svc})
+            continue
+        for city in cities:
+            c = city.strip().lower()
+            # don't double-append the state if the "city" IS the state
+            sfx = "" if (state and c == state.strip().lower()) else suffix
+            buckets[tier].append({"keyword": f"{svc} {c}{sfx}".strip(),
+                                  "volume": 0, "src": "grid",
+                                  "origin": "added", "service": svc})
+    return buckets
+
+
     """Claude pass over the API-generated candidates: removes junk/garbled/off-topic
     terms (using the business description to exclude irrelevant services), folds in
     site-related opportunities, buckets by difficulty, and tags each term's origin
@@ -635,6 +753,40 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     site_terms = [{"keyword": k} for k in (site_terms_kw or [])]
     site_pages = fetch_site_pages(domain)
     biz = business_desc.strip() if business_desc else ""
+
+    # ---- GRID MODE: build a service x city grid like the real proposals -----
+    if CFG.get("grid_mode"):
+        cands = ultra + competitive + long_tail
+        services = claude_expand_services(seeds, biz, site_pages, brand, domain,
+                                          cands, CFG["grid_max_services"])
+        if not services:
+            # fall back to the partner's seeds, spread across tiers
+            tiers = ["ultra", "ultra", "competitive", "long_tail"]
+            services = [{"service": s.strip().lower(), "tier": tiers[min(i, 3)]}
+                        for i, s in enumerate(seeds[:CFG["grid_max_services"]])]
+        g = build_grid(services, markets, state)
+        full = g["ultra"] + g["competitive"] + g["long_tail"]
+        # Exact-match volume: geo-modified forms report ~0, so look up the BARE
+        # service term and attribute it to every city row for that service.
+        svc_names = list(dict.fromkeys([s["service"] for s in services]))
+        exact = fetch_exact_volume(svc_names, markets, state)
+        if exact:
+            for r in full:
+                v = exact.get((r.get("service") or "").lower())
+                if v is not None:
+                    r["volume"] = v
+        return {
+            "ultra": g["ultra"], "competitive": g["competitive"],
+            "long_tail": g["long_tail"],
+            "head": g["ultra"] + g["competitive"],
+            "all": full,
+            "refined_by_ai": True,
+            "business_desc": biz,
+            "site_pages_found": len(site_pages),
+            "grid": True,
+            "services": services,
+        }
+
     refined = claude_refine_keywords(seeds, markets, brand, domain,
                                      ultra + competitive + long_tail, site_terms,
                                      business_desc=biz, site_pages=site_pages)
@@ -1218,6 +1370,8 @@ def api_refine():
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
+        "grid": s1.get("grid", False),
+        "services": s1.get("services", []),
     })
 
 @app.route("/api/metrics", methods=["POST"])
@@ -1339,6 +1493,10 @@ def api_config_get():
         "addon_market_ratio": CFG["addon_market_ratio"],
         "default_markup_pct": CFG["default_markup_pct"],
         "ultra_bucket_size": CFG["ultra_bucket_size"],
+        "grid_mode": CFG.get("grid_mode", True),
+        "grid_max_services": CFG.get("grid_max_services", 4),
+        "grid_max_cities": CFG.get("grid_max_cities", 10),
+        "grid_state_suffix": CFG.get("grid_state_suffix", True),
         "competitive_bucket_size": CFG["competitive_bucket_size"],
         "longtail_target": CFG["longtail_target"],
     })
@@ -1381,6 +1539,13 @@ def api_config_set():
             CFG["vol_free_below"] = float(d["vol_free_below"])
         if "cpc_adder_enabled" in d:
             CFG["cpc_adder_enabled"] = bool(d["cpc_adder_enabled"])
+        if "grid_mode" in d:
+            CFG["grid_mode"] = bool(d["grid_mode"])
+        if "grid_state_suffix" in d:
+            CFG["grid_state_suffix"] = bool(d["grid_state_suffix"])
+        for key, caster in [("grid_max_services", int), ("grid_max_cities", int)]:
+            if key in d and d[key] not in (None, ""):
+                CFG[key] = caster(d[key])
         for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),
                             ("client_floor", int), ("addon_market_ratio", float),

@@ -322,6 +322,7 @@ function renderStep1(){
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
+    ${kw.grid&&kw.services&&kw.services.length?`<div style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>Grid:</b> ${kw.services.length} services × cities — ${kw.services.map(s=>`${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}</div>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">
       ${kwBucket('Ultra Competitive','ultra')}
@@ -433,10 +434,15 @@ async function runStep3(){
     }
     const checkedOk = Math.max(ST.total - ST.errored, 0) || 1;
     ST.zero = (ST.ranked/checkedOk) < 0.10;
-    const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
+    // Long tail comes from the grid itself (lower-competition services x cities).
+    // The People-Also-Ask harvest is deliberately NOT folded in: it produces
+    // question-style phrases, which the real proposals essentially never use.
     ST.longtail=[...ST.kw.long_tail];
-    for(const q of ST.paa){ if(ST.longtail.length>=10) break;
-      if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
+    if(!ST.kw.grid){
+      const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
+      for(const q of ST.paa){ if(ST.longtail.length>=10) break;
+        if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
+    }
     panel('p3', step3Html());
     $('step4').addEventListener('click', runStep4);
   }catch(e){ panel('p3',`<div class="err">${e.message} (mid-batch — re-click Check rankings to retry)</div>`); $('step3').disabled=false; }
@@ -762,6 +768,11 @@ async function loadConfig(){
   catch(e){ $('cfgFields').innerHTML=`<div class="err">Couldn't load config: ${e.message}</div>`; return; }
   const ga=c.geo_anchor, ca=c.competitive_adder, bb=c.bid_score_breaks;
   $('cfgFields').innerHTML =
+    cfgGroup('Step 1 · keyword grid',
+      `<div class="tierhelp">Builds the keyword list as a SERVICE × CITY grid, matching the real proposals: each service gets a tier and every city inherits it (e.g. "auto insurance fairfax va" is Ultra-Competitive in all cities). Services × cities = total keywords.</div>`+
+      cfgRow('Services','cf_gsvc',c.grid_max_services,'expanded from your seed terms by AI, each assigned a tier')+
+      cfgRow('Max cities','cf_gcity',c.grid_max_cities,'crossed against every service')+
+      cfgRow('State suffix (1/0)','cf_gsfx',c.grid_state_suffix?1:0,'1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"')) +
     cfgGroup('Step 2 · competition (hard cost)',
       `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
       cfgRow('CPC multiplier','cf_cpcmult',c.cpc_adder_mult,'$ of adder per $1 of median CPC (e.g. 3 → a $150 CPC adds $450)')+
@@ -798,6 +809,8 @@ $('cfgApply').addEventListener('click', async()=>{
       non_contiguous_region:v('cf_ga_noncontig'),statewide:v('cf_ga_state'),nationwide:v('cf_ga_nation')},
     competitive_adder:{1:v('cf_add1'),2:v('cf_add2')},
     bid_score_breaks:[v('cf_break1'),v('cf_break2')],
+    grid_max_services:v('cf_gsvc'), grid_max_cities:v('cf_gcity'),
+    grid_state_suffix: (parseFloat(v('cf_gsfx'))?true:false),
     cpc_adder_mult:v('cf_cpcmult'), cpc_adder_cap:v('cf_cpccap'), cpc_adder_free_below:v('cf_cpcfree'),
     zero_ranking_top_n:v('cf_topn'),
     zero_ranking_tiers:readTierRows('cf_zr'),
