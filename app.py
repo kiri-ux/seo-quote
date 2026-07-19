@@ -2030,23 +2030,44 @@ Return ONLY a JSON object mapping every input label to its search phrase or null
 
 class _NavLinkParser(HTMLParser):
     """Collect anchor text from the page, tracking whether each link sits inside
-    a <nav>/<header> element. Menu structure is the signal: businesses list the
-    services they actually sell in their navigation."""
+    menu context. Menu structure is the signal: businesses list the services
+    they actually sell in their navigation. Menu context means a semantic
+    <nav>/<header> OR any element whose class/id contains nav|menu — WordPress
+    themes and page builders routinely skip the semantic tags and ship
+    <div class="menu">/<ul id="main-menu"> instead."""
     _NAV = {"nav", "header"}
+    _MENUISH = re.compile(r"(?:^|[\s_-])(?:nav|menu)(?:$|[\s_-])|nav(?:bar|igation)|menu[-_]", re.I)
     def __init__(self):
         super().__init__(convert_charrefs=True)
+        self._stack = []          # per open tag: True if it opened menu context
         self.nav_depth = 0
         self._in_a = False
         self._href = ""
         self._buf = []
         self.nav_links, self.other_links = [], []
+    _VOID = {"br","img","input","meta","link","hr","area","base","col","embed","source","track","wbr"}
+    def _is_menuish(self, tag, attrs):
+        if tag in self._NAV: return True
+        d = dict(attrs)
+        blob = (d.get("class") or "") + " " + (d.get("id") or "") + " " + (d.get("role") or "")
+        return bool(self._MENUISH.search(blob)) or (d.get("role") or "").lower() == "navigation"
     def handle_starttag(self, tag, attrs):
-        if tag in self._NAV: self.nav_depth += 1
+        if tag in self._VOID:
+            return
+        menuish = self._is_menuish(tag, attrs)
+        self._stack.append((tag, menuish))
+        if menuish: self.nav_depth += 1
         if tag == "a":
             self._in_a = True; self._buf = []
             self._href = (dict(attrs).get("href") or "")
     def handle_endtag(self, tag):
-        if tag in self._NAV and self.nav_depth: self.nav_depth -= 1
+        # pop to the matching open tag (tolerates unclosed tags in the wild)
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                for _t, m in self._stack[i:]:
+                    if m and self.nav_depth: self.nav_depth -= 1
+                del self._stack[i:]
+                break
         if tag == "a" and self._in_a:
             self._in_a = False
             text = " ".join("".join(self._buf).split())
@@ -2069,8 +2090,9 @@ _MENU_GENERIC = {
     "history","our history","our story","leadership","safety","awards",
 }
 _SERVICE_PATH_HINT = re.compile(
-    r"/(services?|markets?|sectors?|industries|what-we-do|capabilities|"
-    r"specialt(?:y|ies)|divisions?|expertise|solutions?)(/|$)", re.I)
+    r"/[a-z0-9-]*(?:services?|markets?|sectors?|industr(?:y|ies)|what-we-do|"
+    r"capabilit(?:y|ies)|specialt(?:y|ies)|divisions?|expertise|solutions?)"
+    r"[a-z0-9-]*(?:/|$)", re.I)
 
 @app.route("/api/site_services", methods=["POST"])
 def api_site_services():
