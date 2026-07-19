@@ -155,11 +155,11 @@
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
 
     <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
-      <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — not needed in adtini</div>
-      <div class="help" style="margin:0 0 9px">In adtini the geos are already validated at line-item submission, so the state is known and the cities are guaranteed real. This block exists only because this standalone demo takes free-text geos.</div>
+      <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Validation UI: demo only — state data: real pipeline input</div>
+      <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
 
-      <label style="margin-top:0">State <span style="font-weight:400;color:var(--muted)">(used for the local keyword suffix + location lookups)</span></label>
-      <div class="help">Keywords are built as "commercial contractor kaukauna <b>wi</b>" — matching how people actually search locally. Leave blank only for Nationwide.</div>
+      <label style="margin-top:0">Fallback state <span style="font-weight:400;color:var(--muted)">(only for cities without a ", ST" tag)</span></label>
+      <div class="help">Cities tagged "Cherry Hill, NJ" carry their own state and ignore this. Untagged cities get this state&#39;s suffix — keywords build as "commercial contractor kaukauna <b>wi</b>", matching how people search locally. Leave blank when every city is tagged, or for Nationwide.</div>
       <select id="state">
         <option value="">— none / nationwide —</option>
         <option>Alabama</option><option>Alaska</option><option>Arizona</option><option>Arkansas</option>
