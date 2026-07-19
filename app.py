@@ -315,36 +315,71 @@ def fetch_site_pages(domain, limit=30):
 
     pages, seen = [], set()
     import re
-    deadline = time.time() + 5          # hard cap: sitemap work gets <= 5s total
-    for sm in (f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml"):
-        if time.time() > deadline:
-            break
+    deadline = time.time() + 8          # hard cap: sitemap work gets <= 8s total
+    UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+
+    # Candidate sitemap locations: what robots.txt declares, plus the standard
+    # and WordPress-native paths. WP >=5.5 ships /wp-sitemap.xml; Yoast uses
+    # /sitemap_index.xml; many themes use /page-sitemap.xml directly.
+    candidates = []
+    try:
+        rr = requests.get(f"https://{dom}/robots.txt", timeout=4, headers=UA)
+        if rr.status_code == 200:
+            candidates += re.findall(r"(?im)^sitemap:\s*(\S+)", rr.text)
+    except Exception:
+        pass
+    candidates += [f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml",
+                   f"https://{dom}/wp-sitemap.xml", f"https://{dom}/page-sitemap.xml"]
+    seen_sm = set()
+
+    def _blogish(url):
+        u = url.lower()
+        return bool(re.search(r"/(blog|news|category|tag|author|20\d\d)/", u))
+
+    for sm in candidates:
+        if sm in seen_sm or time.time() > deadline:
+            continue
+        seen_sm.add(sm)
         try:
-            r = requests.get(sm, timeout=5, headers={"User-Agent": "Mozilla/5.0 (SEO-quote-tool)"})
+            r = requests.get(sm, timeout=5, headers=UA)
             if r.status_code != 200 or "<" not in r.text:
                 continue
             locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", r.text, re.I)
             if locs and all(l.lower().endswith(".xml") for l in locs[:3]):
+                # sitemap INDEX — service pages live in "page" sitemaps, so read
+                # those first; blog-post sitemaps are last resort
+                kids = sorted(locs, key=lambda l: (("page" not in l.lower()),
+                                                   ("post" in l.lower())))
                 child_locs = []
-                for child in locs[:2]:          # at most 2 child sitemaps
+                for child in kids[:4]:
                     if time.time() > deadline:
                         break
                     try:
-                        cr = requests.get(child, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
+                        cr = requests.get(child, timeout=4, headers=UA)
                         child_locs += re.findall(r"<loc>\s*(.*?)\s*</loc>", cr.text, re.I)
                     except Exception:
                         pass
                 locs = child_locs or locs
-            for url in locs:
+            # shallow, non-blog URLs first — service pages are shallow; posts are
+            # deep or dated. Service-path hints float to the top.
+            def _rank(u):
+                depth = u.rstrip("/").count("/") - 2
+                hinted = bool(_SERVICE_PATH_HINT.search(u)) if "_SERVICE_PATH_HINT" in globals() else False
+                return (_blogish(u), not hinted, depth)
+            for url in sorted(locs, key=_rank):
+                if _blogish(url) and len(pages) >= 5:
+                    continue
                 t = slug_to_topic(url)
                 if t and t.lower() not in seen:
                     seen.add(t.lower()); pages.append(t)
                 if len(pages) >= limit:
                     break
-            if pages:
+            if len(pages) >= 3:
                 return pages[:limit]
         except Exception:
             continue
+    if pages:
+        return pages[:limit]
 
     # On-Page fallback only if we have time budget left
     if time.time() > deadline:
@@ -2103,12 +2138,28 @@ def api_site_services():
     dom = re.sub(r"^https?://", "", (d.get("domain") or "").strip()).strip("/")
     if not dom:
         return jsonify({"error": "Add the client website first."}), 400
-    try:
-        r = requests.get(f"https://{dom}", timeout=12, allow_redirects=True,
-                         headers={"User-Agent": "Mozilla/5.0 (compatible; adtini-seo-quote/1.0)"})
-        html = r.text[:800_000]
-    except Exception as e:
-        return jsonify({"error": f"Couldn't fetch the site: {e}"}), 502
+    _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+    html = ""
+    fetch_err = None
+    # Some servers hand bots a stub page the browser never sees; a real browser
+    # UA plus the www variant recovers most of those.
+    for url in (f"https://{dom}", f"https://www.{dom}"):
+        try:
+            r = requests.get(url, timeout=12, allow_redirects=True,
+                             headers={"User-Agent": _BROWSER_UA,
+                                      "Accept": "text/html,application/xhtml+xml"})
+            candidate = r.text[:800_000]
+            # a real homepage has links; a block/challenge stub usually doesn't
+            if candidate.lower().count("<a") >= 5:
+                html = candidate
+                break
+            if not html:
+                html = candidate
+        except Exception as e:
+            fetch_err = e
+    if not html:
+        return jsonify({"error": f"Couldn't fetch the site: {fetch_err}"}), 502
     p = _NavLinkParser()
     try:
         p.feed(html)

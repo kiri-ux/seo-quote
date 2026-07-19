@@ -22,6 +22,15 @@
   .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
   label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
   .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
+  /* helper text collapsed behind an i-icon: hover (or tap) to reveal */
+  .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
+  .tipicon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    border-radius:50%;border:1px solid var(--atlas);color:var(--atlas);font-size:10.5px;font-weight:700;
+    font-style:normal;cursor:help;user-select:none;background:#fff;line-height:1}
+  .tipwrap .help{display:none;position:absolute;left:-10px;top:20px;z-index:60;width:330px;max-width:72vw;
+    background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
+    padding:9px 12px;margin:0;font-size:12px;color:var(--muted);white-space:normal;text-transform:none;letter-spacing:0}
+  .tipwrap:hover .help,.tipwrap.open .help{display:block}
   .tierhelp{font-size:12px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
   .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
   .tiertext{font-size:13px;color:#333}
@@ -1512,6 +1521,29 @@ async function delQuote(id){
     loadSavedList($('savedSearch').value);
   }catch(e){ alert('Could not delete: '+e.message); }
 }
+
+// ---- collapse helper text behind i-icons ----
+// Every .help block that follows a label folds into an (i) tooltip inside that
+// label — hover to read, tap to toggle on touch. Markup inside the help text is
+// preserved. Runs once on load; content rendered later (quote panels) is
+// untouched, since explanations there ARE the content.
+(function collapseHelp(){
+  document.querySelectorAll('.card label, .card > label, label').forEach(lbl=>{
+    let n=lbl.nextElementSibling;
+    if(!n || !n.classList || !n.classList.contains('help')) return;
+    if(lbl.closest('#out')||lbl.closest('#savedPanel')) return;   // leave quote output alone
+    const wrap=document.createElement('span'); wrap.className='tipwrap';
+    const icon=document.createElement('i'); icon.className='tipicon'; icon.textContent='i';
+    icon.setAttribute('aria-label','More info'); icon.setAttribute('tabindex','0');
+    wrap.appendChild(icon);
+    wrap.appendChild(n);                       // moves the .help div inside the tip
+    lbl.appendChild(wrap);
+    // touch / keyboard toggle; click-away closes
+    icon.addEventListener('click',e=>{e.stopPropagation(); wrap.classList.toggle('open');});
+    icon.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();wrap.classList.toggle('open');} });
+  });
+  document.addEventListener('click',()=>document.querySelectorAll('.tipwrap.open').forEach(w=>w.classList.remove('open')));
+})();
 </script>
 </body>
 </html>
