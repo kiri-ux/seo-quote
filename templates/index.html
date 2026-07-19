@@ -572,8 +572,72 @@ function finishStep3(){
   const order=new Map(ST.kw.all.map((r,i)=>[r.kw,i]));
   ST.table.sort((a,b)=>(order.get(a.kw)??999)-(order.get(b.kw)??999));
   panel('p3', step3Html());
+  panel('p3b', focusHtml());
   if($('retryFailed')) $('retryFailed').onclick=()=>runStep3(true);
   if($('step4')) $('step4').onclick = ()=>runStep4();
+}
+
+// ---------- RECOMMENDED FOCUS ----------
+// Synthesize demand (volume) x opportunity (current rank) x value (CPC) into a
+// per-SERVICE priority so a human can see where the SEO budget works hardest.
+// Rank logic: 4-20 = striking distance (SEO moves these fastest), 21-50 = mid,
+// Not Found = long grind, 1-3 = already won (defend, little incremental gain).
+function _bareService(kw){
+  let k=kw.toLowerCase().trim();
+  const st=(ST.inputs&&ST.inputs.state||'').toLowerCase();
+  const AB={'alabama':'al','alaska':'ak','arizona':'az','arkansas':'ar','california':'ca','colorado':'co','connecticut':'ct','delaware':'de','florida':'fl','georgia':'ga','hawaii':'hi','idaho':'id','illinois':'il','indiana':'in','iowa':'ia','kansas':'ks','kentucky':'ky','louisiana':'la','maine':'me','maryland':'md','massachusetts':'ma','michigan':'mi','minnesota':'mn','mississippi':'ms','missouri':'mo','montana':'mt','nebraska':'ne','nevada':'nv','new hampshire':'nh','new jersey':'nj','new mexico':'nm','new york':'ny','north carolina':'nc','north dakota':'nd','ohio':'oh','oklahoma':'ok','oregon':'or','pennsylvania':'pa','rhode island':'ri','south carolina':'sc','south dakota':'sd','tennessee':'tn','texas':'tx','utah':'ut','vermont':'vt','virginia':'va','washington':'wa','west virginia':'wv','wisconsin':'wi','wyoming':'wy'};
+  const ab=AB[st]||'';
+  if(ab && k.endsWith(' '+ab)) k=k.slice(0,-(ab.length+1)).trim();
+  const geos=(ST.inputs&&ST.inputs.geo_values||[]).slice().sort((a,b)=>b.length-a.length);
+  for(const g of geos){ const gl=g.toLowerCase(); if(k.endsWith(' '+gl)){k=k.slice(0,-(gl.length+1)).trim();break;} }
+  return k;
+}
+function computeFocus(){
+  const volOf=new Map(ST.kw.all.map(r=>[r.kw,r.vol||0]));
+  const posOf=new Map(ST.table.map(r=>[r.kw, r.pos]));
+  const svc={};
+  for(const r of ST.kw.all){
+    const b=_bareService(r.kw);
+    const s=svc[b]||(svc[b]={service:b, vol:0, terms:0, strike:0, won:0, nf:0, mid:0, bestPos:null, cpc:0});
+    s.terms++; s.vol+=(r.vol||0);
+    const p=posOf.get(r.kw);
+    const n=(typeof p==='number')?p:(/^\d+$/.test(String(p))?parseInt(p,10):null);
+    if(n!=null){
+      if(n<=3) s.won++; else if(n<=20) s.strike++; else if(n<=50) s.mid++;
+      if(s.bestPos==null||n<s.bestPos) s.bestPos=n;
+    }else if(p==='Not Found'){ s.nf++; }   // '—' (failed lookup) counts nowhere
+    const c=(ST.cpc&&(ST.cpc[r.kw]||ST.cpc[b]))||0; if(c>s.cpc)s.cpc=c;
+  }
+  const rows=Object.values(svc);
+  for(const s of rows){
+    // opportunity weight: striking-distance terms dominate; long-grind and
+    // already-won contribute less; scale by demand and click value.
+    const oppTerms = s.strike*1.0 + s.mid*0.6 + s.nf*0.45 + s.won*0.2;
+    const perTerm = s.terms? oppTerms/s.terms : 0;
+    s.score = Math.round(s.vol * perTerm * (1 + Math.min(s.cpc,40)/20));
+    s.tag = s.strike? 'striking distance' : s.won&&!s.nf? 'defend #1s' : s.nf===s.terms? 'from scratch' : 'mixed';
+  }
+  rows.sort((a,b)=>b.score-a.score);
+  return rows;
+}
+function focusHtml(){
+  const rows=computeFocus();
+  if(!rows.length) return '';
+  const top=rows.slice(0,6);
+  const li=top.map((s,i)=>{
+    const bits=[];
+    if(s.strike) bits.push(`<b>${s.strike}</b> in striking distance (pos 4–20)`);
+    if(s.won) bits.push(`${s.won} already top-3`);
+    if(s.mid) bits.push(`${s.mid} on pages 3–5`);
+    if(s.nf) bits.push(`${s.nf} not found`);
+    return `<tr><td style="padding:4px 10px 4px 0;white-space:nowrap"><b>${i+1}. ${s.service}</b></td>
+      <td style="padding:4px 10px 4px 0;text-align:right">${(s.vol||0).toLocaleString()}/mo</td>
+      <td style="padding:4px 10px 4px 0">${s.tag}</td>
+      <td style="padding:4px 0" class="nf">${bits.join(' · ')||'—'}${s.cpc?` · CPC ~$${s.cpc.toFixed(0)}`:''}</td></tr>`;
+  }).join('');
+  return `<h4 class="sec">Recommended focus <span class="nf">(demand × rank opportunity × click value)</span></h4>
+  <div class="why">Positions 4–20 are where SEO pays back fastest — real demand, already on Google's radar, one push from page 1. Terms already at #1–3 need defending, not budget; "not found" terms are the long build. Sanity-check against what work the client actually <i>wants</i> more of — the formula can't know that.</div>
+  <table style="font-size:12.5px;border-collapse:collapse">${li}</table>`;
 }
 
 // ---------- STEP 4 ----------
