@@ -108,6 +108,9 @@
     <label>Keyword / Vertical Focus</label>
     <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
+    <button id="siteSvcBtn" type="button" style="margin-top:7px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button>
+    <span class="nf" style="font-size:11.5px;margin-left:6px">reads the client site's navigation — menu items are usually their service list</span>
+    <div id="siteSvcOut" style="margin-top:7px"></div>
 
     <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
     <input type="text" id="brand" placeholder="VersAbility">
@@ -214,13 +217,14 @@ function wirePills(key, inputId){
       const el=document.createElement('span');
       el.className='pill'+(key==='geo'?' geo-pill':'');
       el.innerHTML=`${v} <b data-i="${i}">×</b>`;
-      el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();};
+      el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
       box.insertBefore(el,input);
     });
   }
   PILL_RENDER[key] = render;
   function commit(){
     const parts=input.value.split(',').map(s=>s.trim()).filter(Boolean);
+    if(parts.length){ try{scheduleAutoSave();}catch(e){} }
     parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
     input.value=''; render();
   }
@@ -232,6 +236,39 @@ function wirePills(key, inputId){
   box.addEventListener('click',()=>input.focus());
 }
 wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in');
+
+// ---- suggest services from the client site's nav menu ----
+document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
+  document.getElementById('sites_in').dispatchEvent(new Event('blur'));
+  const btn=document.getElementById('siteSvcBtn'), out=document.getElementById('siteSvcOut');
+  const dom=stores.sites[0];
+  if(!dom){ out.innerHTML='<div class="nf" style="font-size:12px">Add the client website above first.</div>'; return; }
+  btn.disabled=true; btn.textContent='Reading site menu…';
+  out.innerHTML='';
+  try{
+    const res=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:dom})});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
+    if(!(data.services||[]).length){
+      out.innerHTML='<div class="nf" style="font-size:12px">No menu items found — the site may build its nav with JavaScript. Add seeds by hand.</div>';
+      return;
+    }
+    const chips=data.services.map((s,i)=>
+      `<span class="svc-chip" data-label="${s.label.replace(/"/g,'&quot;')}" title="${s.service_path?'from a services/markets page link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${s.label}</span>`).join('');
+    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Click to add as a seed — ★ came from a services/markets link (strongest signal). Edit freely; these cross with your cities like any other seed.</div>${chips}`;
+    out.querySelectorAll('.svc-chip').forEach(ch=>{
+      ch.onclick=()=>{
+        const v=ch.getAttribute('data-label').toLowerCase();
+        if(!stores.kw.includes(v)){ stores.kw.push(v); PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} }
+        ch.style.opacity=.35; ch.style.pointerEvents='none';
+      };
+    });
+  }catch(e){
+    out.innerHTML=`<div class="err" style="font-size:12px">${e.message}</div>`;
+  }finally{
+    btn.disabled=false; btn.textContent='✦ Suggest from site menu';
+  }
+});
 
 // ---- toggle ----
 const pastseo=document.getElementById('pastseo');
@@ -949,9 +986,19 @@ function renderSaveStatusBar(){
 
 // Build a full, restorable snapshot of the current quote.
 function snapshotQuote(){
+  // Overlay LIVE pill stores + form values onto the captured inputs. After a
+  // saved quote is loaded, ST.inputs points at the parsed snapshot — decoupled
+  // from the pill arrays — so an edited pill (e.g. fixing a city's spelling)
+  // would otherwise never reach the next save.
+  const liveInputs = ST.inputs ? Object.assign({}, ST.inputs, {
+    sites: stores.sites.slice(), domain: stores.sites[0]||'',
+    keywords: stores.kw.slice(), geo_values: stores.geo.slice(),
+    state: $('state') ? $('state').value : (ST.inputs.state||''),
+    geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
+  }) : ST.inputs;
   return {
     schema: 1,
-    inputs: ST.inputs, kw: ST.kw, adder: ST.adder, score: ST.score,
+    inputs: liveInputs, kw: ST.kw, adder: ST.adder, score: ST.score,
     adder_basis: ST.adder_basis, cpc_used: ST.cpc_used,
     table: ST.table, paa: ST.paa, ranked: ST.ranked, total: ST.total,
     zero: ST.zero, longtail: ST.longtail, cpc: ST.cpc, kd: ST.kd,

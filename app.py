@@ -15,8 +15,9 @@ Local run:
     DFS_LOGIN=... DFS_PASSWORD=... python app.py
     -> http://localhost:5000
 """
-import os, json, base64, statistics, time
+import os, json, base64, statistics, time, re
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
 import requests
 from flask import Flask, render_template, request, jsonify
 import storage
@@ -1922,6 +1923,100 @@ def api_validate_geo():
         return jsonify({"state": state, "results": validate_cities(cities, state)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+class _NavLinkParser(HTMLParser):
+    """Collect anchor text from the page, tracking whether each link sits inside
+    a <nav>/<header> element. Menu structure is the signal: businesses list the
+    services they actually sell in their navigation."""
+    _NAV = {"nav", "header"}
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.nav_depth = 0
+        self._in_a = False
+        self._href = ""
+        self._buf = []
+        self.nav_links, self.other_links = [], []
+    def handle_starttag(self, tag, attrs):
+        if tag in self._NAV: self.nav_depth += 1
+        if tag == "a":
+            self._in_a = True; self._buf = []
+            self._href = (dict(attrs).get("href") or "")
+    def handle_endtag(self, tag):
+        if tag in self._NAV and self.nav_depth: self.nav_depth -= 1
+        if tag == "a" and self._in_a:
+            self._in_a = False
+            text = " ".join("".join(self._buf).split())
+            rec = (text, self._href)
+            (self.nav_links if self.nav_depth else self.other_links).append(rec)
+    def handle_data(self, data):
+        if self._in_a: self._buf.append(data)
+
+_MENU_GENERIC = {
+    "home","about","about us","contact","contact us","blog","news","careers",
+    "gallery","portfolio","testimonials","reviews","faq","faqs","privacy policy",
+    "privacy","terms","terms of use","team","our team","meet the team","locations",
+    "location","sitemap","login","log in","search","services","our services",
+    "projects","our projects","our work","work","resources","get a quote",
+    "request a quote","free quote","free estimate","get started","learn more",
+    "read more","view all","see all","menu","español","facebook","instagram",
+    "linkedin","twitter","youtube","x",
+}
+_SERVICE_PATH_HINT = re.compile(
+    r"/(services?|markets?|sectors?|industries|what-we-do|capabilities|"
+    r"specialt(?:y|ies)|divisions?|expertise|solutions?)(/|$)", re.I)
+
+@app.route("/api/site_services", methods=["POST"])
+def api_site_services():
+    """Parse the client site's navigation into candidate service terms. Menu
+    items are how the business describes what it sells — often a better seed
+    list than anything a partner types in freehand."""
+    d = request.get_json(force=True) or {}
+    dom = re.sub(r"^https?://", "", (d.get("domain") or "").strip()).strip("/")
+    if not dom:
+        return jsonify({"error": "Add the client website first."}), 400
+    try:
+        r = requests.get(f"https://{dom}", timeout=12, allow_redirects=True,
+                         headers={"User-Agent": "Mozilla/5.0 (compatible; adtini-seo-quote/1.0)"})
+        html = r.text[:800_000]
+    except Exception as e:
+        return jsonify({"error": f"Couldn't fetch the site: {e}"}), 502
+    p = _NavLinkParser()
+    try:
+        p.feed(html)
+    except Exception:
+        pass
+
+    def _clean(t):
+        t = re.sub(r"[»›→▸▾▼+]+$", "", t).strip()
+        return t
+    def _keep(t, href, require_hint):
+        tl = t.lower().strip()
+        if not tl or tl in _MENU_GENERIC: return False
+        if len(tl) > 48 or len(tl.split()) > 6: return False
+        if not re.search(r"[a-z]", tl): return False
+        if re.search(r"\d{3}", tl): return False          # phone numbers
+        if require_hint and not _SERVICE_PATH_HINT.search(href or ""): return False
+        return True
+
+    out, seen = [], set()
+    # Pass 1 — links inside <nav>/<header>. Pass 2 — links anywhere on the page
+    # whose URL path looks service-ish (/services/, /markets/, /industries/...),
+    # which catches sites that render menus without semantic nav tags.
+    for links, need_hint, src in ((p.nav_links, False, "menu"),
+                                  (p.other_links, True, "page")):
+        for text, href in links:
+            t = _clean(text)
+            if not _keep(t, href, need_hint): continue
+            key = t.lower()
+            if key in seen: continue
+            seen.add(key)
+            hinted = bool(_SERVICE_PATH_HINT.search(href or ""))
+            out.append({"label": t, "source": src, "service_path": hinted})
+    # service-path links first (strongest signal), then menu order
+    out.sort(key=lambda x: (not x["service_path"], x["source"] != "menu"))
+    return jsonify({"domain": dom, "services": out[:40],
+                    "n_nav_links": len(p.nav_links)})
 
 
 @app.route("/api/quotes/status")
