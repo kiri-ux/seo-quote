@@ -2186,6 +2186,13 @@ def review_page(token):
     switches to read-only review mode."""
     return render_template("index.html")
 
+@app.route("/q/<int:qid>")
+def edit_link_page(qid):
+    """Edit deep-link: opens the tool with this saved quote loaded, ready to
+    revise. Version history makes collaborative edits safe — every save
+    snapshots the prior state."""
+    return render_template("index.html")
+
 @app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
 def api_quotes_version_delete(vid):
     if not storage.enabled():

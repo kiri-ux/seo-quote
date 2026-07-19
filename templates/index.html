@@ -1090,6 +1090,11 @@ async function initReviewMode(){
   }
 }
 
+// Edit deep-links: /q/<id> opens that saved quote ready to edit. Every save
+// still snapshots the prior version, so a collaborator's revisions are always
+// recoverable from History.
+const EDIT_QUOTE_ID = (location.pathname.match(/^\/q\/(\d+)/)||[])[1] || null;
+
 let SAVE_DETAIL = '';
 (async function initSaved(){
   if(REVIEW_MODE){ await initReviewMode(); return; }
@@ -1099,6 +1104,13 @@ let SAVE_DETAIL = '';
     SAVE_DETAIL = s.detail || '';
   }catch(e){ SAVE_ENABLED=false; SAVE_DETAIL='Could not reach the status endpoint.'; }
   renderSaveStatusBar();
+  if(EDIT_QUOTE_ID && SAVE_ENABLED){
+    await openQuote(EDIT_QUOTE_ID);
+    const bar=$('saveStatusBar');
+    if(bar && CURRENT_QUOTE_ID){
+      bar.innerHTML='✓ Opened “'+escapeHtml(CURRENT_QUOTE_NAME)+'” from a shared edit link — changes auto-save, and every save keeps the prior version in History.';
+    }
+  }
 })();
 
 function renderSaveStatusBar(){
@@ -1316,13 +1328,16 @@ function renderSaveRow(){
   if($('saveNewBtn')) $('saveNewBtn').onclick=()=>doSave('new');
   if($('shareBtn')) $('shareBtn').onclick=async()=>{
     const msg=$('saveMsg');
+    const editUrl=location.origin+'/q/'+CURRENT_QUOTE_ID;
     try{
       const r=await postJSON(`/api/quotes/${CURRENT_QUOTE_ID}/share`,{});
       let copied=false;
-      try{ await navigator.clipboard.writeText(r.url); copied=true; }catch(e){}
-      msg.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:7px 11px;border-radius:8px">
-        ${copied?'✓ Review link copied to clipboard':'Review link'} — read-only, latest saved version:<br>
-        <input type="text" readonly value="${r.url}" onclick="this.select()" style="width:100%;margin-top:5px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace"></div>`;
+      try{ await navigator.clipboard.writeText(editUrl); copied=true; }catch(e){}
+      msg.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:8px 11px;border-radius:8px;font-size:12px">
+        <b>Edit link</b> ${copied?'(copied)':''} — opens this quote ready to revise; every save keeps the prior version in History:<br>
+        <input type="text" readonly value="${editUrl}" onclick="this.select()" style="width:100%;margin:4px 0 8px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace">
+        <b>Read-only link</b> — safe to send when it should be looked at, not touched:<br>
+        <input type="text" readonly value="${r.url}" onclick="this.select()" style="width:100%;margin-top:4px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace"></div>`;
     }catch(e){ msg.innerHTML=`<div class="err">${e.message}</div>`; }
   };
 }
