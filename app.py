@@ -1,1260 +1,1998 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>adtini · SEO Quote Tool</title>
-<style>
-  :root{
-    --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
-    --parchment:#F6F1E7; --ink:#1a2231; --muted:#6b7686; --line:#dfe4ec;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:var(--parchment);color:var(--ink);line-height:1.5}
-  header{background:var(--atlas);color:#fff;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
-  header span{opacity:.7;font-size:13px}
-  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-  @media(max-width:840px){.grid{grid-template-columns:1fr}}
-  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px}
-  .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
-  label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
-  .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
-  .tierhelp{font-size:12px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
-  .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
-  .tiertext{font-size:13px;color:#333}
-  .tierin{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;
-    font-size:13px;font-family:inherit;text-align:right}
-  .tierin-sm{width:60px}
-  input[type=text],textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);
-    border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
-  textarea{min-height:58px;resize:vertical}
-  .pillbox{display:flex;flex-wrap:wrap;gap:6px;padding:7px;border:1px solid var(--line);
-    border-radius:8px;background:#fff;min-height:42px;align-items:center;cursor:text}
-  .pillbox input{border:none;outline:none;flex:1;min-width:120px;padding:4px;font-size:14px}
-  .pill{background:var(--velocity);color:#fff;padding:3px 9px;border-radius:20px;font-size:12.5px;
-    display:inline-flex;align-items:center;gap:6px}
-  .pill b{cursor:pointer;opacity:.8;font-weight:700}
-  .geo-pill{background:var(--atlas)}
-  .toggle-row{display:flex;align-items:center;gap:10px;margin-top:8px}
-  .switch{position:relative;width:44px;height:24px;flex:none}
-  .switch input{opacity:0;width:0;height:0}
-  .slider{position:absolute;inset:0;background:#c7cedb;border-radius:24px;transition:.2s;cursor:pointer}
-  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
-  .switch input:checked + .slider{background:var(--velocity)}
-  .switch input:checked + .slider:before{transform:translateX(20px)}
-  .btn{margin-top:22px;width:100%;background:var(--gold);color:#3a2c08;border:none;padding:13px;
-    border-radius:9px;font-size:15px;font-weight:700;cursor:pointer}
-  .btn:disabled{opacity:.55;cursor:wait}
-  .hidden{display:none}
-  /* results */
-  #out{margin-top:24px}
-  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:6px 0 20px}
-  .tier{border:1px solid var(--line);border-radius:11px;padding:18px;text-align:center;background:#fff}
-  .tier.mid{border-color:var(--velocity);box-shadow:0 0 0 2px rgba(55,138,221,.15)}
-  .tier .name{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  .tier .price{font-size:26px;font-weight:700;color:var(--atlas);margin:6px 0 2px}
-  .tier .mo{font-size:12px;color:var(--muted)}
-  .calc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13.5px;margin-bottom:16px}
-  .calc code{background:var(--parchment);padding:1px 6px;border-radius:5px}
-  .kwcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:13px}
-  @media(max-width:700px){.kwcols{grid-template-columns:1fr}}
-  .kwcols h4{margin:0 0 6px;font-size:12px;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px}
-  .kwcols ul{margin:0;padding-left:16px} .kwcols li{margin:2px 0}
-  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase}
-  .nf{color:var(--muted)}
-  .flag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:600}
-  .flag.on{background:#fde8c8;color:#7a5410} .flag.off{background:#e3eee3;color:#2f6b34}
-  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
-  .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
-  .paa{font-size:12.5px;color:var(--ink)} .paa li{margin:2px 0}
-  .sec{margin:18px 0 8px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .why{font-size:12.5px;color:var(--muted);margin:-2px 0 10px;line-height:1.45;border-left:2px solid var(--line);padding-left:10px}
-</style>
-</head>
-<body>
-<header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO</span></h1>
-  <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
-</header>
+#!/usr/bin/env python3
+"""
+SSG / adtini — SEO Quote Tool (Render-ready Flask app)
 
-<!-- Saved quotes drawer -->
-<div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:50;overflow-y:auto;padding:20px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <h2 style="margin:0;color:var(--atlas);font-size:15px">Saved quotes</h2>
-    <button id="savedClose" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">×</button>
-  </div>
-  <input type="text" id="savedSearch" placeholder="Search by name or client…" style="width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:12px">
-  <div id="savedList"></div>
-</div>
-<div id="savedBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:40"></div>
+Partner fills the product form -> backend runs the keyword pull, rank check,
+and pricing formula against DataForSEO -> quote renders on screen with the full
+staged breakdown for a human to review before sending.
 
-<div class="wrap">
-<div id="saveStatusBar" style="margin-bottom:14px;padding:9px 14px;border-radius:9px;font-size:12.5px;display:flex;align-items:center;gap:8px">Checking save status…</div>
-<div class="grid">
-  <!-- ============ FORM ============ -->
-  <div class="card">
-    <h2>Product Details</h2>
+ENV (set in Render dashboard -> Environment):
+    DFS_LOGIN      DataForSEO account email
+    DFS_PASSWORD   DataForSEO API password (from dashboard, not portal login)
 
-    <label>Website(s) needing SEO</label>
-    <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
-    <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
+Local run:
+    pip install -r requirements.txt
+    DFS_LOGIN=... DFS_PASSWORD=... python app.py
+    -> http://localhost:5000
+"""
+import os, json, base64, statistics, time
+from concurrent.futures import ThreadPoolExecutor
+import requests
+from flask import Flask, render_template, request, jsonify
+import storage
 
-    <label>Keyword / Vertical Focus</label>
-    <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
-    <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
+app = Flask(__name__)
+BASE = "https://api.dataforseo.com/v3"
 
-    <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
-    <input type="text" id="brand" placeholder="VersAbility">
-
-    <label>Business description <span style="font-weight:400;color:var(--muted)">(optional — helps AI exclude off-target terms)</span></label>
-    <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
-    <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
-
-    <label>Has done SEO in the past</label>
-    <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
-    <div class="toggle-row">
-      <span class="switch"><input type="checkbox" id="pastseo"><span class="slider"></span></span>
-      <span id="pastseo_lbl">No</span>
-    </div>
-    <div id="pastseo_detail_wrap" class="hidden">
-      <label>Past SEO details</label>
-      <div class="help">What went right or wrong in their past SEO campaigns?</div>
-      <textarea id="pastseo_detail"></textarea>
-    </div>
-
-    <label>Geo scope</label>
-    <div class="help">Where the client needs to be <i>found</i> in search — not necessarily where they're located. Usually matches their service area; when it doesn't, go with where customers search (a one-city tourism bureau targeting "things to do in kansas" is Statewide, not Single City).</div>
-    <select id="geo_scope">
-      <option value="single_city">Single City</option>
-      <option value="contiguous_region">Contiguous region</option>
-      <option value="non_contiguous_region">Non-contiguous region</option>
-      <option value="statewide">Statewide</option>
-      <option value="nationwide">Nationwide</option>
-    </select>
-
-    <label>Geographic targeting areas</label>
-    <div class="help">Cities / regions / state the keywords should target. At least one entry required (except Nationwide). Type and press comma/Enter.</div>
-    <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
-
-    <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
-      <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — not needed in adtini</div>
-      <div class="help" style="margin:0 0 9px">In adtini the geos are already validated at line-item submission, so the state is known and the cities are guaranteed real. This block exists only because this standalone demo takes free-text geos.</div>
-
-      <label style="margin-top:0">State <span style="font-weight:400;color:var(--muted)">(used for the local keyword suffix + location lookups)</span></label>
-      <div class="help">Keywords are built as "commercial contractor kaukauna <b>wi</b>" — matching how people actually search locally. Leave blank only for Nationwide.</div>
-      <select id="state">
-        <option value="">— none / nationwide —</option>
-        <option>Alabama</option><option>Alaska</option><option>Arizona</option><option>Arkansas</option>
-        <option>California</option><option>Colorado</option><option>Connecticut</option><option>Delaware</option>
-        <option>Florida</option><option>Georgia</option><option>Hawaii</option><option>Idaho</option>
-        <option>Illinois</option><option>Indiana</option><option>Iowa</option><option>Kansas</option>
-        <option>Kentucky</option><option>Louisiana</option><option>Maine</option><option>Maryland</option>
-        <option>Massachusetts</option><option>Michigan</option><option>Minnesota</option><option>Mississippi</option>
-        <option>Missouri</option><option>Montana</option><option>Nebraska</option><option>Nevada</option>
-        <option>New Hampshire</option><option>New Jersey</option><option>New Mexico</option><option>New York</option>
-        <option>North Carolina</option><option>North Dakota</option><option>Ohio</option><option>Oklahoma</option>
-        <option>Oregon</option><option>Pennsylvania</option><option>Rhode Island</option><option>South Carolina</option>
-        <option>South Dakota</option><option>Tennessee</option><option>Texas</option><option>Utah</option>
-        <option>Vermont</option><option>Virginia</option><option>Washington</option><option>West Virginia</option>
-        <option>Wisconsin</option><option>Wyoming</option>
-      </select>
-
-      <button id="checkGeo" style="margin-top:8px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✓ Check cities</button>
-      <div id="geoCheck" style="margin-top:8px"></div>
-    </div>
-
-    <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
-    <input type="text" id="addon" placeholder="0" value="0">
-
-    <label>Client markup <span style="font-weight:400;color:var(--muted)">(% on top of hard cost)</span></label>
-    <div class="help">Internal pricing starts at hard cost; the client price is hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
-    <input type="text" id="markup" placeholder="35" value="35">
-
-    <button class="btn" id="step1">1 · Build keyword list</button>
-  </div>
-
-  <!-- ============ RESULTS ============ -->
-  <div class="card">
-    <h2>Quote</h2>
-    <div id="out"><p style="color:var(--muted);font-size:14px">Fill in the form, then step through the pipeline. Each step makes its own short live call to DataForSEO and reveals its result here — keyword list, competition score, rankings, then price.</p></div>
-    <div id="steps" class="hidden" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
-  </div>
-</div>
-
-<!-- ============ CONFIG REVIEW (Brendan) ============ -->
-<div class="card" style="margin-top:24px">
-  <h2 style="cursor:pointer;user-select:none" id="cfgToggle">⚙ Pricing config — review &amp; tweak <span id="cfgChevron" style="font-weight:400;color:var(--muted)">▸ click to expand</span></h2>
-  <div id="cfgBody" class="hidden">
-    <p class="why" style="margin-bottom:16px">Every number the pricing engine uses, grouped by the step it affects. Edit any value and click <b>Apply</b> to update the live session, then re-run a quote to see the effect. Changes last until the app restarts (they don't overwrite the code defaults) — note what works and we'll bake it in.</p>
-    <div id="cfgFields" style="font-size:13px"></div>
-    <button class="btn" id="cfgApply" style="margin-top:16px;max-width:200px">Apply changes</button>
-    <span id="cfgStatus" style="margin-left:12px;font-size:13px;color:var(--muted)"></span>
-  </div>
-</div>
-</div>
-
-<script>
-// ---- pill inputs ----
-const stores = {sites:[], kw:[], geo:[]};
-// Each pillbox's render() lives inside wirePills' closure; register them here so
-// loading a saved quote can redraw the pills after repopulating the stores.
-const PILL_RENDER = {};
-function wirePills(key, inputId){
-  const box = document.querySelector(`.pillbox[data-for="${key}"]`);
-  const input = document.getElementById(inputId);
-  function render(){
-    box.querySelectorAll('.pill').forEach(p=>p.remove());
-    stores[key].forEach((v,i)=>{
-      const el=document.createElement('span');
-      el.className='pill'+(key==='geo'?' geo-pill':'');
-      el.innerHTML=`${v} <b data-i="${i}">×</b>`;
-      el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();};
-      box.insertBefore(el,input);
-    });
-  }
-  PILL_RENDER[key] = render;
-  function commit(){
-    const parts=input.value.split(',').map(s=>s.trim()).filter(Boolean);
-    parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
-    input.value=''; render();
-  }
-  input.addEventListener('keydown',e=>{
-    if(e.key===','||e.key==='Enter'){e.preventDefault();commit();}
-    else if(e.key==='Backspace'&&!input.value&&stores[key].length){stores[key].pop();render();}
-  });
-  input.addEventListener('blur',commit);
-  box.addEventListener('click',()=>input.focus());
-}
-wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in');
-
-// ---- toggle ----
-const pastseo=document.getElementById('pastseo');
-pastseo.addEventListener('change',()=>{
-  document.getElementById('pastseo_lbl').textContent=pastseo.checked?'Yes':'No';
-  document.getElementById('pastseo_detail_wrap').classList.toggle('hidden',!pastseo.checked);
-});
-
-
-// ---- stepped live flow ----
-const $=id=>document.getElementById(id);
-function money(n){return '$'+n.toLocaleString();}
-function renderErr(msg){$('out').innerHTML=`<div class="err">${msg}</div>`;}
-
-const ST = {inputs:null, kw:null, adder:null, score:null,
-            table:[], paa:[], ranked:0, total:0, zero:null, longtail:null, actual:{}};
-
-function collectInputs(){
-  ['sites_in','kw_in','geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
-  const scope=$('geo_scope').value;
-  if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return null;}
-  if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return null;}
-  return {
-    domain: stores.sites[0]||'', sites: stores.sites.slice(),
-    keywords: stores.kw, brand: $('brand').value,
-    business_desc: $('business_desc').value,
-    geo_scope: scope, geo_values: stores.geo, state: $('state').value,
-    addon_markets: parseInt($('addon').value||'0',10),
-    markup_pct: parseFloat($('markup').value||'35'),
-  };
+# ---------------------------------------------------------------------------
+# CONFIG — every tunable constant. Brendan-calibration items live here only.
+# Spring ladder ($1,450–$4,250 by geo scope), per decision.
+# ---------------------------------------------------------------------------
+CFG = {
+    # Geo dropdown (5 options) -> 4 price anchors.
+    # Non-contiguous shares the $2,950 (multi-region) anchor with statewide.
+    # HARD COST anchors = CEIL50(0.65 × former client anchor). All internal
+    # calculations start from hard cost; client price = hard × (1 + markup).
+    # HARD COST anchors = CEIL50(client anchor / 1.35). Client anchors blended
+    # from the spring ladder uplifted toward the June ~$3,950 pricing. No floor —
+    # the raised bases carry the new pricing level directly.
+    "geo_anchor": {
+        "single_city":          1650,
+        "contiguous_region":    2350,
+        "non_contiguous_region":2600,
+        "statewide":            2600,
+        "nationwide":           3150,
+    },
+    "competitive_adder": {0: 0, 1: 150, 2: 300},   # FLAT fallback (used when no bid data)
+    "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2 (for the fallback)
+    # --- CPC-scaled competitive adder ---
+    # The competitive adder scales with the median top-of-page bid (CPC), because
+    # CPC is the market's own measure of how valuable a click is: high-CPC verticals
+    # (e.g. insurance ~$150) mean ranking organically replaces huge ad spend, so the
+    # SEO is worth more. adder = median_cpc × cpc_adder_mult, rounded to $50, capped.
+    # When there's NO bid data, fall back to the flat score buckets above.
+    "cpc_adder_enabled": True,
+    "cpc_adder_mult": 3.0,                     # $ of hard-cost adder per $1 of median CPC
+    "cpc_adder_cap": 1500,                     # max adder (hard cost) so a freak CPC can't explode price
+    "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
+    "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
+    "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
+    "zero_ranking_top_n": 20,
+    "zero_ranking_frac": 0.10,
+    # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
+    # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
+    # Evaluated high-to-low; first threshold met wins. Replaces the flat bonus.
+    # Calibrated against Serene Health (84% not ranking -> +14%, which with the
+    # volume uplift reproduces the real $3,950/$5,450/$6,950 proposal).
+    "zero_ranking_tiers": [
+        [80, 14],   # 80%+ not ranking -> +14%
+        [65, 9],    # 65-80% -> +9%
+        [50, 5],    # 50-65% -> +5%
+    ],
+    # --- VOLUME-based pricing (fixed $ per additional search, declining marginal
+    # rate, like tax brackets). Base price assumes a "normalized" volume up to
+    # vol_free_below. Above that, each bracket adds $/search for volume WITHIN that
+    # bracket; brackets stack. Each: [lo, hi, dollars_per_search]. Open-ended top
+    # bracket uses hi = null. Added to the hard base. Admin-editable.
+    # NOTE: rates are the lever to calibrate. Brendan's example used $0.50/search,
+    # but that produces very large adds (a 15k client would gain ~$2,600 on the hard
+    # base, roughly doubling the quote). These starting rates (~$0.05-0.08) keep a
+    # normal-volume client near its real proposal while still escalating hard for
+    # 100k+ clients. Tune live; no high-volume proposals exist to fit against.
+    "vol_free_below": 10000,            # normalized: base already covers this
+    "volume_brackets": [
+        [10000, 20000, 0.08],
+        [20000, 35000, 0.05],
+        [35000, 50000, 0.04],
+        [50000, None,  0.03],           # open-ended top bracket so it keeps escalating
+    ],
+    "step_ratio": 0.38,                       # June proposals: 38% step
+    "client_floor": 0,                        # no floor — raised anchors carry pricing
+    "addon_market_ratio": 0.42,
+    "ultra_bucket_size": 3,
+    "competitive_bucket_size": 6,
+    "list_cap": 20,
+    "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
+    # Long-tail sourcing
+    "use_suggestions": True,           # pull keyword_suggestions for longer phrases
+    "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
+    "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
+    "longtail_min_words": 4,           # >= this many words qualifies as long-tail
+    "longtail_prefixes": ["how","what","why","when","where","which","who","best",
+                          "affordable","cheap","near","cost","top","is","can","do"],
+    "longtail_target": 10,             # how many long-tails to keep in the list
+    "rank_check_cap": 60,              # max keywords sent to the SERP rank check
+    # --- GRID MODE (matches Brendan's proposals) -----------------------------
+    # His keyword tables are a systematic SERVICE x CITY grid, with the tier
+    # assigned to the SERVICE (every city inherits it): e.g. "auto insurance" is
+    # Ultra-Competitive in all ten cities, "umbrella insurance" is Long Tail in
+    # all ten. He does NOT use question-style long-tails (2 instances across 18
+    # proposals), so the long-tail tier is just lower-competition services.
+    "grid_mode": True,
+    # Brendan targets a keyword COUNT, trading services against cities:
+    #   Rockingham  10 cities x 10 services = ~104
+    #   Serene       1 metro  x ~14 services = 20
+    #   Skidmore     0 cities x ~20 services = 24
+    # So services scale INVERSELY with cities to hold the total near target.
+    "grid_target_keywords": 32,
+    "grid_min_services": 4,
+    "grid_max_services": 20,
+    "grid_max_cities": 10,             # cities crossed against each service
+    "grid_state_suffix": "auto",       # auto = suffix only cities that need it
 }
 
-async function postJSON(url, body, method){
-  const res=await fetch(url,{method:method||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const text=await res.text();
-  let data; try{data=JSON.parse(text);}catch(_){throw new Error(`Server ${res.status} (timeout or non-JSON).`);}
-  if(!res.ok) throw new Error(data.error||`Request failed (${res.status}).`);
-  return data;
+def r50(x):
+    return int(round(x / 50.0) * 50)
+
+def dfs_post(path, payload, timeout=120):
+    login = os.environ.get("DFS_LOGIN", "")
+    pw    = os.environ.get("DFS_PASSWORD", "")
+    token = base64.b64encode(f"{login}:{pw}".encode()).decode()
+    resp = requests.post(BASE + path,
+                         headers={"Authorization": f"Basic {token}",
+                                  "Content-Type": "application/json"},
+                         data=json.dumps(payload), timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+def loc_string(markets, state):
+    if markets and state:
+        return f"{markets[0]},{state},United States"
+    if markets:                       # city without state — still localizes
+        return f"{markets[0]},United States"
+    if state:
+        return f"{state},United States"
+    return "United States"
+
+# City -> state auto-derivation. Covers major US metros + the cities in the
+# sample proposals. Unknown cities fall back to "City,United States", which
+# DataForSEO usually resolves to the largest match.
+CITY_STATE = {
+    "san diego":"California","chula vista":"California","el cajon":"California",
+    "oceanside":"California","escondido":"California","bonita":"California","alpine":"California",
+    "los angeles":"California","san francisco":"California","sacramento":"California",
+    "san jose":"California","fresno":"California","long beach":"California","irvine":"California",
+    "knoxville":"Tennessee","nashville":"Tennessee","memphis":"Tennessee",
+    "farragut":"Tennessee","alcoa":"Tennessee","maryville":"Tennessee","louisville":"Tennessee",
+    "hampton roads":"Virginia","norfolk":"Virginia","virginia beach":"Virginia",
+    "chesapeake":"Virginia","newport news":"Virginia","hampton":"Virginia","richmond":"Virginia",
+    "wichita":"Kansas","kansas city":"Missouri","topeka":"Kansas",
+    "altoona":"Pennsylvania","state college":"Pennsylvania","hanover":"Pennsylvania",
+    "harrisburg":"Pennsylvania","lancaster":"Pennsylvania","york":"Pennsylvania",
+    "philadelphia":"Pennsylvania","pittsburgh":"Pennsylvania","bedford":"Pennsylvania",
+    "lava hot springs":"Idaho","pocatello":"Idaho","boise":"Idaho","idaho falls":"Idaho",
+    "anchorage":"Alaska","fairbanks":"Alaska","juneau":"Alaska",
+    "new york":"New York","brooklyn":"New York","buffalo":"New York","albany":"New York",
+    "chicago":"Illinois","houston":"Texas","dallas":"Texas","austin":"Texas",
+    "san antonio":"Texas","phoenix":"Arizona","tucson":"Arizona","denver":"Colorado",
+    "seattle":"Washington","portland":"Oregon","miami":"Florida","orlando":"Florida",
+    "tampa":"Florida","atlanta":"Georgia","boston":"Massachusetts","detroit":"Michigan",
+    "minneapolis":"Minnesota","charlotte":"North Carolina","raleigh":"North Carolina",
+    "las vegas":"Nevada","salt lake city":"Utah","columbus":"Ohio","cleveland":"Ohio",
+    "cincinnati":"Ohio","indianapolis":"Indiana","milwaukee":"Wisconsin","st louis":"Missouri",
+}
+def derive_state(markets, provided_state=""):
+    """Return a state: use the partner's value if given, else look up the first
+    market. Empty if unknown (loc_string then falls back to city,United States)."""
+    if provided_state and provided_state.strip():
+        return provided_state.strip()
+    for mkt in markets:
+        s = CITY_STATE.get(mkt.strip().lower())
+        if s:
+            return s
+    return ""
+
+def is_longtail(kw):
+    """A keyword qualifies as long-tail if it's long or question/intent-shaped."""
+    words = kw.split()
+    if len(words) >= CFG["longtail_min_words"]:
+        return True
+    if words and words[0].lower() in CFG["longtail_prefixes"]:
+        return True
+    return False
+
+def fetch_suggestions(seeds, markets, state):
+    """keyword_suggestions returns queries CONTAINING the seed — structurally
+    longer than keyword_ideas. Calls run in parallel; failures are non-fatal."""
+    out = []
+    if not CFG["use_suggestions"]:
+        return out
+    loc = loc_string(markets, state)
+
+    def one(s):
+        try:
+            payload = [{"keyword": s, "location_name": loc,
+                        "language_code": "en", "limit": 150}]
+            data = dfs_post("/keywords_data/google_ads/keyword_suggestions/live", payload)
+            res = (data["tasks"][0]["result"] or [])
+            rows = []
+            for block in res:
+                for it in (block.get("items") or []):
+                    kw = it.get("keyword")
+                    if kw:
+                        ki = it.get("keyword_info") or {}
+                        rows.append({"keyword": kw, "volume": ki.get("search_volume") or 0})
+            return rows
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=min(len(seeds), CFG["rank_check_workers"]) or 1) as ex:
+        for rows in ex.map(one, seeds[:6]):
+            out.extend(rows)
+    return out
+
+def fetch_keywords_for_site(domain, markets, state):
+    """Labs 'Keywords For Site' — keywords relevant to the client's domain,
+    derived from the site's content/category. Supplements partner seeds for
+    established sites; returns little (harmlessly) for brand-new/zero-ranking
+    sites, which is why it's additive, not a replacement. One call. Non-fatal."""
+    if not CFG["use_site_keywords"] or not domain:
+        return []
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    if not dom:
+        return []
+    try:
+        # Labs endpoint: use numeric location_code (2840 = US), not location_name.
+        payload = [{"target": dom, "location_code": 2840,
+                    "language_code": "en", "limit": CFG["site_keywords_limit"]}]
+        data = dfs_post("/dataforseo_labs/google/keywords_for_site/live", payload)
+        res = (data["tasks"][0]["result"] or [])
+        rows = []
+        for block in res:
+            for it in (block.get("items") or []):
+                kw = it.get("keyword")
+                if kw:
+                    ki = it.get("keyword_info") or {}
+                    rows.append({"keyword": kw, "volume": ki.get("search_volume") or 0})
+        return rows
+    except Exception:
+        return []
+
+def fetch_site_pages(domain, limit=30):
+    """Pull the client's page structure as readable topics — the names of the
+    pages they've built, which map directly to their service taxonomy and are
+    strong SEO keyword fuel. Tries sitemap.xml first (fast, standard); falls back
+    to the DataForSEO On-Page API if there's no usable sitemap. Returns a list of
+    short topic strings. Non-fatal: [] on any failure."""
+    if not domain:
+        return []
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    if not dom:
+        return []
+
+    def slug_to_topic(url):
+        path = url.split("//", 1)[-1]
+        path = path.split("/", 1)[1] if "/" in path else ""
+        path = path.strip("/").split("?")[0].split("#")[0]
+        if not path:
+            return ""
+        seg = [s for s in path.split("/") if s and not s.endswith((".xml", ".jpg", ".png", ".pdf", ".css", ".js"))]
+        if not seg:
+            return ""
+        topic = seg[-1].replace("-", " ").replace("_", " ").replace(".html", "").strip()
+        if len(topic) < 3 or topic.isdigit():
+            return ""
+        if topic.lower() in {"index", "home", "page", "blog", "category", "tag"}:
+            return ""
+        return topic
+
+    pages, seen = [], set()
+    import re
+    deadline = time.time() + 5          # hard cap: sitemap work gets <= 5s total
+    for sm in (f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml"):
+        if time.time() > deadline:
+            break
+        try:
+            r = requests.get(sm, timeout=5, headers={"User-Agent": "Mozilla/5.0 (SEO-quote-tool)"})
+            if r.status_code != 200 or "<" not in r.text:
+                continue
+            locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", r.text, re.I)
+            if locs and all(l.lower().endswith(".xml") for l in locs[:3]):
+                child_locs = []
+                for child in locs[:2]:          # at most 2 child sitemaps
+                    if time.time() > deadline:
+                        break
+                    try:
+                        cr = requests.get(child, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
+                        child_locs += re.findall(r"<loc>\s*(.*?)\s*</loc>", cr.text, re.I)
+                    except Exception:
+                        pass
+                locs = child_locs or locs
+            for url in locs:
+                t = slug_to_topic(url)
+                if t and t.lower() not in seen:
+                    seen.add(t.lower()); pages.append(t)
+                if len(pages) >= limit:
+                    break
+            if pages:
+                return pages[:limit]
+        except Exception:
+            continue
+
+    # On-Page fallback only if we have time budget left
+    if time.time() > deadline:
+        return pages[:limit]
+    try:
+        payload = [{"url": f"https://{dom}", "max_crawl_pages": limit}]
+        data = dfs_post("/on_page/instant_pages", payload)
+        res = (data["tasks"][0]["result"] or [])
+        for block in res:
+            for it in (block.get("items") or []):
+                t = slug_to_topic(it.get("url") or "")
+                if t and t.lower() not in seen:
+                    seen.add(t.lower()); pages.append(t)
+        return pages[:limit]
+    except Exception:
+        return pages[:limit]
+
+
+def fetch_local_volume(terms, markets, state):
+    """Search volume for bare service terms across THE CITIES BEING TARGETED.
+
+    A single lookup only covers markets[0], which undercounts a multi-city grid
+    by roughly the city count (e.g. 'auto insurance' is ~480/mo in Alexandria but
+    the campaign also covers nine other cities). So query each city and sum per
+    service — that's the client's real addressable demand.
+    Returns ({term_lower: summed_volume}, error_or_None)."""
+    if not terms:
+        return {}, {}, None
+    cities = [c for c in (markets or []) if c and c.strip()]
+    if state:
+        cities = [c for c in cities if c.strip().lower() != state.strip().lower()]
+    if not cities:
+        cities = [""]                      # nationwide / no city: single lookup
+    cities = cities[:CFG.get("grid_max_cities", 10)]
+    kws = [t.lower() for t in terms]
+
+    def one(city):
+        loc = loc_string([city], state) if city else loc_string([], state)
+        def call(location):
+            payload = [{"keywords": kws, "location_name": location,
+                        "language_code": "en"}]
+            data = dfs_post("/keywords_data/google_ads/search_volume/live", payload,
+                            timeout=25)
+            task0 = (data.get("tasks") or [{}])[0]
+            if task0.get("status_code") not in (20000, None):
+                raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+            return task0.get("result") or []
+        try:
+            return call(loc)
+        except Exception as e:
+            # An unrecognized city (misspelling, or a name DataForSEO doesn't
+            # carry) returns 40501. Retry at a broader location so the quote
+            # still gets *some* demand signal instead of silently pricing at $0.
+            if "40501" in str(e) or "not found" in str(e).lower():
+                broader = (f"{state},United States" if state else "United States")
+                return call(broader)
+            raise
+
+    totals, per_city, errs, ok = {}, {}, [], 0
+    try:
+        with ThreadPoolExecutor(max_workers=min(len(cities), 8)) as ex:
+            futs = {ex.submit(one, c): c for c in cities}
+            for fut in futs:
+                city = futs[fut]
+                try:
+                    for it in fut.result():
+                        k = (it.get("keyword") or "").lower()
+                        if k:
+                            v = it.get("search_volume") or 0
+                            totals[k] = totals.get(k, 0) + v
+                            per_city[(city.strip().lower(), k)] = v
+                    ok += 1
+                except Exception as e:
+                    errs.append(str(e))
+    except Exception as e:
+        return {}, {}, str(e)
+    if not ok:
+        return {}, {}, (errs[0] if errs else "no volume rows returned")
+    note = None
+    if ok < len(cities):
+        note = f"volume summed over {ok}/{len(cities)} cities (some lookups failed)"
+    return totals, per_city, note
+
+
+def fetch_exact_volume(keywords, markets, state):
+    """Exact-match search volume. The Google Ads keywords_for_keywords endpoint
+    we use to GENERATE terms returns GROUPED (broad) volumes that merge similar
+    terms — which is why the numbers looked inflated/off. For the FINAL list we
+    re-pull volume from the Labs keyword database, which returns per-term exact
+    volume. Returns {keyword_lower: volume}. Non-fatal: {} on any failure."""
+    if not keywords:
+        return {}
+    out = {}
+    # Labs endpoint takes numeric location_code; use the city if known, else US.
+    loc_code = 2840
+    try:
+        # batch up to 1000 per call
+        for i in range(0, len(keywords), 1000):
+            chunk = keywords[i:i+1000]
+            payload = [{"keywords": [k.lower() for k in chunk],
+                        "location_code": loc_code, "language_code": "en"}]
+            data = dfs_post("/dataforseo_labs/google/keyword_overview/live", payload)
+            res = (data["tasks"][0]["result"] or [])
+            for block in res:
+                for it in (block.get("items") or []):
+                    kw = (it.get("keyword") or "").lower()
+                    ki = it.get("keyword_info") or {}
+                    if kw:
+                        out[kw] = ki.get("search_volume") or 0
+        return out
+    except Exception:
+        return {}
+
+def infer_business(domain, seeds, site_terms):
+    """Infer a short description of what the client's business does (and doesn't),
+    from its domain + site keywords, so Claude can exclude off-target terms
+    (e.g. 'medication' for a therapy practice that doesn't prescribe). Returns a
+    short string, or '' if unavailable. Uses Claude; non-fatal."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not (domain or site_terms):
+        return ""
+    site_list = [s["keyword"] for s in site_terms][:40]
+    prompt = f"""Based on this client's website and the keywords their site ranks for, write ONE sentence describing what the business does and, importantly, what related services it does NOT offer (for SEO targeting).
+
+WEBSITE: {domain or "(none)"}
+SERVICES/VERTICAL: {", ".join(seeds)}
+KEYWORDS FROM THEIR SITE: {json.dumps(site_list, ensure_ascii=False)}
+
+Example output: "A therapy and counseling practice providing talk therapy for mental health conditions; does NOT prescribe medication or offer psychiatric drug treatment."
+
+Return ONLY the one-sentence description, no preamble."""
+    try:
+        resp = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 200, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=20)
+        resp.raise_for_status()
+        body = resp.json()
+        return "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+    except Exception:
+        return ""
+
+STATE_ABBREV = {
+    "alabama":"al","alaska":"ak","arizona":"az","arkansas":"ar","california":"ca",
+    "colorado":"co","connecticut":"ct","delaware":"de","florida":"fl","georgia":"ga",
+    "hawaii":"hi","idaho":"id","illinois":"il","indiana":"in","iowa":"ia","kansas":"ks",
+    "kentucky":"ky","louisiana":"la","maine":"me","maryland":"md","massachusetts":"ma",
+    "michigan":"mi","minnesota":"mn","mississippi":"ms","missouri":"mo","montana":"mt",
+    "nebraska":"ne","nevada":"nv","new hampshire":"nh","new jersey":"nj","new mexico":"nm",
+    "new york":"ny","north carolina":"nc","north dakota":"nd","ohio":"oh","oklahoma":"ok",
+    "oregon":"or","pennsylvania":"pa","rhode island":"ri","south carolina":"sc",
+    "south dakota":"sd","tennessee":"tn","texas":"tx","utah":"ut","vermont":"vt",
+    "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
 }
 
-// progressive panel: each step appends/updates its own block by id
-function panel(id, html){
-  let el=$(id);
-  if(!el){ el=document.createElement('div'); el.id=id; $('out').appendChild(el); }
-  el.innerHTML=html;
-}
-function stepBtn(id, label, disabled){
-  return `<button class="btn" id="${id}" style="margin-top:10px" ${disabled?'disabled':''}>${label}</button>`;
-}
-function kwlist(arr){return arr.length?`<ul>${arr.map(x=>`<li>${x.kw}${x.vol?` <span class="nf">(${x.vol})</span>`:''}</li>`).join('')}</ul>`:'<p class="nf">—</p>';}
+def claude_expand_services(seeds, business_desc, site_pages, brand, domain,
+                           candidates, max_services, n_cities=1):
+    """Expand the partner's seed terms into the SERVICE list a proposal would
+    target, assigning a competitiveness TIER to each service (not to each
+    keyword). This mirrors how the real proposals are built: 'auto insurance' is
+    Ultra-Competitive in every city, 'umbrella insurance' is Long Tail in every
+    city. Returns [{"service":..., "tier": "ultra"|"competitive"|"long_tail"}]
+    or None on failure (caller falls back to the seeds themselves)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    pages = [p for p in (site_pages or [])][:40]
+    cands = [c.get("keyword", c) if isinstance(c, dict) else c for c in (candidates or [])][:80]
+    prompt = f"""You are an SEO strategist choosing which SERVICES a local business should target in a proposal.
 
-// ---------- STEP 1 ----------
-$('step1').addEventListener('click', async()=>{
-  const inp=collectInputs(); if(!inp) return;
-  ST.inputs=inp;
-  $('out').innerHTML='';
-  $('step1').disabled=true; $('step1').textContent='Building keyword list…';
-  panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
-  try{
-    const kw=await postJSON('/api/keywords',{
-      keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
-      domain:inp.domain, business_desc:inp.business_desc});
-    ST.kw=kw;
-    renderStep1();
-    // Step 1b — AI refinement runs as its OWN request so it can't time out the
-    // build. Show the list immediately, then refine it in place.
-    if(kw.all && kw.all.length){
-      const note=document.createElement('div');
-      note.id='refiningNote';
-      note.style.cssText='margin-top:8px;font-size:12.5px;color:var(--velocity,#378ADD);display:flex;align-items:center;gap:8px';
-      note.innerHTML=`<span style="width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--velocity,#378ADD);border-radius:50%;display:inline-block;animation:spin .8s linear infinite"></span> Refining with AI — cleaning off-target terms, reading the site, correcting volume…`;
-      const p1=$('p1'); if(p1) p1.appendChild(note);
-      try{
-        const ref=await postJSON('/api/refine',{
-          keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
-          domain:inp.domain, business_desc:inp.business_desc,
-          ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
-          site_terms:kw.site_terms||[]});
-        if(ref && ref.all){ ST.kw=ref; renderStep1(); }
-      }catch(e){ const n=$('refiningNote'); if(n) n.remove(); /* keep unrefined list */ }
+BUSINESS: {business_desc or "(infer from the vertical, website and pages below)"}
+SEED TERMS FROM THE PARTNER: {", ".join(seeds)}
+WEBSITE: {domain or "(none)"}
+BRAND (never include this in a service): {brand or "(none)"}
+
+THEIR ACTUAL WEBSITE PAGES (their real service taxonomy):
+{json.dumps(pages, ensure_ascii=False) if pages else "(none available)"}
+
+KEYWORDS THE SEARCH API RETURNED FOR THIS BUSINESS (evidence of real demand):
+{json.dumps(cands, ensure_ascii=False)}
+
+TASK: choose exactly {max_services} SERVICES this business should target, and assign each a competitiveness tier.
+
+RULES:
+1. A SERVICE is a short, generic service phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". It will be crossed with city names later, so do NOT include any location.
+2. Only services this business actually offers. Exclude anything they don't do.
+3. Spread across tiers so the proposal has all three. Aim for roughly:
+   - 2 "ultra"        (the biggest, most competitive money terms)
+   - 1 "competitive"  (solid mid-competition terms)
+   - 1 "long_tail"    (a genuine but lower-competition service, e.g. a niche product line)
+   Adjust the mix if {max_services} differs, but always include at least one long_tail and at least one ultra.
+4. long_tail means a LOWER-COMPETITION SERVICE — never a question. Do NOT produce phrases starting with how/what/why/when/where.
+5. Prefer the phrasing a customer would actually search.
+6. TIER GUIDANCE — how these tiers are actually assigned in practice (insurance example):
+   - ultra: the core high-demand money terms — "auto insurance", "car insurance", "home insurance", "insurance quotes"
+   - competitive: solid mid-demand services — "homeowners insurance", "renters insurance", "insurance agency", "insurance company"
+   - long_tail: niche or compound product lines with genuinely lower demand — "umbrella insurance", "home and auto insurance"
+   Note that a mainstream service like "renters insurance" is COMPETITIVE, not long tail. Reserve long_tail for genuinely niche lines.
+   LONG-TAIL PHRASING: prefer COMPOUND or QUALIFIED service phrases over bare two-word niches, so the long-tail tier reads as
+   genuinely longer than the head terms. Good: "home and auto insurance", "commercial umbrella insurance", "business auto insurance",
+   "classic car insurance". Weaker (still valid, but use sparingly): "umbrella insurance", "boat insurance".
+   Aim for at least one multi-word compound in the long_tail tier. These must still be real services the business offers —
+   never invent a service, and never turn it into a question.
+7. VARIETY: these will be crossed with {n_cities} cit{"y" if n_cities == 1 else "ies"}, so you must supply {max_services} DISTINCT services.
+   {"Because there are few or no cities to cross against, the variety has to come from the services themselves. Include close variants and qualified forms the way a real proposal does — e.g. for a supplement brand: 'energy gummies', 'electrolyte gummies', 'hydration gummies', 'energy gummies for athletes', 'electrolyte gummies for kids sports', 'best energy gummies'. For a clinic: 'adhd treatment', 'anxiety treatment', 'depression counseling', 'couples therapy', 'family therapy', 'mental health clinic', 'behavioral health services'. Synonyms, sub-services, audience qualifiers and 'best X' forms all count as distinct services." if n_cities <= 2 else "With several cities to cross against, keep the services broad and distinct rather than near-duplicates."}
+
+Return ONLY valid JSON, no prose:
+{{"services": [{{"service": "auto insurance", "tier": "ultra"}}, {{"service": "umbrella insurance", "tier": "long_tail"}}]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 1000, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text").strip()
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+        parsed = json.loads(text.strip())
+        out = []
+        for s in parsed.get("services", []):
+            svc = (s.get("service") or "").strip().lower()
+            tier = (s.get("tier") or "competitive").strip().lower()
+            if tier not in ("ultra", "competitive", "long_tail"):
+                tier = "competitive"
+            if svc:
+                out.append({"service": svc, "tier": tier})
+        return out[:max_services] or None
+    except Exception:
+        return None
+
+
+def services_needed(n_cities):
+    """How many services to generate so services x cities lands near the target
+    keyword count. Few cities -> many services (a one-metro client needs service
+    variety); many cities -> fewer services (the crossing supplies the volume)."""
+    import math
+    target = CFG.get("grid_target_keywords", 32)
+    lo, hi = CFG.get("grid_min_services", 4), CFG.get("grid_max_services", 20)
+    n = max(int(n_cities), 1)
+    return max(lo, min(hi, math.ceil(target / n)))
+
+
+def pick_grid_cities(markets, state, limit):
+    """Choose WHICH cities go in the grid when more are supplied than the cap.
+    Taking the first N by input order picks alphabetically-early villages over
+    real metros (e.g. 'Augusta Springs' before 'Fairfax'). Instead, rank the
+    supplied cities by how much search demand they actually carry, using a
+    generic '<city>' population-proxy query, and keep the biggest.
+    Falls back to input order if the lookup fails."""
+    cities = [m.strip() for m in markets if m.strip()]
+    # drop a market that is actually the state name — it isn't a city
+    if state:
+        cities = [c for c in cities if c.lower() != state.strip().lower()]
+    if len(cities) <= limit:
+        return cities
+    try:
+        # Probe with the state suffix so ambiguous names resolve to the RIGHT
+        # place: bare "insurance washington" matches Washington State/DC, and
+        # "insurance jersey" matches New Jersey — which would rank tiny Virginia
+        # towns above real metros. "insurance washington va" scores correctly.
+        abbr = STATE_ABBREV.get((state or "").strip().lower(), "")
+        sfx = f" {abbr}" if abbr else ""
+        probe = [f"insurance {c.lower()}{sfx}" for c in cities][:700]
+        payload = [{"keywords": probe,
+                    "location_name": loc_string(cities, state),
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        items = (data.get("tasks") or [{}])[0].get("result") or []
+        vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
+               for it in items}
+        ranked = sorted(cities,
+                        key=lambda c: vol.get(f"insurance {c.lower()}{sfx}", 0),
+                        reverse=True)
+        return ranked[:limit]
+    except Exception:
+        return cities[:limit]
+
+
+def build_grid(services, markets, state, prepicked=False):
+    """Cross each SERVICE with each CITY, in the proposal format
+    ('auto insurance fairfax va'). The tier comes from the service, so every
+    city inherits it. Returns {ultra:[], competitive:[], long_tail:[]}."""
+    cities = list(markets) if prepicked else pick_grid_cities(markets, state, CFG["grid_max_cities"])
+    suffix_mode = CFG.get("grid_state_suffix", "auto")
+    abbr = STATE_ABBREV.get((state or "").strip().lower(), "") if state else ""
+    buckets = {"ultra": [], "competitive": [], "long_tail": []}
+
+    def city_suffix(city_lower):
+        """Brendan suffixes small/ambiguous cities but not well-known metros:
+        'auto insurance alexandria va' and 'adult autism services hyde pa', but
+        'adhd treatment san diego' and 'deck repair knoxville'. CITY_STATE holds
+        the recognizable metros, so membership is a good proxy for 'needs no
+        disambiguation'."""
+        if not abbr:
+            return ""
+        if suffix_mode is False or suffix_mode == 0:
+            return ""
+        if suffix_mode is True or suffix_mode == 1:
+            return f" {abbr}"
+        return "" if city_lower in CITY_STATE else f" {abbr}"   # auto
+    for s in services:
+        svc, tier = s["service"], s["tier"]
+        if not cities:                     # nationwide: no crossing
+            buckets[tier].append({"keyword": svc, "volume": 0,
+                                  "src": "grid", "origin": "added", "service": svc})
+            continue
+        for city in cities:
+            c = city.strip().lower()
+            # don't append the state if the "city" IS the state
+            sfx = "" if (state and c == state.strip().lower()) else city_suffix(c)
+            buckets[tier].append({"keyword": f"{svc} {c}{sfx}".strip(),
+                                  "volume": 0, "src": "grid",
+                                  "origin": "added", "service": svc, "city": c})
+    return buckets
+
+
+    """Claude pass over the API-generated candidates: removes junk/garbled/off-topic
+    terms (using the business description to exclude irrelevant services), folds in
+    site-related opportunities, buckets by difficulty, and tags each term's origin
+    ('kept' from the candidates, or 'added' by Claude) so the UI can show what AI did.
+    Non-fatal: returns None on no key / failure, so the caller falls back to rules."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return None
+    cand_terms = [c["keyword"] for c in candidates][:120]
+    site_list  = [s["keyword"] for s in site_terms][:40]
+    pages_list = [p for p in (site_pages or [])][:60]
+    cand_lower = {c.lower() for c in cand_terms}
+    mkt = ", ".join(markets) if markets else "national (no specific city)"
+    biz = business_desc or "(NOT PROVIDED — infer it yourself from the vertical, website, pages, and site keywords below, and return it in the 'business' field)"
+    pages_block = (json.dumps(pages_list, ensure_ascii=False) if pages_list
+                   else "(no page structure available)")
+    prompt = f"""You are an SEO strategist refining a keyword list for a client proposal. Be strict about relevance to THIS specific business.
+
+WHAT THE BUSINESS DOES (and does not do): {biz}
+CLIENT VERTICAL / SERVICES: {", ".join(seeds)}
+TARGET MARKET(S): {mkt}
+CLIENT BRAND (exclude any keyword containing this): {brand or "(none given)"}
+CLIENT WEBSITE: {domain or "(none given)"}
+
+THE CLIENT'S ACTUAL WEBSITE PAGES (their real service taxonomy — each page is a topic they offer and should rank for):
+{pages_block}
+
+CANDIDATE KEYWORDS (from a keyword API — contain junk, garbled terms, near-duplicates, and OFF-TARGET terms for services this business does not offer):
+{json.dumps(cand_terms, ensure_ascii=False)}
+
+KEYWORDS THE SITE ALREADY RANKS FOR:
+{json.dumps(site_list, ensure_ascii=False)}
+
+RULES:
+1. EXCLUDE terms for services the business does NOT offer. (Example: a therapy practice that does not prescribe drugs should NOT have "medication", "prescription", or "over the counter" keywords.)
+2. EXCLUDE garbled/nonsensical terms ("adhd and therapy", "add therapy" when the vertical is "adhd treatment"), near-duplicates, and brand terms.
+3. KEEP real searches a prospective customer of THIS business would type.
+4. USE THE WEBSITE PAGES as your primary guide to what this business actually offers. For each real service page, ensure there is a strong head keyword targeting it (geo-modified where local). ADD any the candidate list missed — these are high-priority SEO opportunities.
+5. ADD other high-value keywords this business should target, consistent with their pages and services.
+6. Keep the city modifier on local-intent terms where the market is local.
+7. Bucket by ranking difficulty: "ultra" (hardest/highest value), "competitive" (moderate), "long_tail" (longer/question-style).
+8. Do NOT invent search volumes. Only real, searchable terms.
+
+Return ONLY valid JSON in exactly this shape. Each keyword item is [keyword, origin] where origin is "kept" or "added". The "business" field is your one-sentence read of what the business does and does not offer:
+{{"business": "one sentence", "ultra": [["keyword","kept"], ...], "competitive": [["keyword","added"], ...], "long_tail": [["keyword","kept"], ...]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 2500,
+                "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}],
+            }), timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text")
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+        parsed = json.loads(text.strip())
+        def rows(key):
+            out = []
+            for item in parsed.get(key, []):
+                if isinstance(item, list) and item:
+                    kw = str(item[0]).strip()
+                    origin = item[1] if len(item) > 1 else "kept"
+                elif isinstance(item, str):
+                    kw = item.strip(); origin = "kept"
+                else:
+                    continue
+                if not kw:
+                    continue
+                # trust the model's tag but sanity-check against the candidate set
+                if origin not in ("kept", "added"):
+                    origin = "added" if kw.lower() not in cand_lower else "kept"
+                out.append({"keyword": kw, "volume": 0, "src": "claude", "origin": origin})
+            return out
+        return {"ultra": rows("ultra"), "competitive": rows("competitive"),
+                "long_tail": rows("long_tail"),
+                "business": (parsed.get("business") or "").strip()}
+    except Exception:
+        return None
+
+
+
+# ---------------------------------------------------------------------------
+# STAGE 1 — keyword list
+# ---------------------------------------------------------------------------
+def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc=""):
+    crossed = []
+    for s in seeds:
+        crossed.append(s)
+        for m in markets:
+            crossed.append(f"{s} {m}")
+        if state:
+            crossed.append(f"{s} {state}")
+
+    payload = [{"keywords": crossed[:200],
+                "location_name": loc_string(markets, state),
+                "language_code": "en"}]
+    data = dfs_post("/keywords_data/google_ads/keywords_for_keywords/live", payload)
+    items = (data["tasks"][0]["result"] or [])
+    raw = [{"keyword": it["keyword"], "volume": it.get("search_volume") or 0, "src": "ideas"}
+           for it in items]
+
+    # Add keyword_suggestions (longer, seed-containing phrases) into the pool
+    for r in fetch_suggestions(seeds, markets, state):
+        r["src"] = "suggest"; raw.append(r)
+    # Add keywords_for_site (terms relevant to the client's domain) into the pool
+    for r in fetch_keywords_for_site(domain, markets, state):
+        r["src"] = "site"; raw.append(r)
+
+    seed_tokens = {t.lower() for s in seeds for t in s.split()}
+    brand_l = (brand or "").lower()
+    # Connector words that signal a stitched-together / garbled phrase rather
+    # than a real search query ("adhd and therapy", "treatment or counseling").
+    CONNECTORS = {"and", "or", "&", "vs", "with"}
+    def is_junk(kw):
+        toks = kw.split()
+        for i, t in enumerate(toks):
+            if 0 < i < len(toks) - 1 and t in CONNECTORS:
+                return True
+        return False
+    kept = []
+    seen = set()
+    for r in raw:
+        kw = r["keyword"].lower()
+        if kw in seen:
+            continue
+        seen.add(kw)
+        if brand_l and brand_l in kw:
+            continue
+        if is_junk(kw):
+            continue
+        # Seed-token relevance filter applies to seed-derived sources only.
+        # Site keywords come from the client's own domain and are on-topic by
+        # construction, so they bypass it (but still drop the brand name above).
+        if r.get("src") != "site" and seed_tokens and not (seed_tokens & set(kw.split())):
+            continue
+        kept.append(r)
+
+    kept.sort(key=lambda r: r["volume"], reverse=True)
+    with_vol = [r for r in kept if r["volume"] > 0]
+
+    u, c = CFG["ultra_bucket_size"], CFG["competitive_bucket_size"]
+    n_head = u + c
+
+    if markets:
+        # GEO-SCOPED: head terms are seed × market combinations ("adhd treatment
+        # san diego") — the form the proposals actually use. We build these
+        # directly from the crossing rather than relying on the API to return
+        # them (it strips geo and inflates bare national terms). Volume is looked
+        # up where available but NOT required, since local terms often report low
+        # or zero volume in keyword tools yet are exactly what we rank/quote on.
+        vol_lookup = {r["keyword"].lower(): r["volume"] for r in kept}
+        geo_heads, seen_h = [], set()
+        # (a) direct seed × market crossings
+        seed_phrases = list(seeds)
+        # (b) plus the API's related head terms, geo-modified — this is what gives
+        # the proposal its variety ("adhd therapy san diego", "couples therapy
+        # san diego") beyond the literal seeds. Drawn from the FULL candidate pool
+        # (not volume-filtered) so sparse/niche verticals — where local terms
+        # report little or no volume — still build a full list instead of
+        # collapsing to the bare seeds. (This is the Versability case.)
+        # Related expansion terms must share a SUBSTANTIVE seed token (length >= 4)
+        # with the seeds. This drops loose API associations and garbled near-words
+        # like "add therapy" (the seed was "adhd treatment" — "add" is only 3 chars
+        # and isn't a seed word) while keeping real expansions ("adhd therapy").
+        seed_long_tokens = {t.lower() for s in seeds for t in s.split() if len(t) >= 4}
+        def shares_substantive_seed(kw):
+            return bool(seed_long_tokens & set(kw.lower().split()))
+        related = [r["keyword"] for r in kept
+                   if not is_longtail(r["keyword"])
+                   and not any(m.lower() in r["keyword"].lower() for m in markets)
+                   and shares_substantive_seed(r["keyword"])]
+        seed_phrases += related[:25]
+        for s in seed_phrases:
+            for m in markets:
+                kw = f"{s} {m}".strip()
+                kl = kw.lower()
+                if kl in seen_h or (brand_l and brand_l in kl):
+                    continue
+                seen_h.add(kl)
+                # rank these by the volume of their BARE form (local volume is
+                # usually unreported, but bare volume signals term importance)
+                bare_vol = vol_lookup.get(s.lower(), 0)
+                geo_heads.append({"keyword": kw, "volume": bare_vol, "src": "geo"})
+        # strongest terms first (by bare-form volume)
+        geo_heads.sort(key=lambda r: r["volume"], reverse=True)
+        # backfill with any remaining bare terms (volume or not) if still short
+        bare_backfill = [r for r in kept if not is_longtail(r["keyword"])
+                         and r["keyword"].lower() not in seen_h]
+        head_ordered = geo_heads + bare_backfill
+    else:
+        # NATIONAL: no geo modifier; rank bare head terms by volume.
+        head_ordered = [r for r in with_vol if not is_longtail(r["keyword"])]
+
+    ultra       = head_ordered[:u]
+    competitive = head_ordered[u:u + c]
+    head_kws    = {r["keyword"] for r in ultra + competitive}
+
+    # LONG-TAIL bucket: explicitly long / question-shaped phrases, deduped,
+    # not already used as a head term. Longer phrases preferred.
+    lt_candidates = [r for r in kept
+                     if is_longtail(r["keyword"]) and r["keyword"] not in head_kws]
+    # prefer more words, then higher volume
+    lt_candidates.sort(key=lambda r: (len(r["keyword"].split()), r["volume"]), reverse=True)
+    long_tail = lt_candidates[:CFG["longtail_target"]]
+
+    # Backfill: if the API returned few real long-tails (common in local/niche
+    # verticals), generate question-form long-tails from the seeds + market so
+    # the bucket is never empty at Step 1. PAA harvested in Step 3 will add more.
+    if len(long_tail) < CFG["longtail_target"]:
+        seen_lt = {r["keyword"].lower() for r in long_tail} | {k.lower() for k in head_kws}
+        mkt = markets[0] if markets else ""
+        templates = ["how much does {s} cost{inm}", "best {s} near me",
+                     "what to look for in {s}{inm}", "affordable {s} for adults{inm}",
+                     "is {s} covered by insurance{inm}", "how to find a good {s}{inm}"]
+        for s in seeds:
+            for t in templates:
+                if len(long_tail) >= CFG["longtail_target"]:
+                    break
+                kw = t.format(s=s, inm=(f" in {mkt}" if mkt else "")).strip()
+                kl = kw.lower()
+                if kl in seen_lt or (brand_l and brand_l in kl):
+                    continue
+                seen_lt.add(kl)
+                long_tail.append({"keyword": kw, "volume": 0, "src": "gen"})
+
+    # ---- Claude refinement pass (Option 2: API generates, Claude refines) ----
+    site_terms = [r for r in raw if r.get("src") == "site"]
+    # BUILD stops here (fast: keyword API + rules only). The Claude refinement and
+    # exact-match volume run in a SEPARATE request (stage1b_refine) so neither
+    # half can exceed the platform request timeout on heavy verticals.
+    full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
+    fs = {r["keyword"] for r in full}
+    return {
+        "ultra":       [r for r in ultra if r["keyword"] in fs],
+        "competitive": [r for r in competitive if r["keyword"] in fs],
+        "long_tail":   [r for r in long_tail if r["keyword"] in fs],
+        "head":        [r for r in (ultra + competitive) if r["keyword"] in fs],
+        "all":         full,
+        "refined_by_ai": False,
+        "business_desc": "",
+        "site_pages_found": 0,
+        "site_terms":  [r["keyword"] for r in site_terms],   # passed to refine step
     }
-  }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
-  $('step1').disabled=false; $('step1').textContent='1 · Build keyword list';
-});
 
-// Editable keyword list: removable chips per bucket + manual add. Step 2 reads
-// from ST.kw, so edits here flow through to scoring, rankings, and the table.
-function kwBucket(title, bucketKey){
-  const arr=ST.kw[bucketKey]||[];
-  const items=arr.map((x,i)=>{
-    const added = x.origin==='added';
-    const dot = added
-      ? `<span title="Added by AI" style="color:var(--velocity,#378ADD);font-weight:700;margin-right:3px">✦</span>`
-      : '';
-    return `<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
-      <span style="flex:1${added?';color:#1c5fa8':''}">${dot}${x.kw}${x.vol?` <span class="nf">(${Number(x.vol).toLocaleString()})</span>`:''}</span>
-      <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700;line-height:1.2">×</b>
-    </li>`;
-  }).join('');
-  return `<div>
-    <h4>${title}</h4>
-    <ul style="list-style:none;padding:0;margin:0 0 6px">${items||'<li class="nf">—</li>'}</ul>
-    <div style="display:flex;gap:4px">
-      <input type="text" class="kwadd" data-bucket="${bucketKey}" placeholder="add term…"
-        style="flex:1;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px">
-    </div>
-  </div>`;
-}
+def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
+                   ultra, competitive, long_tail, site_terms_kw):
+    """Second half of Step 1, run as its own request: reads the sitemap, runs the
+    Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
+    from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
+    the list build."""
+    site_terms = [{"keyword": k} for k in (site_terms_kw or [])]
+    site_pages = fetch_site_pages(domain)
+    biz = business_desc.strip() if business_desc else ""
 
-function renderStep1(){
-  const kw=ST.kw;
-  panel('p1',`
-    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
-    ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
-    ${kw.business_desc?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
-    ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
-    ${kw.grid&&kw.services&&kw.services.length?`<div style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>Grid:</b> ${kw.services.length} services × cities — ${kw.services.map(s=>`${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}
-      <div style="margin-top:4px">${(kw.total_volume)?`<b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()} <span class="nf">(summed across all targeted cities — this drives the volume component of price; the number beside each keyword is that city's own volume)</span>`:`<span style="color:#8a5a10">⚠ No volume data${kw.volume_error?` — ${escapeHtml(kw.volume_error)}`:''}. The volume part of pricing will be $0.</span>`}</div></div>`:''}
-    <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
-    <div class="kwcols">
-      ${kwBucket('Ultra Competitive','ultra')}
-      ${kwBucket('Competitive','competitive')}
-      ${kwBucket('Long Tail','long_tail')}
-    </div>
-    ${stepBtn('step2','2 · Score competition')}`);
-  // wire removes
-  document.querySelectorAll('.kwrm').forEach(b=>{
-    b.onclick=()=>{
-      const bk=b.dataset.bucket, i=+b.dataset.i;
-      const removed=ST.kw[bk][i];
-      ST.kw[bk].splice(i,1);
-      ST.kw.all=ST.kw.all.filter(x=>x.kw!==removed.kw);
-      if(ST.kw.head) ST.kw.head=ST.kw.head.filter(x=>x.kw!==removed.kw);
-      renderStep1();
-    };
-  });
-  // wire adds (Enter to add to that bucket)
-  document.querySelectorAll('.kwadd').forEach(inp=>{
-    inp.onkeydown=e=>{
-      if(e.key==='Enter'){
-        e.preventDefault();
-        const bk=inp.dataset.bucket, v=inp.value.trim();
-        if(!v) return;
-        const row={kw:v,vol:0};
-        ST.kw[bk].push(row);
-        ST.kw.all.push(row);
-        if((bk==='ultra'||bk==='competitive') && ST.kw.head) ST.kw.head.push(row);
-        inp.value=''; renderStep1();
-      }
-    };
-  });
-  $('step2').onclick = ()=>runStep2();
-}
+    # ---- GRID MODE: build a service x city grid like the real proposals -----
+    if CFG.get("grid_mode"):
+        cands = ultra + competitive + long_tail
+        # Decide the city set FIRST so the service count can scale to it.
+        cities = pick_grid_cities(markets, state, CFG["grid_max_cities"])
+        n_services = services_needed(len(cities))
+        services = claude_expand_services(seeds, biz, site_pages, brand, domain,
+                                          cands, n_services, len(cities))
+        if not services:
+            # fall back to the partner's seeds, spread across tiers
+            tiers = ["ultra", "ultra", "competitive", "long_tail"]
+            services = [{"service": s.strip().lower(), "tier": tiers[min(i, 3)]}
+                        for i, s in enumerate(seeds[:n_services])]
+        g = build_grid(services, cities, state, prepicked=True)
+        full = g["ultra"] + g["competitive"] + g["long_tail"]
+        # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
+        # geo-modified forms report ~0). The same figure is shown on each city
+        # row for that service, so pricing must count it ONCE PER SERVICE — not
+        # once per row — or a 10-city grid would inflate volume 10x.
+        svc_names = list(dict.fromkeys([s["service"] for s in services]))
+        vols, per_city, vol_err = fetch_local_volume(svc_names, cities, state)
+        for r in full:
+            svc_l = (r.get("service") or "").lower()
+            city_l = (r.get("city") or "").lower()
+            # the row shows ITS OWN city's volume; pricing uses the summed total
+            v = per_city.get((city_l, svc_l))
+            if v is None:
+                v = vols.get(svc_l)
+            if v is not None:
+                r["volume"] = v
+        service_volume = {s: vols.get(s.lower(), 0) for s in svc_names}
+        return {
+            "ultra": g["ultra"], "competitive": g["competitive"],
+            "long_tail": g["long_tail"],
+            "head": g["ultra"] + g["competitive"],
+            "all": full,
+            "refined_by_ai": True,
+            "business_desc": biz,
+            "site_pages_found": len(site_pages),
+            "grid": True,
+            "services": services,
+            "service_volume": service_volume,
+            "volume_error": vol_err,
+            "volume_location": loc_string(markets, state),
+            "state_missing": bool(cities) and not state,
+            "grid_cities": cities,
+            "total_volume": sum(service_volume.values()),   # unique, not per-row
+        }
 
-// ---------- STEP 2 ----------
-function step2Html(m){
-  const kdLine = (m.median_kd!=null)
-    ? `<div class="calc">median keyword difficulty <code>${m.median_kd}</code><span class="nf">/100 (organic ranking difficulty — informational, not yet driving price)</span></div>`
-    : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
-  const bs=m.bid_stats, br=m.breaks||[5,15];
-  const bidLine = bs
-    ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data; breaks at $${br[0]}/$${br[1]})</span></div>`
-    : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
-        <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
-  const marketWarn = (m.n_markets && m.n_markets > 8)
-    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> The grid uses the top cities by search demand, and volume is summed across those. But <b>bid/CPC and ranking</b> lookups still use only the first market (<code>${m.bid_location||''}</code>). For a whole state, choose <b>Statewide</b> with the state as the single market; for a metro footprint, enter just the cities you actually want.</div>`
-    : '';
-  return `
-      <h4 class="sec">Step 2 · Competition</h4>
-      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison.</div>
-      ${marketWarn}
-      ${bidLine}
-      <div class="calc">${m.adder_basis==='cpc'
-        ? `median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
-        : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
-      ${kdLine}
-      ${stepBtn('step3','3 · Check rankings')}`;
-}
+    refined = claude_refine_keywords(seeds, markets, brand, domain,
+                                     ultra + competitive + long_tail, site_terms,
+                                     business_desc=biz, site_pages=site_pages)
+    used_claude = False
+    biz_out = biz
+    if refined and (refined["ultra"] or refined["competitive"]):
+        ultra       = refined["ultra"][:CFG["ultra_bucket_size"]] or ultra
+        competitive = refined["competitive"][:CFG["competitive_bucket_size"]] or competitive
+        if refined["long_tail"]:
+            long_tail = refined["long_tail"][:CFG["longtail_target"]]
+        used_claude = True
+        biz_out = biz or refined.get("business", "")
 
-async function runStep2(){
-  $('step2').disabled=true; $('step2').textContent='Scoring…';
-  try{
-    const m=await postJSON('/api/metrics',{
-      head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
-    ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
-    ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
-    ST._m2=m;   // keep for save/restore
-    panel('p2', step2Html(m));
-    $('step3').onclick = ()=>runStep3();
-  }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
-}
+    full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
 
-function step3Html(){
-  // Errored lookups are EXCLUDED from the denominator — a failed API call must
-  // not count as "not ranking", since that would inflate the price.
-  const checked = Math.max((ST.total||0) - (ST.errored||0), 0);
-  const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
-  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
-  return `
-      <h4 class="sec">Step 3 · Rankings</h4>
-      <div class="why">Checks where the client's site currently ranks (top ${20}) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch.</div>
-      <div class="calc">zero-ranking
-        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
-        — ${ST.ranked}/${checked} rank in top 20 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
-      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all.</b> That can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix. This applies the largest zero-ranking uplift, so it <b>raises the price</b>. Spot-check one keyword in Google before quoting.</div>`:''}
-      ${ST.errored?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
-      <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
-      ${stepBtn('step4','4 · Price it')}`;
-}
+    exact = fetch_exact_volume([r["keyword"] for r in full], markets, state)
+    if exact:
+        for r in full:
+            v = exact.get(r["keyword"].lower())
+            if v is not None:
+                r["volume"] = v
 
-// ---------- STEP 3 (batched) ----------
-let STEP3_RUNNING = false;
-async function runStep3(retryOnlyFailed){
-  if(STEP3_RUNNING) return;          // a second click must not start a parallel run
-  STEP3_RUNNING = true;
-  try{ await _runStep3(retryOnlyFailed); }
-  finally{ STEP3_RUNNING = false; }
-}
-
-async function _runStep3(retryOnlyFailed){
-  $('step3') && ($('step3').disabled=true);
-  const all=ST.kw.all.map(r=>r.kw);
-  const BATCH=5;   // smaller request = shorter server time = far fewer 502s
-
-  // RESUME: keep everything already fetched. Only look up keywords we don't have
-  // a good result for yet, so a mid-run failure never costs completed work.
-  if(!ST.table || !ST.table.length){
-    ST.table=[]; ST.paa=[]; ST.ranked=0; ST.errored=0;
-  }
-  ST.total=all.length;
-  const haveGood=new Set(ST.table.filter(r=>!r.error).map(r=>r.kw));
-  if(retryOnlyFailed){
-    // drop the failed rows so they can be re-fetched cleanly
-    ST.table=ST.table.filter(r=>!r.error);
-    ST.errored=0;
-  }
-  const done=new Set(ST.table.map(r=>r.kw));
-  const todo=all.filter(k=>!done.has(k));
-
-  if(!todo.length){ finishStep3(); return; }
-
-  panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
-    <div class="why">Checks where the client's site currently ranks for each keyword in their market. Runs in batches; if one batch fails the rest still complete, and re-running only fetches what's missing.</div>
-    <div class="calc" id="rkprog">Checking ${haveGood.size}/${all.length}…</div>`);
-
-  for(let i=0;i<todo.length;i+=BATCH){
-    const batch=todo.slice(i,i+BATCH);
-    let got=null;
-    for(let attempt=0; attempt<2 && !got; attempt++){
-      try{
-        got=await postJSON('/api/rankings',{
-          batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
-          state:ST.inputs.state, brand:ST.inputs.brand});
-      }catch(e){
-        if(attempt===0){ await new Promise(r=>setTimeout(r,1500)); }   // one retry
-      }
+    fs = {r["keyword"] for r in full}
+    return {
+        "ultra":       [r for r in ultra if r["keyword"] in fs],
+        "competitive": [r for r in competitive if r["keyword"] in fs],
+        "long_tail":   [r for r in long_tail if r["keyword"] in fs],
+        "head":        [r for r in (ultra + competitive) if r["keyword"] in fs],
+        "all":         full,
+        "refined_by_ai": used_claude,
+        "business_desc": biz_out if used_claude else "",
+        "site_pages_found": len(site_pages),
     }
-    if(got){
-      got.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
-      ST.paa.push(...(got.paa||[]));
-    }else{
-      // batch failed twice — record these as failed and KEEP GOING
-      batch.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
+
+# ---------------------------------------------------------------------------
+# STAGE 3a — metrics -> competitive adder
+# ---------------------------------------------------------------------------
+def fetch_keyword_difficulty(kws, markets, state):
+    """Labs bulk keyword difficulty (1-100 organic ranking difficulty). Separate
+    call from the Google Ads bid data. Returns (kd_map, error_or_None) so the
+    caller can surface why it's empty instead of silently failing."""
+    if not kws:
+        return {}, None
+    try:
+        # Labs endpoints want a numeric location_code, not location_name (which
+        # the Google Ads endpoints use). 2840 = United States. Keyword difficulty
+        # is a national-level organic metric, so country-level is appropriate.
+        payload = [{"keywords": kws[:1000],
+                    "location_code": 2840,
+                    "language_code": "en"}]
+        data = dfs_post("/dataforseo_labs/google/bulk_keyword_difficulty/live", payload)
+        task = (data.get("tasks") or [{}])[0]
+        # surface API-level errors (auth, plan, balance) explicitly
+        if task.get("status_code") not in (20000, None) and not task.get("result"):
+            return {}, f"{task.get('status_code')}: {task.get('status_message')}"
+        res = task.get("result") or []
+        kd = {}
+        for block in res:
+            for it in (block.get("items") or []):
+                k = it.get("keyword")
+                if k is None:
+                    continue
+                # difficulty can appear as a top-level field or nested
+                v = it.get("keyword_difficulty")
+                if v is None:
+                    v = (it.get("keyword_properties") or {}).get("keyword_difficulty")
+                if v is not None:
+                    kd[k] = v
+        return kd, None
+    except requests.HTTPError as e:
+        return {}, f"HTTP {e.response.status_code if e.response else '?'}"
+    except Exception as e:
+        return {}, str(e)[:80]
+
+def _strip_markets(kw, markets, state=None):
+    """Remove the trailing geo modifier so we can look up bid/difficulty data,
+    which the APIs key to the bare term ('adhd treatment'), not the geo form
+    ('adhd treatment san diego'). Grid keywords may also carry a state suffix
+    ('commercial contractor kaukauna wi'), so strip that FIRST — otherwise the
+    city never matches the end of the string and nothing gets stripped, which
+    silently kills the bid lookup."""
+    k = kw
+    if state:
+        abbr = STATE_ABBREV.get(state.strip().lower(), "")
+        if abbr and k.lower().endswith(" " + abbr):
+            k = k[: -(len(abbr) + 1)].strip()
+    for m in sorted(markets, key=len, reverse=True):
+        if m and k.lower().endswith(" " + m.lower()):
+            k = k[: -(len(m) + 1)].strip()
+            break
+    return k
+
+def stage3_metrics(head, markets, state):
+    geo_kws = [r["keyword"] for r in head]
+    if not geo_kws:
+        return {"adder": 0, "median_score": 0, "bids": {}, "cpc": {}, "kd": {}}
+    # Map each geo head term -> its bare form; query metrics on the bare forms
+    # (which have real bid/difficulty data), then attribute results to both keys.
+    bare_of = {g: _strip_markets(g, markets, state) for g in geo_kws}
+    bare_unique = list(dict.fromkeys(bare_of.values()))
+
+    payload = [{"keywords": bare_unique,
+                "location_name": loc_string(markets, state),
+                "language_code": "en"}]
+    bid_err = None
+    items = []
+    try:
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        task0 = (data.get("tasks") or [{}])[0]
+        # DataForSEO reports per-task problems in status_code/status_message even
+        # on an HTTP 200, so surface those rather than silently returning nothing.
+        if task0.get("status_code") not in (20000, None):
+            bid_err = f"{task0.get('status_code')}: {task0.get('status_message')}"
+        items = (task0.get("result") or [])
+    except Exception as e:
+        bid_err = str(e)
+    bare_bid = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
+    bare_cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
+    bare_kd, kd_err = fetch_keyword_difficulty(bare_unique, markets, state)
+
+    # Attribute to both the geo key (for the table) and the bare key.
+    bids, cpc, kd = {}, {}, {}
+    for g in geo_kws:
+        b = bare_of[g]
+        if bare_bid.get(b):  bids[g] = bare_bid[b]; bids[b] = bare_bid[b]
+        if bare_cpc.get(b):  cpc[g]  = bare_cpc[b]; cpc[b]  = bare_cpc[b]
+        if bare_kd.get(b) is not None: kd[g] = bare_kd[b]; kd[b] = bare_kd[b]
+
+    kd_vals = [v for v in {bare_of[g]: kd.get(g) for g in geo_kws}.values()
+               if isinstance(v, (int, float))]
+    median_kd = int(statistics.median(kd_vals)) if kd_vals else None
+
+    lo, hi = CFG["bid_score_breaks"]
+    # Score only on head terms that returned bid data (don't let missing data
+    # count as 0 and drag the median down).
+    have_bid = [bids.get(g, 0) for g in geo_kws if bids.get(g, 0)]
+    scores = [2 if b >= hi else 1 if b >= lo else 0 for b in have_bid]
+    median_score = int(statistics.median(scores)) if scores else 0
+    # Bid distribution so the panel can show what the score is derived from.
+    # Use unique bare-term bids (the actual data points the score is built on).
+    bid_vals = [v for v in bare_bid.values() if v]
+    bid_stats = None
+    if bid_vals:
+        bid_stats = {"median": round(statistics.median(bid_vals), 2),
+                     "min": round(min(bid_vals), 2),
+                     "max": round(max(bid_vals), 2),
+                     "n": len(bid_vals), "n_total": len(bare_unique)}
+    # Competitive adder: prefer CPC-scaled (adder tracks median bid = click value),
+    # fall back to the flat score buckets when there's no bid data to scale on.
+    flat_adder = CFG["competitive_adder"][median_score]
+    adder = flat_adder
+    adder_basis = "flat"
+    cpc_used = None
+    if CFG.get("cpc_adder_enabled") and bid_stats and bid_stats["median"]:
+        med_cpc = bid_stats["median"]
+        cpc_used = med_cpc
+        free = CFG.get("cpc_adder_free_below", 5.0)
+        if med_cpc > free:
+            raw = med_cpc * CFG.get("cpc_adder_mult", 3.0)
+            capped = min(raw, CFG.get("cpc_adder_cap", 1500))
+            adder = int(round(capped / 50.0) * 50)
+            adder_basis = "cpc"
+        else:
+            adder = 0
+            adder_basis = "cpc"
+    return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
+            "flat_adder": flat_adder,
+            "bid_error": bid_err,
+            "bid_location": loc_string(markets, state),
+            "bid_terms_queried": bare_unique[:8],
+            "n_markets": len(markets),
+            "median_score": median_score, "bids": bids, "cpc": cpc,
+            "bid_stats": bid_stats, "breaks": [lo, hi],
+            "kd": kd, "median_kd": median_kd, "kd_error": kd_err}
+
+# ---------------------------------------------------------------------------
+# STAGE 3b — rank check -> table + zero-ranking + PAA
+# ---------------------------------------------------------------------------
+def _serp_one(kw, domain_dom, markets, state, brand, top_n):
+    """One keyword's SERP call. Returns (position_or_None, [paa questions]).
+    Depth tracks top_n (not 100) and the timeout is short, so one slow lookup
+    can't push the batch past the platform request limit. Retries once, because
+    a transient failure would otherwise be recorded as 'Not Found' — which would
+    wrongly inflate the not-ranking percentage that drives pricing."""
+    depth = max(top_n, 10)
+    payload = [{"keyword": kw, "location_name": loc_string(markets, state),
+                "language_code": "en", "depth": depth}]
+    last_err = None
+    for attempt in range(2):
+        try:
+            data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=20)
+            break
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(1)
+    else:
+        raise last_err
+    res = (data["tasks"][0]["result"] or [{}])[0]
+    items = res.get("items", []) or []
+    pos, paa = None, []
+    for it in items:
+        if it.get("type") == "organic" and domain_dom and domain_dom in (it.get("domain") or ""):
+            if pos is None:
+                pos = it.get("rank_absolute")
+        if it.get("type") == "people_also_ask":
+            for el in it.get("items", []):
+                q = el.get("title")
+                if q and (brand or "").lower() not in q.lower():
+                    paa.append(q)
+    return pos, paa
+
+def stage3_rankcheck(all_kws, domain, markets, state, brand):
+    top_n = CFG["zero_ranking_top_n"]
+    dom = (domain or "").replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    # Cap the number of SERP calls to stay under the platform timeout.
+    capped = all_kws[:CFG["rank_check_cap"]]
+    kws = [r["keyword"] for r in capped]
+
+    # Fire SERP calls in parallel; keep results aligned to input order.
+    results = [None] * len(kws)
+    with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
+        futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n): i
+                for i, kw in enumerate(kws)}
+        for fut in futs:
+            i = futs[fut]
+            try:
+                results[i] = fut.result()
+            except Exception:
+                results[i] = (None, [])   # one bad keyword shouldn't sink the quote
+
+    table, paa, ranked = [], [], 0
+    for kw, (pos, qs) in zip(kws, results):
+        table.append({"keyword": kw, "position": pos})
+        paa.extend(qs)
+        if pos is not None and pos <= top_n:
+            ranked += 1
+    n = len(kws) or 1
+    frac = ranked / n
+    return {"table": table, "ranked": ranked, "frac": frac,
+            "zero_ranking": frac < CFG["zero_ranking_frac"],
+            "paa_pool": list(dict.fromkeys(paa))}
+
+# ---------------------------------------------------------------------------
+# STAGE 4 — pricing
+# ---------------------------------------------------------------------------
+def _tier_uplift(value, tiers):
+    """Given a value and a list of [threshold, uplift_pct] sorted high-to-low,
+    return the uplift_pct of the first threshold the value meets (else 0)."""
+    for thresh, uplift in tiers:
+        if value >= thresh:
+            return uplift
+    return 0
+
+def _volume_dollar_add(total_volume, free_below, brackets):
+    """Fixed $ added for search volume above a normalized baseline, using a
+    declining marginal rate (tax-bracket style). Each bracket [lo, hi, rate]
+    charges 'rate' $/search for the volume that falls within [lo, hi]; a hi of
+    None means open-ended. Returns total $ added (0 if at/below the baseline)."""
+    if not total_volume or total_volume <= free_below:
+        return 0
+    add = 0.0
+    for b in brackets:
+        lo, hi, rate = b[0], b[1], b[2]
+        if total_volume > lo:
+            top = total_volume if hi is None else min(total_volume, hi)
+            band = max(0, top - lo)
+            add += band * rate
+    return add
+
+def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
+                 pct_not_ranking=None, total_volume=None, base_override=None):
+    if markup_pct is None:
+        markup_pct = CFG["default_markup_pct"]
+    m = 1.0 + (markup_pct / 100.0)
+    anchor = CFG["geo_anchor"][band]                       # hard cost
+
+    # --- volume-based add: fixed $ for volume above the normalized baseline ---
+    vol_add = 0
+    if total_volume is not None:
+        vol_add = _volume_dollar_add(total_volume, CFG.get("vol_free_below", 10000),
+                                     CFG.get("volume_brackets", []))
+
+    # Base before % uplift = anchor + competitive adder + volume $ add.
+    base_pre = anchor + adder + vol_add
+
+    # --- tiered zero-ranking uplift (% of head terms not ranking) ---
+    zr_uplift = 0
+    if pct_not_ranking is not None:
+        zr_uplift = _tier_uplift(pct_not_ranking, CFG.get("zero_ranking_tiers", []))
+    elif zero_ranking:
+        zr_uplift = CFG.get("zero_ranking_tiers", [[0, 0]])[0][1]
+
+    # MANUAL OVERRIDE: set the hard base directly; the ladder recomputes from it.
+    manual_base = base_override is not None and str(base_override) != ""
+    if manual_base:
+        base = r50(float(base_override))
+        zr_uplift = 0; vol_add = 0
+    else:
+        base = r50(base_pre * (1.0 + zr_uplift / 100.0))
+
+    step = r50(base * CFG["step_ratio"])
+    hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
+
+    client_base = r50(base * m)
+    floor = CFG.get("client_floor", 0)
+    floored = False
+    if floor and client_base < floor:
+        client_base = floor
+        floored = True
+        cstep = r50(client_base * CFG["step_ratio"])
+        client = {"base": client_base,
+                  "intermediate": client_base + cstep,
+                  "advanced": client_base + 2*cstep}
+    else:
+        client = {k: r50(v * m) for k, v in hard.items()}
+
+    hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
+    client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
+    return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "floored": floored, "client_floor": floor, "manual_base": manual_base,
+            "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
+            "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
+            "hard_tiers": hard, "client_tiers": client,
+            "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
+            "markup_pct": markup_pct, "addon_markets": addon_markets,
+            "tiers": client, "addon_per_market": client_addon}
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
+    """Realistic sample data — no DataForSEO calls. Deterministic per input so
+    the demo feels responsive to what the partner typed. Cannot time out."""
+    market = markets[0] if markets else ""
+
+    # Head terms: seed + market variants, descending volume
+    head_terms = []
+    for s in seeds:
+        if market:
+            head_terms.append(f"{s} {market}".strip())
+        head_terms.append(s)
+    seen = set(); head_terms = [h for h in head_terms if not (h in seen or seen.add(h))]
+    ultra, comp = [], []
+    for i, h in enumerate(head_terms):
+        vol = max(40, 620 - i * 55)
+        (ultra if i < 3 else comp).append({"kw": h, "vol": vol})
+    comp = comp[:6]
+
+    # Long-tail: question-shaped, longer phrases
+    templates = ["how much does {s} cost in {m}", "best {s} near me",
+                 "what to look for in {s} in {m}", "affordable {s} for adults in {m}",
+                 "is {s} covered by insurance in {m}"]
+    longtail = []
+    for s in seeds:
+        for t in templates:
+            kw = t.format(s=s, m=market or "your area").replace("  ", " ").strip()
+            longtail.append({"kw": kw, "vol": 0})
+    longtail = longtail[:10]
+
+    # Ranking table: mostly Not Found (zero-ranking demo), one ranked deep
+    all_rows = ultra + comp + longtail
+    table = []
+    for i, r in enumerate(all_rows):
+        pos = 54 if i == len(all_rows) - 1 else "Not Found"
+        table.append({"kw": r["kw"], "pos": pos})
+    ranked, total = 0, len(all_rows)   # 0 in top 50 -> zero-ranking fires
+    zero_ranking = True
+    adder, score = 300, 2              # hard-cost high-competition sample
+
+    base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
+    step = r50(base * CFG["step_ratio"])
+    tiers = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
+    addon_per = {k: r50(v * CFG["addon_market_ratio"]) for k, v in tiers.items()}
+
+    export_rows = (
+        [{"kw": r["kw"], "rank": "Not Found", "comp": "Ultra Competitive"} for r in ultra] +
+        [{"kw": r["kw"], "rank": "Not Found", "comp": "Competitive"} for r in comp] +
+        [{"kw": r["kw"], "rank": "Not Found", "comp": "Long Tail"} for r in longtail])
+
+    return {
+        "demo": True,
+        "stage1": {"ultra": ultra, "competitive": comp, "long_tail": longtail, "count": total},
+        "stage3a": {"adder": adder, "score": score},
+        "stage3b": {"ranked": ranked, "total": total, "frac": 0,
+                    "zero_ranking": zero_ranking,
+                    "paa": [r["kw"] for r in longtail[:6]], "table": table},
+        "stage4": {"anchor": CFG["geo_anchor"][band], "adder": adder,
+                   "zero_bonus": CFG["zero_ranking_bonus"], "base": base,
+                   "step": step, "tiers": tiers, "addon_per_market": addon_per,
+                   "addon_markets": addon, "band": band},
+        "export_rows": export_rows,
     }
-    const p=$('rkprog');
-    if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
-      +(ST.errored?`  (${ST.errored} failed — retry button appears when done)`:'');
-  }
-  finishStep3();
-}
 
-function finishStep3(){
-  const checkedOk = Math.max(ST.total - ST.errored, 0) || 1;
-  ST.zero = (ST.ranked/checkedOk) < 0.10;
-  // Long tail comes from the grid itself (lower-competition services x cities).
-  // The People-Also-Ask harvest is deliberately NOT folded in: it produces
-  // question-style phrases, which the real proposals essentially never use.
-  ST.longtail=[...ST.kw.long_tail];
-  if(!ST.kw.grid){
-    const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
-    for(const q of ST.paa){ if(ST.longtail.length>=10) break;
-      if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
-  }
-  // keep the table in the original keyword order after resumes
-  const order=new Map(ST.kw.all.map((r,i)=>[r.kw,i]));
-  ST.table.sort((a,b)=>(order.get(a.kw)??999)-(order.get(b.kw)??999));
-  panel('p3', step3Html());
-  if($('retryFailed')) $('retryFailed').onclick=()=>runStep3(true);
-  if($('step4')) $('step4').onclick = ()=>runStep4();
-}
+@app.route("/quote", methods=["POST"])
+def quote():
+    d = request.get_json(force=True)
+    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = (d.get("state") or "").strip()
+    domain  = (d.get("domain") or "").strip()
+    brand   = (d.get("brand") or "").strip()
+    band    = d.get("geo_scope", "single_city")
+    addon   = int(d.get("addon_markets", 0) or 0)
 
-// ---------- STEP 4 ----------
-// Crop a (tall) screenshot to a clean landscape frame: keep full width, take the
-// top slice at the target aspect ratio, paint onto white so any transparent/dark
-// gaps read as a clean white proposal image. Returns a PNG data URL.
-function cropLandscape(dataUrl, ratio){
-  return new Promise((resolve)=>{
-    const img=new Image();
-    img.onload=()=>{
-      const w=img.naturalWidth;
-      const cropH=Math.round(w/ratio);
-      const h=Math.min(cropH, img.naturalHeight);
-      const canvas=document.createElement('canvas');
-      canvas.width=w; canvas.height=h;
-      const ctx=canvas.getContext('2d');
-      ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,w,h);
-      ctx.drawImage(img, 0, 0, w, h, 0, 0, w, h);
-      try{ resolve(canvas.toDataURL('image/png')); }
-      catch(e){ resolve(dataUrl); }
-    };
-    img.onerror=()=>resolve(dataUrl);
-    img.src=dataUrl;
-  });
-}
+    if not seeds:
+        return jsonify({"error": "At least one keyword/vertical is required."}), 400
+    if band not in CFG["geo_anchor"]:
+        return jsonify({"error": f"Unknown geo scope '{band}'."}), 400
 
-function renderStep4(p){
-  ST.pricing = p;   // keep the latest pricing so the whole quote can be saved
-  const cpcOf=kw=>(ST.cpc&&ST.cpc[kw])?ST.cpc[kw]:'';
-  const kdOf=kw=>(ST.kd&&ST.kd[kw]!=null)?ST.kd[kw]:'';
-  // build export rows (CPC + difficulty available for head terms from Step 2)
-  const exp=[]
-    .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
-    .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
-    .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})));
-  window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
-  const h=p.hard_tiers, c=p.client_tiers;
-  let addon='';
-  if(p.addon_markets>0){
-    const ha=p.hard_addon_per_market, ca=p.client_addon_per_market;
-    addon=`<div class="calc"><b>Add-on markets (${p.addon_markets}):</b><br>
-      hard cost — Base ${money(ha.base)} · Int ${money(ha.intermediate)} · Adv ${money(ha.advanced)} (each/mo)<br>
-      client — Base ${money(ca.base)} · Int ${money(ca.intermediate)} · Adv ${money(ca.advanced)} (each/mo)</div>`;
-  }
-  panel('p4',`
-    <h4 class="sec">Step 4 · Price</h4>
-    <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
+    # DEMO_MODE: serve sample data instantly, no API calls, cannot time out.
+    if DEMO_MODE:
+        return jsonify(mock_pipeline(seeds, markets, state, domain, brand, band, addon))
 
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)</div>
-    <div class="tiers">
-      <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${money(h.base)}</div><div class="mo">/month</div></div>
-      <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div></div>
-      <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${money(h.advanced)}</div><div class="mo">/month</div></div>
-    </div>
-    <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
-      + competitive adder <code>+${money(p.adder)}</code> = <code>${money(p.base_pre_uplift)}</code>
-      ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
-      ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not ranking)</span>`:''}
-      <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
+    try:
+        s1 = stage1_keyword_list(seeds, markets, state, brand)
+        if not s1["all"]:
+            return jsonify({"error": "No keywords returned — try broader seeds or check the market/state."}), 400
+        m3 = stage3_metrics(s1["head"], markets, state)
+        r3 = stage3_rankcheck(s1["all"], domain, markets, state, brand)
+        p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}. Set DEMO_MODE=1 to run on sample data."}), 500
 
-    <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:10px 0">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:12.5px;font-weight:600">Manual hard-base override</span>
-        <input type="text" id="base_override" value="${p.manual_base?p.base:''}" placeholder="e.g. 4000"
-          style="width:90px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-        <button id="base_apply" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Apply</button>
-        ${p.manual_base?`<button id="base_clear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Clear</button> <span style="color:#1c5fa8;font-size:12px">✓ manual base active — tiers & markup recomputed from it</span>`:'<span class="nf" style="font-size:12px">for niche clients the formula doesn\u2019t fit — sets the hard base directly; everything else recomputes</span>'}
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
-      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--atlas);font-weight:600">Client price · markup</span>
-      <input type="text" id="markup_live" value="${p.markup_pct}" style="width:56px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-      <span style="color:var(--muted);font-size:13px">%</span>
-    </div>
-    <div class="tiers">
-      <div class="tier"><div class="name">Base</div><div class="price">${money(c.base)}</div><div class="mo">/month</div></div>
-      <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(c.intermediate)}</div><div class="mo">/month</div></div>
-      <div class="tier"><div class="name">Advanced</div><div class="price">${money(c.advanced)}</div><div class="mo">/month</div></div>
-    </div>
+    # Fold PAA questions into the long-tail bucket (they're real long-tail queries
+    # Google confirms users ask). Keep existing long-tails first, then top up with
+    # PAA until we hit the target, deduping against everything already in the list.
+    used = {r["keyword"].lower() for r in s1["ultra"] + s1["competitive"] + s1["long_tail"]}
+    longtail = [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["long_tail"]]
+    for q in r3["paa_pool"]:
+        if len(longtail) >= CFG["longtail_target"]:
+            break
+        ql = q.lower()
+        if ql not in used:
+            used.add(ql)
+            longtail.append({"kw": q, "vol": 0})   # PAA has no volume figure
 
-    <div style="margin-top:14px;background:#f7f7f9;border:1px solid var(--line);border-radius:9px;padding:12px 14px">
-      <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to Brendan's actual quote</div>
-      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.</div>
-      <table style="font-size:12.5px;width:100%">
-        <thead><tr>
-          <th style="text-align:left">Tier</th><th style="text-align:right">Formula</th>
-          <th style="text-align:right">Brendan's actual</th><th style="text-align:right">Difference</th>
-        </tr></thead>
-        <tbody>
-          <tr><td>Base</td><td style="text-align:right">${money(c.base)}</td>
-            <td style="text-align:right"><input type="number" id="act_base" value="${(ST.actual&&ST.actual.base)||''}" placeholder="—" style="width:88px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;text-align:right"></td>
-            <td style="text-align:right" id="diff_base">—</td></tr>
-          <tr><td>Intermediate</td><td style="text-align:right">${money(c.intermediate)}</td>
-            <td style="text-align:right"><input type="number" id="act_int" value="${(ST.actual&&ST.actual.intermediate)||''}" placeholder="—" style="width:88px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;text-align:right"></td>
-            <td style="text-align:right" id="diff_int">—</td></tr>
-          <tr><td>Advanced</td><td style="text-align:right">${money(c.advanced)}</td>
-            <td style="text-align:right"><input type="number" id="act_adv" value="${(ST.actual&&ST.actual.advanced)||''}" placeholder="—" style="width:88px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;text-align:right"></td>
-            <td style="text-align:right" id="diff_adv">—</td></tr>
-        </tbody>
-      </table>
-      <div id="cmpSummary" style="font-size:12px;margin-top:8px"></div>
-    </div>
-    ${addon}
-    <h4 class="sec" style="margin-top:18px">Keyword table</h4>
-    <table style="font-size:12.5px">
-      <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th><th>Difficulty</th></tr></thead>
-      <tbody>${exp.map(r=>`<tr>
-        <td>${r.kw}</td>
-        <td class="${r.rank==='Not Found'?'nf':''}">${r.rank}</td>
-        <td>${r.comp}</td>
-        <td>${r.cpc?('$'+Number(r.cpc).toFixed(2)):'<span class="nf">—</span>'}</td>
-        <td>${r.kd!==''&&r.kd!=null?(r.kd+'/100'):'<span class="nf">—</span>'}</td>
-      </tr>`).join('')}</tbody>
-    </table>
-    <button id="csvbtn" style="margin-top:12px;background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
+    # Build the exportable keyword table: keyword / rank / competitiveness
+    rank_map = {t["keyword"]: t["position"] for t in r3["table"]}
+    def comp_label(kw, tier):
+        return tier
+    export_rows = []
+    for r in s1["ultra"]:
+        pos = rank_map.get(r["keyword"]); export_rows.append(
+            {"kw": r["keyword"], "rank": pos if pos is not None else "Not Found", "comp": "Ultra Competitive"})
+    for r in s1["competitive"]:
+        pos = rank_map.get(r["keyword"]); export_rows.append(
+            {"kw": r["keyword"], "rank": pos if pos is not None else "Not Found", "comp": "Competitive"})
+    for lt in longtail:
+        pos = rank_map.get(lt["kw"])
+        export_rows.append(
+            {"kw": lt["kw"], "rank": pos if pos is not None else "Not Found", "comp": "Long Tail"})
 
-    <h4 class="sec" style="margin-top:20px">SERP screenshot <span class="nf">(for the proposal)</span></h4>
-    <div class="why">Captures a live Google results page for a head term — ideal for showing a prospect they're absent from page 1 while competitors rank. The recommended term is a "Not Found", high-competition, local keyword; change it if you like, then generate.</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <select id="serpPhrase" style="flex:1;min-width:240px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px"></select>
-      <button id="serpBtn" style="background:var(--velocity,#378ADD);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📸 Generate SERP</button>
-    </div>
-    <div id="serpOut" style="margin-top:12px"></div>
+    return jsonify({
+        "stage1": {
+            "ultra":       [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["ultra"]],
+            "competitive": [{"kw": r["keyword"], "vol": r["volume"]} for r in s1["competitive"]],
+            "long_tail":   longtail,
+            "count": len(s1["all"]),
+        },
+        "stage3a": {"adder": m3["adder"], "score": m3["median_score"]},
+        "stage3b": {
+            "ranked": r3["ranked"], "total": len(s1["all"]),
+            "frac": round(r3["frac"]*100), "zero_ranking": r3["zero_ranking"],
+            "paa": r3["paa_pool"][:15],
+            "table": [{"kw": t["keyword"],
+                       "pos": (t["position"] if t["position"] is not None else "Not Found")}
+                      for t in r3["table"]],
+        },
+        "stage4": {
+            "anchor": p["anchor"], "adder": m3["adder"],
+            "zero_bonus": CFG["zero_ranking_bonus"] if r3["zero_ranking"] else 0,
+            "base": p["base"], "step": p["step"], "tiers": p["tiers"],
+            "addon_per_market": p["addon_per_market"], "addon_markets": addon,
+            "band": band,
+        },
+        "export_rows": export_rows,
+    })
 
-    <div id="saveRow" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"></div>
+@app.route("/export.csv", methods=["POST"])
+def export_csv():
+    """Stateless CSV: frontend posts back the rows it already has."""
+    import csv, io
+    d = request.get_json(force=True)
+    rows = d.get("rows", [])
+    client = (d.get("client") or "client").replace(" ", "_")
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Keyword", "Current Google Rank", "Competitiveness", "Est. CPC", "Keyword Difficulty"])
+    for r in rows:
+        cpc = r.get("cpc", "")
+        cpc_str = f"${cpc:.2f}" if isinstance(cpc, (int, float)) and cpc else ""
+        kd = r.get("kd", "")
+        kd_str = f"{kd}/100" if isinstance(kd, (int, float)) else ""
+        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", ""), cpc_str, kd_str])
+    from flask import Response
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={client}_keywords.csv"})
 
-    <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
-  renderSaveRow();
-  wireCompare(c);
-  scheduleAutoSave();
-  // live markup recompute (re-hits /api/price; pure math, instant)
-  $('markup_live').addEventListener('change', async()=>{
-    const mk=parseFloat($('markup_live').value||'35');
-    try{
-      const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
-        zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
-        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
-        base_override:ST.baseOverride||''});
-      renderStep4(np);
-    }catch(e){ /* keep current */ }
-  });
-  // manual hard-base override
-  const applyBase=async(val)=>{
-    ST.baseOverride = val;
-    const mk=parseFloat($('markup_live').value||'35');
-    try{
-      const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
-        zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
-        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
-        base_override:val||''});
-      renderStep4(np);
-    }catch(e){ /* keep current */ }
-  };
-  $('base_apply').onclick=()=>applyBase($('base_override').value.trim());
-  if($('base_clear')) $('base_clear').onclick=()=>applyBase('');
-  $('csvbtn').onclick=async()=>{
-    const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
-    const blob=await res.blob(); const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url;
-    a.download=(window._exportClient||'client').replace(/ /g,'_')+'_keywords.csv';
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-  };
+# ===========================================================================
+# STEPPED LIVE ENDPOINTS — each is its own short request so nothing times out.
+# The frontend calls them in sequence and holds state between steps.
+# ===========================================================================
 
-  // ---- SERP screenshot: populate the phrase picker with an auto-recommendation ----
-  (async ()=>{
-    const head=[...ST.kw.ultra.map(r=>({kw:r.kw,comp:'Ultra'})),
-                ...ST.kw.competitive.map(r=>({kw:r.kw,comp:'Competitive'}))];
-    const ranks={}; ST.table.forEach(r=>{ranks[r.kw]=r.pos;});
-    let rec=null;
-    try{
-      const rr=await postJSON('/api/serp_recommend',{head, ranks, geo_values:ST.inputs.geo_values});
-      rec=rr.recommended;
-    }catch(e){ /* fall back to first head term */ }
-    const sel=$('serpPhrase'); if(!sel) return;
-    head.forEach(h=>{
-      const o=document.createElement('option'); o.value=h.kw;
-      o.textContent=h.kw+(ranks[h.kw]==='Not Found'?'  (Not Found)':''); 
-      if(h.kw===rec) o.selected=true;
-      sel.appendChild(o);
-    });
-  })();
-
-  $('serpBtn').onclick=async()=>{
-    const kw=$('serpPhrase').value;
-    const out=$('serpOut'), btn=$('serpBtn');
-    btn.disabled=true; btn.textContent='Generating…';
-    const spin=(msg)=>{ out.innerHTML=`<div class="calc" style="display:flex;align-items:center;gap:10px">
-      <span style="width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--atlas);border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite"></span>
-      ${msg}</div>`; };
-    spin(`Queuing live SERP for “${kw}”…`);
-    // Fixed landscape capture sized for the proposal slide frame. Width kept
-    // narrow (~1100) so Google's results column fills the frame and the mostly-
-    // empty right rail is cropped out; height keeps a landscape (~16:9) ratio.
-    const sz={device:'desktop',width:1100,height:620,scale:2};
-    try{
-      // Step A — queue (quick)
-      const q=await postJSON('/api/serp_queue',{
-        keyword:kw, geo_values:ST.inputs.geo_values, state:ST.inputs.state,
-        device:sz.device, width:sz.width, height:sz.height, scale:sz.scale});
-      // Step B — poll the fetch until the screenshot is ready (each call short)
-      let done=null;
-      for(let i=0;i<40;i++){            // up to ~120s of polling (queue can be slow)
-        spin(`Capturing live SERP for “${kw}” — ${(i*3)}s… (usually 20-40s, can take longer)`);
-        await new Promise(r=>setTimeout(r,3000));
-        const f=await postJSON('/api/serp_fetch',{task_id:q.task_id, device:q.device, keyword:kw,
-          width:q.width, height:q.height, scale:q.scale});
-        if(f.ready && f.data_url){ done=f; break; }
-      }
-      if(!done){ out.innerHTML=`<div class="err">SERP didn't finish in 2 minutes — DataForSEO's queue may be busy. Click Generate to retry (often works on a second try).</div>`; }
-      else{
-        // Crop to a clean landscape frame: take the top portion of the capture
-        // (local pack + top competitors), at a 16:9 ratio, on a white background.
-        // Done client-side via canvas so there's no server image dependency.
-        const cropped = await cropLandscape(done.data_url, 16/9);
-        out.innerHTML=`
-          <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${done.keyword}”:</div>
-          <img src="${cropped}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
-          <div style="margin-top:8px"><a href="${cropped}" download="serp_${kw.replace(/ /g,'_')}.png"
-            style="font-size:12.5px;color:var(--atlas);font-weight:600">⬇ Download image for the proposal</a></div>`;
-      }
-    }catch(e){
-      out.innerHTML=`<div class="err">${e.message}</div>`;
+@app.route("/api/keywords", methods=["POST"])
+def api_keywords():
+    """Step 1 — build + bucket the keyword list. One ideas call + parallel suggestions."""
+    d = request.get_json(force=True)
+    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    brand   = (d.get("brand") or "").strip()
+    domain  = (d.get("domain") or "").strip()
+    business_desc = (d.get("business_desc") or "").strip()
+    if not seeds:
+        return jsonify({"error": "At least one keyword/vertical is required."}), 400
+    try:
+        s1 = stage1_keyword_list(seeds, markets, state, brand, domain, business_desc)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}. Check funds / credentials."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    if not s1["all"]:
+        return jsonify({"error": "No keywords returned — try broader seeds or check market/state."}), 400
+    conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                       "origin": r.get("origin", "")} for r in L]
+    resp = {
+        "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
+        "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
+        "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
+        "business_desc": s1.get("business_desc", ""),
+        "site_pages_found": s1.get("site_pages_found", 0),
+        "site_terms": s1.get("site_terms", []),
     }
-    btn.disabled=false; btn.textContent='📸 Generate SERP';
-  };
-}
+    # Thin-list guard: sparse/niche verticals or too few seeds produce a short
+    # list. Flag it so the partner can add more seed terms for a fuller table.
+    if len(s1["all"]) < 6 or len(s1["competitive"]) == 0:
+        resp["thin_warning"] = ("Only a few keywords came back — this vertical may "
+            "be low-volume, or try adding more seed terms (e.g. related services) "
+            "for a fuller keyword table like the proposals.")
+    return jsonify(resp)
 
-async function runStep4(){
-  $('step4').disabled=true; $('step4').textContent='Pricing…';
-  ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
-  // Brendan #4/#5 inputs: total head-term volume, and % of terms NOT ranking.
-  // In grid mode the same service volume appears on every city row, so summing
-  // rows would multiply it by the city count. Use the deduplicated per-service
-  // total the backend computed.
-  const totalVol = (ST.kw && ST.kw.total_volume != null)
-    ? Number(ST.kw.total_volume)
-    : (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
-  // Exclude failed lookups from the denominator — a timed-out SERP call must not
-  // be treated as "not ranking", or a flaky API call would raise the price.
-  const checkedOk = Math.max((ST.total||0) - (ST.errored||0), 0);
-  const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
-  ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
-  try{
-    const p=await postJSON('/api/price',{
-      band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
-      addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
-      pct_not_ranking:pctNotRanking, total_volume:totalVol});
-    renderStep4(p);
-  }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
-}
-// ---- config review panel (Brendan) ----
-$('cfgToggle').addEventListener('click', async()=>{
-  const body=$('cfgBody'), chev=$('cfgChevron');
-  const open=body.classList.toggle('hidden')===false;
-  chev.textContent = open ? '▾ click to collapse' : '▸ click to expand';
-  if(open && !body.dataset.loaded){ await loadConfig(); body.dataset.loaded='1'; }
-});
+@app.route("/api/refine", methods=["POST"])
+def api_refine():
+    """Step 1b — AI refinement + exact-match volume, run as a SEPARATE request so
+    a heavy Claude call can't time out the list build. Takes the buckets the build
+    step returned (plus any user edits) and returns the refined, volume-corrected
+    list. Non-fatal: on any failure, returns the input list unchanged so the flow
+    continues with the rules-based buckets."""
+    d = request.get_json(force=True)
+    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    brand   = (d.get("brand") or "").strip()
+    domain  = (d.get("domain") or "").strip()
+    business_desc = (d.get("business_desc") or "").strip()
+    site_terms_kw = d.get("site_terms", [])
+    # rebuild bucket rows from what the frontend sends back (kw + vol)
+    def rows(key):
+        return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
+                for x in d.get(key, []) if x.get("kw")]
+    ultra, competitive, long_tail = rows("ultra"), rows("competitive"), rows("long_tail")
+    try:
+        s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
+                            ultra, competitive, long_tail, site_terms_kw)
+    except Exception as e:
+        # graceful: hand back the unrefined list so the pipeline still works
+        conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
+        return jsonify({"ultra": conv0(ultra), "competitive": conv0(competitive),
+                        "long_tail": conv0(long_tail),
+                        "head": conv0(ultra + competitive),
+                        "all": conv0(ultra + competitive + long_tail),
+                        "refined_by_ai": False, "business_desc": "",
+                        "site_pages_found": 0, "refine_error": str(e)})
+    conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                       "origin": r.get("origin", "")} for r in L]
+    return jsonify({
+        "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
+        "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
+        "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
+        "business_desc": s1.get("business_desc", ""),
+        "site_pages_found": s1.get("site_pages_found", 0),
+        "grid": s1.get("grid", False),
+        "services": s1.get("services", []),
+        "service_volume": s1.get("service_volume", {}),
+        "total_volume": s1.get("total_volume", None),
+        "volume_error": s1.get("volume_error"),
+        "volume_location": s1.get("volume_location"),
+        "state_missing": s1.get("state_missing", False),
+        "grid_cities": s1.get("grid_cities", []),
+    })
 
-function cfgRow(label, id, val, note){
-  return `<div style="display:flex;align-items:center;gap:10px;margin:5px 0">
-    <label style="flex:1;margin:0;font-weight:400">${label}${note?` <span class="nf">${note}</span>`:''}</label>
-    <input type="text" id="${id}" value="${val}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-  </div>`;
-}
-function cfgGroup(title, rows){
-  return `<div style="margin:14px 0 6px"><div class="sec" style="margin:0 0 6px">${title}</div>${rows}</div>`;
-}
+@app.route("/api/metrics", methods=["POST"])
+def api_metrics():
+    """Step 2 — competitive adder from head-term bids. One search_volume call."""
+    d = request.get_json(force=True)
+    head    = [{"keyword": k} for k in d.get("head", [])]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    try:
+        m3 = stage3_metrics(head, markets, state)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    return jsonify({"adder": m3["adder"], "score": m3["median_score"],
+                    "adder_basis": m3.get("adder_basis"), "cpc_used": m3.get("cpc_used"),
+                    "flat_adder": m3.get("flat_adder"),
+                    "bid_error": m3.get("bid_error"),
+                    "bid_location": m3.get("bid_location"),
+                    "bid_terms_queried": m3.get("bid_terms_queried"),
+                    "n_markets": m3.get("n_markets"),
+                    "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
+                    "median_kd": m3.get("median_kd"), "kd_error": m3.get("kd_error"),
+                    "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
 
-// Tier rows: render each [threshold, uplift] as a readable sentence with two
-// separate number inputs, instead of a cryptic "70:30" string.
-function tierRows(tiers, idPrefix, lead, midUnit, tailUnit){
-  // lead: text before threshold; midUnit: between the two inputs; tailUnit: after
-  return (tiers||[]).map((t,i)=>`
-    <div class="tierrow">
-      <span class="tiertext">${lead}</span>
-      <input type="number" id="${idPrefix}_t${i}" value="${t[0]}" class="tierin">
-      <span class="tiertext">${midUnit}</span>
-      <input type="number" id="${idPrefix}_u${i}" value="${t[1]}" class="tierin tierin-sm">
-      <span class="tiertext">${tailUnit}</span>
-    </div>`).join('');
-}
-function readTierRows(idPrefix){
-  const out=[];
-  for(let i=0;i<10;i++){
-    const tEl=$(`${idPrefix}_t${i}`), uEl=$(`${idPrefix}_u${i}`);
-    if(!tEl||!uEl) break;
-    const t=parseFloat(tEl.value), u=parseFloat(uEl.value);
-    if(!isNaN(t)&&!isNaN(u)) out.push([t,u]);
-  }
-  return out.sort((a,b)=>b[0]-a[0]);
-}
+@app.route("/api/rankings", methods=["POST"])
+def api_rankings():
+    """Step 3 — rank-check ONE small batch of keywords (frontend loops batches).
+    Each call is short: a few parallel SERP lookups."""
+    d = request.get_json(force=True)
+    batch   = d.get("batch", [])
+    domain  = (d.get("domain") or "").strip()
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    brand   = (d.get("brand") or "").strip()
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    top_n = CFG["zero_ranking_top_n"]
+    results, paa = [], []
+    try:
+        with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
+            futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n): kw for kw in batch}
+            done = {}
+            for fut in futs:
+                kw = futs[fut]
+                try:
+                    pos, qs = fut.result()
+                    err = False
+                except Exception:
+                    # lookup FAILED — record it as unknown, NOT as "Not Found".
+                    # Counting a failed call as not-ranking would inflate the
+                    # zero-ranking percentage and therefore the price.
+                    pos, qs, err = None, [], True
+                done[kw] = (pos, qs, err)
+        for kw in batch:
+            pos, qs, err = done.get(kw, (None, [], True))
+            results.append({"kw": kw,
+                            "pos": ("—" if err else (pos if pos is not None else "Not Found")),
+                            "ranked_top": (not err and pos is not None and pos <= top_n),
+                            "error": err})
+            paa.extend(qs)
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    return jsonify({"results": results, "paa": list(dict.fromkeys(paa))})
 
-// Volume brackets: [[lo, hi, $/search], ...]. hi may be null (open-ended top band).
-function volBracketRows(brackets){
-  return (brackets||[]).map((b,i)=>{
-    const hi = (b[1]===null||b[1]===undefined) ? '' : b[1];
-    const openTop = (b[1]===null||b[1]===undefined);
-    return `<div class="tierrow">
-      <span class="tiertext">From</span>
-      <input type="number" id="cf_vb_lo${i}" value="${b[0]}" class="tierin">
-      <span class="tiertext">to</span>
-      <input type="number" id="cf_vb_hi${i}" value="${hi}" placeholder="${openTop?'∞ (top)':''}" class="tierin">
-      <span class="tiertext">searches → add $</span>
-      <input type="number" step="0.01" id="cf_vb_rate${i}" value="${b[2]}" class="tierin tierin-sm">
-      <span class="tiertext">per search</span>
-    </div>`;
-  }).join('');
-}
-function readVolBrackets(){
-  const out=[];
-  for(let i=0;i<12;i++){
-    const lo=$(`cf_vb_lo${i}`), hi=$(`cf_vb_hi${i}`), rate=$(`cf_vb_rate${i}`);
-    if(!lo||!hi||!rate) break;
-    const L=parseFloat(lo.value), R=parseFloat(rate.value);
-    const H = hi.value.trim()===''? null : parseFloat(hi.value);
-    if(!isNaN(L)&&!isNaN(R)) out.push([L,H,R]);
-  }
-  return out.sort((a,b)=>a[0]-b[0]);
-}
+@app.route("/api/price", methods=["POST"])
+def api_price():
+    """Step 4 — pure pricing math, instant. Returns hard cost + client (marked-up)."""
+    d = request.get_json(force=True)
+    band = d.get("band", "single_city")
+    if band not in CFG["geo_anchor"]:
+        return jsonify({"error": f"Unknown geo scope '{band}'."}), 400
+    adder = int(d.get("adder", 0) or 0)
+    zero  = bool(d.get("zero_ranking", False))
+    addon = int(d.get("addon_markets", 0) or 0)
+    markup = d.get("markup_pct", None)
+    markup = float(markup) if markup not in (None, "") else None
+    pct_not_ranking = d.get("pct_not_ranking", None)
+    pct_not_ranking = float(pct_not_ranking) if pct_not_ranking not in (None, "") else None
+    total_volume = d.get("total_volume", None)
+    total_volume = int(total_volume) if total_volume not in (None, "") else None
+    base_override = d.get("base_override", None)
+    base_override = base_override if base_override not in (None, "") else None
+    p = stage4_price(band, adder, zero, addon, markup,
+                     pct_not_ranking=pct_not_ranking, total_volume=total_volume,
+                     base_override=base_override)
+    return jsonify({"anchor": p["anchor"], "adder": adder,
+                    "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
+                    "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
+                    "volume_add": p["volume_add"],
+                    "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
+                    "base": p["base"], "step": p["step"],
+                    "hard_tiers": p["hard_tiers"], "client_tiers": p["client_tiers"],
+                    "hard_addon_per_market": p["hard_addon_per_market"],
+                    "client_addon_per_market": p["client_addon_per_market"],
+                    "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
-async function loadConfig(){
-  let c;
-  try{ c=await (await fetch('/api/config')).json(); }
-  catch(e){ $('cfgFields').innerHTML=`<div class="err">Couldn't load config: ${e.message}</div>`; return; }
-  const ga=c.geo_anchor, ca=c.competitive_adder, bb=c.bid_score_breaks;
-  $('cfgFields').innerHTML =
-    cfgGroup('Step 1 · keyword grid',
-      `<div class="tierhelp">Builds the list as a SERVICE × CITY grid like the real proposals — each service gets a tier and every city inherits it. Services scale <b>inversely</b> with cities to hit the target: 10 cities → ~4 services, 1 city → ~20 services (a single-metro client needs service variety instead of crossings).</div>`+
-      cfgRow('Target keywords','cf_gtarget',c.grid_target_keywords,'services × cities aims for this total')+
-      cfgRow('Min services','cf_gmin',c.grid_min_services,'floor, used when there are many cities')+
-      cfgRow('Max services','cf_gmax',c.grid_max_services,'ceiling, used when there are few/no cities')+
-      cfgRow('Max cities','cf_gcity',c.grid_max_cities,'cities crossed against every service')+
-      cfgRow('State suffix (1/0)','cf_gsfx',c.grid_state_suffix?1:0,'1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"')) +
-    cfgGroup('Step 2 · competition (hard cost)',
-      `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
-      cfgRow('CPC multiplier','cf_cpcmult',c.cpc_adder_mult,'$ of adder per $1 of median CPC (e.g. 3 → a $150 CPC adds $450)')+
-      cfgRow('CPC adder cap ($)','cf_cpccap',c.cpc_adder_cap,'max adder so a freak CPC can\u2019t explode the price')+
-      cfgRow('CPC free-below ($)','cf_cpcfree',c.cpc_adder_free_below,'CPC at/below this adds nothing')+
-      cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'flat fallback: under this → +$0')+
-      cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'flat fallback: over this → top adder')+
-      cfgRow('Adder · score 1','cf_add1',ca['1'],'flat fallback')+
-      cfgRow('Adder · score 2','cf_add2',ca['2'],'flat fallback')) +
-    cfgGroup('Step 3 · zero-ranking uplift',
-      `<div class="tierhelp">When a share of the client's keywords aren't ranking, add a percentage to the price. Higher share not ranking → bigger uplift.</div>`+
-      tierRows(c.zero_ranking_tiers,'cf_zr','If at least','% of terms aren\u2019t ranking → add','% to price')+
-      cfgRow('Positions checked (top-N)','cf_topn',c.zero_ranking_top_n,'a term counts as "ranking" if it appears in the top N results')) +
-    cfgGroup('Step 4 · volume-based pricing',
-      `<div class="tierhelp">The base price assumes a normalized search volume. Above that baseline, add a fixed $ per additional monthly search, at a declining rate per band (like tax brackets). Edit the bands and rates to calibrate.</div>`+
-      cfgRow('Normalized baseline (searches)','cf_volfree',c.vol_free_below,'volume at/below this adds nothing — the base already covers it')+
-      volBracketRows(c.volume_brackets)) +
-    cfgGroup('Step 4 · pricing (hard-cost anchors)',
-      cfgRow('Single City','cf_ga_single',ga.single_city)+
-      cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
-      cfgRow('Non-contiguous region','cf_ga_noncontig',ga.non_contiguous_region)+
-      cfgRow('Statewide','cf_ga_state',ga.statewide)+
-      cfgRow('Nationwide','cf_ga_nation',ga.nationwide)+
-      cfgRow('Step ratio','cf_step',c.step_ratio,'0.38 = 38%')+
-      cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
-      cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'× tier price')+
-      cfgRow('Default markup (%)','cf_markup',c.default_markup_pct));
-}
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    """Expose the tunable pricing constants for the review panel."""
+    return jsonify({
+        "geo_anchor": CFG["geo_anchor"],
+        "competitive_adder": CFG["competitive_adder"],
+        "bid_score_breaks": CFG["bid_score_breaks"],
+        "cpc_adder_enabled": CFG.get("cpc_adder_enabled", True),
+        "cpc_adder_mult": CFG.get("cpc_adder_mult", 3.0),
+        "cpc_adder_cap": CFG.get("cpc_adder_cap", 1500),
+        "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
+        "zero_ranking_bonus": CFG["zero_ranking_bonus"],
+        "zero_ranking_top_n": CFG["zero_ranking_top_n"],
+        "zero_ranking_frac": CFG["zero_ranking_frac"],
+        "zero_ranking_tiers": CFG.get("zero_ranking_tiers", []),
+        "vol_free_below": CFG.get("vol_free_below", 10000),
+        "volume_brackets": CFG.get("volume_brackets", []),
+        "step_ratio": CFG["step_ratio"],
+        "client_floor": CFG["client_floor"],
+        "addon_market_ratio": CFG["addon_market_ratio"],
+        "default_markup_pct": CFG["default_markup_pct"],
+        "ultra_bucket_size": CFG["ultra_bucket_size"],
+        "grid_mode": CFG.get("grid_mode", True),
+        "grid_target_keywords": CFG.get("grid_target_keywords", 32),
+        "grid_min_services": CFG.get("grid_min_services", 4),
+        "grid_max_services": CFG.get("grid_max_services", 20),
+        "grid_max_cities": CFG.get("grid_max_cities", 10),
+        "grid_state_suffix": CFG.get("grid_state_suffix", True),
+        "competitive_bucket_size": CFG["competitive_bucket_size"],
+        "longtail_target": CFG["longtail_target"],
+    })
 
-$('cfgApply').addEventListener('click', async()=>{
-  const v=id=>$(id).value;
-  const payload={
-    geo_anchor:{single_city:v('cf_ga_single'),contiguous_region:v('cf_ga_contig'),
-      non_contiguous_region:v('cf_ga_noncontig'),statewide:v('cf_ga_state'),nationwide:v('cf_ga_nation')},
-    competitive_adder:{1:v('cf_add1'),2:v('cf_add2')},
-    bid_score_breaks:[v('cf_break1'),v('cf_break2')],
-    grid_target_keywords:v('cf_gtarget'), grid_min_services:v('cf_gmin'),
-    grid_max_services:v('cf_gmax'), grid_max_cities:v('cf_gcity'),
-    grid_state_suffix: (parseFloat(v('cf_gsfx'))?true:false),
-    cpc_adder_mult:v('cf_cpcmult'), cpc_adder_cap:v('cf_cpccap'), cpc_adder_free_below:v('cf_cpcfree'),
-    zero_ranking_top_n:v('cf_topn'),
-    zero_ranking_tiers:readTierRows('cf_zr'),
-    vol_free_below:v('cf_volfree'),
-    volume_brackets:readVolBrackets(),
-    step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
-    default_markup_pct:v('cf_markup'),
-  };
-  $('cfgStatus').textContent='Applying…';
-  try{
-    const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const d=await r.json();
-    $('cfgStatus').textContent = r.ok ? '✓ Applied — re-run a quote to see the effect.' : ('Error: '+(d.error||''));
-    // sync the markup field on the form to the new default
-    if(r.ok && $('markup')) $('markup').value=v('cf_markup');
-  }catch(e){ $('cfgStatus').textContent='Error: '+e.message; }
-});
-// ===================== SAVED QUOTES (persistence + version history) =========
-let SAVE_ENABLED = false;
-let CURRENT_QUOTE_ID = null;     // set when a saved quote is loaded/edited
-let CURRENT_QUOTE_NAME = '';
+@app.route("/api/config", methods=["POST"])
+def api_config_set():
+    """Apply edited constants to the running session (not persisted to disk —
+    a restart reverts to the file defaults). Lets Brendan tune and re-quote live."""
+    d = request.get_json(force=True)
+    try:
+        if "geo_anchor" in d:
+            for k, v in d["geo_anchor"].items():
+                if k in CFG["geo_anchor"]:
+                    CFG["geo_anchor"][k] = int(v)
+        if "competitive_adder" in d:
+            for k, v in d["competitive_adder"].items():
+                CFG["competitive_adder"][int(k)] = int(v)
+        if "bid_score_breaks" in d:
+            CFG["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
+        # zero_ranking_tiers: [[pct_not_ranking, uplift_pct], ...] sorted high-to-low
+        if "zero_ranking_tiers" in d and isinstance(d["zero_ranking_tiers"], list):
+            tiers = []
+            for pair in d["zero_ranking_tiers"]:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    tiers.append([float(pair[0]), float(pair[1])])
+            tiers.sort(key=lambda t: t[0], reverse=True)
+            CFG["zero_ranking_tiers"] = tiers
+        # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
+        if "volume_brackets" in d and isinstance(d["volume_brackets"], list):
+            brs = []
+            for b in d["volume_brackets"]:
+                if isinstance(b, (list, tuple)) and len(b) >= 3:
+                    lo = float(b[0])
+                    hi = None if b[1] in (None, "", "null") else float(b[1])
+                    rate = float(b[2])
+                    brs.append([lo, hi, rate])
+            brs.sort(key=lambda x: x[0])
+            CFG["volume_brackets"] = brs
+        if "vol_free_below" in d and d["vol_free_below"] not in (None, ""):
+            CFG["vol_free_below"] = float(d["vol_free_below"])
+        if "cpc_adder_enabled" in d:
+            CFG["cpc_adder_enabled"] = bool(d["cpc_adder_enabled"])
+        if "grid_mode" in d:
+            CFG["grid_mode"] = bool(d["grid_mode"])
+        if "grid_state_suffix" in d:
+            CFG["grid_state_suffix"] = bool(d["grid_state_suffix"])
+        for key, caster in [("grid_target_keywords", int), ("grid_min_services", int),
+                            ("grid_max_services", int), ("grid_max_cities", int)]:
+            if key in d and d[key] not in (None, ""):
+                CFG[key] = caster(d[key])
+        for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
+                            ("zero_ranking_frac", float), ("step_ratio", float),
+                            ("client_floor", int), ("addon_market_ratio", float),
+                            ("default_markup_pct", float), ("ultra_bucket_size", int),
+                            ("competitive_bucket_size", int), ("longtail_target", int),
+                            ("cpc_adder_mult", float), ("cpc_adder_cap", int),
+                            ("cpc_adder_free_below", float)]:
+            if key in d and d[key] not in (None, ""):
+                CFG[key] = caster(d[key])
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": f"Invalid value: {e}"}), 400
+    return jsonify({"ok": True})
 
-let SAVE_DETAIL = '';
-(async function initSaved(){
-  try{
-    const s = await (await fetch('/api/quotes/status')).json();
-    SAVE_ENABLED = !!s.enabled;
-    SAVE_DETAIL = s.detail || '';
-  }catch(e){ SAVE_ENABLED=false; SAVE_DETAIL='Could not reach the status endpoint.'; }
-  renderSaveStatusBar();
-})();
+@app.route("/api/serp_recommend", methods=["POST"])
+def api_serp_recommend():
+    """Pick the most persuasive head term to screenshot for a proposal:
+    prefer a 'Not Found' term, then most competitive, then geo-modified."""
+    d = request.get_json(force=True)
+    head = d.get("head", [])          # [{"kw":..., "comp":"Ultra"/"Competitive"}]
+    ranks = d.get("ranks", {})        # {kw: "Not Found" | position}
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    def is_geo(kw):
+        return any(m.lower() in kw.lower() for m in markets)
+    def not_found(kw):
+        r = ranks.get(kw, "Not Found")
+        return r == "Not Found" or r is None
+    def score(item):
+        kw = item.get("kw", "")
+        comp_rank = 2 if item.get("comp", "").lower().startswith("ultra") else 1
+        return (1 if not_found(kw) else 0,   # absent first
+                comp_rank,                    # most competitive
+                1 if is_geo(kw) else 0)       # geo-modified
+    if not head:
+        return jsonify({"recommended": None, "options": []})
+    ordered = sorted(head, key=score, reverse=True)
+    return jsonify({"recommended": ordered[0]["kw"],
+                    "options": [h["kw"] for h in head]})
 
-function renderSaveStatusBar(){
-  const bar=$('saveStatusBar'); if(!bar) return;
-  if(SAVE_ENABLED){
-    bar.style.background='#e8f5ec'; bar.style.border='1px solid #b6e0c2'; bar.style.color='#2a7a4a';
-    bar.innerHTML='✓ Saving is on — quotes auto-save when priced, and you can reload them anytime.';
-  }else{
-    bar.style.background='#fdf1d8'; bar.style.border='1px solid #e8c98a'; bar.style.color='#7a5410';
-    bar.innerHTML='⚠ Saving is OFF — '+escapeHtml(SAVE_DETAIL||'attach a Postgres database in Render.')+' Quotes will NOT be saved until this is fixed.';
-  }
-}
+@app.route("/api/serp_queue", methods=["POST"])
+def api_serp_queue():
+    """Step A — queue the SERP task and return immediately with the task_id.
+    Short request (no waiting). The frontend then polls /api/serp_fetch."""
+    d = request.get_json(force=True)
+    keyword = (d.get("keyword") or "").strip()
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    device  = d.get("device", "desktop")
+    if not keyword:
+        return jsonify({"error": "No keyword provided."}), 400
+    try:
+        tp = dfs_post("/serp/google/organic/task_post", [{
+            "keyword": keyword, "location_name": loc_string(markets, state),
+            "language_code": "en", "device": device, "priority": 2}])
+        task = (tp.get("tasks") or [{}])[0]
+        task_id = task.get("id")
+        if not task_id:
+            return jsonify({"error": f"Task not created: {task.get('status_message')}"}), 502
+        # pass display params through so the fetch step can size the screenshot
+        return jsonify({"task_id": task_id, "keyword": keyword, "device": device,
+                        "width": d.get("width"), "height": d.get("height"),
+                        "scale": d.get("scale")})
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
-// Build a full, restorable snapshot of the current quote.
-function snapshotQuote(){
-  return {
-    schema: 1,
-    inputs: ST.inputs, kw: ST.kw, adder: ST.adder, score: ST.score,
-    adder_basis: ST.adder_basis, cpc_used: ST.cpc_used,
-    table: ST.table, paa: ST.paa, ranked: ST.ranked, total: ST.total,
-    zero: ST.zero, longtail: ST.longtail, cpc: ST.cpc, kd: ST.kd,
-    m2: ST._m2 || null,
-    pricing: ST.pricing,
-    totalVol: ST.totalVol, pctNotRanking: ST.pctNotRanking,
-    baseOverride: ST.baseOverride||'',
-    actual: ST.actual||null
-  };
-}
+@app.route("/api/serp_fetch", methods=["POST"])
+def api_serp_fetch():
+    """Step B — try to fetch the screenshot for a queued task_id. Returns the
+    image if ready, or {ready:false} if still processing. Frontend polls this.
+    Each call is short, so no request-timeout risk."""
+    d = request.get_json(force=True)
+    task_id = (d.get("task_id") or "").strip()
+    device  = d.get("device", "desktop")
+    keyword = d.get("keyword", "")
+    if not task_id:
+        return jsonify({"error": "No task_id."}), 400
+    # build screenshot params, including optional sizing
+    shot = {"task_id": task_id, "browser_preset": device}
+    if d.get("width"):  shot["browser_screen_width"]  = int(d["width"])
+    if d.get("height"): shot["browser_screen_height"] = int(d["height"])
+    if d.get("scale"):  shot["browser_screen_scale_factor"] = float(d["scale"])
+    try:
+        sc = dfs_post("/serp/screenshot", [shot])
+        try:
+            image_url = sc["tasks"][0]["result"][0]["items"][0]["image"]
+        except (KeyError, IndexError, TypeError):
+            image_url = None
+        if not image_url:
+            msg = (sc.get("tasks") or [{}])[0].get("status_message", "")
+            return jsonify({"ready": False, "status": msg})
+        login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
+        tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
+        img = requests.get(image_url, headers={"Authorization": f"Basic {tok}"}, timeout=60)
+        img.raise_for_status()
+        b64 = base64.b64encode(img.content).decode()
+        return jsonify({"ready": True, "keyword": keyword,
+                        "data_url": f"data:image/png;base64,{b64}"})
+    except requests.HTTPError as e:
+        # screenshot endpoint returns an error while the task is still running;
+        # treat as not-ready rather than a hard failure so the poll continues
+        return jsonify({"ready": False, "status": f"processing ({e})"})
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
-// Restore a snapshot back into ST and re-render every step.
-function restoreQuote(p){
-  SUPPRESS_AUTOSAVE=true;   // don't auto-save just from loading a saved quote
-  ST.inputs=p.inputs; ST.kw=p.kw; ST.adder=p.adder; ST.score=p.score;
-  ST.adder_basis=p.adder_basis; ST.cpc_used=p.cpc_used;
-  ST.table=p.table||[]; ST.paa=p.paa||[]; ST.ranked=p.ranked||0; ST.total=p.total||0;
-  ST.zero=p.zero; ST.longtail=p.longtail; ST.cpc=p.cpc||{}; ST.kd=p.kd||{};
-  ST.pricing=p.pricing; ST.totalVol=p.totalVol; ST.pctNotRanking=p.pctNotRanking;
-  ST.baseOverride=p.baseOverride||'';
-  ST.actual=p.actual||{};
-  if(p.inputs){ try{ reflectInputs(p.inputs); }catch(e){} }
-  // Step 1 — keyword list
-  if(ST.kw){ try{ renderStep1(); }catch(e){} }
-  // Step 2 — competition summary (rebuild from saved metrics)
-  if(p.m2){ ST._m2=p.m2; try{ panel('p2', step2Html(p.m2)); $('step3')&&($('step3').onclick=()=>runStep3()); }catch(e){} }
-  else if(ST.adder!=null){
-    try{ panel('p2', step2Html({adder:ST.adder, score:ST.score, adder_basis:ST.adder_basis, cpc_used:ST.cpc_used})); }catch(e){}
-  }
-  // Step 3 — rankings table (rebuild from saved ST)
-  if(ST.table && ST.table.length){
-    try{ panel('p3', step3Html()); $('step4')&&($('step4').onclick=()=>runStep4()); }catch(e){}
-  }
-  // Step 4 — pricing
-  if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){} }
-  // re-enable auto-save shortly after the load settles
-  setTimeout(()=>{ SUPPRESS_AUTOSAVE=false; }, 1500);
-}
+# ---------------------------------------------------------------------------
+# SAVED QUOTES — persistence with version history (like the Meta forecast tool).
+# Degrades gracefully: if no DATABASE_URL, /api/quotes/status reports disabled
+# and the UI shows "attach a database to enable" instead of the Save controls.
+# ---------------------------------------------------------------------------
+_LOCATIONS_CACHE = {"names": None}
 
-// push saved inputs back into the visible form fields + pill stores
-function reflectInputs(inp){
-  if(!inp) return;
-  // repopulate the pill stores, then REDRAW them (the stores alone don't render)
-  const fill=(key, arr)=>{ stores[key].length=0; (arr||[]).forEach(v=>stores[key].push(v)); };
-  fill('sites', inp.sites && inp.sites.length ? inp.sites : (inp.domain?[inp.domain]:[]));
-  fill('kw',    inp.keywords);
-  fill('geo',   inp.geo_values);
-  Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
+def dfs_get(path, timeout=60):
+    login = os.environ.get("DFS_LOGIN", "")
+    pw    = os.environ.get("DFS_PASSWORD", "")
+    token = base64.b64encode(f"{login}:{pw}".encode()).decode()
+    resp = requests.get(BASE + path,
+                        headers={"Authorization": f"Basic {token}"}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
 
-  if($('brand'))         $('brand').value = inp.brand||'';
-  if($('business_desc')) $('business_desc').value = inp.business_desc||'';
-  if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
-  if($('state'))         $('state').value = inp.state||'';
-  if($('addon'))         $('addon').value = (inp.addon_markets!=null?inp.addon_markets:0);
-  if($('markup'))        $('markup').value = (inp.markup_pct!=null?inp.markup_pct:35);
-  // geo scope drives whether the add-on field is shown — re-run that toggle
-  if($('geo_scope')) { try{ $('geo_scope').dispatchEvent(new Event('change')); }catch(e){} }
-}
 
-function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
+def us_location_names():
+    """All US location_names DataForSEO recognises, cached for the process.
+    Used to validate the cities a partner typed BEFORE spending API calls on a
+    misspelling (e.g. 'Kakuana' should be 'Kaukauna')."""
+    if _LOCATIONS_CACHE["names"] is not None:
+        return _LOCATIONS_CACHE["names"]
+    try:
+        data = dfs_get("/keywords_data/google_ads/locations/us")
+        items = (data.get("tasks") or [{}])[0].get("result") or []
+        names = [it.get("location_name", "") for it in items if it.get("location_name")]
+        _LOCATIONS_CACHE["names"] = names
+        return names
+    except Exception:
+        _LOCATIONS_CACHE["names"] = []
+        return []
 
-// Live comparison: formula tiers vs Brendan's actual quote, with deltas.
-function wireCompare(c){
-  const fields=[['act_base','diff_base','base'],['act_int','diff_int','intermediate'],['act_adv','diff_adv','advanced']];
-  if(!ST.actual) ST.actual={};
-  const recompute=()=>{
-    let anyOver=0, anyUnder=0, n=0, pctSum=0;
-    fields.forEach(([inId,diffId,key])=>{
-      const el=$(inId), out=$(diffId); if(!el||!out) return;
-      const actual=parseFloat(el.value);
-      const formula=c[key];
-      ST.actual[key]= isNaN(actual)? null : actual;
-      if(isNaN(actual)||!formula){ out.innerHTML='<span class="nf">—</span>'; return; }
-      const diff=formula-actual;                 // + = formula higher than Brendan
-      const pct=actual? Math.round((diff/actual)*100) : 0;
-      n++; pctSum+=pct;
-      if(diff>0) anyOver++; else if(diff<0) anyUnder++;
-      const sign = diff>0?'+':'';
-      const color = diff>0?'#b04a4a':(diff<0?'#2a7a4a':'var(--muted)');
-      out.innerHTML=`<span style="color:${color};font-weight:600">${sign}${money(diff)}</span> <span class="nf">(${sign}${pct}%)</span>`;
-    });
-    const s=$('cmpSummary'); if(!s) return;
-    if(!n){ s.innerHTML='<span class="nf">Enter the actual prices above to compare.</span>'; return; }
-    const avg=Math.round(pctSum/n);
-    let verdict;
-    if(Math.abs(avg)<=5) verdict=`<span style="color:#2a7a4a">Formula is within ${Math.abs(avg)}% of Brendan on average — good match.</span>`;
-    else if(avg>0) verdict=`<span style="color:#b04a4a">Formula runs ~${avg}% HIGHER than Brendan on this client.</span>`;
-    else verdict=`<span style="color:#b04a4a">Formula runs ~${Math.abs(avg)}% LOWER than Brendan on this client.</span>`;
-    s.innerHTML=verdict;
-  };
-  fields.forEach(([inId])=>{ const el=$(inId); if(el) el.addEventListener('input', recompute); });
-  recompute();
-}
 
-// Auto-save: once a quote is priced, persist it automatically (create once, then
-// update in place). Debounced so markup/override tweaks don't spam saves.
-let AUTOSAVE_TIMER=null;
-let SUPPRESS_AUTOSAVE=false;   // set briefly when loading a saved quote
-function scheduleAutoSave(){
-  if(!SAVE_ENABLED || SUPPRESS_AUTOSAVE) return;
-  if(AUTOSAVE_TIMER) clearTimeout(AUTOSAVE_TIMER);
-  AUTOSAVE_TIMER=setTimeout(autoSave, 1200);
-}
-async function autoSave(){
-  if(!SAVE_ENABLED || !ST.pricing) return;
-  const brand=(ST.inputs&&ST.inputs.brand)?ST.inputs.brand:'';
-  const today=new Date().toISOString().slice(0,10);
-  const name = CURRENT_QUOTE_NAME || (brand?`${brand} — ${today}`:today);
-  const client = brand;
-  const payload=snapshotQuote();
-  try{
-    let r;
-    if(CURRENT_QUOTE_ID!=null){
-      r=await postJSON('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
-    }else{
-      r=await postJSON('/api/quotes', {payload, name, client});
-      CURRENT_QUOTE_ID=r.id;
-    }
-    CURRENT_QUOTE_NAME=name;
-    flashAutoSaved();
-    renderSaveRow();
-  }catch(e){ /* silent; manual Save still available */ }
-}
-function flashAutoSaved(){
-  const bar=$('saveStatusBar'); if(!bar||!SAVE_ENABLED) return;
-  const t=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  bar.style.background='#e8f5ec'; bar.style.border='1px solid #b6e0c2'; bar.style.color='#2a7a4a';
-  bar.innerHTML=`✓ Auto-saved “${escapeHtml(CURRENT_QUOTE_NAME)}” at ${t}. Reload anytime from 📁 Saved quotes.`;
-}
+def validate_cities(cities, state):
+    """Check each entered city resolves to a real DataForSEO location in the
+    chosen state. Returns [{city, ok, resolved, suggestions[]}]. Suggestions use
+    close-match scoring so a typo surfaces the intended city."""
+    import difflib
+    names = us_location_names()
+    out = []
+    if not names:
+        return [{"city": c, "ok": None, "resolved": "", "suggestions": []} for c in cities]
+    state_l = (state or "").strip().lower()
+    # cities within the chosen state, as "City,State,United States"
+    in_state = [n for n in names if state_l and f",{state_l}," in n.lower()] if state_l else names
+    city_only = {}
+    for n in in_state:
+        first = n.split(",")[0].strip().lower()
+        city_only.setdefault(first, n)
+    for c in cities:
+        cl = c.strip().lower()
+        if cl in city_only:
+            out.append({"city": c, "ok": True, "resolved": city_only[cl], "suggestions": []})
+        else:
+            close = difflib.get_close_matches(cl, list(city_only.keys()), n=3, cutoff=0.72)
+            out.append({"city": c, "ok": False, "resolved": "",
+                        "suggestions": [city_only[m] for m in close]})
+    return out
 
-function renderSaveRow(){
-  const row=$('saveRow'); if(!row) return;
-  if(!SAVE_ENABLED){
-    row.innerHTML=`<div class="nf" style="font-size:12px">💾 Saving is off. ${escapeHtml(SAVE_DETAIL||'Attach a Postgres database in Render.')}</div>`;
-    return;
-  }
-  const editing = CURRENT_QUOTE_ID!=null;
-  // New quotes auto-name as "Brand — YYYY-MM-DD"; editing keeps the saved name.
-  const brand = (ST.inputs && ST.inputs.brand) ? ST.inputs.brand : '';
-  const today = new Date().toISOString().slice(0,10);
-  const defaultName = editing ? CURRENT_QUOTE_NAME
-                     : (brand ? `${brand} — ${today}` : today);
-  row.innerHTML=`
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input type="text" id="saveName" placeholder="Quote name" value="${escapeHtml(defaultName)}"
-        style="flex:1;min-width:150px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px">
-      <input type="text" id="saveClient" placeholder="Client (optional)" value="${(ST.inputs&&ST.inputs.brand)?escapeHtml(ST.inputs.brand):''}"
-        style="flex:1;min-width:130px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px">
-      <button id="saveBtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">${editing?'💾 Update':'💾 Save'}</button>
-      ${editing?`<button id="saveNewBtn" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:8px 12px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Save as new</button>`:''}
-    </div>
-    ${editing?`<div class="nf" style="font-size:11.5px;margin-top:5px">✓ Auto-saving as “${escapeHtml(CURRENT_QUOTE_NAME)}” (quote #${CURRENT_QUOTE_ID}). Rename above and hit Update, or Save as new to branch a copy. Each update snapshots the prior version to history.</div>`:`<div class="nf" style="font-size:11.5px;margin-top:5px">This quote auto-saves once priced. You can also name & save it manually here.</div>`}
-    <div id="saveMsg" style="font-size:12px;margin-top:6px"></div>`;
-  $('saveBtn').onclick=()=>doSave(editing?'update':'new');
-  if($('saveNewBtn')) $('saveNewBtn').onclick=()=>doSave('new');
-}
 
-async function doSave(mode){
-  const name=($('saveName').value||'').trim();
-  const client=($('saveClient').value||'').trim();
-  const msg=$('saveMsg');
-  if(!name){ msg.innerHTML='<span style="color:#b04a4a">Give the quote a name.</span>'; return; }
-  const btn=$('saveBtn'); const label=btn?btn.textContent:'';
-  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
-  const payload=snapshotQuote();
-  try{
-    let r;
-    if(mode==='update' && CURRENT_QUOTE_ID!=null){
-      r=await postJSON('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
-    }else{
-      r=await postJSON('/api/quotes', {payload, name, client});
-      CURRENT_QUOTE_ID=r.id;
-    }
-    CURRENT_QUOTE_NAME=name;
-    const when=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    const note = (r && r.unchanged)
-      ? `<span style="color:#2a7a4a">✓ Saved at ${when} — no changes since the last version, so no new history entry.</span>`
-      : `<span style="color:#2a7a4a">✓ ${mode==='update'?'Updated':'Saved'} at ${when}${(r&&r.version_saved)?' — previous version kept in History.':''}</span>`;
-    // re-render FIRST, then write the confirmation (the re-render rebuilds the
-    // row and would otherwise wipe the message immediately).
-    renderSaveRow();
-    const m2=$('saveMsg'); if(m2) m2.innerHTML=note;
-  }catch(e){
-    if(btn){ btn.disabled=false; btn.textContent=label; }
-    const m3=$('saveMsg'); if(m3) m3.innerHTML='<span style="color:#b04a4a">'+e.message+'</span>';
-  }
-}
+@app.route("/api/validate_geo", methods=["POST"])
+def api_validate_geo():
+    d = request.get_json(force=True)
+    cities = [c.strip() for c in d.get("geo_values", []) if c.strip()]
+    state  = (d.get("state") or "").strip()
+    if not cities:
+        return jsonify({"error": "No cities to check."}), 400
+    try:
+        return jsonify({"state": state, "results": validate_cities(cities, state)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-// ---- Geo validation: catch a misspelled city BEFORE it costs a run ----
-$('checkGeo').onclick=async()=>{
-  ['geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
-  const out=$('geoCheck');
-  const state=$('state').value;
-  if(!stores.geo.length){ out.innerHTML='<div class="nf" style="font-size:12px">Add some cities first.</div>'; return; }
-  out.innerHTML='<div class="nf" style="font-size:12px">Checking…</div>';
-  try{
-    const r=await postJSON('/api/validate_geo',{geo_values:stores.geo, state});
-    const bad=r.results.filter(x=>x.ok===false);
-    const unknown=r.results.filter(x=>x.ok===null).length;
-    if(unknown){ out.innerHTML='<div class="nf" style="font-size:12px">Couldn\'t reach the location list — skipped.</div>'; return; }
-    if(!bad.length){
-      out.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:7px 11px;border-radius:8px;font-size:12.5px">✓ All ${r.results.length} cities recognised${state?` in ${escapeHtml(state)}`:''}.</div>`;
-      return;
-    }
-    out.innerHTML=`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:8px;font-size:12.5px">
-      <b>${bad.length} cit${bad.length>1?'ies':'y'} not recognised${state?` in ${escapeHtml(state)}`:''}.</b> These will return no data and can wrongly report the client as not ranking.
-      ${!state?'<div style="margin-top:4px">Tip: pick a <b>State</b> above — that alone resolves most of these.</div>':''}
-      <div style="margin-top:6px">${bad.map(b=>`<div style="margin:3px 0">✗ <b>${escapeHtml(b.city)}</b>${b.suggestions.length?` — did you mean ${b.suggestions.map(s=>`<a href="#" class="geo-fix" data-old="${escapeHtml(b.city)}" data-new="${escapeHtml(s.split(',')[0])}" style="color:var(--atlas);font-weight:600">${escapeHtml(s.split(',')[0])}</a>`).join(' or ')}?`:' — no close match found'}</div>`).join('')}</div></div>`;
-    out.querySelectorAll('.geo-fix').forEach(a=>a.onclick=(ev)=>{
-      ev.preventDefault();
-      const i=stores.geo.findIndex(g=>g.toLowerCase()===a.dataset.old.toLowerCase());
-      if(i>=0){ stores.geo[i]=a.dataset.new; PILL_RENDER.geo && PILL_RENDER.geo(); $('checkGeo').click(); }
-    });
-  }catch(e){ out.innerHTML=`<div class="err">${e.message}</div>`; }
-};
+@app.route("/api/quotes/status")
+def api_quotes_status():
+    # Diagnostic detail so "saving is off" isn't a black box: report whether the
+    # URL is present and whether the Postgres driver imported.
+    return jsonify({
+        "enabled": storage.enabled(),
+        "has_database_url": bool(os.environ.get("DATABASE_URL", "")),
+        "driver_installed": getattr(storage, "_HAVE_DRIVER", False),
+        "detail": storage.status_detail(),
+    })
 
-$('savedBtn').onclick=()=>openSaved();
-$('savedClose').onclick=closeSaved;
-$('savedBackdrop').onclick=closeSaved;
-$('savedSearch').addEventListener('input', ()=>loadSavedList($('savedSearch').value));
+@app.route("/api/quotes", methods=["GET"])
+def api_quotes_list():
+    if not storage.enabled():
+        return jsonify({"enabled": False, "quotes": []})
+    search = (request.args.get("q") or "").strip()
+    return jsonify({"enabled": True, "quotes": storage.list_quotes(search)})
 
-function openSaved(){ $('savedPanel').style.display='block'; $('savedBackdrop').style.display='block'; loadSavedList(''); }
-function closeSaved(){ $('savedPanel').style.display='none'; $('savedBackdrop').style.display='none'; }
+@app.route("/api/quotes", methods=["POST"])
+def api_quotes_save():
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled — attach a Postgres database in Render."}), 400
+    d = request.get_json(force=True)
+    name = (d.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Give the quote a name."}), 400
+    client = (d.get("client") or "").strip()
+    payload = d.get("payload") or {}
+    qid = storage.save_quote(name, client, payload)
+    return jsonify({"ok": True, "id": qid})
 
-async function loadSavedList(q){
-  const list=$('savedList');
-  if(!SAVE_ENABLED){ list.innerHTML='<div class="nf" style="font-size:12.5px">Saving is off. Attach a Postgres database in Render to enable saving and reloading quotes.</div>'; return; }
-  list.innerHTML='<div class="nf">Loading…</div>';
-  try{
-    const r=await (await fetch('/api/quotes'+(q?('?q='+encodeURIComponent(q)):''))).json();
-    const qs=r.quotes||[];
-    if(!qs.length){ list.innerHTML='<div class="nf" style="font-size:12.5px">No saved quotes yet.</div>'; return; }
-    list.innerHTML=qs.map(x=>`
-      <div style="border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px">
-        <div style="display:flex;justify-content:space-between;gap:8px">
-          <div style="font-weight:600;font-size:13.5px">${escapeHtml(x.name)}</div>
-          <div class="nf" style="font-size:11px">${(x.updated_at||'').slice(0,10)}</div>
-        </div>
-        ${x.client?`<div class="nf" style="font-size:12px">${escapeHtml(x.client)}</div>`:''}
-        <div style="font-size:12.5px;margin:5px 0;color:var(--atlas)">${money0(x.base)} / ${money0(x.intermediate)} / ${money0(x.advanced)}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="q-load" data-id="${x.id}" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Open</button>
-          <button class="q-hist" data-id="${x.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:5px 11px;border-radius:6px;font-size:12px;cursor:pointer">History</button>
-          <button class="q-del" data-id="${x.id}" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;cursor:pointer">Delete</button>
-        </div>
-        <div id="hist-${x.id}"></div>
-      </div>`).join('');
-    list.querySelectorAll('.q-load').forEach(b=>b.onclick=()=>openQuote(b.dataset.id));
-    list.querySelectorAll('.q-hist').forEach(b=>b.onclick=()=>toggleHistory(b.dataset.id));
-    list.querySelectorAll('.q-del').forEach(b=>b.onclick=()=>delQuote(b.dataset.id));
-  }catch(e){ list.innerHTML='<div class="err">'+e.message+'</div>'; }
-}
+@app.route("/api/quotes/<int:qid>", methods=["GET"])
+def api_quotes_load(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    q = storage.load_quote(qid)
+    if not q:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify(q)
 
-async function openQuote(id){
-  try{
-    const q=await (await fetch('/api/quotes/'+id)).json();
-    if(q.payload){ restoreQuote(q.payload); CURRENT_QUOTE_ID=q.id; CURRENT_QUOTE_NAME=q.name; renderSaveRow(); closeSaved(); }
-  }catch(e){ alert('Could not load: '+e.message); }
-}
+@app.route("/api/quotes/<int:qid>", methods=["PUT"])
+def api_quotes_update(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    d = request.get_json(force=True)
+    payload = d.get("payload") or {}
+    name = d.get("name"); client = d.get("client")
+    ok, version_saved = storage.update_quote(
+        qid, payload,
+        name=name.strip() if isinstance(name, str) else None,
+        client=client.strip() if isinstance(client, str) else None)
+    if not ok:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify({"ok": True, "id": qid,
+                    "version_saved": version_saved,
+                    "unchanged": not version_saved})
 
-async function toggleHistory(id){
-  const box=$('hist-'+id);
-  if(box.dataset.open==='1'){ box.innerHTML=''; box.dataset.open='0'; return; }
-  box.dataset.open='1'; box.innerHTML='<div class="nf" style="font-size:12px;margin-top:6px">Loading history…</div>';
-  try{
-    const r=await (await fetch('/api/quotes/'+id+'/versions')).json();
-    const vs=r.versions||[];
-    if(!vs.length){ box.innerHTML='<div class="nf" style="font-size:11.5px;margin-top:6px">No prior versions yet — the original is the current one.</div>'; return; }
-    box.innerHTML='<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">'+
-      vs.map((v,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0">
-          <span style="font-size:11.5px">${i===0?'<b>Original</b>':'Edit '+i} · ${money0(v.base)}/${money0(v.intermediate)}/${money0(v.advanced)} <span class="nf">${(v.snapshot_at||'').slice(0,10)}</span></span>
-          <span style="display:flex;gap:4px">
-            <button class="v-load" data-vid="${v.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer">View</button>
-            <button class="v-del" data-vid="${v.id}" data-qid="${id}" title="Delete this version" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:3px 7px;border-radius:5px;font-size:11px;cursor:pointer">×</button>
-          </span>
-        </div>`).join('')+'</div>';
-    box.querySelectorAll('.v-load').forEach(b=>b.onclick=()=>loadVersion(b.dataset.vid, id));
-    box.querySelectorAll('.v-del').forEach(b=>b.onclick=()=>delVersion(b.dataset.vid, b.dataset.qid, box));
-  }catch(e){ box.innerHTML='<div class="err">'+e.message+'</div>'; }
-}
+@app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
+def api_quotes_version_delete(vid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    storage.delete_version(vid)
+    return jsonify({"ok": True})
 
-async function loadVersion(vid, quoteId){
-  try{
-    const v=await (await fetch('/api/quotes/version/'+vid)).json();
-    if(v.payload){
-      restoreQuote(v.payload);
-      // loading a historical version keeps you attached to the quote, but flags it
-      CURRENT_QUOTE_ID=quoteId; renderSaveRow();
-      const m=$('saveMsg'); if(m) m.innerHTML='<span class="nf" style="font-size:12px">Loaded a historical version — Update will save it forward as the current version.</span>';
-      closeSaved();
-    }
-  }catch(e){ alert('Could not load version: '+e.message); }
-}
+@app.route("/api/quotes/<int:qid>", methods=["DELETE"])
+def api_quotes_delete(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    storage.delete_quote(qid)
+    return jsonify({"ok": True})
 
-async function delVersion(vid, qid, box){
-  if(!confirm('Delete this history version? The quote itself is not affected.')) return;
-  try{
-    await fetch('/api/quotes/version/'+vid, {method:'DELETE'});
-    box.dataset.open='0';          // force a refresh of the history list
-    await toggleHistory(qid);
-  }catch(e){ alert('Could not delete version: '+e.message); }
-}
+@app.route("/api/quotes/<int:qid>/versions", methods=["GET"])
+def api_quotes_versions(qid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    return jsonify({"versions": storage.list_versions(qid)})
 
-async function delQuote(id){
-  if(!confirm('Delete this saved quote and its history?')) return;
-  try{
-    await fetch('/api/quotes/'+id, {method:'DELETE'});
-    if(String(CURRENT_QUOTE_ID)===String(id)){ CURRENT_QUOTE_ID=null; CURRENT_QUOTE_NAME=''; renderSaveRow(); }
-    loadSavedList($('savedSearch').value);
-  }catch(e){ alert('Could not delete: '+e.message); }
-}
-</script>
-</body>
-</html>
+@app.route("/api/quotes/version/<int:vid>", methods=["GET"])
+def api_quotes_version_load(vid):
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    v = storage.load_version(vid)
+    if not v:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify(v)
+
+# initialize the DB tables on startup (no-op when saving isn't enabled)
+try:
+    storage.init_db()
+except Exception as _e:
+    print(f"[storage] init skipped: {_e}")
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
