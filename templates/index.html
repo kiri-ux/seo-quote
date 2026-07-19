@@ -142,27 +142,32 @@
     <div class="help">Cities / regions / state the keywords should target. At least one entry required (except Nationwide). Type and press comma/Enter.</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
 
-    <label>State <span style="font-weight:400;color:var(--muted)">(used for the local keyword suffix + location lookups)</span></label>
-    <div class="help">Keywords are built as "commercial contractor kaukauna <b>wi</b>" — matching how people actually search locally. Leave blank only for Nationwide.</div>
-    <select id="state">
-      <option value="">— none / nationwide —</option>
-      <option>Alabama</option><option>Alaska</option><option>Arizona</option><option>Arkansas</option>
-      <option>California</option><option>Colorado</option><option>Connecticut</option><option>Delaware</option>
-      <option>Florida</option><option>Georgia</option><option>Hawaii</option><option>Idaho</option>
-      <option>Illinois</option><option>Indiana</option><option>Iowa</option><option>Kansas</option>
-      <option>Kentucky</option><option>Louisiana</option><option>Maine</option><option>Maryland</option>
-      <option>Massachusetts</option><option>Michigan</option><option>Minnesota</option><option>Mississippi</option>
-      <option>Missouri</option><option>Montana</option><option>Nebraska</option><option>Nevada</option>
-      <option>New Hampshire</option><option>New Jersey</option><option>New Mexico</option><option>New York</option>
-      <option>North Carolina</option><option>North Dakota</option><option>Ohio</option><option>Oklahoma</option>
-      <option>Oregon</option><option>Pennsylvania</option><option>Rhode Island</option><option>South Carolina</option>
-      <option>South Dakota</option><option>Tennessee</option><option>Texas</option><option>Utah</option>
-      <option>Vermont</option><option>Virginia</option><option>Washington</option><option>West Virginia</option>
-      <option>Wisconsin</option><option>Wyoming</option>
-    </select>
+    <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
+      <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — not needed in adtini</div>
+      <div class="help" style="margin:0 0 9px">In adtini the geos are already validated at line-item submission, so the state is known and the cities are guaranteed real. This block exists only because this standalone demo takes free-text geos.</div>
 
-    <button id="checkGeo" style="margin-top:8px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✓ Check cities</button>
-    <div id="geoCheck" style="margin-top:8px"></div>
+      <label style="margin-top:0">State <span style="font-weight:400;color:var(--muted)">(used for the local keyword suffix + location lookups)</span></label>
+      <div class="help">Keywords are built as "commercial contractor kaukauna <b>wi</b>" — matching how people actually search locally. Leave blank only for Nationwide.</div>
+      <select id="state">
+        <option value="">— none / nationwide —</option>
+        <option>Alabama</option><option>Alaska</option><option>Arizona</option><option>Arkansas</option>
+        <option>California</option><option>Colorado</option><option>Connecticut</option><option>Delaware</option>
+        <option>Florida</option><option>Georgia</option><option>Hawaii</option><option>Idaho</option>
+        <option>Illinois</option><option>Indiana</option><option>Iowa</option><option>Kansas</option>
+        <option>Kentucky</option><option>Louisiana</option><option>Maine</option><option>Maryland</option>
+        <option>Massachusetts</option><option>Michigan</option><option>Minnesota</option><option>Mississippi</option>
+        <option>Missouri</option><option>Montana</option><option>Nebraska</option><option>Nevada</option>
+        <option>New Hampshire</option><option>New Jersey</option><option>New Mexico</option><option>New York</option>
+        <option>North Carolina</option><option>North Dakota</option><option>Ohio</option><option>Oklahoma</option>
+        <option>Oregon</option><option>Pennsylvania</option><option>Rhode Island</option><option>South Carolina</option>
+        <option>South Dakota</option><option>Tennessee</option><option>Texas</option><option>Utah</option>
+        <option>Vermont</option><option>Virginia</option><option>Washington</option><option>West Virginia</option>
+        <option>Wisconsin</option><option>Wyoming</option>
+      </select>
+
+      <button id="checkGeo" style="margin-top:8px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✓ Check cities</button>
+      <div id="geoCheck" style="margin-top:8px"></div>
+    </div>
 
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
     <input type="text" id="addon" placeholder="0" value="0">
@@ -378,7 +383,7 @@ function renderStep1(){
       }
     };
   });
-  $('step2').addEventListener('click', runStep2);
+  $('step2').onclick = ()=>runStep2();
 }
 
 // ---------- STEP 2 ----------
@@ -415,7 +420,7 @@ async function runStep2(){
     ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
     ST._m2=m;   // keep for save/restore
     panel('p2', step2Html(m));
-    $('step3').addEventListener('click', runStep3);
+    $('step3').onclick = ()=>runStep3();
   }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
 }
 
@@ -438,7 +443,15 @@ function step3Html(){
 }
 
 // ---------- STEP 3 (batched) ----------
+let STEP3_RUNNING = false;
 async function runStep3(retryOnlyFailed){
+  if(STEP3_RUNNING) return;          // a second click must not start a parallel run
+  STEP3_RUNNING = true;
+  try{ await _runStep3(retryOnlyFailed); }
+  finally{ STEP3_RUNNING = false; }
+}
+
+async function _runStep3(retryOnlyFailed){
   $('step3') && ($('step3').disabled=true);
   const all=ST.kw.all.map(r=>r.kw);
   const BATCH=5;   // smaller request = shorter server time = far fewer 502s
@@ -484,7 +497,8 @@ async function runStep3(retryOnlyFailed){
       batch.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
     }
     const p=$('rkprog');
-    if(p) p.textContent=`Checking ${ST.table.length}/${all.length}…`+(ST.errored?`  (${ST.errored} failed, will retry)`:'');
+    if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
+      +(ST.errored?`  (${ST.errored} failed — retry button appears when done)`:'');
   }
   finishStep3();
 }
@@ -506,7 +520,7 @@ function finishStep3(){
   ST.table.sort((a,b)=>(order.get(a.kw)??999)-(order.get(b.kw)??999));
   panel('p3', step3Html());
   if($('retryFailed')) $('retryFailed').onclick=()=>runStep3(true);
-  if($('step4')) $('step4').addEventListener('click', runStep4);
+  if($('step4')) $('step4').onclick = ()=>runStep4();
 }
 
 // ---------- STEP 4 ----------
@@ -953,13 +967,13 @@ function restoreQuote(p){
   // Step 1 — keyword list
   if(ST.kw){ try{ renderStep1(); }catch(e){} }
   // Step 2 — competition summary (rebuild from saved metrics)
-  if(p.m2){ ST._m2=p.m2; try{ panel('p2', step2Html(p.m2)); $('step3')&&$('step3').addEventListener('click',runStep3); }catch(e){} }
+  if(p.m2){ ST._m2=p.m2; try{ panel('p2', step2Html(p.m2)); $('step3')&&($('step3').onclick=()=>runStep3()); }catch(e){} }
   else if(ST.adder!=null){
     try{ panel('p2', step2Html({adder:ST.adder, score:ST.score, adder_basis:ST.adder_basis, cpc_used:ST.cpc_used})); }catch(e){}
   }
   // Step 3 — rankings table (rebuild from saved ST)
   if(ST.table && ST.table.length){
-    try{ panel('p3', step3Html()); $('step4')&&$('step4').addEventListener('click',runStep4); }catch(e){}
+    try{ panel('p3', step3Html()); $('step4')&&($('step4').onclick=()=>runStep4()); }catch(e){}
   }
   // Step 4 — pricing
   if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){} }
