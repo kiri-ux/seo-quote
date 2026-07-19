@@ -497,6 +497,11 @@ RULES:
    - competitive: solid mid-demand services — "homeowners insurance", "renters insurance", "insurance agency", "insurance company"
    - long_tail: niche or compound product lines with genuinely lower demand — "umbrella insurance", "home and auto insurance"
    Note that a mainstream service like "renters insurance" is COMPETITIVE, not long tail. Reserve long_tail for genuinely niche lines.
+   LONG-TAIL PHRASING: prefer COMPOUND or QUALIFIED service phrases over bare two-word niches, so the long-tail tier reads as
+   genuinely longer than the head terms. Good: "home and auto insurance", "commercial umbrella insurance", "business auto insurance",
+   "classic car insurance". Weaker (still valid, but use sparingly): "umbrella insurance", "boat insurance".
+   Aim for at least one multi-word compound in the long_tail tier. These must still be real services the business offers —
+   never invent a service, and never turn it into a question.
 7. VARIETY: these will be crossed with {n_cities} cit{"y" if n_cities == 1 else "ies"}, so you must supply {max_services} DISTINCT services.
    {"Because there are few or no cities to cross against, the variety has to come from the services themselves. Include close variants and qualified forms the way a real proposal does — e.g. for a supplement brand: 'energy gummies', 'electrolyte gummies', 'hydration gummies', 'energy gummies for athletes', 'electrolyte gummies for kids sports', 'best energy gummies'. For a clinic: 'adhd treatment', 'anxiety treatment', 'depression counseling', 'couples therapy', 'family therapy', 'mental health clinic', 'behavioral health services'. Synonyms, sub-services, audience qualifiers and 'best X' forms all count as distinct services." if n_cities <= 2 else "With several cities to cross against, keep the services broad and distinct rather than near-duplicates."}
 
