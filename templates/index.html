@@ -642,11 +642,40 @@ function _bareService(kw){
   let k=kw.toLowerCase().trim();
   const st=(ST.inputs&&ST.inputs.state||'').toLowerCase();
   const AB={'alabama':'al','alaska':'ak','arizona':'az','arkansas':'ar','california':'ca','colorado':'co','connecticut':'ct','delaware':'de','florida':'fl','georgia':'ga','hawaii':'hi','idaho':'id','illinois':'il','indiana':'in','iowa':'ia','kansas':'ks','kentucky':'ky','louisiana':'la','maine':'me','maryland':'md','massachusetts':'ma','michigan':'mi','minnesota':'mn','mississippi':'ms','missouri':'mo','montana':'mt','nebraska':'ne','nevada':'nv','new hampshire':'nh','new jersey':'nj','new mexico':'nm','new york':'ny','north carolina':'nc','north dakota':'nd','ohio':'oh','oklahoma':'ok','oregon':'or','pennsylvania':'pa','rhode island':'ri','south carolina':'sc','south dakota':'sd','tennessee':'tn','texas':'tx','utah':'ut','vermont':'vt','virginia':'va','washington':'wa','west virginia':'wv','wisconsin':'wi','wyoming':'wy'};
-  const ab=AB[st]||'';
-  if(ab && k.endsWith(' '+ab)) k=k.slice(0,-(ab.length+1)).trim();
-  const geos=(ST.inputs&&ST.inputs.geo_values||[]).slice().sort((a,b)=>b.length-a.length);
-  for(const g of geos){ const gl=g.toLowerCase(); if(k.endsWith(' '+gl)){k=k.slice(0,-(gl.length+1)).trim();break;} }
-  return k;
+  // Build strip candidates from pills: the raw pill, its parsed city ("Cherry
+  // Hill, NJ" -> "cherry hill"), and township/city variants.
+  const geos=[];
+  (ST.inputs&&ST.inputs.geo_values||[]).forEach(g=>{
+    const raw=g.toLowerCase().trim();
+    geos.push(raw);
+    const m=raw.match(/^(.+?),\s*[a-z]{2}$/)||raw.match(/^(.+?),\s*[a-z][a-z ]+$/);
+    if(m){ geos.push(m[1].trim()); }
+  });
+  const uniq=[...new Set(geos)].sort((a,b)=>b.length-a.length);
+  const ABL=new Set(Object.values(AB));
+  function stripGeo(str){
+    for(const g of uniq){ if(str.endsWith(' '+g)) return str.slice(0,-(g.length+1)).trim(); }
+    return null;
+  }
+  // try: [service city] · [service city st] · [service st] (state-only pill)
+  let r=stripGeo(k);
+  if(r==null){
+    const toks=k.split(' '); const last=toks[toks.length-1];
+    if(ABL.has(last)){
+      const cut=k.slice(0,-(last.length+1)).trim();
+      const r2=stripGeo(cut);
+      if(r2!=null) return r2;
+    }
+    // state-name pill ("delaware") or regional phrase already covered by uniq
+    if(st && k.endsWith(' '+st.toLowerCase())) return k.slice(0,-(st.length+1)).trim();
+    return k;
+  }
+  // after city strip, a leftover trailing abbr shouldn't remain, but guard anyway
+  const t2=r.split(' '); if(ABL.has(t2[t2.length-1]) && t2.length>1){
+    const cut=r.slice(0,-(t2[t2.length-1].length+1)).trim();
+    if(cut) r=cut;
+  }
+  return r;
 }
 function computeFocus(){
   const volOf=new Map(ST.kw.all.map(r=>[r.kw,r.vol||0]));
