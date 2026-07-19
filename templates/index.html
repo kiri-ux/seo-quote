@@ -142,7 +142,7 @@
     </select>
 
     <label>Geographic targeting areas</label>
-    <div class="help">Cities / regions / state the keywords should target. At least one entry required (except Nationwide). Type and press comma/Enter.</div>
+    <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
 
     <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
@@ -222,8 +222,22 @@ function wirePills(key, inputId){
     });
   }
   PILL_RENDER[key] = render;
+  const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
+  const US_ST_NAMES=new Set(['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming']);
   function commit(){
-    const parts=input.value.split(',').map(s=>s.trim()).filter(Boolean);
+    let parts=input.value.split(',').map(s=>s.trim()).filter(Boolean);
+    // Geo pills accept "City, ST" — the comma would normally split it into two
+    // pills, so re-join a bare state token with the city before it.
+    if(key==='geo'){
+      const merged=[];
+      for(const p of parts){
+        const pl=p.toLowerCase();
+        if(merged.length && (US_ST.has(pl)||US_ST_NAMES.has(pl))){
+          merged[merged.length-1]+=', '+(pl.length===2?p.toUpperCase():p);
+        } else merged.push(p);
+      }
+      parts=merged;
+    }
     if(parts.length){ try{scheduleAutoSave();}catch(e){} }
     parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
     input.value=''; render();
@@ -261,7 +275,7 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
       const showLabel=s.label && s.label.toLowerCase()!==term;
       return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
     }).join('');
-    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.ai_refined?'Menu items converted to how customers actually search — hover a chip to see the original label. ':'⚠ AI unavailable — showing raw menu labels; edit them into search phrases (e.g. “Healthcare” → “healthcare construction company”). '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
+    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
     out.querySelectorAll('.svc-chip').forEach(ch=>{
       ch.onclick=()=>{
         const v=ch.getAttribute('data-label').toLowerCase();

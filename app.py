@@ -137,10 +137,12 @@ def dfs_post(path, payload, timeout=120):
     return resp.json()
 
 def loc_string(markets, state):
-    if markets and state:
-        return f"{markets[0]},{state},United States"
-    if markets:                       # city without state — still localizes
-        return f"{markets[0]},United States"
+    if markets:
+        city, st = parse_market(markets[0], state)
+        if city and st:
+            return f"{city},{st},United States"
+        if city:                      # city without state — still localizes
+            return f"{city},United States"
     if state:
         return f"{state},United States"
     return "United States"
@@ -172,6 +174,40 @@ CITY_STATE = {
     "las vegas":"Nevada","salt lake city":"Utah","columbus":"Ohio","cleveland":"Ohio",
     "cincinnati":"Ohio","indianapolis":"Indiana","milwaukee":"Wisconsin","st louis":"Missouri",
 }
+_ABBREV_TO_STATE = None   # built lazily — STATE_ABBREV is defined later in the module
+
+def _abbrev_to_state():
+    global _ABBREV_TO_STATE
+    if _ABBREV_TO_STATE is None:
+        _ABBREV_TO_STATE = {v: k for k, v in STATE_ABBREV.items()}   # 'nj' -> 'new jersey'
+    return _ABBREV_TO_STATE
+
+def parse_market(m, default_state=""):
+    """Split an entered market into (city, state). Accepts 'Cherry Hill, NJ',
+    'Cherry Hill, New Jersey', or plain 'Cherry Hill' (state then comes from
+    the metro map or the global State field). Multi-state regions — a tri-state
+    MSP, say — need per-city suffixes: 'it support cherry hill nj' but
+    'it support wilmington de'; one global state would mislabel two-thirds
+    of the grid."""
+    m = (m or "").strip()
+    city, st = m, ""
+    if "," in m:
+        head, tail = [p.strip() for p in m.rsplit(",", 1)]
+        t = tail.lower()
+        if t in _abbrev_to_state():              # 'NJ'
+            city, st = head, _abbrev_to_state()[t].title()
+        elif t in STATE_ABBREV:                  # 'New Jersey'
+            city, st = head, tail.title()
+    if not st:
+        st = CITY_STATE.get(city.strip().lower(), "") or (default_state or "").strip()
+    return city.strip(), st
+
+def market_city(m, default_state=""):
+    return parse_market(m, default_state)[0]
+
+def market_state(m, default_state=""):
+    return parse_market(m, default_state)[1]
+
 def derive_state(markets, provided_state=""):
     """Return a state: use the partner's value if given, else look up the first
     market. Empty if unknown (loc_string then falls back to city,United States)."""
@@ -346,6 +382,7 @@ def fetch_local_volume(terms, markets, state):
     kws = [t.lower() for t in terms]
 
     def one(city):
+        # loc_string parses "City, ST" itself; each city localizes to its own state
         loc = loc_string([city], state) if city else loc_string([], state)
         def call(location):
             payload = [{"keywords": kws, "location_name": location,
@@ -603,22 +640,23 @@ def build_grid(services, markets, state, prepicked=False):
     city inherits it. Returns {ultra:[], competitive:[], long_tail:[]}."""
     cities = list(markets) if prepicked else pick_grid_cities(markets, state, CFG["grid_max_cities"])
     suffix_mode = CFG.get("grid_state_suffix", "auto")
-    abbr = STATE_ABBREV.get((state or "").strip().lower(), "") if state else ""
     buckets = {"ultra": [], "competitive": [], "long_tail": []}
 
-    def city_suffix(city_lower):
+    def city_suffix(city_lower, city_state):
         """Brendan suffixes small/ambiguous cities but not well-known metros:
         'auto insurance alexandria va' and 'adult autism services hyde pa', but
         'adhd treatment san diego' and 'deck repair knoxville'. CITY_STATE holds
         the recognizable metros, so membership is a good proxy for 'needs no
-        disambiguation'."""
-        if not abbr:
+        disambiguation'. Each city uses ITS OWN state — a tri-state footprint
+        gets 'cherry hill nj' and 'wilmington de' in the same grid."""
+        ab = STATE_ABBREV.get((city_state or "").strip().lower(), "")
+        if not ab:
             return ""
         if suffix_mode is False or suffix_mode == 0:
             return ""
         if suffix_mode is True or suffix_mode == 1:
-            return f" {abbr}"
-        return "" if city_lower in CITY_STATE else f" {abbr}"   # auto
+            return f" {ab}"
+        return "" if city_lower in CITY_STATE else f" {ab}"   # auto
     for s in services:
         svc, tier = s["service"], s["tier"]
         if not cities:                     # nationwide: no crossing
@@ -626,9 +664,10 @@ def build_grid(services, markets, state, prepicked=False):
                                   "src": "grid", "origin": "added", "service": svc})
             continue
         for city in cities:
-            c = city.strip().lower()
+            c_name, c_state = parse_market(city, state)
+            c = c_name.strip().lower()
             # don't append the state if the "city" IS the state
-            sfx = "" if (state and c == state.strip().lower()) else city_suffix(c)
+            sfx = "" if (c_state and c == c_state.strip().lower()) else city_suffix(c, c_state)
             buckets[tier].append({"keyword": f"{svc} {c}{sfx}".strip(),
                                   "volume": 0, "src": "grid",
                                   "origin": "added", "service": svc, "city": c})
@@ -943,7 +982,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "volume_location": loc_string(markets, state),
-            "state_missing": bool(cities) and not state,
+            "state_missing": bool(cities) and not state
+                             and not all(market_state(c) for c in cities),
             "grid_cities": cities,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
@@ -1030,13 +1070,25 @@ def _strip_markets(kw, markets, state=None):
     city never matches the end of the string and nothing gets stripped, which
     silently kills the bid lookup."""
     k = kw
+    # Strip whichever state abbr this keyword carries — in a multi-state grid
+    # different keywords end in different abbrs (nj / pa / de).
+    abbrs = set()
     if state:
-        abbr = STATE_ABBREV.get(state.strip().lower(), "")
-        if abbr and k.lower().endswith(" " + abbr):
-            k = k[: -(len(abbr) + 1)].strip()
-    for m in sorted(markets, key=len, reverse=True):
-        if m and k.lower().endswith(" " + m.lower()):
-            k = k[: -(len(m) + 1)].strip()
+        a = STATE_ABBREV.get(state.strip().lower(), "")
+        if a: abbrs.add(a)
+    for m in markets:
+        a = STATE_ABBREV.get((market_state(m, state) or "").lower(), "")
+        if a: abbrs.add(a)
+    for a in abbrs:
+        if k.lower().endswith(" " + a):
+            k = k[: -(len(a) + 1)].strip()
+            break
+    # Then strip the city — match on the parsed city name, not the raw
+    # "Cherry Hill, NJ" pill text.
+    city_names = sorted({market_city(m, state) for m in markets}, key=len, reverse=True)
+    for c in city_names:
+        if c and k.lower().endswith(" " + c.lower()):
+            k = k[: -(len(c) + 1)].strip()
             break
     return k
 
@@ -1900,15 +1952,15 @@ def validate_cities(cities, state):
     out = []
     if not names:
         return [{"city": c, "ok": None, "resolved": "", "suggestions": []} for c in cities]
-    state_l = (state or "").strip().lower()
-    # cities within the chosen state, as "City,State,United States"
-    in_state = [n for n in names if state_l and f",{state_l}," in n.lower()] if state_l else names
-    city_only = {}
-    for n in in_state:
-        first = n.split(",")[0].strip().lower()
-        city_only.setdefault(first, n)
     for c in cities:
-        cl = c.strip().lower()
+        c_name, c_state = parse_market(c, state)
+        state_l = (c_state or "").strip().lower()
+        in_state = [n for n in names if state_l and f",{state_l}," in n.lower()] if state_l else names
+        city_only = {}
+        for n in in_state:
+            first = n.split(",")[0].strip().lower()
+            city_only.setdefault(first, n)
+        cl = c_name.strip().lower()
         if cl in city_only:
             out.append({"city": c, "ok": True, "resolved": city_only[cl], "suggestions": []})
         else:
@@ -2067,6 +2119,24 @@ def api_site_services():
             seen.add(key)
             hinted = bool(_SERVICE_PATH_HINT.search(href or ""))
             out.append({"label": t, "source": src, "service_path": hinted})
+
+    # Pass 3 — JS-built navs render no anchors in raw HTML. The sitemap is
+    # static XML that JavaScript can't hide, and page slugs map to the same
+    # service taxonomy a menu would. Same crawler used for business-desc
+    # inference; capped at ~5s internally.
+    used_sitemap = False
+    if len(out) < 3:
+        try:
+            for topic in fetch_site_pages(dom, limit=30):
+                key = topic.lower()
+                if key in seen or key in _MENU_GENERIC: continue
+                if len(topic) > 48 or len(topic.split()) > 6: continue
+                seen.add(key)
+                out.append({"label": topic.title(), "source": "sitemap",
+                            "service_path": False})
+            used_sitemap = len(out) > 0
+        except Exception:
+            pass
     # service-path links first (strongest signal), then menu order
     out.sort(key=lambda x: (not x["service_path"], x["source"] != "menu"))
     out = out[:40]
@@ -2098,7 +2168,8 @@ def api_site_services():
             s["term"] = s["label"].lower()
 
     return jsonify({"domain": dom, "services": out,
-                    "ai_refined": ai_used, "n_nav_links": len(p.nav_links)})
+                    "ai_refined": ai_used, "from_sitemap": used_sitemap,
+                    "n_nav_links": len(p.nav_links)})
 
 
 @app.route("/api/quotes/status")
