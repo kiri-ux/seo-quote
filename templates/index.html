@@ -461,6 +461,16 @@ async function _runStep3(retryOnlyFailed){
   if(!ST.table || !ST.table.length){
     ST.table=[]; ST.paa=[]; ST.ranked=0; ST.errored=0;
   }
+  // ...but ONLY results for keywords in the CURRENT list. If Step 1 was re-run
+  // (e.g. a state was added, so every keyword changed), the old rows no longer
+  // match — keeping them makes the counter run past the total ("32/16") and
+  // lets stale no-state rankings pollute the zero-ranking % that drives price.
+  const allSet=new Set(all);
+  if(ST.table.length){
+    ST.table=ST.table.filter(r=>allSet.has(r.kw));
+    ST.ranked=ST.table.filter(r=>r.ranked_top).length;
+    ST.errored=ST.table.filter(r=>r.error).length;
+  }
   ST.total=all.length;
   const haveGood=new Set(ST.table.filter(r=>!r.error).map(r=>r.kw));
   if(retryOnlyFailed){

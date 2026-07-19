@@ -1048,21 +1048,43 @@ def stage3_metrics(head, markets, state):
     bare_of = {g: _strip_markets(g, markets, state) for g in geo_kws}
     bare_unique = list(dict.fromkeys(bare_of.values()))
 
-    payload = [{"keywords": bare_unique,
-                "location_name": loc_string(markets, state),
-                "language_code": "en"}]
+    # Google Ads bid data is sparse at small-city granularity (e.g. Kaukauna, WI
+    # returns no rows even for real terms). Advertiser demand for the adder
+    # doesn't need city precision, so fall back city -> state -> US and report
+    # which level actually supplied the data.
+    primary_loc = loc_string(markets, state)
+    loc_chain = [primary_loc]
+    if state and f"{state},United States" not in loc_chain:
+        loc_chain.append(f"{state},United States")
+    if "United States" not in loc_chain:
+        loc_chain.append("United States")
     bid_err = None
     items = []
-    try:
-        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
-        task0 = (data.get("tasks") or [{}])[0]
-        # DataForSEO reports per-task problems in status_code/status_message even
-        # on an HTTP 200, so surface those rather than silently returning nothing.
-        if task0.get("status_code") not in (20000, None):
-            bid_err = f"{task0.get('status_code')}: {task0.get('status_message')}"
-        items = (task0.get("result") or [])
-    except Exception as e:
-        bid_err = str(e)
+    bid_loc_used = primary_loc
+    for _loc in loc_chain:
+        payload = [{"keywords": bare_unique,
+                    "location_name": _loc,
+                    "language_code": "en"}]
+        try:
+            data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+            task0 = (data.get("tasks") or [{}])[0]
+            # DataForSEO reports per-task problems in status_code/status_message
+            # even on an HTTP 200, so surface those rather than returning nothing.
+            if task0.get("status_code") not in (20000, None):
+                bid_err = f"{task0.get('status_code')}: {task0.get('status_message')}"
+                continue
+            got = (task0.get("result") or [])
+            if got and not items:
+                items = got            # keep the first non-empty result set
+                bid_loc_used = _loc
+            # only stop early if this level actually carries bid values
+            if got and any((it.get("high_top_of_page_bid") or 0) for it in got):
+                items = got
+                bid_loc_used = _loc
+                bid_err = None
+                break
+        except Exception as e:
+            bid_err = str(e)
     bare_bid = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
     bare_cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
     bare_kd, kd_err = fetch_keyword_difficulty(bare_unique, markets, state)
@@ -1115,7 +1137,8 @@ def stage3_metrics(head, markets, state):
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
             "flat_adder": flat_adder,
             "bid_error": bid_err,
-            "bid_location": loc_string(markets, state),
+            "bid_location": bid_loc_used,
+            "bid_location_fallback": (bid_loc_used != primary_loc),
             "bid_terms_queried": bare_unique[:8],
             "n_markets": len(markets),
             "median_score": median_score, "bids": bids, "cpc": cpc,
