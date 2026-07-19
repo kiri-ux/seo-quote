@@ -1003,6 +1003,28 @@ function reflectInputs(inp){
 
 function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
 
+// Keep post-build form edits from being silently lost on save. ST.inputs is
+// captured when Step 1 runs; if these fields change afterward, sync them in
+// so the autosaved snapshot (and any manual save) reflects the current form.
+['state','geo_scope','addon','markup','brand'].forEach(fid=>{
+  const el=$(fid); if(!el) return;
+  el.addEventListener('change',()=>{
+    if(!ST.inputs) return;
+    if(fid==='state')          ST.inputs.state=el.value;
+    else if(fid==='geo_scope') ST.inputs.geo_scope=el.value;
+    else if(fid==='addon')     ST.inputs.addon_markets=parseInt(el.value||'0',10);
+    else if(fid==='markup')    ST.inputs.markup_pct=parseFloat(el.value||'35');
+    else if(fid==='brand')     ST.inputs.brand=el.value;
+    // A state change after the keyword build means the list no longer matches
+    // the form — nudge toward a re-run rather than quoting a mismatched list.
+    if(fid==='state' && ST.kw){
+      panel('p_state_note',
+        `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ State changed after the keyword list was built — re-run Step 1 so keywords get the "${el.value?el.value:'(none)'}" suffix and the rank check matches.</div>`);
+    }
+    scheduleAutoSave();
+  });
+});
+
 // Live comparison: formula tiers vs Brendan's actual quote, with deltas.
 function wireCompare(c){
   const fields=[['act_base','diff_base','base'],['act_int','diff_int','intermediate'],['act_adv','diff_adv','advanced']];
