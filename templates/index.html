@@ -566,6 +566,17 @@ async function _runStep3(retryOnlyFailed){
     if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
       +(ST.errored?`  (${ST.errored} failed — retry button appears when done)`:'');
   }
+  // One automatic retry pass: batch failures are usually cold-start latency on
+  // the live SERP queue, which has warmed up by the time the run finishes. Only
+  // the failed keywords are re-fetched; completed rows are kept.
+  if(ST.errored>0 && !retryOnlyFailed && !ST._autoRetried){
+    ST._autoRetried=true;
+    const p2=$('rkprog');
+    if(p2) p2.textContent=`Retrying ${ST.errored} failed lookup${ST.errored>1?'s':''} automatically…`;
+    await _runStep3(true);
+    return;
+  }
+  ST._autoRetried=false;
   finishStep3();
 }
 

@@ -1149,19 +1149,23 @@ def stage3_metrics(head, markets, state):
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
 # ---------------------------------------------------------------------------
-def _serp_one(kw, domain_dom, markets, state, brand, top_n):
+def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None):
     """One keyword's SERP call. Returns (position_or_None, [paa questions]).
-    Depth tracks top_n (not 100) and the timeout is short, so one slow lookup
-    can't push the batch past the platform request limit. Retries once, because
-    a transient failure would otherwise be recorded as 'Not Found' — which would
-    wrongly inflate the not-ranking percentage that drives pricing."""
+    Depth tracks top_n (not 100). Works within a shared batch DEADLINE: the
+    platform kills any request near ~30s, so retrying past the budget doesn't
+    save this keyword — it kills the WHOLE batch, failing keywords that had
+    already finished. Better to fail one fast and let the retry pass get it."""
     depth = max(top_n, 10)
     payload = [{"keyword": kw, "location_name": loc_string(markets, state),
                 "language_code": "en", "depth": depth}]
     last_err = None
     for attempt in range(2):
+        remaining = (deadline - time.time()) if deadline else 20
+        if remaining < 4:
+            raise last_err or TimeoutError("rank-check batch budget exhausted")
+        tmo = min(14 if attempt == 0 else remaining - 1, remaining, 20)
         try:
-            data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=20)
+            data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=tmo)
             break
         except Exception as e:
             last_err = e
@@ -1610,7 +1614,9 @@ def api_rankings():
     results, paa = [], []
     try:
         with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
-            futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n): kw for kw in batch}
+            batch_deadline = time.time() + 24   # stay well under the ~30s platform kill
+            futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n,
+                              batch_deadline): kw for kw in batch}
             done = {}
             for fut in futs:
                 kw = futs[fut]
