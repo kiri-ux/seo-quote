@@ -410,43 +410,81 @@ function step3Html(){
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
         — ${ST.ranked}/${checked} rank in top 20 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
+      ${ST.errored?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`;
 }
 
 // ---------- STEP 3 (batched) ----------
-async function runStep3(){
-  $('step3').disabled=true;
+async function runStep3(retryOnlyFailed){
+  $('step3') && ($('step3').disabled=true);
   const all=ST.kw.all.map(r=>r.kw);
-  const BATCH=8;
-  ST.table=[]; ST.paa=[]; ST.ranked=0; ST.total=all.length; ST.errored=0;
+  const BATCH=5;   // smaller request = shorter server time = far fewer 502s
+
+  // RESUME: keep everything already fetched. Only look up keywords we don't have
+  // a good result for yet, so a mid-run failure never costs completed work.
+  if(!ST.table || !ST.table.length){
+    ST.table=[]; ST.paa=[]; ST.ranked=0; ST.errored=0;
+  }
+  ST.total=all.length;
+  const haveGood=new Set(ST.table.filter(r=>!r.error).map(r=>r.kw));
+  if(retryOnlyFailed){
+    // drop the failed rows so they can be re-fetched cleanly
+    ST.table=ST.table.filter(r=>!r.error);
+    ST.errored=0;
+  }
+  const done=new Set(ST.table.map(r=>r.kw));
+  const todo=all.filter(k=>!done.has(k));
+
+  if(!todo.length){ finishStep3(); return; }
+
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
-    <div class="why">Checks where the client's site currently ranks (top 100) for each keyword in their market. Done in small batches so it can't time out.</div>
-    <div class="calc" id="rkprog">Checking 0/${all.length}…</div>`);
-  try{
-    for(let i=0;i<all.length;i+=BATCH){
-      const batch=all.slice(i,i+BATCH);
-      const r=await postJSON('/api/rankings',{
-        batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
-        state:ST.inputs.state, brand:ST.inputs.brand});
-      r.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
-      ST.paa.push(...r.paa);
-      $('rkprog').textContent=`Checking ${Math.min(i+BATCH,all.length)}/${all.length}…`;
+    <div class="why">Checks where the client's site currently ranks for each keyword in their market. Runs in batches; if one batch fails the rest still complete, and re-running only fetches what's missing.</div>
+    <div class="calc" id="rkprog">Checking ${haveGood.size}/${all.length}…</div>`);
+
+  for(let i=0;i<todo.length;i+=BATCH){
+    const batch=todo.slice(i,i+BATCH);
+    let got=null;
+    for(let attempt=0; attempt<2 && !got; attempt++){
+      try{
+        got=await postJSON('/api/rankings',{
+          batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
+          state:ST.inputs.state, brand:ST.inputs.brand});
+      }catch(e){
+        if(attempt===0){ await new Promise(r=>setTimeout(r,1500)); }   // one retry
+      }
     }
-    const checkedOk = Math.max(ST.total - ST.errored, 0) || 1;
-    ST.zero = (ST.ranked/checkedOk) < 0.10;
-    // Long tail comes from the grid itself (lower-competition services x cities).
-    // The People-Also-Ask harvest is deliberately NOT folded in: it produces
-    // question-style phrases, which the real proposals essentially never use.
-    ST.longtail=[...ST.kw.long_tail];
-    if(!ST.kw.grid){
-      const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
-      for(const q of ST.paa){ if(ST.longtail.length>=10) break;
-        if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
+    if(got){
+      got.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
+      ST.paa.push(...(got.paa||[]));
+    }else{
+      // batch failed twice — record these as failed and KEEP GOING
+      batch.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
     }
-    panel('p3', step3Html());
-    $('step4').addEventListener('click', runStep4);
-  }catch(e){ panel('p3',`<div class="err">${e.message} (mid-batch — re-click Check rankings to retry)</div>`); $('step3').disabled=false; }
+    const p=$('rkprog');
+    if(p) p.textContent=`Checking ${ST.table.length}/${all.length}…`+(ST.errored?`  (${ST.errored} failed, will retry)`:'');
+  }
+  finishStep3();
+}
+
+function finishStep3(){
+  const checkedOk = Math.max(ST.total - ST.errored, 0) || 1;
+  ST.zero = (ST.ranked/checkedOk) < 0.10;
+  // Long tail comes from the grid itself (lower-competition services x cities).
+  // The People-Also-Ask harvest is deliberately NOT folded in: it produces
+  // question-style phrases, which the real proposals essentially never use.
+  ST.longtail=[...ST.kw.long_tail];
+  if(!ST.kw.grid){
+    const used=new Set([...ST.kw.ultra,...ST.kw.competitive,...ST.kw.long_tail].map(r=>r.kw.toLowerCase()));
+    for(const q of ST.paa){ if(ST.longtail.length>=10) break;
+      if(!used.has(q.toLowerCase())){used.add(q.toLowerCase()); ST.longtail.push({kw:q,vol:0});} }
+  }
+  // keep the table in the original keyword order after resumes
+  const order=new Map(ST.kw.all.map((r,i)=>[r.kw,i]));
+  ST.table.sort((a,b)=>(order.get(a.kw)??999)-(order.get(b.kw)??999));
+  panel('p3', step3Html());
+  if($('retryFailed')) $('retryFailed').onclick=()=>runStep3(true);
+  if($('step4')) $('step4').addEventListener('click', runStep4);
 }
 
 // ---------- STEP 4 ----------
