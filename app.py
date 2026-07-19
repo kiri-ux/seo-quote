@@ -346,13 +346,25 @@ def fetch_local_volume(terms, markets, state):
 
     def one(city):
         loc = loc_string([city], state) if city else loc_string([], state)
-        payload = [{"keywords": kws, "location_name": loc, "language_code": "en"}]
-        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload,
-                        timeout=25)
-        task0 = (data.get("tasks") or [{}])[0]
-        if task0.get("status_code") not in (20000, None):
-            raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
-        return task0.get("result") or []
+        def call(location):
+            payload = [{"keywords": kws, "location_name": location,
+                        "language_code": "en"}]
+            data = dfs_post("/keywords_data/google_ads/search_volume/live", payload,
+                            timeout=25)
+            task0 = (data.get("tasks") or [{}])[0]
+            if task0.get("status_code") not in (20000, None):
+                raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+            return task0.get("result") or []
+        try:
+            return call(loc)
+        except Exception as e:
+            # An unrecognized city (misspelling, or a name DataForSEO doesn't
+            # carry) returns 40501. Retry at a broader location so the quote
+            # still gets *some* demand signal instead of silently pricing at $0.
+            if "40501" in str(e) or "not found" in str(e).lower():
+                broader = (f"{state},United States" if state else "United States")
+                return call(broader)
+            raise
 
     totals, per_city, errs, ok = {}, {}, [], 0
     try:
@@ -930,6 +942,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "volume_location": loc_string(markets, state),
+            "state_missing": bool(cities) and not state,
+            "grid_cities": cities,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
 
@@ -1522,6 +1536,8 @@ def api_refine():
         "total_volume": s1.get("total_volume", None),
         "volume_error": s1.get("volume_error"),
         "volume_location": s1.get("volume_location"),
+        "state_missing": s1.get("state_missing", False),
+        "grid_cities": s1.get("grid_cities", []),
     })
 
 @app.route("/api/metrics", methods=["POST"])
@@ -1809,6 +1825,75 @@ def api_serp_fetch():
 # Degrades gracefully: if no DATABASE_URL, /api/quotes/status reports disabled
 # and the UI shows "attach a database to enable" instead of the Save controls.
 # ---------------------------------------------------------------------------
+_LOCATIONS_CACHE = {"names": None}
+
+def dfs_get(path, timeout=60):
+    login = os.environ.get("DFS_LOGIN", "")
+    pw    = os.environ.get("DFS_PASSWORD", "")
+    token = base64.b64encode(f"{login}:{pw}".encode()).decode()
+    resp = requests.get(BASE + path,
+                        headers={"Authorization": f"Basic {token}"}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def us_location_names():
+    """All US location_names DataForSEO recognises, cached for the process.
+    Used to validate the cities a partner typed BEFORE spending API calls on a
+    misspelling (e.g. 'Kakuana' should be 'Kaukauna')."""
+    if _LOCATIONS_CACHE["names"] is not None:
+        return _LOCATIONS_CACHE["names"]
+    try:
+        data = dfs_get("/keywords_data/google_ads/locations/us")
+        items = (data.get("tasks") or [{}])[0].get("result") or []
+        names = [it.get("location_name", "") for it in items if it.get("location_name")]
+        _LOCATIONS_CACHE["names"] = names
+        return names
+    except Exception:
+        _LOCATIONS_CACHE["names"] = []
+        return []
+
+
+def validate_cities(cities, state):
+    """Check each entered city resolves to a real DataForSEO location in the
+    chosen state. Returns [{city, ok, resolved, suggestions[]}]. Suggestions use
+    close-match scoring so a typo surfaces the intended city."""
+    import difflib
+    names = us_location_names()
+    out = []
+    if not names:
+        return [{"city": c, "ok": None, "resolved": "", "suggestions": []} for c in cities]
+    state_l = (state or "").strip().lower()
+    # cities within the chosen state, as "City,State,United States"
+    in_state = [n for n in names if state_l and f",{state_l}," in n.lower()] if state_l else names
+    city_only = {}
+    for n in in_state:
+        first = n.split(",")[0].strip().lower()
+        city_only.setdefault(first, n)
+    for c in cities:
+        cl = c.strip().lower()
+        if cl in city_only:
+            out.append({"city": c, "ok": True, "resolved": city_only[cl], "suggestions": []})
+        else:
+            close = difflib.get_close_matches(cl, list(city_only.keys()), n=3, cutoff=0.72)
+            out.append({"city": c, "ok": False, "resolved": "",
+                        "suggestions": [city_only[m] for m in close]})
+    return out
+
+
+@app.route("/api/validate_geo", methods=["POST"])
+def api_validate_geo():
+    d = request.get_json(force=True)
+    cities = [c.strip() for c in d.get("geo_values", []) if c.strip()]
+    state  = (d.get("state") or "").strip()
+    if not cities:
+        return jsonify({"error": "No cities to check."}), 400
+    try:
+        return jsonify({"state": state, "results": validate_cities(cities, state)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/quotes/status")
 def api_quotes_status():
     # Diagnostic detail so "saving is off" isn't a black box: report whether the

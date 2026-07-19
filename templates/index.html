@@ -142,7 +142,27 @@
     <div class="help">Cities / regions / state the keywords should target. At least one entry required (except Nationwide). Type and press comma/Enter.</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
 
-    <input type="hidden" id="state" value="">
+    <label>State <span style="font-weight:400;color:var(--muted)">(used for the local keyword suffix + location lookups)</span></label>
+    <div class="help">Keywords are built as "commercial contractor kaukauna <b>wi</b>" — matching how people actually search locally. Leave blank only for Nationwide.</div>
+    <select id="state">
+      <option value="">— none / nationwide —</option>
+      <option>Alabama</option><option>Alaska</option><option>Arizona</option><option>Arkansas</option>
+      <option>California</option><option>Colorado</option><option>Connecticut</option><option>Delaware</option>
+      <option>Florida</option><option>Georgia</option><option>Hawaii</option><option>Idaho</option>
+      <option>Illinois</option><option>Indiana</option><option>Iowa</option><option>Kansas</option>
+      <option>Kentucky</option><option>Louisiana</option><option>Maine</option><option>Maryland</option>
+      <option>Massachusetts</option><option>Michigan</option><option>Minnesota</option><option>Mississippi</option>
+      <option>Missouri</option><option>Montana</option><option>Nebraska</option><option>Nevada</option>
+      <option>New Hampshire</option><option>New Jersey</option><option>New Mexico</option><option>New York</option>
+      <option>North Carolina</option><option>North Dakota</option><option>Ohio</option><option>Oklahoma</option>
+      <option>Oregon</option><option>Pennsylvania</option><option>Rhode Island</option><option>South Carolina</option>
+      <option>South Dakota</option><option>Tennessee</option><option>Texas</option><option>Utah</option>
+      <option>Vermont</option><option>Virginia</option><option>Washington</option><option>West Virginia</option>
+      <option>Wisconsin</option><option>Wyoming</option>
+    </select>
+
+    <button id="checkGeo" style="margin-top:8px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✓ Check cities</button>
+    <div id="geoCheck" style="margin-top:8px"></div>
 
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
     <input type="text" id="addon" placeholder="0" value="0">
@@ -322,6 +342,7 @@ function renderStep1(){
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
+    ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
     ${kw.grid&&kw.services&&kw.services.length?`<div style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>Grid:</b> ${kw.services.length} services × cities — ${kw.services.map(s=>`${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}
       <div style="margin-top:4px">${(kw.total_volume)?`<b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()} <span class="nf">(summed across all targeted cities — this drives the volume component of price; the number beside each keyword is that city's own volume)</span>`:`<span style="color:#8a5a10">⚠ No volume data${kw.volume_error?` — ${escapeHtml(kw.volume_error)}`:''}. The volume part of pricing will be $0.</span>`}</div></div>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
@@ -410,6 +431,7 @@ function step3Html(){
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
         — ${ST.ranked}/${checked} rank in top 20 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
+      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all.</b> That can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix. This applies the largest zero-ranking uplift, so it <b>raises the price</b>. Spot-check one keyword in Google before quoting.</div>`:''}
       ${ST.errored?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`;
@@ -1096,7 +1118,34 @@ async function doSave(mode){
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-// ---- Saved quotes drawer ----
+// ---- Geo validation: catch a misspelled city BEFORE it costs a run ----
+$('checkGeo').onclick=async()=>{
+  ['geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
+  const out=$('geoCheck');
+  const state=$('state').value;
+  if(!stores.geo.length){ out.innerHTML='<div class="nf" style="font-size:12px">Add some cities first.</div>'; return; }
+  out.innerHTML='<div class="nf" style="font-size:12px">Checking…</div>';
+  try{
+    const r=await postJSON('/api/validate_geo',{geo_values:stores.geo, state});
+    const bad=r.results.filter(x=>x.ok===false);
+    const unknown=r.results.filter(x=>x.ok===null).length;
+    if(unknown){ out.innerHTML='<div class="nf" style="font-size:12px">Couldn\'t reach the location list — skipped.</div>'; return; }
+    if(!bad.length){
+      out.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:7px 11px;border-radius:8px;font-size:12.5px">✓ All ${r.results.length} cities recognised${state?` in ${escapeHtml(state)}`:''}.</div>`;
+      return;
+    }
+    out.innerHTML=`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:8px;font-size:12.5px">
+      <b>${bad.length} cit${bad.length>1?'ies':'y'} not recognised${state?` in ${escapeHtml(state)}`:''}.</b> These will return no data and can wrongly report the client as not ranking.
+      ${!state?'<div style="margin-top:4px">Tip: pick a <b>State</b> above — that alone resolves most of these.</div>':''}
+      <div style="margin-top:6px">${bad.map(b=>`<div style="margin:3px 0">✗ <b>${escapeHtml(b.city)}</b>${b.suggestions.length?` — did you mean ${b.suggestions.map(s=>`<a href="#" class="geo-fix" data-old="${escapeHtml(b.city)}" data-new="${escapeHtml(s.split(',')[0])}" style="color:var(--atlas);font-weight:600">${escapeHtml(s.split(',')[0])}</a>`).join(' or ')}?`:' — no close match found'}</div>`).join('')}</div></div>`;
+    out.querySelectorAll('.geo-fix').forEach(a=>a.onclick=(ev)=>{
+      ev.preventDefault();
+      const i=stores.geo.findIndex(g=>g.toLowerCase()===a.dataset.old.toLowerCase());
+      if(i>=0){ stores.geo[i]=a.dataset.new; PILL_RENDER.geo && PILL_RENDER.geo(); $('checkGeo').click(); }
+    });
+  }catch(e){ out.innerHTML=`<div class="err">${e.message}</div>`; }
+};
+
 $('savedBtn').onclick=()=>openSaved();
 $('savedClose').onclick=closeSaved;
 $('savedBackdrop').onclick=closeSaved;
