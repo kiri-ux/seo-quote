@@ -109,9 +109,16 @@ CFG = {
     # all ten. He does NOT use question-style long-tails (2 instances across 18
     # proposals), so the long-tail tier is just lower-competition services.
     "grid_mode": True,
-    "grid_max_services": 4,            # services expanded from the seeds
+    # Brendan targets a keyword COUNT, trading services against cities:
+    #   Rockingham  10 cities x 10 services = ~104
+    #   Serene       1 metro  x ~14 services = 20
+    #   Skidmore     0 cities x ~20 services = 24
+    # So services scale INVERSELY with cities to hold the total near target.
+    "grid_target_keywords": 32,
+    "grid_min_services": 4,
+    "grid_max_services": 20,
     "grid_max_cities": 10,             # cities crossed against each service
-    "grid_state_suffix": True,         # "auto insurance fairfax va" vs "... fairfax"
+    "grid_state_suffix": "auto",       # auto = suffix only cities that need it
 }
 
 def r50(x):
@@ -320,23 +327,57 @@ def fetch_site_pages(domain, limit=30):
 
 
 def fetch_local_volume(terms, markets, state):
-    """Search volume for bare service terms AT THE CLIENT'S MARKET (not national).
-    Uses the Google Ads endpoint because it accepts a location_name string, so we
-    can scope to the actual city/state. National volume would be wildly larger
-    than a local client's real addressable demand. Returns {term_lower: volume}."""
+    """Search volume for bare service terms across THE CITIES BEING TARGETED.
+
+    A single lookup only covers markets[0], which undercounts a multi-city grid
+    by roughly the city count (e.g. 'auto insurance' is ~480/mo in Alexandria but
+    the campaign also covers nine other cities). So query each city and sum per
+    service — that's the client's real addressable demand.
+    Returns ({term_lower: summed_volume}, error_or_None)."""
     if not terms:
-        return {}
-    try:
-        payload = [{"keywords": [t.lower() for t in terms],
-                    "location_name": loc_string(markets, state),
-                    "language_code": "en"}]
-        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        return {}, {}, None
+    cities = [c for c in (markets or []) if c and c.strip()]
+    if state:
+        cities = [c for c in cities if c.strip().lower() != state.strip().lower()]
+    if not cities:
+        cities = [""]                      # nationwide / no city: single lookup
+    cities = cities[:CFG.get("grid_max_cities", 10)]
+    kws = [t.lower() for t in terms]
+
+    def one(city):
+        loc = loc_string([city], state) if city else loc_string([], state)
+        payload = [{"keywords": kws, "location_name": loc, "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload,
+                        timeout=25)
         task0 = (data.get("tasks") or [{}])[0]
-        items = task0.get("result") or []
-        return {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
-                for it in items}
-    except Exception:
-        return {}
+        if task0.get("status_code") not in (20000, None):
+            raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+        return task0.get("result") or []
+
+    totals, per_city, errs, ok = {}, {}, [], 0
+    try:
+        with ThreadPoolExecutor(max_workers=min(len(cities), 8)) as ex:
+            futs = {ex.submit(one, c): c for c in cities}
+            for fut in futs:
+                city = futs[fut]
+                try:
+                    for it in fut.result():
+                        k = (it.get("keyword") or "").lower()
+                        if k:
+                            v = it.get("search_volume") or 0
+                            totals[k] = totals.get(k, 0) + v
+                            per_city[(city.strip().lower(), k)] = v
+                    ok += 1
+                except Exception as e:
+                    errs.append(str(e))
+    except Exception as e:
+        return {}, {}, str(e)
+    if not ok:
+        return {}, {}, (errs[0] if errs else "no volume rows returned")
+    note = None
+    if ok < len(cities):
+        note = f"volume summed over {ok}/{len(cities)} cities (some lookups failed)"
+    return totals, per_city, note
 
 
 def fetch_exact_volume(keywords, markets, state):
@@ -414,7 +455,7 @@ STATE_ABBREV = {
 }
 
 def claude_expand_services(seeds, business_desc, site_pages, brand, domain,
-                           candidates, max_services):
+                           candidates, max_services, n_cities=1):
     """Expand the partner's seed terms into the SERVICE list a proposal would
     target, assigning a competitiveness TIER to each service (not to each
     keyword). This mirrors how the real proposals are built: 'auto insurance' is
@@ -456,6 +497,8 @@ RULES:
    - competitive: solid mid-demand services — "homeowners insurance", "renters insurance", "insurance agency", "insurance company"
    - long_tail: niche or compound product lines with genuinely lower demand — "umbrella insurance", "home and auto insurance"
    Note that a mainstream service like "renters insurance" is COMPETITIVE, not long tail. Reserve long_tail for genuinely niche lines.
+7. VARIETY: these will be crossed with {n_cities} cit{"y" if n_cities == 1 else "ies"}, so you must supply {max_services} DISTINCT services.
+   {"Because there are few or no cities to cross against, the variety has to come from the services themselves. Include close variants and qualified forms the way a real proposal does — e.g. for a supplement brand: 'energy gummies', 'electrolyte gummies', 'hydration gummies', 'energy gummies for athletes', 'electrolyte gummies for kids sports', 'best energy gummies'. For a clinic: 'adhd treatment', 'anxiety treatment', 'depression counseling', 'couples therapy', 'family therapy', 'mental health clinic', 'behavioral health services'. Synonyms, sub-services, audience qualifiers and 'best X' forms all count as distinct services." if n_cities <= 2 else "With several cities to cross against, keep the services broad and distinct rather than near-duplicates."}
 
 Return ONLY valid JSON, no prose:
 {{"services": [{{"service": "auto insurance", "tier": "ultra"}}, {{"service": "umbrella insurance", "tier": "long_tail"}}]}}"""
@@ -489,6 +532,17 @@ Return ONLY valid JSON, no prose:
         return None
 
 
+def services_needed(n_cities):
+    """How many services to generate so services x cities lands near the target
+    keyword count. Few cities -> many services (a one-metro client needs service
+    variety); many cities -> fewer services (the crossing supplies the volume)."""
+    import math
+    target = CFG.get("grid_target_keywords", 32)
+    lo, hi = CFG.get("grid_min_services", 4), CFG.get("grid_max_services", 20)
+    n = max(int(n_cities), 1)
+    return max(lo, min(hi, math.ceil(target / n)))
+
+
 def pick_grid_cities(markets, state, limit):
     """Choose WHICH cities go in the grid when more are supplied than the cap.
     Taking the first N by input order picks alphabetically-early villages over
@@ -503,7 +557,13 @@ def pick_grid_cities(markets, state, limit):
     if len(cities) <= limit:
         return cities
     try:
-        probe = [f"insurance {c.lower()}" for c in cities][:700]
+        # Probe with the state suffix so ambiguous names resolve to the RIGHT
+        # place: bare "insurance washington" matches Washington State/DC, and
+        # "insurance jersey" matches New Jersey — which would rank tiny Virginia
+        # towns above real metros. "insurance washington va" scores correctly.
+        abbr = STATE_ABBREV.get((state or "").strip().lower(), "")
+        sfx = f" {abbr}" if abbr else ""
+        probe = [f"insurance {c.lower()}{sfx}" for c in cities][:700]
         payload = [{"keywords": probe,
                     "location_name": loc_string(cities, state),
                     "language_code": "en"}]
@@ -512,23 +572,35 @@ def pick_grid_cities(markets, state, limit):
         vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                for it in items}
         ranked = sorted(cities,
-                        key=lambda c: vol.get(f"insurance {c.lower()}", 0),
+                        key=lambda c: vol.get(f"insurance {c.lower()}{sfx}", 0),
                         reverse=True)
         return ranked[:limit]
     except Exception:
         return cities[:limit]
 
 
-def build_grid(services, markets, state):
+def build_grid(services, markets, state, prepicked=False):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
     city inherits it. Returns {ultra:[], competitive:[], long_tail:[]}."""
-    cities = pick_grid_cities(markets, state, CFG["grid_max_cities"])
-    suffix = ""
-    if CFG.get("grid_state_suffix") and state:
-        suffix = " " + STATE_ABBREV.get(state.strip().lower(), "")
-        suffix = suffix.rstrip()
+    cities = list(markets) if prepicked else pick_grid_cities(markets, state, CFG["grid_max_cities"])
+    suffix_mode = CFG.get("grid_state_suffix", "auto")
+    abbr = STATE_ABBREV.get((state or "").strip().lower(), "") if state else ""
     buckets = {"ultra": [], "competitive": [], "long_tail": []}
+
+    def city_suffix(city_lower):
+        """Brendan suffixes small/ambiguous cities but not well-known metros:
+        'auto insurance alexandria va' and 'adult autism services hyde pa', but
+        'adhd treatment san diego' and 'deck repair knoxville'. CITY_STATE holds
+        the recognizable metros, so membership is a good proxy for 'needs no
+        disambiguation'."""
+        if not abbr:
+            return ""
+        if suffix_mode is False or suffix_mode == 0:
+            return ""
+        if suffix_mode is True or suffix_mode == 1:
+            return f" {abbr}"
+        return "" if city_lower in CITY_STATE else f" {abbr}"   # auto
     for s in services:
         svc, tier = s["service"], s["tier"]
         if not cities:                     # nationwide: no crossing
@@ -537,11 +609,11 @@ def build_grid(services, markets, state):
             continue
         for city in cities:
             c = city.strip().lower()
-            # don't double-append the state if the "city" IS the state
-            sfx = "" if (state and c == state.strip().lower()) else suffix
+            # don't append the state if the "city" IS the state
+            sfx = "" if (state and c == state.strip().lower()) else city_suffix(c)
             buckets[tier].append({"keyword": f"{svc} {c}{sfx}".strip(),
                                   "volume": 0, "src": "grid",
-                                  "origin": "added", "service": svc})
+                                  "origin": "added", "service": svc, "city": c})
     return buckets
 
 
@@ -812,23 +884,31 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     # ---- GRID MODE: build a service x city grid like the real proposals -----
     if CFG.get("grid_mode"):
         cands = ultra + competitive + long_tail
+        # Decide the city set FIRST so the service count can scale to it.
+        cities = pick_grid_cities(markets, state, CFG["grid_max_cities"])
+        n_services = services_needed(len(cities))
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
-                                          cands, CFG["grid_max_services"])
+                                          cands, n_services, len(cities))
         if not services:
             # fall back to the partner's seeds, spread across tiers
             tiers = ["ultra", "ultra", "competitive", "long_tail"]
             services = [{"service": s.strip().lower(), "tier": tiers[min(i, 3)]}
-                        for i, s in enumerate(seeds[:CFG["grid_max_services"]])]
-        g = build_grid(services, markets, state)
+                        for i, s in enumerate(seeds[:n_services])]
+        g = build_grid(services, cities, state, prepicked=True)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
         # geo-modified forms report ~0). The same figure is shown on each city
         # row for that service, so pricing must count it ONCE PER SERVICE — not
         # once per row — or a 10-city grid would inflate volume 10x.
         svc_names = list(dict.fromkeys([s["service"] for s in services]))
-        vols = fetch_local_volume(svc_names, markets, state)
+        vols, per_city, vol_err = fetch_local_volume(svc_names, cities, state)
         for r in full:
-            v = vols.get((r.get("service") or "").lower())
+            svc_l = (r.get("service") or "").lower()
+            city_l = (r.get("city") or "").lower()
+            # the row shows ITS OWN city's volume; pricing uses the summed total
+            v = per_city.get((city_l, svc_l))
+            if v is None:
+                v = vols.get(svc_l)
             if v is not None:
                 r["volume"] = v
         service_volume = {s: vols.get(s.lower(), 0) for s in svc_names}
@@ -843,6 +923,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "grid": True,
             "services": services,
             "service_volume": service_volume,
+            "volume_error": vol_err,
+            "volume_location": loc_string(markets, state),
             "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
 
@@ -1433,6 +1515,8 @@ def api_refine():
         "services": s1.get("services", []),
         "service_volume": s1.get("service_volume", {}),
         "total_volume": s1.get("total_volume", None),
+        "volume_error": s1.get("volume_error"),
+        "volume_location": s1.get("volume_location"),
     })
 
 @app.route("/api/metrics", methods=["POST"])
@@ -1555,7 +1639,9 @@ def api_config_get():
         "default_markup_pct": CFG["default_markup_pct"],
         "ultra_bucket_size": CFG["ultra_bucket_size"],
         "grid_mode": CFG.get("grid_mode", True),
-        "grid_max_services": CFG.get("grid_max_services", 4),
+        "grid_target_keywords": CFG.get("grid_target_keywords", 32),
+        "grid_min_services": CFG.get("grid_min_services", 4),
+        "grid_max_services": CFG.get("grid_max_services", 20),
         "grid_max_cities": CFG.get("grid_max_cities", 10),
         "grid_state_suffix": CFG.get("grid_state_suffix", True),
         "competitive_bucket_size": CFG["competitive_bucket_size"],
@@ -1604,7 +1690,8 @@ def api_config_set():
             CFG["grid_mode"] = bool(d["grid_mode"])
         if "grid_state_suffix" in d:
             CFG["grid_state_suffix"] = bool(d["grid_state_suffix"])
-        for key, caster in [("grid_max_services", int), ("grid_max_cities", int)]:
+        for key, caster in [("grid_target_keywords", int), ("grid_min_services", int),
+                            ("grid_max_services", int), ("grid_max_cities", int)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
         for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
