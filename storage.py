@@ -87,9 +87,40 @@ def init_db():
             );
         """)
         conn.commit()
+    # Share-token column for read-only review links (idempotent for existing DBs).
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;")
+        conn.commit()
 
 
-def _tiers(payload):
+def get_or_create_share_token(quote_id):
+    """Return the quote's share token, minting one on first request. The token
+    is the whole credential — anyone with the link can VIEW (never edit), so
+    it's long and random, and stable so a re-share doesn't kill the old link."""
+    import secrets
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT share_token FROM quotes WHERE id=%s", (quote_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        if row[0]:
+            return row[0]
+        token = secrets.token_urlsafe(18)
+        cur.execute("UPDATE quotes SET share_token=%s WHERE id=%s", (token, quote_id))
+        conn.commit()
+        return token
+
+
+def load_by_token(token):
+    """Read-only fetch of a quote by its share token."""
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, name, client, payload, updated_at FROM quotes "
+                    "WHERE share_token=%s", (token,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "name": row[1], "client": row[2],
+                "payload": row[3], "updated_at": row[4].isoformat()}
     """Pull the 3 client-tier prices out of a saved quote for list display."""
     try:
         ct = payload.get("pricing", {}).get("client_tiers", {})

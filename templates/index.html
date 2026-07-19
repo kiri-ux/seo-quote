@@ -281,6 +281,13 @@ const pastseo=document.getElementById('pastseo');
 pastseo.addEventListener('change',()=>{
   document.getElementById('pastseo_lbl').textContent=pastseo.checked?'Yes':'No';
   document.getElementById('pastseo_detail_wrap').classList.toggle('hidden',!pastseo.checked);
+  if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.past_seo=pastseo.checked; }
+  try{scheduleAutoSave();}catch(e){}
+});
+document.getElementById('pastseo_detail').addEventListener('change',()=>{
+  const v=document.getElementById('pastseo_detail').value.trim();
+  if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.past_seo_detail=v; }
+  try{scheduleAutoSave();}catch(e){}
 });
 
 
@@ -304,6 +311,8 @@ function collectInputs(){
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
     addon_markets: parseInt($('addon').value||'0',10),
     markup_pct: parseFloat($('markup').value||'35'),
+    past_seo: !!($('pastseo')&&$('pastseo').checked),
+    past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
   };
 }
 
@@ -473,8 +482,12 @@ function step3Html(){
   const checked = Math.max((ST.total||0) - (ST.errored||0), 0);
   const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
   const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
+  const ctx=(ST.inputs&&ST.inputs.past_seo)
+    ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
+    : '';
   return `
       <h4 class="sec">Step 3 · Rankings</h4>
+      ${ctx}
       <div class="why">Checks where the client's site currently ranks (top ${20}) for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks, the client is starting from scratch.</div>
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
@@ -1033,8 +1046,42 @@ let SAVE_ENABLED = false;
 let CURRENT_QUOTE_ID = null;     // set when a saved quote is loaded/edited
 let CURRENT_QUOTE_NAME = '';
 
+// ---- READ-ONLY REVIEW MODE (shared /review/<token> links) ----
+const REVIEW_TOKEN = (location.pathname.match(/^\/review\/([A-Za-z0-9_-]+)/)||[])[1] || null;
+const REVIEW_MODE = !!REVIEW_TOKEN;
+
+async function initReviewMode(){
+  const bar=$('saveStatusBar');
+  try{
+    const res=await fetch('/api/review/'+REVIEW_TOKEN);
+    const q=await res.json();
+    if(!res.ok) throw new Error(q.error||'Could not load this review link.');
+    // banner replaces the save-status bar
+    if(bar){
+      bar.style.background='#eef4fb'; bar.style.border='1px solid var(--atlas)'; bar.style.color='var(--atlas)';
+      bar.innerHTML=`🔎 <b>Review copy</b> — “${escapeHtml(q.name)}”${q.client?` · ${escapeHtml(q.client)}`:''} · saved ${q.updated_at.slice(0,10)} · read-only. Edits here won't save; contact the sender to change the quote.`;
+    }
+    if(q.payload) restoreQuote(q.payload);
+    // hide the input form column + config so the reviewer sees only the quote
+    document.querySelectorAll('.wrap > .card').forEach((c,i)=>{ if(i===0) c.style.display='none'; });
+    const cfg=document.querySelector('.wrap > .card[style*="margin-top"]'); if(cfg) cfg.style.display='none';
+    const sb=document.getElementById('savedBtn'); if(sb) sb.style.display='none';
+    // neuter every pipeline/save button — view, don't re-run
+    ['step1','step2','step3','step4','saveBtn','saveNewBtn','shareBtn','retryFailed'].forEach(id=>{
+      const el=$(id); if(el){ el.disabled=true; el.style.display='none'; }
+    });
+    document.querySelectorAll('#out button, #out input:not([readonly]), #out select').forEach(el=>{
+      if(el.tagName==='BUTTON'){ el.disabled=true; }
+    });
+  }catch(e){
+    if(bar){ bar.style.background='#fdecec'; bar.style.border='1px solid #e8a0a0'; bar.style.color='#a33';
+      bar.innerHTML='⚠ '+escapeHtml(e.message); }
+  }
+}
+
 let SAVE_DETAIL = '';
 (async function initSaved(){
+  if(REVIEW_MODE){ await initReviewMode(); return; }
   try{
     const s = await (await fetch('/api/quotes/status')).json();
     SAVE_ENABLED = !!s.enabled;
@@ -1065,6 +1112,8 @@ function snapshotQuote(){
     keywords: stores.kw.slice(), geo_values: stores.geo.slice(),
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
+    past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
+    past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
   }) : ST.inputs;
   return {
     schema: 1,
@@ -1100,7 +1149,7 @@ function restoreQuote(p){
   }
   // Step 3 — rankings table (rebuild from saved ST)
   if(ST.table && ST.table.length){
-    try{ panel('p3', step3Html()); $('step4')&&($('step4').onclick=()=>runStep4()); }catch(e){}
+    try{ panel('p3', step3Html()); panel('p3b', focusHtml()); $('step4')&&($('step4').onclick=()=>runStep4()); }catch(e){}
   }
   // Step 4 — pricing
   if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){} }
@@ -1119,6 +1168,13 @@ function reflectInputs(inp){
   Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
 
   if($('brand'))         $('brand').value = inp.brand||'';
+  if($('pastseo')){
+    $('pastseo').checked = !!inp.past_seo;
+    const l=$('pastseo_lbl'); if(l) l.textContent = inp.past_seo?'Yes':'No';
+    const w=document.getElementById('pastseo_detail_wrap');
+    if(w) w.classList.toggle('hidden', !inp.past_seo);
+  }
+  if($('pastseo_detail')) $('pastseo_detail').value = inp.past_seo_detail||'';
   if($('business_desc')) $('business_desc').value = inp.business_desc||'';
   if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
   if($('state'))         $('state').value = inp.state||'';
@@ -1190,12 +1246,12 @@ function wireCompare(c){
 let AUTOSAVE_TIMER=null;
 let SUPPRESS_AUTOSAVE=false;   // set briefly when loading a saved quote
 function scheduleAutoSave(){
-  if(!SAVE_ENABLED || SUPPRESS_AUTOSAVE) return;
+  if(REVIEW_MODE || !SAVE_ENABLED || SUPPRESS_AUTOSAVE) return;
   if(AUTOSAVE_TIMER) clearTimeout(AUTOSAVE_TIMER);
   AUTOSAVE_TIMER=setTimeout(autoSave, 1200);
 }
 async function autoSave(){
-  if(!SAVE_ENABLED || !ST.pricing) return;
+  if(REVIEW_MODE || !SAVE_ENABLED || !ST.pricing) return;
   const brand=(ST.inputs&&ST.inputs.brand)?ST.inputs.brand:'';
   const today=new Date().toISOString().slice(0,10);
   const name = CURRENT_QUOTE_NAME || (brand?`${brand} — ${today}`:today);
@@ -1241,11 +1297,23 @@ function renderSaveRow(){
         style="flex:1;min-width:130px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px">
       <button id="saveBtn" style="background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">${editing?'💾 Update':'💾 Save'}</button>
       ${editing?`<button id="saveNewBtn" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:8px 12px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Save as new</button>`:''}
+      ${editing?`<button id="shareBtn" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:8px 12px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">🔗 Share for review</button>`:''}
     </div>
-    ${editing?`<div class="nf" style="font-size:11.5px;margin-top:5px">✓ Auto-saving as “${escapeHtml(CURRENT_QUOTE_NAME)}” (quote #${CURRENT_QUOTE_ID}). Rename above and hit Update, or Save as new to branch a copy. Each update snapshots the prior version to history.</div>`:`<div class="nf" style="font-size:11.5px;margin-top:5px">This quote auto-saves once priced. You can also name & save it manually here.</div>`}
+    ${editing?`<div class="nf" style="font-size:11.5px;margin-top:5px">✓ Auto-saving as “${escapeHtml(CURRENT_QUOTE_NAME)}” (quote #${CURRENT_QUOTE_ID}). Rename above and hit Update, or Save as new to branch a copy. Each update snapshots the prior version to history.</div>`:`<div class="nf" style="font-size:11.5px;margin-top:5px">This quote auto-saves once priced. You can also name & save it manually here. Once saved, you can share a read-only review link.</div>`}
     <div id="saveMsg" style="font-size:12px;margin-top:6px"></div>`;
   $('saveBtn').onclick=()=>doSave(editing?'update':'new');
   if($('saveNewBtn')) $('saveNewBtn').onclick=()=>doSave('new');
+  if($('shareBtn')) $('shareBtn').onclick=async()=>{
+    const msg=$('saveMsg');
+    try{
+      const r=await postJSON(`/api/quotes/${CURRENT_QUOTE_ID}/share`,{});
+      let copied=false;
+      try{ await navigator.clipboard.writeText(r.url); copied=true; }catch(e){}
+      msg.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:7px 11px;border-radius:8px">
+        ${copied?'✓ Review link copied to clipboard':'Review link'} — read-only, latest saved version:<br>
+        <input type="text" readonly value="${r.url}" onclick="this.select()" style="width:100%;margin-top:5px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace"></div>`;
+    }catch(e){ msg.innerHTML=`<div class="err">${e.message}</div>`; }
+  };
 }
 
 async function doSave(mode){

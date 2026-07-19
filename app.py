@@ -2152,6 +2152,34 @@ def api_quotes_update(qid):
                     "version_saved": version_saved,
                     "unchanged": not version_saved})
 
+@app.route("/api/quotes/<int:qid>/share", methods=["POST"])
+def api_quotes_share(qid):
+    """Mint (or return the existing) read-only review link for a saved quote."""
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled — attach Postgres first."}), 400
+    token = storage.get_or_create_share_token(qid)
+    if not token:
+        return jsonify({"error": "Quote not found."}), 404
+    return jsonify({"token": token,
+                    "url": request.host_url.rstrip("/") + "/review/" + token})
+
+@app.route("/api/review/<token>")
+def api_review(token):
+    """Read-only quote fetch for the review page. Token is the credential;
+    no edit endpoints accept it."""
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    q = storage.load_by_token(token)
+    if not q:
+        return jsonify({"error": "This review link is invalid or the quote was deleted."}), 404
+    return jsonify(q)
+
+@app.route("/review/<token>")
+def review_page(token):
+    """Same template as the tool; the frontend sees /review/ in the path and
+    switches to read-only review mode."""
+    return render_template("index.html")
+
 @app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
 def api_quotes_version_delete(vid):
     if not storage.enabled():
