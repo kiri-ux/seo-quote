@@ -1925,6 +1925,51 @@ def api_validate_geo():
         return jsonify({"error": str(e)}), 500
 
 
+def claude_menu_to_terms(labels, brand, domain, seeds, business_desc):
+    """Convert raw nav-menu labels into search-phrase service terms. A menu
+    says 'Healthcare' or 'Warehouse'; a searcher types 'healthcare construction
+    company'. Returns {label: term_or_None} — None means drop it (careers,
+    press, process pages). Empty dict when the AI isn't available, so the
+    caller can fall back to raw labels."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not labels:
+        return {}
+    prompt = f"""These are navigation menu labels scraped from a business's website. Convert each into the search phrase a potential CUSTOMER would type into Google when looking for that service from this kind of business.
+
+BUSINESS: {brand or "(unknown)"} — {domain}
+WHAT THEY DO: {business_desc or "(infer from the labels and any seeds)"}
+EXISTING SEED TERMS: {", ".join(seeds) if seeds else "(none)"}
+
+MENU LABELS: {json.dumps(labels, ensure_ascii=False)}
+
+Rules:
+- Sector/industry labels get the core service appended: for a commercial builder, "Healthcare" -> "healthcare construction company", "Self-Storage" -> "self storage construction".
+- Labels that already read like a service ("Commercial Construction") may pass through nearly as-is, normalized to how people search.
+- Map to null anything that is NOT a purchasable service: careers, press, blog, media, "our process", team pages, generic CTAs.
+- Lowercase, no geo, 2-5 words each.
+
+Return ONLY a JSON object mapping every input label to its search phrase or null. No preamble, no markdown fences."""
+    try:
+        resp = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 1500, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=25)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return {k: (v.strip().lower() if isinstance(v, str) and v.strip() else None)
+                    for k, v in parsed.items()}
+    except Exception:
+        pass
+    return {}
+
+
 class _NavLinkParser(HTMLParser):
     """Collect anchor text from the page, tracking whether each link sits inside
     a <nav>/<header> element. Menu structure is the signal: businesses list the
@@ -1961,6 +2006,9 @@ _MENU_GENERIC = {
     "request a quote","free quote","free estimate","get started","learn more",
     "read more","view all","see all","menu","español","facebook","instagram",
     "linkedin","twitter","youtube","x",
+    "start my career","start my project","our process","media","blogs",
+    "press releases","press","join our team","apply now","employment",
+    "history","our history","our story","leadership","safety","awards",
 }
 _SERVICE_PATH_HINT = re.compile(
     r"/(services?|markets?|sectors?|industries|what-we-do|capabilities|"
@@ -2015,8 +2063,36 @@ def api_site_services():
             out.append({"label": t, "source": src, "service_path": hinted})
     # service-path links first (strongest signal), then menu order
     out.sort(key=lambda x: (not x["service_path"], x["source"] != "menu"))
-    return jsonify({"domain": dom, "services": out[:40],
-                    "n_nav_links": len(p.nav_links)})
+    out = out[:40]
+
+    # Convert raw labels into search-phrase terms. "Healthcare" is a menu item,
+    # not a search — a customer types "healthcare construction company". Claude
+    # sees the whole label set plus business context, so it also drops
+    # non-service items the static filter missed. On any failure, raw labels
+    # pass through so the feature degrades instead of breaking.
+    seeds = [s for s in (d.get("seeds") or []) if isinstance(s, str)]
+    mapping = claude_menu_to_terms([s["label"] for s in out],
+                                   d.get("brand") or "", dom, seeds,
+                                   d.get("business_desc") or "")
+    ai_used = bool(mapping)
+    if ai_used:
+        converted, seen_terms = [], set()
+        for s in out:
+            term = mapping.get(s["label"], s["label"].lower())
+            if term is None:
+                continue                      # AI says: not a service
+            if term in seen_terms:
+                continue                      # two labels -> same phrase
+            seen_terms.add(term)
+            s["term"] = term
+            converted.append(s)
+        out = converted
+    else:
+        for s in out:
+            s["term"] = s["label"].lower()
+
+    return jsonify({"domain": dom, "services": out,
+                    "ai_refined": ai_used, "n_nav_links": len(p.nav_links)})
 
 
 @app.route("/api/quotes/status")

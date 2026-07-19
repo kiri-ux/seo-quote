@@ -246,16 +246,22 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
   btn.disabled=true; btn.textContent='Reading site menu…';
   out.innerHTML='';
   try{
-    const res=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:dom})});
+    document.getElementById('brand') && document.getElementById('brand').dispatchEvent(new Event('blur'));
+    const res=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({domain:dom, brand:(document.getElementById('brand')||{}).value||'',
+        business_desc:(document.getElementById('business_desc')||{}).value||'', seeds:stores.kw.slice()})});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
     if(!(data.services||[]).length){
       out.innerHTML='<div class="nf" style="font-size:12px">No menu items found — the site may build its nav with JavaScript. Add seeds by hand.</div>';
       return;
     }
-    const chips=data.services.map((s,i)=>
-      `<span class="svc-chip" data-label="${s.label.replace(/"/g,'&quot;')}" title="${s.service_path?'from a services/markets page link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${s.label}</span>`).join('');
-    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Click to add as a seed — ★ came from a services/markets link (strongest signal). Edit freely; these cross with your cities like any other seed.</div>${chips}`;
+    const chips=data.services.map((s,i)=>{
+      const term=(s.term||s.label).toLowerCase();
+      const showLabel=s.label && s.label.toLowerCase()!==term;
+      return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
+    }).join('');
+    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.ai_refined?'Menu items converted to how customers actually search — hover a chip to see the original label. ':'⚠ AI unavailable — showing raw menu labels; edit them into search phrases (e.g. “Healthcare” → “healthcare construction company”). '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
     out.querySelectorAll('.svc-chip').forEach(ch=>{
       ch.onclick=()=>{
         const v=ch.getAttribute('data-label').toLowerCase();
