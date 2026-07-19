@@ -152,7 +152,7 @@
 
     <label>Geographic targeting areas</label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
-    <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Knoxville, Farragut, Alcoa"></div>
+    <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
 
     <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
       <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — not needed in adtini</div>
@@ -252,7 +252,10 @@ function wirePills(key, inputId){
     input.value=''; render();
   }
   input.addEventListener('keydown',e=>{
-    if(e.key===','||e.key==='Enter'){e.preventDefault();commit();}
+    // Geo pills need literal commas ("Philadelphia, PA"), so only Enter commits
+    // there — committing on the comma keypress would cut the city off before
+    // the state could be typed. Other pill fields keep comma-commit.
+    if(e.key==='Enter'||(e.key===','&&key!=='geo')){e.preventDefault();commit();}
     else if(e.key==='Backspace'&&!input.value&&stores[key].length){stores[key].pop();render();}
   });
   input.addEventListener('blur',commit);
