@@ -121,6 +121,9 @@ def load_by_token(token):
             return None
         return {"id": row[0], "name": row[1], "client": row[2],
                 "payload": row[3], "updated_at": row[4].isoformat()}
+
+
+def _tiers(payload):
     """Pull the 3 client-tier prices out of a saved quote for list display."""
     try:
         ct = payload.get("pricing", {}).get("client_tiers", {})

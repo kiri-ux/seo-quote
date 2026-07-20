@@ -125,14 +125,16 @@ CFG = {
 def r50(x):
     return int(round(x / 50.0) * 50)
 
-def dfs_post(path, payload, timeout=120):
+def dfs_post(path, payload, timeout=120, method="POST"):
     login = os.environ.get("DFS_LOGIN", "")
     pw    = os.environ.get("DFS_PASSWORD", "")
     token = base64.b64encode(f"{login}:{pw}".encode()).decode()
-    resp = requests.post(BASE + path,
-                         headers={"Authorization": f"Basic {token}",
-                                  "Content-Type": "application/json"},
-                         data=json.dumps(payload), timeout=timeout)
+    hdrs = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
+    if method == "GET":
+        resp = requests.get(BASE + path, headers=hdrs, timeout=timeout)
+    else:
+        resp = requests.post(BASE + path, headers=hdrs,
+                             data=json.dumps(payload), timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
@@ -759,6 +761,9 @@ def build_grid(services, markets, state, prepicked=False):
     return buckets
 
 
+def claude_refine_keywords(seeds, markets, brand, domain, candidates,
+                           site_terms, business_desc="", site_pages=None,
+                           state=""):
     """Claude pass over the API-generated candidates: removes junk/garbled/off-topic
     terms (using the business description to exclude irrelevant services), folds in
     site-related opportunities, buckets by difficulty, and tags each term's origin
@@ -1735,6 +1740,104 @@ def api_metrics():
                     "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
                     "median_kd": m3.get("median_kd"), "kd_error": m3.get("kd_error"),
                     "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
+
+def _serp_parse_items(items, domain_dom, brand):
+    """Shared SERP parsing for live + task modes: first organic position for
+    the client domain, plus People-Also-Ask questions (brand-mention filtered)."""
+    pos, paa = None, []
+    for it in items or []:
+        if it.get("type") == "organic" and domain_dom and domain_dom in (it.get("domain") or ""):
+            if pos is None:
+                pos = it.get("rank_absolute")
+        if it.get("type") == "people_also_ask":
+            for el in it.get("items", []):
+                q = el.get("title")
+                if q and (brand or "").lower() not in q.lower():
+                    paa.append(q)
+    return pos, paa
+
+
+@app.route("/api/rankings_submit", methods=["POST"])
+def api_rankings_submit():
+    """Step 3, async mode — submit ALL rank lookups as DataForSEO tasks in one
+    call. Task mode has no 30s wall: the platform ceiling only ever killed us
+    because LIVE lookups block while Google is crawled. Tasks queue server-side
+    and the frontend polls /api/rankings_collect until they land."""
+    d = request.get_json(force=True)
+    kws     = [k for k in d.get("keywords", []) if k]
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state   = derive_state(markets, (d.get("state") or "").strip())
+    top_n   = CFG["zero_ranking_top_n"]
+    depth   = max(top_n, 10)
+    loc     = loc_string(markets, state)
+    payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
+                "depth": depth, "priority": 2, "tag": kw[:255]} for kw in kws]
+    try:
+        data = dfs_post("/serp/google/organic/task_post", payload, timeout=25)
+    except Exception as e:
+        return jsonify({"error": f"task submit failed: {e}"}), 502
+    out = []
+    for t in (data.get("tasks") or []):
+        kw = ((t.get("data") or {}).get("keyword")) or ((t.get("data") or {}).get("tag")) or ""
+        if t.get("status_code") in (20100, 20000) and t.get("id"):
+            out.append({"kw": kw, "task_id": t["id"]})
+        else:
+            out.append({"kw": kw, "task_id": None,
+                        "error": f"{t.get('status_code')}: {t.get('status_message')}"})
+    return jsonify({"tasks": out})
+
+
+@app.route("/api/rankings_collect", methods=["POST"])
+def api_rankings_collect():
+    """Poll pending rank tasks. Returns done rows (same shape as /api/rankings)
+    and the still-pending task list to poll again."""
+    d = request.get_json(force=True)
+    tasks  = d.get("tasks", [])
+    domain = (d.get("domain") or "").strip()
+    brand  = (d.get("brand") or "").strip()
+    dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    top_n = CFG["zero_ranking_top_n"]
+    done, pending, paa = [], [], []
+
+    def one(t):
+        data = dfs_post(f"/serp/google/organic/task_get/advanced/{t['task_id']}",
+                        None, timeout=12, method="GET")
+        task0 = (data.get("tasks") or [{}])[0]
+        sc = task0.get("status_code")
+        if sc == 20000:
+            res = (task0.get("result") or [{}])[0]
+            pos, qs = _serp_parse_items(res.get("items") or [], dom, brand)
+            return ("done", pos, qs)
+        if sc in (40601, 40602, 40100):      # queued / in progress
+            return ("pending", None, [])
+        return ("error", None, [])
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(one, t): t for t in tasks if t.get("task_id")}
+        results = {}
+        for fut in futs:
+            t = futs[fut]
+            try:
+                results[t["kw"]] = fut.result()
+            except Exception:
+                results[t["kw"]] = ("pending", None, [])   # transient: poll again
+    for t in tasks:
+        if not t.get("task_id"):
+            done.append({"kw": t["kw"], "pos": "—", "ranked_top": False, "error": True})
+            continue
+        status, pos, qs = results.get(t["kw"], ("pending", None, []))
+        if status == "done":
+            done.append({"kw": t["kw"],
+                         "pos": (pos if pos is not None else "Not Found"),
+                         "ranked_top": (pos is not None and pos <= top_n),
+                         "error": False})
+            paa.extend(qs)
+        elif status == "error":
+            done.append({"kw": t["kw"], "pos": "—", "ranked_top": False, "error": True})
+        else:
+            pending.append(t)
+    return jsonify({"done": done, "pending": pending, "paa": paa[:40]})
+
 
 @app.route("/api/rankings", methods=["POST"])
 def api_rankings():

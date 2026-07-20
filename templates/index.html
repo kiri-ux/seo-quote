@@ -595,9 +595,47 @@ async function _runStep3(retryOnlyFailed){
   if(!todo.length){ finishStep3(); return; }
 
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
-    <div class="why">Checks where the client's site currently ranks for each keyword in their market. Runs in batches; if one batch fails the rest still complete, and re-running only fetches what's missing.</div>
+    <div class="why">Checks where the client's site currently ranks for each keyword in their market. Lookups run as queued tasks — a slow one just takes a little longer instead of failing.</div>
     <div class="calc" id="rkprog">Checking ${haveGood.size}/${all.length}…</div>`);
 
+  // ---- ASYNC TASK MODE (preferred): submit everything, poll until done ----
+  // Live lookups block while Google is crawled and die at the platform's 30s
+  // wall — the source of every "N failed" you've seen. Task mode queues on
+  // DataForSEO's side with no wall; slow lookups arrive late, not broken.
+  try{
+    const sub=await postJSON('/api/rankings_submit',{keywords:todo,
+      geo_values:ST.inputs.geo_values, state:ST.inputs.state});
+    let pending=(sub.tasks||[]).filter(t=>t.task_id);
+    (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
+      ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++;
+    });
+    if(pending.length){
+      const t0=Date.now();
+      while(pending.length && Date.now()-t0 < 150000){   // up to 2.5 min
+        await new Promise(r=>setTimeout(r,2500));
+        let coll=null;
+        try{
+          coll=await postJSON('/api/rankings_collect',{tasks:pending,
+            domain:ST.inputs.domain, brand:ST.inputs.brand});
+        }catch(e){ continue; }                            // transient — poll again
+        (coll.done||[]).forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
+        ST.paa.push(...(coll.paa||[]));
+        pending=coll.pending||[];
+        const p=$('rkprog');
+        if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
+          +(pending.length?`  (${pending.length} still in Google's queue)`:'');
+      }
+      // anything STILL pending after the window: mark failed; retry pass gets it
+      pending.forEach(t=>{ ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
+    }
+  }catch(e){
+    // ---- LIVE-BATCH FALLBACK: task submit itself failed (rare) ----
+    await _runStep3Live(todo, all, BATCH);
+  }
+  await _finishOrRetry(retryOnlyFailed, all);
+}
+
+async function _runStep3Live(todo, all, BATCH){
   for(let i=0;i<todo.length;i+=BATCH){
     const batch=todo.slice(i,i+BATCH);
     let got=null;
@@ -619,11 +657,13 @@ async function _runStep3(retryOnlyFailed){
     }
     const p=$('rkprog');
     if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
-      +(ST.errored?`  (${ST.errored} failed — retry button appears when done)`:'');
+      +(ST.errored?`  (${ST.errored} retrying automatically at the end)`:'');
   }
-  // Automatic retry passes: failures are usually transient latency on the live
-  // SERP queue, which clears within seconds. Up to two passes, smaller batches,
-  // short pause between — only failed keywords re-fetch; completed rows are kept.
+}
+
+async function _finishOrRetry(retryOnlyFailed, all){
+  // Automatic retry passes for anything that failed or outlived the polling
+  // window. Only failed keywords re-fetch; completed rows are kept.
   ST._autoRetries=(ST._autoRetries||0);
   const before=ST.errored;
   if(ST.errored>0 && ST._autoRetries<2 && !(retryOnlyFailed && ST._lastErrored===ST.errored)){
