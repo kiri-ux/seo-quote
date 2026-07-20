@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <title>adtini · SEO Quote Tool</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
@@ -157,7 +158,7 @@
 
     <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
       <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Validation UI: demo only — state data: real pipeline input</div>
-      <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
+      <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear — and regional search phrases ("south jersey") map to a small optional free-text <b>search-phrase geos</b> field beside the validated pickers, feeding keyword text only, never location lookups. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
 
       <label style="margin-top:0">Fallback state <span style="font-weight:400;color:var(--muted)">(only for cities without a ", ST" tag)</span></label>
       <div class="help">Cities tagged "Cherry Hill, NJ" carry their own state and ignore this. Untagged cities get this state&#39;s suffix — keywords build as "commercial contractor kaukauna <b>wi</b>", matching how people search locally. Leave blank when every city is tagged, or for Nationwide.</div>
@@ -1479,8 +1480,12 @@ $('checkGeo').onclick=async()=>{
     const bad=r.results.filter(x=>x.ok===false);
     const unknown=r.results.filter(x=>x.ok===null).length;
     if(unknown){ out.innerHTML='<div class="nf" style="font-size:12px">Couldn\'t reach the location list — skipped.</div>'; return; }
+    const phrases=r.results.filter(x=>x.kind==='phrase');
+    const states=r.results.filter(x=>x.kind==='state');
+    const extra=(phrases.length||states.length)?`<div class="nf" style="font-size:12px;margin-top:5px">${states.length?`⚑ ${states.map(x=>`<b>${escapeHtml(x.city)}</b>`).join(', ')} — state-level geo${states.length>1?'s':''}: keywords + demand at state level. `:''}${phrases.length?`⚑ ${phrases.map(x=>`<b>${escapeHtml(x.city)}</b>`).join(', ')} — search-phrase geo${phrases.length>1?'s':''}: appears in keyword text only; demand is measured at a broader level and rankings anchor to your first city. In adtini this maps to a free-text "search-phrase geos" field beside the validated pickers.`:''}</div>`:'';
     if(!bad.length){
-      out.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:7px 11px;border-radius:8px;font-size:12.5px">✓ All ${r.results.length} cities recognised${state?` in ${escapeHtml(state)}`:''}.</div>`;
+      const nCity=r.results.filter(x=>x.kind==='city'||!x.kind).length;
+      out.innerHTML=`<div style="background:#e8f5ec;border:1px solid #b6e0c2;color:#2a7a4a;padding:7px 11px;border-radius:8px;font-size:12.5px">✓ ${nCity} cit${nCity===1?'y':'ies'} recognised${state?` in ${escapeHtml(state)}`:''}${(states.length||phrases.length)?` · ${states.length+phrases.length} state/phrase geo${states.length+phrases.length>1?'s':''}`:''}.${extra}</div>`;
       return;
     }
     out.innerHTML=`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:8px;font-size:12.5px">

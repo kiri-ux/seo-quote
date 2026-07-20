@@ -2046,12 +2046,21 @@ def validate_cities(cities, state):
             first = n.split(",")[0].strip().lower()
             city_only.setdefault(first, n)
         cl = c_name.strip().lower()
-        if cl in city_only:
-            out.append({"city": c, "ok": True, "resolved": city_only[cl], "suggestions": []})
+        if cl in STATE_ABBREV:            # a state used AS a geo ("delaware")
+            out.append({"city": c, "ok": True, "kind": "state",
+                        "resolved": f"{cl.title()},United States", "suggestions": []})
+        elif cl in city_only:
+            out.append({"city": c, "ok": True, "kind": "city",
+                        "resolved": city_only[cl], "suggestions": []})
         else:
             close = difflib.get_close_matches(cl, list(city_only.keys()), n=3, cutoff=0.72)
-            out.append({"city": c, "ok": False, "resolved": "",
-                        "suggestions": [city_only[m] for m in close]})
+            if close:                     # probably a typo of a real city
+                out.append({"city": c, "ok": False, "kind": "typo", "resolved": "",
+                            "suggestions": [city_only[m] for m in close]})
+            else:                         # regional phrase ("south jersey") —
+                                          # legit in keyword TEXT, not a location
+                out.append({"city": c, "ok": True, "kind": "phrase",
+                            "resolved": "", "suggestions": []})
     return out
 
 
