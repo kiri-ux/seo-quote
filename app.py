@@ -37,12 +37,15 @@ CFG = {
     # HARD COST anchors = CEIL50(client anchor / 1.35). Client anchors blended
     # from the spring ladder uplifted toward the June ~$3,950 pricing. No floor —
     # the raised bases carry the new pricing level directly.
+    # Calibrated 2026-07-20 against Brendan's three actuals (Keller Builds,
+    # Red Shoes, Waytek): anchors trimmed $250 and the tier step flattened, which
+    # lands the formula within ~0-5% of all nine quoted tier prices.
     "geo_anchor": {
-        "single_city":          1650,
-        "contiguous_region":    2350,
-        "non_contiguous_region":2600,
-        "statewide":            2600,
-        "nationwide":           3150,
+        "single_city":          1400,
+        "contiguous_region":    2100,
+        "non_contiguous_region":2350,
+        "statewide":            2350,
+        "nationwide":           2900,
     },
     "competitive_adder": {0: 0, 1: 150, 2: 300},   # FLAT fallback (used when no bid data)
     "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2 (for the fallback)
@@ -81,13 +84,22 @@ CFG = {
     # normal-volume client near its real proposal while still escalating hard for
     # 100k+ clients. Tune live; no high-volume proposals exist to fit against.
     "vol_free_below": 10000,            # normalized: base already covers this
+    "volume_add_cap": 500,              # max hard-$ from volume: Brendan's quotes
+                                        # flex a few hundred for market size, never
+                                        # thousands (Waytek: his +$500 total vs the
+                                        # formula's former +$1,400-4,500 vol adds)
     "volume_brackets": [
         [10000, 20000, 0.08],
         [20000, 35000, 0.05],
         [35000, 50000, 0.04],
         [50000, None,  0.03],           # open-ended top bracket so it keeps escalating
     ],
-    "step_ratio": 0.38,                       # June proposals: 38% step
+    # Brendan steps his ladder in FLAT dollars (~$900-1,000 client per tier),
+    # not proportionally — the old 38% ratio made the gap widen with every tier
+    # (+15/18/20% on Keller, +13/24/34% on Waytek). Flat $700 hard = ~$950
+    # client at 35% markup. step_ratio remains as fallback if flat is nulled.
+    "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
+    "step_ratio": 0.38,                       # fallback: proportional step
     "client_floor": 0,                        # no floor — raised anchors carry pricing
     "addon_market_ratio": 0.42,
     "ultra_bucket_size": 3,
@@ -1019,7 +1031,7 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     }
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
-                   ultra, competitive, long_tail, site_terms_kw):
+                   ultra, competitive, long_tail, site_terms_kw, phrase_geos=None):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -1033,7 +1045,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         cands = ultra + competitive + long_tail
         # Decide the city set FIRST so the service count can scale to it.
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"])
-        n_services = services_needed(len(cities))
+        # Search-phrase geos ("south jersey", "fox cities") cross into keyword
+        # TEXT exactly like cities, but never touch a location API — no volume
+        # lookup, no validation, no rank-check location. Keeps Brendan-style
+        # regional phrasing without the invalid-location fallout.
+        phrases = [p.strip() for p in (phrase_geos or []) if p and p.strip()]
+        seen_c = {c.strip().lower() for c in cities}
+        grid_cities = cities + [p for p in phrases if p.lower() not in seen_c]
+        n_services = services_needed(len(grid_cities))
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
                                           cands, n_services, len(cities))
         if not services:
@@ -1041,7 +1060,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             tiers = ["ultra", "ultra", "competitive", "long_tail"]
             services = [{"service": s.strip().lower(), "tier": tiers[min(i, 3)]}
                         for i, s in enumerate(seeds[:n_services])]
-        g = build_grid(services, cities, state, prepicked=True)
+        g = build_grid(services, grid_cities, state, prepicked=True)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
         # geo-modified forms report ~0). The same figure is shown on each city
@@ -1399,6 +1418,9 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if total_volume is not None:
         vol_add = _volume_dollar_add(total_volume, CFG.get("vol_free_below", 10000),
                                      CFG.get("volume_brackets", []))
+        cap = CFG.get("volume_add_cap")
+        if cap:
+            vol_add = min(vol_add, cap)
 
     # Base before % uplift = anchor + competitive adder + volume $ add.
     base_pre = anchor + adder + vol_add
@@ -1418,7 +1440,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     else:
         base = r50(base_pre * (1.0 + zr_uplift / 100.0))
 
-    step = r50(base * CFG["step_ratio"])
+    flat = CFG.get("tier_step_flat")
+    step = r50(flat) if flat else r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
 
     client_base = r50(base * m)
@@ -1427,7 +1450,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if floor and client_base < floor:
         client_base = floor
         floored = True
-        cstep = r50(client_base * CFG["step_ratio"])
+        cstep = r50(step * m) if CFG.get("tier_step_flat") else r50(client_base * CFG["step_ratio"])
         client = {"base": client_base,
                   "intermediate": client_base + cstep,
                   "advanced": client_base + 2*cstep}
@@ -1494,7 +1517,8 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
     adder, score = 300, 2              # hard-cost high-competition sample
 
     base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
-    step = r50(base * CFG["step_ratio"])
+    flat = CFG.get("tier_step_flat")
+    step = r50(flat) if flat else r50(base * CFG["step_ratio"])
     tiers = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
     addon_per = {k: r50(v * CFG["addon_market_ratio"]) for k, v in tiers.items()}
 
@@ -1613,13 +1637,12 @@ def export_csv():
     client = (d.get("client") or "client").replace(" ", "_")
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Keyword", "Current Google Rank", "Competitiveness", "Est. CPC", "Keyword Difficulty"])
+    # CPC and keyword difficulty stay ON SCREEN for the reviewer but out of the
+    # export — the CSV travels into proposals, and internal pricing signals
+    # don't belong in a client-facing artifact.
+    w.writerow(["Keyword", "Current Google Rank", "Competitiveness"])
     for r in rows:
-        cpc = r.get("cpc", "")
-        cpc_str = f"${cpc:.2f}" if isinstance(cpc, (int, float)) and cpc else ""
-        kd = r.get("kd", "")
-        kd_str = f"{kd}/100" if isinstance(kd, (int, float)) else ""
-        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", ""), cpc_str, kd_str])
+        w.writerow([r.get("kw", ""), r.get("rank", ""), r.get("comp", "")])
     from flask import Response
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={client}_keywords.csv"})
@@ -1682,6 +1705,7 @@ def api_refine():
     domain  = (d.get("domain") or "").strip()
     business_desc = (d.get("business_desc") or "").strip()
     site_terms_kw = d.get("site_terms", [])
+    phrase_geos = [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
     # rebuild bucket rows from what the frontend sends back (kw + vol)
     def rows(key):
         return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
@@ -1689,7 +1713,7 @@ def api_refine():
     ultra, competitive, long_tail = rows("ultra"), rows("competitive"), rows("long_tail")
     try:
         s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
-                            ultra, competitive, long_tail, site_terms_kw)
+                            ultra, competitive, long_tail, site_terms_kw, phrase_geos)
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
         conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
@@ -1723,6 +1747,9 @@ def api_metrics():
     d = request.get_json(force=True)
     head    = [{"keyword": k} for k in d.get("head", [])]
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    # phrase geos must be strippable so bare-term metrics resolve for
+    # "managed it services south jersey" -> "managed it services"
+    markets = markets + [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
     try:
         m3 = stage3_metrics(head, markets, state)
@@ -1932,6 +1959,8 @@ def api_config_get():
         "vol_free_below": CFG.get("vol_free_below", 10000),
         "volume_brackets": CFG.get("volume_brackets", []),
         "step_ratio": CFG["step_ratio"],
+        "tier_step_flat": CFG.get("tier_step_flat"),
+        "volume_add_cap": CFG.get("volume_add_cap"),
         "client_floor": CFG["client_floor"],
         "addon_market_ratio": CFG["addon_market_ratio"],
         "default_markup_pct": CFG["default_markup_pct"],
@@ -2001,6 +2030,12 @@ def api_config_set():
                             ("cpc_adder_free_below", float)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
+        # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;
+        # no cap means volume brackets run uncapped).
+        for key in ("tier_step_flat", "volume_add_cap"):
+            if key in d:
+                v = d[key]
+                CFG[key] = None if v in (None, "", "null", 0, "0") else int(float(v))
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"Invalid value: {e}"}), 400
     return jsonify({"ok": True})

@@ -133,8 +133,8 @@
     <label>Has done SEO in the past</label>
     <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
     <div class="toggle-row">
-      <span class="switch"><input type="checkbox" id="pastseo"><span class="slider"></span></span>
-      <span id="pastseo_lbl">No</span>
+      <label class="switch"><input type="checkbox" id="pastseo"><span class="slider"></span></label>
+      <span id="pastseo_lbl" style="cursor:pointer" onclick="var p=document.getElementById('pastseo');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span>
     </div>
     <div id="pastseo_detail_wrap" class="hidden">
       <label>Past SEO details</label>
@@ -156,9 +156,13 @@
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
 
+    <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+    <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
+    <div class="pillbox" data-for="spgeo"><input type="text" id="spgeo_in" placeholder="south jersey, fox cities"></div>
+
     <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
       <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Validation UI: demo only — state data: real pipeline input</div>
-      <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear — and regional search phrases ("south jersey") map to a small optional free-text <b>search-phrase geos</b> field beside the validated pickers, feeding keyword text only, never location lookups. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
+      <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear — and the <b>search-phrase geos</b> field above maps 1:1 to a free-text field beside adtini&#39;s validated pickers — keyword text only, never location lookups. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
 
       <label style="margin-top:0">Fallback state <span style="font-weight:400;color:var(--muted)">(only for cities without a ", ST" tag)</span></label>
       <div class="help">Cities tagged "Cherry Hill, NJ" carry their own state and ignore this. Untagged cities get this state&#39;s suffix — keywords build as "commercial contractor kaukauna <b>wi</b>", matching how people search locally. Leave blank when every city is tagged, or for Nationwide.</div>
@@ -202,7 +206,9 @@
 </div>
 
 <!-- ============ CONFIG REVIEW (Brendan) ============ -->
-<div class="card" style="margin-top:24px">
+<div class="card" style="margin-top:24px;border:2px dashed #b06fc9;background:#faf6fc">
+  <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — admin config, not partner-facing</div>
+  <div class="help" style="margin:0 0 8px">In adtini every constant below lives in admin-side configuration — partners never see or edit pricing internals. Values encode Brendan-calibrated pricing (2026-07-20, fit to three actual proposals within ~5%), so edits here are pricing-policy decisions, not tuning knobs.</div>
   <h2 style="cursor:pointer;user-select:none" id="cfgToggle">⚙ Pricing config — review &amp; tweak <span id="cfgChevron" style="font-weight:400;color:var(--muted)">▸ click to expand</span></h2>
   <div id="cfgBody" class="hidden">
     <p class="why" style="margin-bottom:16px">Every number the pricing engine uses, grouped by the step it affects. Edit any value and click <b>Apply</b> to update the live session, then re-run a quote to see the effect. Changes last until the app restarts (they don't overwrite the code defaults) — note what works and we'll bake it in.</p>
@@ -215,7 +221,7 @@
 
 <script>
 // ---- pill inputs ----
-const stores = {sites:[], kw:[], geo:[]};
+const stores = {sites:[], kw:[], geo:[], spgeo:[]};
 // Each pillbox's render() lives inside wirePills' closure; register them here so
 // loading a saved quote can redraw the pills after repopulating the stores.
 const PILL_RENDER = {};
@@ -263,7 +269,7 @@ function wirePills(key, inputId){
   input.addEventListener('blur',commit);
   box.addEventListener('click',()=>input.focus());
 }
-wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in');
+wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'); wirePills('spgeo','spgeo_in');
 
 function renderSvcChips(data, out){
   const chips=data.services.map((s,i)=>{
@@ -364,6 +370,7 @@ function collectInputs(){
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
     addon_markets: parseInt($('addon').value||'0',10),
     markup_pct: parseFloat($('markup').value||'35'),
+    phrase_geos: stores.spgeo.slice(),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
   };
@@ -410,7 +417,7 @@ $('step1').addEventListener('click', async()=>{
       note.innerHTML=`<span style="width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--velocity,#378ADD);border-radius:50%;display:inline-block;animation:spin .8s linear infinite"></span> Refining with AI — cleaning off-target terms, reading the site, correcting volume…`;
       const p1=$('p1'); if(p1) p1.appendChild(note);
       try{
-        const ref=await postJSON('/api/refine',{
+        const ref=await postJSON('/api/refine',{phrase_geos:ST.inputs.phrase_geos||[],
           keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
           domain:inp.domain, business_desc:inp.business_desc,
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
@@ -519,7 +526,7 @@ function step2Html(m){
 async function runStep2(){
   $('step2').disabled=true; $('step2').textContent='Scoring…';
   try{
-    const m=await postJSON('/api/metrics',{
+    const m=await postJSON('/api/metrics',{phrase_geos:ST.inputs.phrase_geos||[],
       head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
     ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
     ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
@@ -712,7 +719,7 @@ function _bareService(kw){
   // Build strip candidates from pills: the raw pill, its parsed city ("Cherry
   // Hill, NJ" -> "cherry hill"), and township/city variants.
   const geos=[];
-  (ST.inputs&&ST.inputs.geo_values||[]).forEach(g=>{
+  ((ST.inputs&&ST.inputs.geo_values)||[]).concat((ST.inputs&&ST.inputs.phrase_geos)||[]).forEach(g=>{
     const raw=g.toLowerCase().trim();
     geos.push(raw);
     const m=raw.match(/^(.+?),\s*[a-z]{2}$/)||raw.match(/^(.+?),\s*[a-z][a-z ]+$/);
@@ -1147,7 +1154,9 @@ async function loadConfig(){
       cfgRow('Non-contiguous region','cf_ga_noncontig',ga.non_contiguous_region)+
       cfgRow('Statewide','cf_ga_state',ga.statewide)+
       cfgRow('Nationwide','cf_ga_nation',ga.nationwide)+
-      cfgRow('Step ratio','cf_step',c.step_ratio,'0.38 = 38%')+
+      cfgRow('Tier step — flat $ (hard)','cf_stepflat',c.tier_step_flat==null?'':c.tier_step_flat,'Brendan-calibrated: 700 ≈ $950 client/tier. Blank = use ratio below')+
+      cfgRow('Step ratio (fallback)','cf_step',c.step_ratio,'0.38 = 38% — only used when flat step is blank')+
+      cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
       cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'× tier price')+
       cfgRow('Default markup (%)','cf_markup',c.default_markup_pct));
@@ -1168,7 +1177,7 @@ $('cfgApply').addEventListener('click', async()=>{
     zero_ranking_tiers:readTierRows('cf_zr'),
     vol_free_below:v('cf_volfree'),
     volume_brackets:readVolBrackets(),
-    step_ratio:v('cf_step'), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
+    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
     default_markup_pct:v('cf_markup'),
   };
   $('cfgStatus').textContent='Applying…';
@@ -1261,6 +1270,7 @@ function snapshotQuote(){
   const liveInputs = ST.inputs ? Object.assign({}, ST.inputs, {
     sites: stores.sites.slice(), domain: stores.sites[0]||'',
     keywords: stores.kw.slice(), geo_values: stores.geo.slice(),
+    phrase_geos: stores.spgeo.slice(),
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
@@ -1316,6 +1326,7 @@ function reflectInputs(inp){
   fill('sites', inp.sites && inp.sites.length ? inp.sites : (inp.domain?[inp.domain]:[]));
   fill('kw',    inp.keywords);
   fill('geo',   inp.geo_values);
+  fill('spgeo', inp.phrase_geos||[]);
   Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
 
   if($('brand'))         $('brand').value = inp.brand||'';
