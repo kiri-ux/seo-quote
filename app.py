@@ -429,29 +429,36 @@ def fetch_local_volume(terms, markets, state):
                 raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
             return task0.get("result") or []
         try:
-            return call(loc)
+            return call(loc), loc
         except Exception as e:
-            # An unrecognized city (misspelling, or a name DataForSEO doesn't
-            # carry) returns 40501. Retry at a broader location so the quote
-            # still gets *some* demand signal instead of silently pricing at $0.
+            # An unrecognized city (misspelling, a regional phrase like "south
+            # jersey", or a name DataForSEO doesn't carry) returns 40501. Retry
+            # at a broader location so the quote still gets *some* demand signal
+            # — but report WHICH location answered, because broad-location
+            # volume must never be attributed per-city and summed: three cities
+            # falling back to the same national number would count the same
+            # searches three times and wildly inflate the volume add.
             if "40501" in str(e) or "not found" in str(e).lower():
-                broader = (f"{state},United States" if state else "United States")
-                return call(broader)
+                city_st = market_state(city, state)
+                broader = (f"{city_st},United States" if city_st
+                           else (f"{state},United States" if state else "United States"))
+                return call(broader), broader
             raise
 
     totals, per_city, errs, ok = {}, {}, [], 0
+    counted_locs, fallback_cities, results = set(), [], []
     try:
         with ThreadPoolExecutor(max_workers=min(len(cities), 8)) as ex:
             futs = {ex.submit(one, c): c for c in cities}
             for fut in futs:
                 city = futs[fut]
                 try:
-                    for it in fut.result():
-                        k = (it.get("keyword") or "").lower()
-                        if k:
-                            v = it.get("search_volume") or 0
-                            totals[k] = totals.get(k, 0) + v
-                            per_city[(city.strip().lower(), k)] = v
+                    rows, used_loc = fut.result()
+                    was_fallback = (used_loc != (loc_string([city], state) if city
+                                                 else loc_string([], state)))
+                    if was_fallback:
+                        fallback_cities.append(city)
+                    results.append((city, rows, used_loc))
                     ok += 1
                 except Exception as e:
                     errs.append(str(e))
@@ -459,10 +466,39 @@ def fetch_local_volume(terms, markets, state):
         return {}, {}, str(e)
     if not ok:
         return {}, {}, (errs[0] if errs else "no volume rows returned")
-    note = None
+    # Aggregate in two phases so the rules are deterministic:
+    #   1. each effective location counts into the TOTAL exactly once;
+    #   2. a "United States" fallback never counts when any regional location
+    #      returned data — national volume inside a city-summed regional total
+    #      is a category error (it's what doubled the Waytek quote). It only
+    #      counts when it's the sole data source (true-nationwide runs).
+    non_us = [r for r in results if r[2] != "United States"]
+    us_skipped = False
+    for city, rows, used_loc in sorted(results, key=lambda r: r[2] == "United States"):
+        count_it = used_loc not in counted_locs
+        if used_loc == "United States" and non_us:
+            count_it = False
+            us_skipped = True
+        counted_locs.add(used_loc)
+        for it in rows:
+            k = (it.get("keyword") or "").lower()
+            if k:
+                v = it.get("search_volume") or 0
+                if count_it:
+                    totals[k] = totals.get(k, 0) + v
+                per_city[(city.strip().lower(), k)] = v
+    notes = []
+    if us_skipped:
+        notes.append("some geos had no local volume data and fell back to "
+                     "national numbers — shown per keyword but EXCLUDED from "
+                     "the pricing total to avoid inflating regional demand")
     if ok < len(cities):
-        note = f"volume summed over {ok}/{len(cities)} cities (some lookups failed)"
-    return totals, per_city, note
+        notes.append(f"volume summed over {ok}/{len(cities)} cities (some lookups failed)")
+    if fallback_cities:
+        notes.append("no city-level volume for "
+                     + ", ".join(sorted(set(c.strip() for c in fallback_cities)))
+                     + " — used broader-location volume, counted once (not per city)")
+    return totals, per_city, ("; ".join(notes) or None)
 
 
 def fetch_exact_volume(keywords, markets, state):
@@ -1018,7 +1054,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "volume_error": vol_err,
             "volume_location": loc_string(markets, state),
             "state_missing": bool(cities) and not state
-                             and not all(market_state(c) for c in cities),
+                             and not any(market_state(c) for c in cities),
             "grid_cities": cities,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
