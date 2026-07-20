@@ -105,6 +105,11 @@ CFG = {
     # not proportionally — the old 38% ratio made the gap widen with every tier
     # (+15/18/20% on Keller, +13/24/34% on Waytek). Flat $700 hard = ~$950
     # client at 35% markup. step_ratio remains as fallback if flat is nulled.
+    # Ecommerce / national-product clients (MPG Gummies datapoint, 2026-07-20):
+    # Brendan prices product SEO above local-service SEO — base +$250 hard and
+    # PROPORTIONAL 38% steps instead of the flat local-client ladder. ONE
+    # datapoint so far; treat as provisional until a second ecom actual.
+    "ecom_anchor_add": 250,
     "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
@@ -1451,7 +1456,8 @@ def _volume_dollar_add(total_volume, free_below, brackets):
     return add
 
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
-                 pct_not_ranking=None, total_volume=None, base_override=None):
+                 pct_not_ranking=None, total_volume=None, base_override=None,
+                 ecommerce=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
@@ -1468,6 +1474,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 
     # Base before % uplift = anchor + competitive adder + volume $ add.
     base_pre = anchor + adder + vol_add
+    if ecommerce:
+        base_pre += CFG.get("ecom_anchor_add", 250)
 
     # --- tiered zero-ranking uplift (% of head terms not ranking) ---
     zr_uplift = 0
@@ -1485,7 +1493,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         base = r50(base_pre * (1.0 + zr_uplift / 100.0))
 
     flat = CFG.get("tier_step_flat")
-    if flat:
+    if ecommerce:
+        # product ladders step proportionally (Brendan's ecom quote: 38% steps)
+        step = r50(base * CFG["step_ratio"])
+    elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps
         # ~$950 client on standard quotes but ~$1,300 on his biggest ladder —
         # roughly a quarter of the hard base once the base outgrows the floor.
@@ -1569,7 +1580,10 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
 
     base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
     flat = CFG.get("tier_step_flat")
-    if flat:
+    if ecommerce:
+        # product ladders step proportionally (Brendan's ecom quote: 38% steps)
+        step = r50(base * CFG["step_ratio"])
+    elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps
         # ~$950 client on standard quotes but ~$1,300 on his biggest ladder —
         # roughly a quarter of the hard base once the base outgrows the floor.
@@ -1625,7 +1639,8 @@ def quote():
             return jsonify({"error": "No keywords returned — try broader seeds or check the market/state."}), 400
         m3 = stage3_metrics(s1["head"], markets, state)
         r3 = stage3_rankcheck(s1["all"], domain, markets, state, brand)
-        p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon)
+        p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon,
+                          ecommerce=bool(d.get("ecommerce")))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -1987,7 +2002,7 @@ def api_price():
     base_override = base_override if base_override not in (None, "") else None
     p = stage4_price(band, adder, zero, addon, markup,
                      pct_not_ranking=pct_not_ranking, total_volume=total_volume,
-                     base_override=base_override)
+                     base_override=base_override, ecommerce=bool(d.get("ecommerce")))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
                     "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
@@ -2012,6 +2027,7 @@ def api_config_get():
         "cpc_adder_knee": CFG.get("cpc_adder_knee", 62.0),
         "cpc_adder_mult_high": CFG.get("cpc_adder_mult_high", 14.0),
         "tier_step_pct_of_base": CFG.get("tier_step_pct_of_base", 0.24),
+        "ecom_anchor_add": CFG.get("ecom_anchor_add", 250),
         "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
         "zero_ranking_bonus": CFG["zero_ranking_bonus"],
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
@@ -2089,7 +2105,8 @@ def api_config_set():
                             ("competitive_bucket_size", int), ("longtail_target", int),
                             ("cpc_adder_mult", float), ("cpc_adder_cap", int),
                             ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
-                            ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float)]:
+                            ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float),
+                            ("ecom_anchor_add", int)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
         # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;

@@ -115,6 +115,9 @@
   <div class="card">
     <h2>Product Details</h2>
 
+    <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
+    <input type="text" id="brand" placeholder="VersAbility">
+
     <label>Website(s) needing SEO</label>
     <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
@@ -126,8 +129,6 @@
     <span class="nf" style="font-size:11.5px;margin-left:6px">reads the client site's navigation — menu items are usually their service list</span>
     <div id="siteSvcOut" style="margin-top:7px"></div>
 
-    <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
-    <input type="text" id="brand" placeholder="VersAbility">
 
     <label>Business description <span style="font-weight:400;color:var(--muted)">(optional — helps AI exclude off-target terms)</span></label>
     <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
@@ -154,6 +155,11 @@
       <option value="statewide">Statewide</option>
       <option value="nationwide">Nationwide</option>
     </select>
+
+    <label>Ecommerce / national product client <span style="font-weight:400;color:var(--muted)">(prices as product SEO)</span></label>
+    <div class="help">Product/category-page SEO at national scale is priced above local-service SEO — Brendan's ecom ladder runs a higher base with proportional (38%) tier steps instead of flat ones. One calibration datapoint so far; sanity-check the result.</div>
+    <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
+      <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
 
     <label>Geographic targeting areas</label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
@@ -355,6 +361,12 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
 
 // ---- toggle ----
 const pastseo=document.getElementById('pastseo');
+document.getElementById('ecommerce').addEventListener('change',()=>{
+  const el=document.getElementById('ecommerce');
+  document.getElementById('ecommerce_lbl').textContent=el.checked?'Yes':'No';
+  if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.ecommerce=el.checked; }
+  try{scheduleAutoSave();}catch(e){}
+});
 pastseo.addEventListener('change',()=>{
   document.getElementById('pastseo_lbl').textContent=pastseo.checked?'Yes':'No';
   document.getElementById('pastseo_detail_wrap').classList.toggle('hidden',!pastseo.checked);
@@ -389,6 +401,7 @@ function collectInputs(){
     addon_markets: parseInt($('addon').value||'0',10),
     markup_pct: parseFloat($('markup').value||'35'),
     phrase_geos: stores.spgeo.slice(),
+    ecommerce: !!($('ecommerce')&&$('ecommerce').checked),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
   };
@@ -1015,7 +1028,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -1027,7 +1040,7 @@ function renderStep4(p){
     ST.baseOverride = val;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -1125,7 +1138,7 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{
+    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
@@ -1360,6 +1373,7 @@ function snapshotQuote(){
     phrase_geos: stores.spgeo.slice(),
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
+    ecommerce: $('ecommerce') ? $('ecommerce').checked : !!ST.inputs.ecommerce,
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
     past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
   }) : ST.inputs;
@@ -1418,6 +1432,10 @@ function reflectInputs(inp){
   Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
 
   if($('brand'))         $('brand').value = inp.brand||'';
+  if($('ecommerce')){
+    $('ecommerce').checked=!!inp.ecommerce;
+    const el=$('ecommerce_lbl'); if(el) el.textContent=inp.ecommerce?'Yes':'No';
+  }
   if($('pastseo')){
     $('pastseo').checked = !!inp.past_seo;
     const l=$('pastseo_lbl'); if(l) l.textContent = inp.past_seo?'Yes':'No';
