@@ -1553,10 +1553,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # the legacy ecommerce flag maps to the ecommerce rule.
     rule_key, rule = None, None
     ind = (industry or "").strip().lower()
-    for k, r in CFG.get("industry_pricing", {}).items():
-        if k in ind:
-            rule_key, rule = k, r
-            break
+    # The industry field is multi-select (values joined with " | "), so
+    # several rules can match at once. Precedence: the STRONGEST card wins
+    # (largest anchor_add) — a hospital that also sells products online is
+    # priced as a hospital, not as a shop.
+    _matches = [(k, r) for k, r in CFG.get("industry_pricing", {}).items() if k in ind]
+    if _matches:
+        rule_key, rule = max(_matches, key=lambda kr: int(kr[1].get("anchor_add", 0)))
     if rule is None and ecommerce:
         rule_key, rule = "ecommerce", CFG.get("industry_pricing", {}).get("ecommerce")
     if rule:
