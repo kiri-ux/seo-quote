@@ -602,29 +602,37 @@ async function _runStep3(retryOnlyFailed){
   if(!todo.length){ finishStep3(); return; }
 
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
-    <div class="why">Checks where the client's site currently ranks for each keyword in their market. Lookups run as queued tasks — a slow one just takes a little longer instead of failing.</div>
+    <div class="why">Checks where the client's site currently ranks for each keyword in their market. Fast live lookups for the bulk; a slow one finishes via Google's queue instead of failing.</div>
     <div class="calc" id="rkprog">Checking ${haveGood.size}/${all.length}…</div>`);
 
-  // ---- ASYNC TASK MODE (preferred): submit everything, poll until done ----
-  // Live lookups block while Google is crawled and die at the platform's 30s
-  // wall — the source of every "N failed" you've seen. Task mode queues on
-  // DataForSEO's side with no wall; slow lookups arrive late, not broken.
-  try{
-    const sub=await postJSON('/api/rankings_submit',{keywords:todo,
-      geo_values:ST.inputs.geo_values, state:ST.inputs.state});
-    let pending=(sub.tasks||[]).filter(t=>t.task_id);
-    (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
-      ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++;
-    });
-    if(pending.length){
+  // ---- HYBRID: live-first for speed, queue only for the slow tail ----
+  // Live lookups answer in seconds for most keywords; their only failure mode
+  // is the ~30s platform wall on slow crawls. So: run live batches for the
+  // bulk, then resubmit ONLY the failures as queued tasks (no wall) and let
+  // them trickle in. All-queue mode proved reliable but slow (~minutes).
+  await _runStep3Live(todo, all, BATCH);
+  const failedKws = ST.table.filter(r=>r.error).map(r=>r.kw);
+  if(failedKws.length){
+    // pull the failed rows back out; the queue pass will replace them
+    ST.table = ST.table.filter(r=>!r.error);
+    ST.errored = 0;
+    const p0=$('rkprog');
+    if(p0) p0.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…  (${failedKws.length} slow lookup${failedKws.length>1?'s':''} finishing via Google's queue)`;
+    try{
+      const sub=await postJSON('/api/rankings_submit',{keywords:failedKws,
+        geo_values:ST.inputs.geo_values, state:ST.inputs.state});
+      let pending=(sub.tasks||[]).filter(t=>t.task_id);
+      (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
+        ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++;
+      });
       const t0=Date.now();
-      while(pending.length && Date.now()-t0 < 150000){   // up to 2.5 min
+      while(pending.length && Date.now()-t0 < 90000){        // 90s for the tail
         await new Promise(r=>setTimeout(r,2500));
         let coll=null;
         try{
           coll=await postJSON('/api/rankings_collect',{tasks:pending,
             domain:ST.inputs.domain, brand:ST.inputs.brand});
-        }catch(e){ continue; }                            // transient — poll again
+        }catch(e){ continue; }
         (coll.done||[]).forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
         ST.paa.push(...(coll.paa||[]));
         pending=coll.pending||[];
@@ -632,12 +640,11 @@ async function _runStep3(retryOnlyFailed){
         if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
           +(pending.length?`  (${pending.length} still in Google's queue)`:'');
       }
-      // anything STILL pending after the window: mark failed; retry pass gets it
       pending.forEach(t=>{ ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
+    }catch(e){
+      // queue unavailable: restore the failures for the normal retry passes
+      failedKws.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
     }
-  }catch(e){
-    // ---- LIVE-BATCH FALLBACK: task submit itself failed (rare) ----
-    await _runStep3Live(todo, all, BATCH);
   }
   await _finishOrRetry(retryOnlyFailed, all);
 }
