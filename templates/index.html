@@ -34,10 +34,12 @@
   .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
   .tipicon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
     border-radius:50%;border:1px solid var(--atlas);color:var(--atlas);font-size:10.5px;font-weight:700;
-    font-style:normal;cursor:help;user-select:none;background:#fff;line-height:1}
+    font-style:normal;cursor:help;user-select:none;background:#fff;line-height:1;
+    text-transform:lowercase;letter-spacing:0;vertical-align:1px}
   .tipwrap .help{display:none;position:absolute;left:-10px;top:20px;z-index:60;width:330px;max-width:72vw;
     background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
-    padding:9px 12px;margin:0;font-size:12px;color:var(--muted);white-space:normal;text-transform:none;letter-spacing:0}
+    padding:9px 12px;margin:0;font-size:12px;font-weight:400;font-style:normal;color:var(--muted);
+    white-space:normal;text-transform:none;letter-spacing:0;text-align:left;line-height:1.55}
   .tipwrap:hover .help,.tipwrap.open .help{display:block}
   .tierhelp{font-size:12px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
   .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
@@ -137,18 +139,6 @@
     <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
     <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
 
-    <label>Has done SEO in the past</label>
-    <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
-    <div class="toggle-row">
-      <label class="switch"><input type="checkbox" id="pastseo"><span class="slider"></span></label>
-      <span id="pastseo_lbl" style="cursor:pointer" onclick="var p=document.getElementById('pastseo');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span>
-    </div>
-    <div id="pastseo_detail_wrap" class="hidden">
-      <label>Past SEO details</label>
-      <div class="help">What went right or wrong in their past SEO campaigns?</div>
-      <textarea id="pastseo_detail"></textarea>
-    </div>
-
     <label>Geo scope</label>
     <div class="help">Where the client needs to be <i>found</i> in search — not necessarily where they're located. Usually matches their service area; when it doesn't, go with where customers search (a one-city tourism bureau targeting "things to do in kansas" is Statewide, not Single City).</div>
     <select id="geo_scope">
@@ -209,6 +199,19 @@
 
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span></label>
     <input type="text" id="addon" placeholder="0" value="0">
+
+    <label>Has done SEO in the past</label>
+    <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
+    <div class="toggle-row">
+      <label class="switch"><input type="checkbox" id="pastseo"><span class="slider"></span></label>
+      <span id="pastseo_lbl" style="cursor:pointer" onclick="var p=document.getElementById('pastseo');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span>
+    </div>
+    <div id="pastseo_detail_wrap" class="hidden">
+      <label>Past SEO details</label>
+      <div class="help">What went right or wrong in their past SEO campaigns?</div>
+      <textarea id="pastseo_detail"></textarea>
+    </div>
+
 
     <label>Client markup <span style="font-weight:400;color:var(--muted)">(% on top of hard cost)</span></label>
     <div class="help">Internal pricing starts at hard cost; the client price is hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
@@ -441,7 +444,7 @@ function collapseWhy(host){
     const hdr=w.previousElementSibling;
     const tip=document.createElement('span');
     tip.className='tipwrap';
-    tip.innerHTML=`<span class="tipdot">ⓘ</span><span class="tipbox">${w.innerHTML}</span>`;
+    tip.innerHTML=`<span class="tipicon">i</span><span class="help">${w.innerHTML}</span>`;
     if(hdr&&hdr.classList&&hdr.classList.contains('sec')){ hdr.appendChild(tip); w.remove(); }
     else { w.parentNode.insertBefore(tip, w); w.remove(); }
   });
@@ -605,9 +608,9 @@ function step2Html(m){
   const kdLine = (m.median_kd!=null)
     ? ``
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
-  const bs=m.bid_stats, br=m.breaks||[5,15];
+  const bs=m.bid_stats;
   const bidLine = bs
-    ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data; breaks at $${br[0]}/$${br[1]})</span></div>`
+    ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data)</span></div>`
     : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
         <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
   const marketWarn = (m.n_markets && m.n_markets > 8)
@@ -662,7 +665,7 @@ function step3Html(){
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
         — ${ST.ranked}/${checked} rank in top 20 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
-      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipdot">ⓘ</span><span class="tipbox">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix.</span></span></div>`:''}
+      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipicon">i</span><span class="help">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix.</span></span></div>`:''}
       ${ST.errored?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`;

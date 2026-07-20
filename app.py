@@ -40,6 +40,11 @@ CFG = {
     # Calibrated 2026-07-20 against Brendan's three actuals (Keller Builds,
     # Red Shoes, Waytek): anchors trimmed $250 and the tier step flattened, which
     # lands the formula within ~0-5% of all nine quoted tier prices.
+    # Media Venue datapoint (2026-07-20, RFP bid): Brendan $2,925/$4,040/$5,150
+    # vs formula $3,450/$4,400/$5,350 (+18/+9/+4%). His base sits BELOW his own
+    # $2,950 card and his steps run ~$1,110 (vs his usual ~$1,000) — consistent
+    # with a sharpened competitive-RFP base, not a formula miss. No constants
+    # changed on this datapoint; revisit if non-RFP quotes repeat the pattern.
     "geo_anchor": {
         # single_city raised to match contiguous after the Dental Excellence
         # datapoint (2026-07-20): Brendan's single-city Philadelphia quote was
