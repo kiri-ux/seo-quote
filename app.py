@@ -41,7 +41,12 @@ CFG = {
     # Red Shoes, Waytek): anchors trimmed $250 and the tier step flattened, which
     # lands the formula within ~0-5% of all nine quoted tier prices.
     "geo_anchor": {
-        "single_city":          1400,
+        # single_city raised to match contiguous after the Dental Excellence
+        # datapoint (2026-07-20): Brendan's single-city Philadelphia quote was
+        # his HIGHEST base ($3,350) — he prices the market, not the pin count.
+        # A genuinely tiny single-town client may deserve less; no datapoint
+        # yet — use the manual hard-base override until one exists.
+        "single_city":          2100,
         "contiguous_region":    2100,
         "non_contiguous_region":2350,
         "statewide":            2350,
