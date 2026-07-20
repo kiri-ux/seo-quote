@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.9</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.10</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -506,9 +506,9 @@ $('step1').addEventListener('click', async()=>{
   $('out').innerHTML='';
   const tips=preflightAdvice(inp);
   if(tips.length){
-    panel('p0adv',`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:9px 12px;border-radius:9px;font-size:12.5px;margin-bottom:10px">
-      <b>✈ Pre-flight suggestions</b> <span class="nf">(patterns from actual proposals — the run continues either way)</span>
-      <ul style="margin:6px 0 0 18px;padding:0">${tips.map(t=>`<li style="margin:3px 0">${t}</li>`).join('')}</ul></div>`);
+    panel('p0adv',`<details style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:9px 12px;border-radius:9px;font-size:12.5px;margin-bottom:10px">
+      <summary style="cursor:pointer;user-select:none"><b>✈ Pre-flight suggestions (${tips.length})</b> <span class="nf">— patterns from actual proposals; the run continues either way. Click to expand.</span></summary>
+      <ul style="margin:6px 0 0 18px;padding:0">${tips.map(t=>`<li style="margin:3px 0">${t}</li>`).join('')}</ul></details>`);
   }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
@@ -705,9 +705,10 @@ async function _runStep3(retryOnlyFailed){
   const all=ST.kw.all.map(r=>r.kw);
   // Retry passes use smaller batches: each failed keyword shares the server's
   // 24s budget with fewer neighbors, so a slow lookup has more room to finish.
-  // Main pass uses 8 — server lookups run in PARALLEL (8 workers), so a batch's
-  // wall time is its slowest keyword, not the sum; bigger batches = fewer trips.
-  const BATCH=retryOnlyFailed?3:8;
+  // Main pass: 5-keyword batches × 4 concurrent requests = 20 lookups in
+  // flight at once (server runs 8 gthread threads; each request fans out its
+  // batch in parallel). Wall time ≈ the slowest single crawl, not rounds.
+  const BATCH=retryOnlyFailed?3:5;
 
   // RESUME: keep everything already fetched. Only look up keywords we don't have
   // a good result for yet, so a mid-run failure never costs completed work.
@@ -793,10 +794,9 @@ async function _runStep3(retryOnlyFailed){
 }
 
 async function _runStep3Live(todo, all, BATCH){
-  // Two batch requests in flight at once: the server runs 1 gunicorn worker x 4
-  // threads, so concurrency 2 roughly halves the run while leaving thread
-  // headroom for anything else. Results merge as each batch lands; final order
-  // is restored in finishStep3.
+  // Four batch requests in flight at once (server: 1 gunicorn worker × 8
+  // gthread threads — render.yaml — leaving headroom for other traffic).
+  // Results merge as each batch lands; final order is restored in finishStep3.
   const batches=[]; for(let i=0;i<todo.length;i+=BATCH) batches.push(todo.slice(i,i+BATCH));
   let next=0;
   async function runOne(batch){
@@ -821,7 +821,7 @@ async function _runStep3Live(todo, all, BATCH){
     if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
       +(ST.errored?`  (${ST.errored} retrying automatically at the end)`:'');
   }
-  const CONC=Math.min(2, batches.length);
+  const CONC=Math.min(4, batches.length);
   await Promise.all(Array.from({length:CONC}, async()=>{
     while(next<batches.length){ const b=batches[next++]; await runOne(b); }
   }));
