@@ -639,6 +639,14 @@ TASK: choose exactly {max_services} SERVICES this business should target, and as
 RULES:
 1. A SERVICE is a short, generic service phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". It will be crossed with city names later, so do NOT include any location.
 2. Only services this business actually offers. Exclude anything they don't do.
+2b. BALANCE ACROSS SERVICE LINES — this is the rule that most often gets missed.
+   Cover the business's WHOLE service range the way their own website menu does:
+   no more than 2-3 variants of any one service family unless the business
+   description explicitly says that family is the focus. A general dental
+   practice gets family dentistry, cleanings, crowns, invisalign, veneers,
+   emergency — NOT thirteen implant variants because one seed said "implants".
+   Bread-and-butter services beat exotic variants: they carry the demand and
+   the client's existing rankings.
 3. Spread across tiers so the proposal has all three. Aim for roughly:
    - 2 "ultra"        (the biggest, most competitive money terms)
    - 1 "competitive"  (solid mid-competition terms)

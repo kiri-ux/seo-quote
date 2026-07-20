@@ -395,11 +395,50 @@ function stepBtn(id, label, disabled){
 }
 function kwlist(arr){return arr.length?`<ul>${arr.map(x=>`<li>${x.kw}${x.vol?` <span class="nf">(${x.vol})</span>`:''}</li>`).join('')}</ul>`:'<p class="nf">—</p>';}
 
+// ---------- PRE-FLIGHT ADVISOR ----------
+// The lessons from comparing runs against Brendan's real proposals, checked
+// automatically at build time so they're applied BEFORE the run instead of
+// discovered after. Advisory, never blocking.
+function preflightAdvice(inp){
+  const tips=[];
+  // 1) Business description drives balanced AI expansion (Dental Excellence
+  //    lesson: one "implants" seed became 13/20 implant variants without it).
+  if(!(inp.business_desc||'').trim()){
+    tips.push('<b>No business description.</b> One line ("General dental practice — cleanings, crowns, Invisalign; implants are one line, not the focus") keeps the AI from over-expanding a single seed into half the grid.');
+  }
+  // 2) Seed skew: one word dominating the seed list predicts a lopsided grid.
+  const words={};
+  (inp.keywords||[]).forEach(k=>k.toLowerCase().split(/\s+/).forEach(w=>{
+    if(w.length>3 && !['services','service','near'].includes(w)) words[w]=(words[w]||0)+1;
+  }));
+  const seedN=(inp.keywords||[]).length;
+  const dom=Object.entries(words).sort((a,b)=>b[1]-a[1])[0];
+  if(seedN>=3 && dom && dom[1]/seedN>0.6){
+    tips.push(`<b>Seeds lean hard on “${dom[0]}”</b> (${dom[1]}/${seedN}). Unless that's genuinely the client's focus, add their bread-and-butter services too — the everyday services usually hold their existing rankings.`);
+  }
+  // 3) Single-city local client without neighborhood phrase geos (Brendan's
+  //    dental pattern: half the terms target "northeast philadelphia").
+  if((inp.geo_values||[]).length===1 && !(inp.phrase_geos||[]).length){
+    tips.push('<b>Single city, no search-phrase geos.</b> Local practices often win at NEIGHBORHOOD level — if the client serves a specific area ("northeast philadelphia", "fishtown"), add it to Search-phrase geos so the grid targets both granularities.');
+  }
+  // 4) Brand exclusion only works if the brand is right.
+  if(!(inp.brand||'').trim()){
+    tips.push('<b>No brand name.</b> The brand is excluded from keywords and the rank check — without it, branded terms pollute the grid.');
+  }
+  return tips;
+}
+
 // ---------- STEP 1 ----------
 $('step1').addEventListener('click', async()=>{
   const inp=collectInputs(); if(!inp) return;
   ST.inputs=inp;
   $('out').innerHTML='';
+  const tips=preflightAdvice(inp);
+  if(tips.length){
+    panel('p0adv',`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:9px 12px;border-radius:9px;font-size:12.5px;margin-bottom:10px">
+      <b>✈ Pre-flight suggestions</b> <span class="nf">(patterns from Brendan's proposals — the run continues either way)</span>
+      <ul style="margin:6px 0 0 18px;padding:0">${tips.map(t=>`<li style="margin:3px 0">${t}</li>`).join('')}</ul></div>`);
+  }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
   try{
