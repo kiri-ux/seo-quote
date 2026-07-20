@@ -54,6 +54,14 @@
   .pillbox{display:flex;flex-wrap:wrap;gap:6px;padding:7px;border:1px solid var(--line);
     border-radius:8px;background:#fff;min-height:42px;align-items:center;cursor:text}
   .pillbox input{border:none;outline:none;flex:1;min-width:120px;padding:4px;font-size:14px}
+  .acwrap{position:relative}
+  .acdrop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#fff;border:1px solid var(--line);
+    border-radius:9px;box-shadow:0 8px 22px rgba(0,45,88,.16);max-height:264px;overflow-y:auto;z-index:80;display:none}
+  .acdrop.open{display:block}
+  .acdrop div{padding:7px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f4f1ec}
+  .acdrop div:last-child{border-bottom:none}
+  .acdrop div.on,.acdrop div:hover{background:#eef4fb}
+  .acdrop b{color:var(--velocity);font-weight:700}
   .pill{background:var(--velocity);color:#fff;padding:3px 9px;border-radius:20px;font-size:12.5px;
     display:inline-flex;align-items:center;gap:6px}
   .pill b{cursor:pointer;opacity:.8;font-weight:700}
@@ -99,7 +107,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.21</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.22</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -161,7 +169,7 @@
 
     <label>Industry <span style="font-weight:400;color:var(--muted)">(RZ line item — demo stand-in, optional)</span></label>
     <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries Brendan's big-org card ($3,950/$5,450/$6,950 shape); "Retail - General / E-commerce" carries the product-SEO ladder (replaces the old ecommerce toggle); "Insurance - *" carries the carrier premium (+$800). Blank = standard formula.</div>
-    <div class="pillbox" data-for="industry"><input type="text" id="industry_in" list="rz_industries" placeholder="start typing — RZ category list, Enter to add"></div>
+    <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
     <details id="indrules" style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:8px 0 2px;background:#faf6fc">
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — current industry pricing rules ▸ click to expand</summary>
       <div id="indrules_body" class="help" style="margin:8px 0 4px">Loading…</div>
@@ -298,7 +306,101 @@ function wirePills(key, inputId){
   input.addEventListener('blur',commit);
   box.addEventListener('click',()=>input.focus());
 }
-wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'); wirePills('spgeo','spgeo_in'); wirePills('industry','industry_in');
+wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'); wirePills('spgeo','spgeo_in');
+
+// Industry gets bespoke wiring: same pills, but a styled autocomplete instead
+// of the browser's native datalist popup (unstyled, screen-filling in Chrome).
+// The hidden <datalist> stays as the single source of RZ values.
+(function wireIndustryPills(){
+  const box=document.querySelector('.pillbox[data-for="industry"]');
+  const input=document.getElementById('industry_in');
+  const drop=document.getElementById('industry_drop');
+  if(!box||!input||!drop) return;
+  const RZ=[...document.querySelectorAll('#rz_industries option')].map(o=>o.value);
+  let items=[], active=-1;
+
+  function render(){
+    box.querySelectorAll('.pill').forEach(p=>p.remove());
+    stores.industry.forEach((v,i)=>{
+      const el=document.createElement('span');
+      el.className='pill';
+      el.innerHTML=`${v} <b data-i="${i}">×</b>`;
+      el.querySelector('b').onclick=()=>{stores.industry.splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
+      box.insertBefore(el,input);
+    });
+  }
+  PILL_RENDER.industry=render;
+
+  function add(v){
+    v=(v||'').trim();
+    if(v && !stores.industry.includes(v)){ stores.industry.push(v); render(); try{scheduleAutoSave();}catch(e){} }
+    input.value=''; close();
+  }
+  function close(){ drop.classList.remove('open'); active=-1; }
+  function esc(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+  function open(){
+    const q=input.value.trim().toLowerCase();
+    const picked=new Set(stores.industry);
+    items=RZ.filter(v=>!picked.has(v));
+    if(q){
+      const scored=[];
+      for(const v of items){
+        const vl=v.toLowerCase(), i=vl.indexOf(q);
+        if(i<0) continue;
+        scored.push([i===0?0:(/[\s\-/(]/.test(vl[i-1]||'')?1:2), v, i]);
+      }
+      scored.sort((a,b)=>a[0]-b[0]||a[2]-b[2]||a[1].localeCompare(b[1]));
+      items=scored.map(x=>x[1]);
+    }
+    items=items.slice(0,80);
+    if(!items.length){ close(); return; }
+    const ql=q.length;
+    drop.innerHTML=items.map((v,i)=>{
+      let html=esc(v);
+      if(ql){
+        const j=v.toLowerCase().indexOf(q);
+        if(j>=0) html=esc(v.slice(0,j))+'<b>'+esc(v.slice(j,j+ql))+'</b>'+esc(v.slice(j+ql));
+      }
+      return `<div data-i="${i}">${html}</div>`;
+    }).join('');
+    drop.classList.add('open');
+    active=-1;
+  }
+
+  function mark(){
+    [...drop.children].forEach((el,i)=>el.classList.toggle('on', i===active));
+    if(active>=0 && drop.children[active]) drop.children[active].scrollIntoView({block:'nearest'});
+  }
+
+  input.addEventListener('input', open);
+  input.addEventListener('focus', open);
+  input.addEventListener('keydown', e=>{
+    const isOpen=drop.classList.contains('open');
+    if(e.key==='ArrowDown' && isOpen){ e.preventDefault(); active=Math.min(active+1, items.length-1); mark(); }
+    else if(e.key==='ArrowUp' && isOpen){ e.preventDefault(); active=Math.max(active-1, 0); mark(); }
+    else if(e.key==='Escape'){ close(); }
+    else if(e.key==='Enter'){
+      e.preventDefault();
+      if(isOpen && active>=0) add(items[active]);
+      else{
+        const t=input.value.trim();
+        const exact=t && RZ.find(v=>v.toLowerCase()===t.toLowerCase());
+        add(exact||t);
+      }
+    }
+    else if(e.key==='Backspace' && !input.value && stores.industry.length){
+      stores.industry.pop(); render(); try{scheduleAutoSave();}catch(e2){}
+    }
+  });
+  // mousedown (not click) so the pick lands before the input's blur fires
+  drop.addEventListener('mousedown', e=>{
+    const el=e.target.closest('div[data-i]');
+    if(el){ e.preventDefault(); add(items[+el.dataset.i]); }
+  });
+  input.addEventListener('blur', ()=>{ setTimeout(()=>{ const t=input.value.trim(); if(t){ const exact=RZ.find(v=>v.toLowerCase()===t.toLowerCase()); add(exact||t); } else close(); }, 140); });
+  box.addEventListener('click', ()=>input.focus());
+})();
 
 // Demo expander: the live rule table, straight from server config — never a
 // hardcoded copy that can drift. Lazy-loaded on first open.
