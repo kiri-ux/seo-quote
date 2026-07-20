@@ -143,6 +143,14 @@ CFG = {
     "industry_pricing": {
         "ecommerce":  {"anchor_add": 250, "step_mode": "ratio"},
         "e-commerce": {"anchor_add": 250, "step_mode": "ratio"},
+        # Brendan's premium/big-org card (Serene Health, 2026-07-20 — one
+        # datapoint, provisional): large multi-site / telehealth healthcare
+        # orgs price on ORGANIZATION size, not keyword signals — his
+        # $3,950/$5,450/$6,950 card. anchor_add lands the base at the card;
+        # extras_off skips volume + zero-ranking (size, not SERPs, drives it);
+        # ratio steps give the card's $1,500 rungs.
+        "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
+        "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
     },
     # Core SEO + AI Search: GEO is its OWN rate card, not a % of the SEO quote
     # (Brendan GEO proposal, 2026-07-20): $2,950 / $4,050 / $5,250 bundled with
@@ -1538,11 +1546,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if rule:
         base_pre += int(rule.get("anchor_add", 0))
 
-    # Nationwide service clients: the anchor already prices national scope
-    # (see CFG note) — dampen the scope-tautological extras.
+    # Extras suppression: nationwide service clients (the anchor already
+    # prices national scope — see CFG note) and industry rules that price on
+    # organization size rather than SERP signals (extras_off).
     nw_service = (band == "nationwide" and rule is None)
-    if nw_service and vol_add:
-        _mult = float(CFG.get("nationwide_service_extras", 0.0))
+    extras_off = nw_service or bool(rule and rule.get("extras_off"))
+    _mult = float(CFG.get("nationwide_service_extras", 0.0)) if nw_service else 0.0
+    if extras_off and vol_add:
         base_pre -= vol_add
         vol_add = int(round(vol_add * _mult))
         base_pre += vol_add
@@ -1553,8 +1563,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         zr_uplift = _tier_uplift(pct_not_ranking, CFG.get("zero_ranking_tiers", []))
     elif zero_ranking:
         zr_uplift = CFG.get("zero_ranking_tiers", [[0, 0]])[0][1]
-    if nw_service and zr_uplift:
-        zr_uplift = zr_uplift * float(CFG.get("nationwide_service_extras", 0.0))
+    if extras_off and zr_uplift:
+        zr_uplift = zr_uplift * _mult
 
     # MANUAL OVERRIDE: set the hard base directly; the ladder recomputes from it.
     manual_base = base_override is not None and str(base_override) != ""

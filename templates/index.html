@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.12</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.13</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -121,7 +121,8 @@
   <div class="card">
     <h2>Product Details</h2>
 
-    <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
+    <label>Brand name</label>
+    <div class="help">Excluded from generated keywords and the rank check — without it, branded terms pollute the grid.</div>
     <input type="text" id="brand" placeholder="VersAbility">
 
     <label>Website(s) needing SEO<span class="req">*</span></label>
@@ -162,6 +163,10 @@
     <div class="help">What the client <b>is</b>, not where they target — independent of Geo scope (a nationwide service business leaves this OFF). Pulls from RZ line item (product type) — this toggle is the demo stand-in. Ecommerce prices as product SEO: higher base, proportional (38%) tier steps instead of flat. One calibration datapoint; sanity-check the result.</div>
     <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
       <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
+
+    <label>Industry <span style="font-weight:400;color:var(--muted)">(RZ line item — demo stand-in, optional)</span></label>
+    <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring — e.g. "behavioral health" or "telehealth" carries Brendan's big-org card ($3,950/$5,450/$6,950 shape), "ecommerce" carries the product-SEO ladder. Blank = standard formula.</div>
+    <input type="text" id="industry" placeholder='e.g. behavioral health, telehealth, ecommerce'>
 
     <label>Geographic targeting areas<span class="req" id="georeq">*</span> <span style="font-weight:400;color:var(--muted)" id="georeq_note">(except Nationwide)</span></label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
@@ -428,6 +433,7 @@ function collectInputs(){
     phrase_geos: stores.spgeo.slice(),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
     ecommerce: !!($('ecommerce')&&$('ecommerce').checked),
+    industry: ($('industry')&&$('industry').value.trim())||'',
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
   };
@@ -1113,7 +1119,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -1125,7 +1131,7 @@ function renderStep4(p){
     ST.baseOverride = val;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -1224,7 +1230,7 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
@@ -1467,6 +1473,7 @@ function snapshotQuote(){
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
     strategy: (document.querySelector('#strategies input:checked')||{}).value||ST.inputs.strategy||'Core SEO',
     ecommerce: $('ecommerce') ? $('ecommerce').checked : !!ST.inputs.ecommerce,
+    industry: $('industry') ? $('industry').value.trim() : (ST.inputs.industry||''),
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
     past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
   }) : ST.inputs;
@@ -1549,6 +1556,7 @@ function reflectInputs(inp){
   if($('pastseo_detail')) $('pastseo_detail').value = inp.past_seo_detail||'';
   if($('business_desc')) $('business_desc').value = inp.business_desc||'';
   if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
+  if($('industry'))      $('industry').value = inp.industry||'';
   if($('state'))         $('state').value = inp.state||'';
   if($('addon'))         $('addon').value = (inp.addon_markets!=null?inp.addon_markets:0);
   if($('markup'))        $('markup').value = (inp.markup_pct!=null?inp.markup_pct:35);
