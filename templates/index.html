@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.13</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.14</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -501,6 +501,18 @@ function preflightAdvice(inp){
   // 4) Brand exclusion only works if the brand is right.
   if(!(inp.brand||'').trim()){
     tips.push('<b>No brand name.</b> The brand is excluded from keywords and the rank check — without it, branded terms pollute the grid.');
+  }
+  // Overlapping geos: "san diego" vs "san diego county" vs "san diego area"
+  // cross every service into near-duplicate keywords — 3x grid bloat, split
+  // volume lookups, and unvalidated variants (county/area) fall back to broad
+  // locations that return bogus volumes.
+  const allGeos=[...(inp.geo_values||[]),...(inp.phrase_geos||[])].map(g=>g.toLowerCase().replace(/,\s*[a-z]{2}$/,'').trim()).filter(Boolean);
+  const overlaps=[];
+  for(let i=0;i<allGeos.length;i++) for(let j=0;j<allGeos.length;j++){
+    if(i!==j && allGeos[j].includes(allGeos[i]) && allGeos[i]!==allGeos[j]) overlaps.push(`“${allGeos[i]}” ⊆ “${allGeos[j]}”`);
+  }
+  if(overlaps.length){
+    tips.push(`<b>Overlapping geos</b> (${[...new Set(overlaps)].join(', ')}). Each variant crosses with every service, multiplying the grid with near-duplicates — and non-city variants (“county”, “area”) fail location validation, so their volume lookups fall back to broad locations and return inflated numbers. Keep ONE canonical geo per market; use Search-phrase geos for genuinely different granularity (suburbs, regions).`);
   }
   return tips;
 }

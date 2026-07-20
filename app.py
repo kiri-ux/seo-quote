@@ -149,6 +149,11 @@ CFG = {
         # $3,950/$5,450/$6,950 card. anchor_add lands the base at the card;
         # extras_off skips volume + zero-ranking (size, not SERPs, drives it);
         # ratio steps give the card's $1,500 rungs.
+        # Keys must match the RZ industry taxonomy VERBATIM (substring) — the
+        # line item ships values like "Health Services - Hospital", not the
+        # client's marketing vocabulary. Add each big-org RZ value as Brendan
+        # prices one.
+        "hospital":          {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
         "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
         "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
     },
