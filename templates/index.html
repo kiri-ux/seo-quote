@@ -24,6 +24,9 @@
   .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
   label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
   .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
+  .strat{display:inline-flex;align-items:center;gap:6px;margin:0 8px 6px 0;padding:6px 13px;border:1.5px solid var(--atlas);border-radius:16px;font-size:12.5px;font-weight:600;color:var(--atlas);cursor:pointer;background:#fff;user-select:none}
+  .strat input{accent-color:var(--atlas);margin:0}
+  .strat:has(input:checked){background:var(--atlas);color:#fff}
   /* dev note rail: steps 2-4 are one pipeline call in adtini */
   #p2,#p3,#p3b,#p4{border-left:3px dashed #cf9fe0;padding-left:12px}
   #pdev{margin-top:6px}
@@ -156,8 +159,16 @@
       <option value="nationwide">Nationwide</option>
     </select>
 
+    <label>Strategy</label>
+    <div class="help">Pulls from RZ line item. In adtini the strategy arrives with the order — this selector is the demo stand-in. Core SEO is the priced product; the AI Search add-on and Website Audit are captured for the reviewer and the proposal, with pricing hooks to be added once Brendan prices them.</div>
+    <div id="strategies">
+      <label class="strat"><input type="radio" name="strategy" value="Core SEO" checked> Core SEO</label>
+      <label class="strat"><input type="radio" name="strategy" value="Core SEO + AI Search"> Core SEO + AI Search</label>
+      <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
+    </div>
+
     <label>Ecommerce / national product client <span style="font-weight:400;color:var(--muted)">(prices as product SEO)</span></label>
-    <div class="help">Product/category-page SEO at national scale is priced above local-service SEO — Brendan's ecom ladder runs a higher base with proportional (38%) tier steps instead of flat ones. One calibration datapoint so far; sanity-check the result.</div>
+    <div class="help">Pulls from RZ line item (product type) in adtini — not a manual field there; this toggle is the demo stand-in. Product/category-page SEO at national scale prices above local-service SEO: higher base, proportional (38%) tier steps. One calibration datapoint so far; sanity-check the result.</div>
     <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
       <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
 
@@ -361,6 +372,12 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
 
 // ---- toggle ----
 const pastseo=document.getElementById('pastseo');
+document.querySelectorAll('#strategies input').forEach(x=>x.addEventListener('change',()=>{
+  if(typeof ST!=='undefined'&&ST.inputs){
+    ST.inputs.strategy=(document.querySelector('#strategies input:checked')||{}).value||'Core SEO';
+  }
+  try{scheduleAutoSave();}catch(e){}
+}));
 document.getElementById('ecommerce').addEventListener('change',()=>{
   const el=document.getElementById('ecommerce');
   document.getElementById('ecommerce_lbl').textContent=el.checked?'Yes':'No';
@@ -401,6 +418,7 @@ function collectInputs(){
     addon_markets: parseInt($('addon').value||'0',10),
     markup_pct: parseFloat($('markup').value||'35'),
     phrase_geos: stores.spgeo.slice(),
+    strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
     ecommerce: !!($('ecommerce')&&$('ecommerce').checked),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
@@ -940,6 +958,7 @@ function renderStep4(p){
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(ladder prices Core SEO; AI Search uplift pending Brendan)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending Brendan)</span>':''}</div>`:''}
     <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)</div>
@@ -1373,6 +1392,7 @@ function snapshotQuote(){
     phrase_geos: stores.spgeo.slice(),
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
+    strategy: (document.querySelector('#strategies input:checked')||{}).value||ST.inputs.strategy||'Core SEO',
     ecommerce: $('ecommerce') ? $('ecommerce').checked : !!ST.inputs.ecommerce,
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
     past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
@@ -1432,6 +1452,16 @@ function reflectInputs(inp){
   Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
 
   if($('brand'))         $('brand').value = inp.brand||'';
+  {
+    let strat = inp.strategy;
+    if(!strat && Array.isArray(inp.strategies)){        // back-compat: old multiselect saves
+      strat = inp.strategies.includes('GEO') ? 'Core SEO + AI Search'
+            : inp.strategies.includes('Website Audit') && inp.strategies.length===1 ? 'Website Audit'
+            : 'Core SEO';
+    }
+    strat = strat || 'Core SEO';
+    document.querySelectorAll('#strategies input').forEach(x=>{ x.checked = (x.value===strat); });
+  }
   if($('ecommerce')){
     $('ecommerce').checked=!!inp.ecommerce;
     const el=$('ecommerce_lbl'); if(el) el.textContent=inp.ecommerce?'Yes':'No';
