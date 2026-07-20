@@ -168,7 +168,7 @@ CFG = {
         # deliberately misses "B2B - Insurance Business Solutions". OPEN
         # QUESTION for Brendan: RZ doesn't distinguish carriers from two-agent
         # local agencies; confirm whether small agencies carry the same +$800.
-        "insurance -":       {"anchor_add": 800, "note": "Carrier premium — Rockingham calibration (within 1%/tier). Standard steps + uplift. Open: do small agencies carry it too?"},
+        "insurance -":       {"anchor_add": 450, "note": "Carrier premium — Rockingham re-calibration 2026-07-20 at the CURRENT piecewise CPC adder (which already carries ~$1,000 of insurance click value at a $120 median; the original +$800 was fit against the old +$350-capped adder and double-counted). Contiguous NoVA 9-city scope; lands 5,450/6,750/8,050 vs his 5,450/6,750/7,950. Open: do small agencies carry it too?"},
         "hospital":          {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card ($3,950/$5,450/$6,950 shape) — Serene Health calibration via RZ “Health Services - Hospital”."},
         "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
         "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},

@@ -145,6 +145,35 @@ def save_quote(name, client, payload):
         return qid
 
 
+def _norm_for_diff(p):
+    """Normalized copy of a quote payload for change detection only — never
+    stored. Sorts row arrays into canonical order and drops transient flags."""
+    try:
+        q = json.loads(json.dumps(p))
+    except Exception:
+        return p
+    if isinstance(q, dict):
+        t = q.get("table")
+        if isinstance(t, list):
+            rows = []
+            for r in t:
+                if isinstance(r, dict):
+                    r = {k: v for k, v in r.items() if k != "queued"}
+                rows.append(r)
+            try:
+                rows.sort(key=lambda r: str(r.get("kw", "")) if isinstance(r, dict) else str(r))
+            except Exception:
+                pass
+            q["table"] = rows
+        paa = q.get("paa")
+        if isinstance(paa, list):
+            try:
+                q["paa"] = sorted(paa, key=str)
+            except Exception:
+                pass
+    return q
+
+
 def update_quote(quote_id, payload, name=None, client=None):
     """Update an existing quote IN PLACE. Snapshots the prior version to history
     first — but ONLY when the content actually changed, so repeated auto-saves
@@ -157,9 +186,13 @@ def update_quote(quote_id, payload, name=None, client=None):
         if not row:
             return False, False
         old_payload = row[0]
-        # Compare normalized JSON so ordering/whitespace differences don't count.
+        # Compare normalized JSON so noise doesn't create phantom "changes":
+        # key order, keyword-table row order (rank batches land in arrival
+        # order), and transient row flags (queued) all differ between visually
+        # identical states — an Update click with no real edit must not snapshot.
         try:
-            changed = json.dumps(old_payload, sort_keys=True) != json.dumps(payload, sort_keys=True)
+            changed = (json.dumps(_norm_for_diff(old_payload), sort_keys=True)
+                       != json.dumps(_norm_for_diff(payload), sort_keys=True))
         except Exception:
             changed = True
         version_saved = False

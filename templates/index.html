@@ -107,7 +107,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.22</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.23</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -319,13 +319,22 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
   const RZ=[...document.querySelectorAll('#rz_industries option')].map(o=>o.value);
   let items=[], active=-1;
 
+  // Industry is the one input that affects ONLY Step 4, so it must sync to
+  // ST.inputs immediately — pills added after a restore would otherwise never
+  // reach Re-price (which reads ST.inputs, refreshed only at Build time).
+  function sync(){
+    if(typeof ST!=='undefined' && ST.inputs){
+      ST.inputs.industry = stores.industry.join(' | ');
+      ST.inputs.industries = stores.industry.slice();
+    }
+  }
   function render(){
     box.querySelectorAll('.pill').forEach(p=>p.remove());
     stores.industry.forEach((v,i)=>{
       const el=document.createElement('span');
       el.className='pill';
       el.innerHTML=`${v} <b data-i="${i}">×</b>`;
-      el.querySelector('b').onclick=()=>{stores.industry.splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
+      el.querySelector('b').onclick=()=>{stores.industry.splice(i,1);render();sync();try{scheduleAutoSave();}catch(e){}};
       box.insertBefore(el,input);
     });
   }
@@ -333,7 +342,7 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
 
   function add(v){
     v=(v||'').trim();
-    if(v && !stores.industry.includes(v)){ stores.industry.push(v); render(); try{scheduleAutoSave();}catch(e){} }
+    if(v && !stores.industry.includes(v)){ stores.industry.push(v); render(); sync(); try{scheduleAutoSave();}catch(e){} }
     input.value=''; close();
   }
   function close(){ drop.classList.remove('open'); active=-1; }
@@ -390,7 +399,7 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
       }
     }
     else if(e.key==='Backspace' && !input.value && stores.industry.length){
-      stores.industry.pop(); render(); try{scheduleAutoSave();}catch(e2){}
+      stores.industry.pop(); render(); sync(); try{scheduleAutoSave();}catch(e2){}
     }
   });
   // mousedown (not click) so the pick lands before the input's blur fires
