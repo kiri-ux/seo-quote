@@ -2469,7 +2469,7 @@ _MENU_GENERIC = {
     "request a quote","free quote","free estimate","get started","learn more",
     "read more","view all","see all","menu","español","facebook","instagram",
     "linkedin","twitter","youtube","x",
-    "start my career","start my project","our process","media","blogs",
+    "start my career","start my project","our process","approach","our approach","media","blogs",
     "press releases","press","join our team","apply now","employment",
     "history","our history","our story","leadership","safety","awards",
 }
@@ -2609,6 +2609,35 @@ def api_site_services():
             hinted = bool(_SERVICE_PATH_HINT.search(href or ""))
             out.append({"label": t, "source": src, "service_path": hinted})
 
+    # Pass 2.5 — HEADINGS. Portfolio-style sites (design studios, agencies)
+    # run deliberately minimal navs — Work / About / Contact, all generic — and
+    # put the actual service taxonomy in on-page section headings ("01.Branding",
+    # "02.Packaging Design"). Links can't see those, so when the nav yields
+    # nothing, harvest heading + <strong>/<b> text instead. The AI conversion
+    # step already drops non-service items, so this can afford to over-collect.
+    used_headings = False
+    if len(out) < 3:
+        raw_heads = re.findall(r"<(h[1-6]|strong|b)\b[^>]*>(.*?)</\1>",
+                               html, re.I | re.S)
+        import html as _htmlmod
+        n_before = len(out)
+        for _tag, inner in raw_heads:
+            t = re.sub(r"<[^>]+>", " ", inner)          # strip nested tags
+            t = _htmlmod.unescape(t)
+            t = " ".join(t.split())
+            t = re.sub(r"^\s*\d{1,2}\s*[.):\-–—]?\s*", "", t)  # "01.Branding" -> "Branding"
+            t = t.strip(" :·•|")
+            tl = t.lower()
+            if not t or tl in _MENU_GENERIC or tl in seen: continue
+            if len(t) > 48 or len(t.split()) > 6: continue
+            if not re.search(r"[a-z]", tl): continue
+            if re.search(r"\d{3}", tl): continue          # phone numbers
+            if re.search(r"[.!?]$", t): continue          # sentences, not labels
+            seen.add(tl)
+            out.append({"label": t, "source": "heading", "service_path": False})
+            if len(out) - n_before >= 15: break
+        used_headings = len(out) > n_before
+
     # Pass 3 — JS-built navs render no anchors in raw HTML. The sitemap is
     # static XML that JavaScript can't hide, and page slugs map to the same
     # service taxonomy a menu would. Same crawler used for business-desc
@@ -2638,7 +2667,7 @@ def api_site_services():
     seeds = [s for s in (d.get("seeds") or []) if isinstance(s, str)]
     mapping = claude_menu_to_terms([s["label"] for s in out],
                                    d.get("brand") or "", dom, seeds,
-                                   d.get("business_desc") or "")
+                                   d.get("business_desc") or site_desc or "")
     ai_used = bool(mapping)
     if ai_used:
         converted, seen_terms = [], set()
@@ -2658,6 +2687,7 @@ def api_site_services():
 
     return jsonify({"domain": dom, "services": out,
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,
+                    "from_headings": used_headings,
                     "site_description": site_desc,
                     "n_nav_links": len(p.nav_links), "diag": diag})
 
