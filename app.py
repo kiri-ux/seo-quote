@@ -105,11 +105,20 @@ CFG = {
     # not proportionally — the old 38% ratio made the gap widen with every tier
     # (+15/18/20% on Keller, +13/24/34% on Waytek). Flat $700 hard = ~$950
     # client at 35% markup. step_ratio remains as fallback if flat is nulled.
-    # Ecommerce / national-product clients (MPG Gummies datapoint, 2026-07-20):
-    # Brendan prices product SEO above local-service SEO — base +$250 hard and
-    # PROPORTIONAL 38% steps instead of the flat local-client ladder. ONE
-    # datapoint so far; treat as provisional until a second ecom actual.
-    "ecom_anchor_add": 250,
+    # Industry pricing: industries known to carry additional tiered pricing.
+    # Matched by substring against the RZ-fed industry text ("DTC ecommerce
+    # supplements" matches "ecommerce"). Each rule: anchor_add (hard $) and
+    # step_mode "ratio" (proportional 38% steps) or "flat" (default ladder).
+    # ecommerce calibrated on MPG Gummies (2026-07-20) — one datapoint,
+    # provisional. Add industries here as Brendan prices them.
+    "industry_pricing": {
+        "ecommerce":  {"anchor_add": 250, "step_mode": "ratio"},
+        "e-commerce": {"anchor_add": 250, "step_mode": "ratio"},
+    },
+    # Core SEO + AI Search: GEO is quoted at this % of the Core SEO price,
+    # added on top (per adtini product definition).
+    "ai_search_uplift_pct": 90,
+    "ecom_anchor_add": 250,                   # legacy alias; industry_pricing supersedes
     "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
@@ -1457,7 +1466,7 @@ def _volume_dollar_add(total_volume, free_below, brackets):
 
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
-                 ecommerce=False):
+                 ecommerce=False, industry="", ai_search=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
@@ -1474,8 +1483,18 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 
     # Base before % uplift = anchor + competitive adder + volume $ add.
     base_pre = anchor + adder + vol_add
-    if ecommerce:
-        base_pre += CFG.get("ecom_anchor_add", 250)
+    # Resolve industry rule (substring match against RZ-fed industry text);
+    # the legacy ecommerce flag maps to the ecommerce rule.
+    rule_key, rule = None, None
+    ind = (industry or "").strip().lower()
+    for k, r in CFG.get("industry_pricing", {}).items():
+        if k in ind:
+            rule_key, rule = k, r
+            break
+    if rule is None and ecommerce:
+        rule_key, rule = "ecommerce", CFG.get("industry_pricing", {}).get("ecommerce")
+    if rule:
+        base_pre += int(rule.get("anchor_add", 0))
 
     # --- tiered zero-ranking uplift (% of head terms not ranking) ---
     zr_uplift = 0
@@ -1493,8 +1512,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         base = r50(base_pre * (1.0 + zr_uplift / 100.0))
 
     flat = CFG.get("tier_step_flat")
-    if ecommerce:
-        # product ladders step proportionally (Brendan's ecom quote: 38% steps)
+    if rule and rule.get("step_mode") == "ratio":
+        # these ladders step proportionally (Brendan's ecom quote: 38% steps)
         step = r50(base * CFG["step_ratio"])
     elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps
@@ -1519,9 +1538,23 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     else:
         client = {k: r50(v * m) for k, v in hard.items()}
 
+    # Core SEO + AI Search: GEO quoted at ai_search_uplift_pct of the Core SEO
+    # price, added on top — reported per tier so the quote shows the breakdown.
+    ai = None
+    if ai_search:
+        pct = CFG.get("ai_search_uplift_pct", 90) / 100.0
+        ai = {"uplift_pct": CFG.get("ai_search_uplift_pct", 90),
+              "hard_add":   {k: r50(v * pct) for k, v in hard.items()},
+              "client_add": {k: r50(v * pct) for k, v in client.items()}}
+        ai["hard_total"]   = {k: hard[k] + ai["hard_add"][k] for k in hard}
+        ai["client_total"] = {k: client[k] + ai["client_add"][k] for k in client}
+
     hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
     client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "industry_rule": rule_key,
+            "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
+            "ai_search": ai,
             "floored": floored, "client_floor": floor, "manual_base": manual_base,
             "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
@@ -1580,8 +1613,8 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
 
     base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
     flat = CFG.get("tier_step_flat")
-    if ecommerce:
-        # product ladders step proportionally (Brendan's ecom quote: 38% steps)
+    if rule and rule.get("step_mode") == "ratio":
+        # these ladders step proportionally (Brendan's ecom quote: 38% steps)
         step = r50(base * CFG["step_ratio"])
     elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps
@@ -1640,7 +1673,9 @@ def quote():
         m3 = stage3_metrics(s1["head"], markets, state)
         r3 = stage3_rankcheck(s1["all"], domain, markets, state, brand)
         p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon,
-                          ecommerce=bool(d.get("ecommerce")))
+                          ecommerce=bool(d.get("ecommerce")),
+                          industry=(d.get("industry") or ""),
+                          ai_search=bool(d.get("ai_search")))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -2002,8 +2037,13 @@ def api_price():
     base_override = base_override if base_override not in (None, "") else None
     p = stage4_price(band, adder, zero, addon, markup,
                      pct_not_ranking=pct_not_ranking, total_volume=total_volume,
-                     base_override=base_override, ecommerce=bool(d.get("ecommerce")))
+                     base_override=base_override, ecommerce=bool(d.get("ecommerce")),
+                     industry=(d.get("industry") or ""),
+                     ai_search=bool(d.get("ai_search")))
     return jsonify({"anchor": p["anchor"], "adder": adder,
+                    "industry_rule": p.get("industry_rule"),
+                    "industry_anchor_add": p.get("industry_anchor_add", 0),
+                    "ai_search": p.get("ai_search"),
                     "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
                     "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
                     "volume_add": p["volume_add"],

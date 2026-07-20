@@ -167,10 +167,9 @@
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
-    <label>Ecommerce / national product client <span style="font-weight:400;color:var(--muted)">(prices as product SEO)</span></label>
-    <div class="help">Pulls from RZ line item (product type) in adtini — not a manual field there; this toggle is the demo stand-in. Product/category-page SEO at national scale prices above local-service SEO: higher base, proportional (38%) tier steps. One calibration datapoint so far; sanity-check the result.</div>
-    <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
-      <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
+    <label>Industry</label>
+    <div class="help">Pulls from the RZ order form. Certain industries carry additional tiered pricing — currently <b>ecommerce</b> (higher base, proportional 38% steps; one calibration datapoint). Matching is by keyword, so "DTC ecommerce supplements" prices as ecommerce. More industries get rules as Brendan prices them; anything unmatched prices on the standard ladder.</div>
+    <input type="text" id="industry" placeholder="e.g. ecommerce supplements, dental practice, insurance carrier">
 
     <label>Geographic targeting areas</label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
@@ -378,12 +377,6 @@ document.querySelectorAll('#strategies input').forEach(x=>x.addEventListener('ch
   }
   try{scheduleAutoSave();}catch(e){}
 }));
-document.getElementById('ecommerce').addEventListener('change',()=>{
-  const el=document.getElementById('ecommerce');
-  document.getElementById('ecommerce_lbl').textContent=el.checked?'Yes':'No';
-  if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.ecommerce=el.checked; }
-  try{scheduleAutoSave();}catch(e){}
-});
 pastseo.addEventListener('change',()=>{
   document.getElementById('pastseo_lbl').textContent=pastseo.checked?'Yes':'No';
   document.getElementById('pastseo_detail_wrap').classList.toggle('hidden',!pastseo.checked);
@@ -419,6 +412,7 @@ function collectInputs(){
     markup_pct: parseFloat($('markup').value||'35'),
     phrase_geos: stores.spgeo.slice(),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
+    industry: ($('industry')&&$('industry').value.trim())||'',
     ecommerce: !!($('ecommerce')&&$('ecommerce').checked),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
@@ -958,7 +952,7 @@ function renderStep4(p){
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
-    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(ladder prices Core SEO; AI Search uplift pending Brendan)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending Brendan)</span>':''}</div>`:''}
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(GEO add-on = ${(p.ai_search&&p.ai_search.uplift_pct)||90}% of the Core SEO quote, added on top — combined totals below)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending Brendan)</span>':''}</div>`:''}
     <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)</div>
@@ -968,7 +962,7 @@ function renderStep4(p){
       <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${money(h.advanced)}</div><div class="mo">/month</div></div>
     </div>
     <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
-      + competitive adder <code>+${money(p.adder)}</code> = <code>${money(p.base_pre_uplift)}</code>
+      + competitive adder <code>+${money(p.adder)}</code>${p.industry_rule?` + industry (${p.industry_rule}) <code>+${money(p.industry_anchor_add)}</code>`:''} = <code>${money(p.base_pre_uplift)}</code>
       ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not ranking)</span>`:''}
       <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
@@ -994,6 +988,17 @@ function renderStep4(p){
     </div>
 
     <div style="margin-top:14px;background:#f7f7f9;border:1px solid var(--line);border-radius:9px;padding:12px 14px">
+    ${p.ai_search?`<div style="background:#eef4fb;border:1px solid var(--atlas);border-radius:9px;padding:10px 12px;margin:10px 0">
+      <b style="color:var(--atlas)">Core SEO + AI Search — combined totals</b>
+      <span class="nf">(GEO = ${p.ai_search.uplift_pct}% of Core SEO, added on top)</span><br>
+      <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
+        <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
+        <tr><td style="padding:2px 12px 2px 0">Core SEO (client)</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
+        <tr><td style="padding:2px 12px 2px 0">AI Search / GEO add</td><td style="text-align:right">+${money(p.ai_search.client_add.base)}</td><td style="text-align:right">+${money(p.ai_search.client_add.intermediate)}</td><td style="text-align:right">+${money(p.ai_search.client_add.advanced)}</td></tr>
+        <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 12px 2px 0;border-top:1px solid var(--line)">Combined</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.base)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.intermediate)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.advanced)}</td></tr>
+      </table>
+      <div class="nf" style="font-size:11.5px;margin-top:4px">Hard-cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}. Compare panel below still tracks the Core SEO ladder.</div>
+    </div>`:''}
       <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to Brendan's actual quote</div>
       <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.</div>
       <table style="font-size:12.5px;width:100%">
@@ -1047,7 +1052,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -1059,7 +1064,7 @@ function renderStep4(p){
     ST.baseOverride = val;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -1157,7 +1162,7 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),
+    const p=await postJSON('/api/price',{industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
@@ -1393,6 +1398,7 @@ function snapshotQuote(){
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
     strategy: (document.querySelector('#strategies input:checked')||{}).value||ST.inputs.strategy||'Core SEO',
+    industry: $('industry') ? $('industry').value.trim() : (ST.inputs.industry||''),
     ecommerce: $('ecommerce') ? $('ecommerce').checked : !!ST.inputs.ecommerce,
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
     past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
@@ -1462,10 +1468,7 @@ function reflectInputs(inp){
     strat = strat || 'Core SEO';
     document.querySelectorAll('#strategies input').forEach(x=>{ x.checked = (x.value===strat); });
   }
-  if($('ecommerce')){
-    $('ecommerce').checked=!!inp.ecommerce;
-    const el=$('ecommerce_lbl'); if(el) el.textContent=inp.ecommerce?'Yes':'No';
-  }
+  if($('industry')) $('industry').value = inp.industry || (inp.ecommerce ? 'ecommerce' : '');
   if($('pastseo')){
     $('pastseo').checked = !!inp.past_seo;
     const l=$('pastseo_lbl'); if(l) l.textContent = inp.past_seo?'Yes':'No';
@@ -1487,7 +1490,7 @@ function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
 // Keep post-build form edits from being silently lost on save. ST.inputs is
 // captured when Step 1 runs; if these fields change afterward, sync them in
 // so the autosaved snapshot (and any manual save) reflects the current form.
-['state','geo_scope','addon','markup','brand'].forEach(fid=>{
+['state','geo_scope','addon','markup','brand','industry'].forEach(fid=>{
   const el=$(fid); if(!el) return;
   el.addEventListener('change',()=>{
     if(!ST.inputs) return;
@@ -1496,6 +1499,7 @@ function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
     else if(fid==='addon')     ST.inputs.addon_markets=parseInt(el.value||'0',10);
     else if(fid==='markup')    ST.inputs.markup_pct=parseFloat(el.value||'35');
     else if(fid==='brand')     ST.inputs.brand=el.value;
+    else if(fid==='industry')  ST.inputs.industry=el.value.trim();
     // A state change after the keyword build means the list no longer matches
     // the form — nudge toward a re-run rather than quoting a mismatched list.
     if(fid==='state' && ST.kw){
