@@ -316,15 +316,28 @@ def fetch_site_pages(domain, limit=30):
     pages, seen = [], set()
     import re
     deadline = time.time() + 8          # hard cap: sitemap work gets <= 8s total
-    UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+    _UA_B = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+    _UA_T = {"User-Agent": "Mozilla/5.0 (compatible; adtini-seo-quote/1.0)"}
+    def _get(url, timeout):
+        """Fetch trying both identities — WAFs differ on which they block."""
+        last = None
+        for hdrs in (_UA_B, _UA_T):
+            try:
+                r = requests.get(url, timeout=timeout, headers=hdrs)
+                if r.status_code == 200 and "<" in (r.text or ""):
+                    return r
+                last = r
+            except Exception:
+                pass
+        return last
 
     # Candidate sitemap locations: what robots.txt declares, plus the standard
     # and WordPress-native paths. WP >=5.5 ships /wp-sitemap.xml; Yoast uses
     # /sitemap_index.xml; many themes use /page-sitemap.xml directly.
     candidates = []
     try:
-        rr = requests.get(f"https://{dom}/robots.txt", timeout=4, headers=UA)
-        if rr.status_code == 200:
+        rr = _get(f"https://{dom}/robots.txt", 4)
+        if rr is not None and rr.status_code == 200:
             candidates += re.findall(r"(?im)^sitemap:\s*(\S+)", rr.text)
     except Exception:
         pass
@@ -341,8 +354,8 @@ def fetch_site_pages(domain, limit=30):
             continue
         seen_sm.add(sm)
         try:
-            r = requests.get(sm, timeout=5, headers=UA)
-            if r.status_code != 200 or "<" not in r.text:
+            r = _get(sm, 5)
+            if r is None or r.status_code != 200 or "<" not in r.text:
                 continue
             locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", r.text, re.I)
             if locs and all(l.lower().endswith(".xml") for l in locs[:3]):
@@ -355,7 +368,8 @@ def fetch_site_pages(domain, limit=30):
                     if time.time() > deadline:
                         break
                     try:
-                        cr = requests.get(child, timeout=4, headers=UA)
+                        cr = _get(child, 4)
+                        if cr is None: continue
                         child_locs += re.findall(r"<loc>\s*(.*?)\s*</loc>", cr.text, re.I)
                     except Exception:
                         pass
@@ -2172,30 +2186,78 @@ def api_site_services():
     list than anything a partner types in freehand."""
     d = request.get_json(force=True) or {}
     dom = re.sub(r"^https?://", "", (d.get("domain") or "").strip()).strip("/")
-    if not dom:
+    pasted = (d.get("pasted") or "").strip()
+    if not dom and not pasted:
         return jsonify({"error": "Add the client website first."}), 400
-    _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                   "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+    if pasted:
+        # Manual escape hatch for sites that block automated access entirely:
+        # the partner pastes the menu / service list (one per line or
+        # comma-separated) and it runs through the same cleanup + AI conversion
+        # as a parsed nav would.
+        raw = [p.strip(" \t•·-–—>") for chunk in pasted.splitlines()
+               for p in chunk.split(",")]
+        out, seen = [], set()
+        for t in raw:
+            t = re.sub(r"[»›→▸▾▼+]+$", "", t).strip()
+            tl = t.lower()
+            if not t or tl in _MENU_GENERIC or len(t) > 48 or len(t.split()) > 6:
+                continue
+            if tl in seen:
+                continue
+            seen.add(tl)
+            out.append({"label": t, "source": "pasted", "service_path": False})
+        out = out[:40]
+        seeds = [x for x in (d.get("seeds") or []) if isinstance(x, str)]
+        mapping = claude_menu_to_terms([x["label"] for x in out],
+                                       d.get("brand") or "", dom or "(pasted list)",
+                                       seeds, d.get("business_desc") or "")
+        ai_used = bool(mapping)
+        if ai_used:
+            conv, seen_t = [], set()
+            for x in out:
+                term = mapping.get(x["label"], x["label"].lower())
+                if term is None or term in seen_t:
+                    continue
+                seen_t.add(term); x["term"] = term; conv.append(x)
+            out = conv
+        else:
+            for x in out:
+                x["term"] = x["label"].lower()
+        return jsonify({"domain": dom, "services": out, "ai_refined": ai_used,
+                        "from_sitemap": False, "pasted": True, "n_nav_links": 0})
+    # Two identities: some servers stub out bots, others' WAFs block a Chrome UA
+    # that lacks full browser fingerprints while allowing honest bots through.
+    # Try both per URL and keep whichever returns a page with real links.
+    _UAS = [("browser", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"),
+            ("bot", "Mozilla/5.0 (compatible; adtini-seo-quote/1.0)")]
     html = ""
     fetch_err = None
-    # Some servers hand bots a stub page the browser never sees; a real browser
-    # UA plus the www variant recovers most of those.
+    diag = []
     for url in (f"https://{dom}", f"https://www.{dom}"):
-        try:
-            r = requests.get(url, timeout=12, allow_redirects=True,
-                             headers={"User-Agent": _BROWSER_UA,
-                                      "Accept": "text/html,application/xhtml+xml"})
-            candidate = r.text[:800_000]
-            # a real homepage has links; a block/challenge stub usually doesn't
-            if candidate.lower().count("<a") >= 5:
-                html = candidate
-                break
-            if not html:
-                html = candidate
-        except Exception as e:
-            fetch_err = e
+        for ua_name, ua in _UAS:
+            try:
+                r = requests.get(url, timeout=10, allow_redirects=True,
+                                 headers={"User-Agent": ua,
+                                          "Accept": "text/html,application/xhtml+xml",
+                                          "Accept-Language": "en-US,en;q=0.9"})
+                candidate = r.text[:800_000]
+                nlinks = candidate.lower().count("<a")
+                diag.append(f"{url} [{ua_name}] -> HTTP {r.status_code}, {nlinks} links")
+                if nlinks >= 5:
+                    html = candidate
+                    break
+                if not html:
+                    html = candidate
+            except Exception as e:
+                fetch_err = e
+                diag.append(f"{url} [{ua_name}] -> {type(e).__name__}")
+        if html and html.lower().count("<a") >= 5:
+            break
     if not html:
-        return jsonify({"error": f"Couldn't fetch the site: {fetch_err}"}), 502
+        return jsonify({"error": f"Couldn't fetch the site: {fetch_err}",
+                        "diag": diag}), 502
     p = _NavLinkParser()
     try:
         p.feed(html)
@@ -2278,7 +2340,7 @@ def api_site_services():
 
     return jsonify({"domain": dom, "services": out,
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,
-                    "n_nav_links": len(p.nav_links)})
+                    "n_nav_links": len(p.nav_links), "diag": diag})
 
 
 @app.route("/api/quotes/status")
@@ -2299,7 +2361,23 @@ def api_quotes_list():
     search = (request.args.get("q") or "").strip()
     return jsonify({"enabled": True, "quotes": storage.list_quotes(search)})
 
+def _json_error_guard(fn):
+    """Saves were failing as opaque 'Server 500 (timeout or non-JSON)' — a bare
+    exception produces an HTML error page the frontend can't read. Wrap the
+    persistence routes so any failure comes back as JSON with the actual cause,
+    which turns 'it broke' into a fixable report."""
+    from functools import wraps
+    @wraps(fn)
+    def inner(*a, **k):
+        try:
+            return fn(*a, **k)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+    return inner
+
 @app.route("/api/quotes", methods=["POST"])
+@_json_error_guard
 def api_quotes_save():
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled — attach a Postgres database in Render."}), 400
@@ -2322,6 +2400,7 @@ def api_quotes_load(qid):
     return jsonify(q)
 
 @app.route("/api/quotes/<int:qid>", methods=["PUT"])
+@_json_error_guard
 def api_quotes_update(qid):
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled."}), 400
@@ -2365,6 +2444,19 @@ def review_page(token):
     """Same template as the tool; the frontend sees /review/ in the path and
     switches to read-only review mode."""
     return render_template("index.html")
+
+@app.route("/favicon.svg")
+def favicon():
+    svg = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
+<rect width='64' height='64' rx='14' fill='#002D58'/>
+<circle cx='28' cy='27' r='13' fill='none' stroke='#F1B434' stroke-width='5'/>
+<line x1='37.5' y1='36.5' x2='50' y2='49' stroke='#F1B434' stroke-width='6' stroke-linecap='round'/>
+<text x='28' y='32.5' font-family='Arial,Helvetica,sans-serif' font-size='15' font-weight='bold'
+      fill='#FDFBF7' text-anchor='middle'>$</text>
+</svg>"""
+    from flask import Response
+    return Response(svg, mimetype="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=604800"})
 
 @app.route("/q/<int:qid>")
 def edit_link_page(qid):

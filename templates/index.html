@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>adtini · SEO Quote Tool</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
   :root{
     --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
@@ -263,6 +264,22 @@ function wirePills(key, inputId){
 }
 wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in');
 
+function renderSvcChips(data, out){
+  const chips=data.services.map((s,i)=>{
+      const term=(s.term||s.label).toLowerCase();
+      const showLabel=s.label && s.label.toLowerCase()!==term;
+      return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
+    }).join('');
+  out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
+  out.querySelectorAll('.svc-chip').forEach(ch=>{
+      ch.onclick=()=>{
+        const v=ch.getAttribute('data-label').toLowerCase();
+        if(!stores.kw.includes(v)){ stores.kw.push(v); PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} }
+        ch.style.opacity=.35; ch.style.pointerEvents='none';
+      };
+    });
+}
+
 // ---- suggest services from the client site's nav menu ----
 document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
@@ -279,22 +296,31 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
     const data=await res.json();
     if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
     if(!(data.services||[]).length){
-      out.innerHTML='<div class="nf" style="font-size:12px">No menu items found — the site may build its nav with JavaScript. Add seeds by hand.</div>';
+      const why=(data.diag&&data.diag.length)?('<div class="nf" style="font-size:11px;margin:4px 0;font-family:ui-monospace,monospace">'+data.diag.map(d=>String(d).replace(/</g,'&lt;')).join('<br>')+'</div>'):'';
+      out.innerHTML='<div class="nf" style="font-size:12px">No menu items or sitemap pages found. What the fetch saw:</div>'+why
+        +'<div class="nf" style="font-size:12px">If links show 0 with HTTP 200, the site cloaks bots or is fully JS-rendered. '
+        +'<a href="#" id="pasteMenuLink" style="color:var(--atlas);font-weight:600">Paste their menu instead</a> — copy the nav/service list from the site and it runs through the same AI conversion.</div>'
+        +'<div id="pasteMenuBox" style="display:none;margin-top:6px"><textarea id="pasteMenuTxt" rows="4" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px" placeholder="Managed IT Services\n24/7 Help Desk\nCloud Computing Migration\nCompliance"></textarea>'
+        +'<button id="pasteMenuGo" style="margin-top:5px;background:var(--atlas);color:#fff;border:none;padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Convert to seeds</button></div>';
+      const link=document.getElementById('pasteMenuLink');
+      link.onclick=(e)=>{e.preventDefault();document.getElementById('pasteMenuBox').style.display='block';};
+      document.getElementById('pasteMenuGo').onclick=async()=>{
+        const txt=document.getElementById('pasteMenuTxt').value.trim();
+        if(!txt) return;
+        const b=document.getElementById('pasteMenuGo'); b.disabled=true; b.textContent='Converting…';
+        try{
+          const res2=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({domain:stores.sites[0]||'',pasted:txt,brand:(document.getElementById('brand')||{}).value||'',
+              business_desc:(document.getElementById('business_desc')||{}).value||'',seeds:stores.kw.slice()})});
+          const d2=await res2.json();
+          if(!res2.ok) throw new Error(d2.error||'Conversion failed');
+          renderSvcChips(d2, out);
+        }catch(err){ out.insertAdjacentHTML('beforeend','<div class="err" style="font-size:12px;margin-top:5px">'+err.message+'</div>'); b.disabled=false; b.textContent='Convert to seeds'; }
+      };
       return;
     }
-    const chips=data.services.map((s,i)=>{
-      const term=(s.term||s.label).toLowerCase();
-      const showLabel=s.label && s.label.toLowerCase()!==term;
-      return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
-    }).join('');
-    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
-    out.querySelectorAll('.svc-chip').forEach(ch=>{
-      ch.onclick=()=>{
-        const v=ch.getAttribute('data-label').toLowerCase();
-        if(!stores.kw.includes(v)){ stores.kw.push(v); PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} }
-        ch.style.opacity=.35; ch.style.pointerEvents='none';
-      };
-    });
+    renderSvcChips(data, out);
+    return;
   }catch(e){
     out.innerHTML=`<div class="err" style="font-size:12px">${e.message}</div>`;
   }finally{
@@ -1344,9 +1370,9 @@ async function autoSave(){
   try{
     let r;
     if(CURRENT_QUOTE_ID!=null){
-      r=await postJSON('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
+      r=await postJSONRetry('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
     }else{
-      r=await postJSON('/api/quotes', {payload, name, client});
+      r=await postJSONRetry('/api/quotes', {payload, name, client});
       CURRENT_QUOTE_ID=r.id;
     }
     CURRENT_QUOTE_NAME=name;
@@ -1403,6 +1429,11 @@ function renderSaveRow(){
   };
 }
 
+async function postJSONRetry(url, body, method){
+  // saves occasionally hit a transient 500/timeout; one spaced retry clears most
+  try{ return await postJSON(url, body, method); }
+  catch(e){ await new Promise(r=>setTimeout(r,2000)); return await postJSON(url, body, method); }
+}
 async function doSave(mode){
   const name=($('saveName').value||'').trim();
   const client=($('saveClient').value||'').trim();
@@ -1414,9 +1445,9 @@ async function doSave(mode){
   try{
     let r;
     if(mode==='update' && CURRENT_QUOTE_ID!=null){
-      r=await postJSON('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
+      r=await postJSONRetry('/api/quotes/'+CURRENT_QUOTE_ID, {payload, name, client}, 'PUT');
     }else{
-      r=await postJSON('/api/quotes', {payload, name, client});
+      r=await postJSONRetry('/api/quotes', {payload, name, client});
       CURRENT_QUOTE_ID=r.id;
     }
     CURRENT_QUOTE_NAME=name;
