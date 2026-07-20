@@ -141,8 +141,14 @@ CFG = {
     # ecommerce calibrated on MPG Gummies (2026-07-20) — one datapoint,
     # provisional. Add industries here as Brendan prices them.
     "industry_pricing": {
-        "ecommerce":  {"anchor_add": 250, "step_mode": "ratio"},
-        "e-commerce": {"anchor_add": 250, "step_mode": "ratio"},
+        "ecommerce":  {"anchor_add": 250, "step_mode": "ratio", "note": "Product-SEO ladder — MPG Gummies calibration. Legacy toggle key."},
+        "e-commerce": {"anchor_add": 250, "step_mode": "ratio", "note": "Matches RZ “Retail - General / E-commerce”. Product-SEO ladder — MPG Gummies calibration."},
+        # Sibling RZ values an operator would reasonably pick for a product
+        # brand (MPG is literally a supplements company) — same product-SEO
+        # ladder, so the pricing can't silently vanish on an equally-valid tag.
+        # Extensions of the MPG calibration; Brendan to confirm.
+        "supplements":             {"anchor_add": 250, "step_mode": "ratio", "note": "Sibling of e-commerce (MPG is a supplements brand). Brendan to confirm."},
+        "consumer packaged goods": {"anchor_add": 250, "step_mode": "ratio", "note": "Sibling of e-commerce — product brand tag. Brendan to confirm."},
         # Brendan's premium/big-org card (Serene Health, 2026-07-20 — one
         # datapoint, provisional): large multi-site / telehealth healthcare
         # orgs price on ORGANIZATION size, not keyword signals — his
@@ -153,9 +159,19 @@ CFG = {
         # line item ships values like "Health Services - Hospital", not the
         # client's marketing vocabulary. Add each big-org RZ value as Brendan
         # prices one.
-        "hospital":          {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
-        "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
-        "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True},
+        # Insurance carriers (Rockingham, 2026-07-20 — one datapoint,
+        # provisional): +$800 with extras ON and default steps lands his
+        # $5,450/$6,750/$7,950 within 1% per tier. Note the composition differs
+        # from the hospital card: uplift stays (SEO genuinely starts from
+        # scratch) and steps run the standard 24%-of-base, not the 38% card.
+        # Key "insurance -" matches the RZ "Insurance - *" family only — it
+        # deliberately misses "B2B - Insurance Business Solutions". OPEN
+        # QUESTION for Brendan: RZ doesn't distinguish carriers from two-agent
+        # local agencies; confirm whether small agencies carry the same +$800.
+        "insurance -":       {"anchor_add": 800, "note": "Carrier premium — Rockingham calibration (within 1%/tier). Standard steps + uplift. Open: do small agencies carry it too?"},
+        "hospital":          {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card ($3,950/$5,450/$6,950 shape) — Serene Health calibration via RZ “Health Services - Hospital”."},
+        "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
+        "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
     },
     # Core SEO + AI Search: GEO is its OWN rate card, not a % of the SEO quote
     # (Brendan GEO proposal, 2026-07-20): $2,950 / $4,050 / $5,250 bundled with
@@ -2206,6 +2222,7 @@ def api_config_get():
     """Expose the tunable pricing constants for the review panel."""
     return jsonify({
         "geo_anchor": CFG["geo_anchor"],
+        "industry_pricing": CFG.get("industry_pricing", {}),
         "competitive_adder": CFG["competitive_adder"],
         "bid_score_breaks": CFG["bid_score_breaks"],
         "cpc_adder_enabled": CFG.get("cpc_adder_enabled", True),
