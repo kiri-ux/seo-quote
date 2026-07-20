@@ -114,6 +114,17 @@ CFG = {
         [35000, 50000, 0.04],
         [50000, None,  0.03],           # open-ended top bracket so it keeps escalating
     ],
+    # NATIONWIDE service clients (Skidmore Studio datapoint, 2026-07-20):
+    # Brendan's national ladder $3,950/$5,450/$6,950 backs out to hard
+    # $2,926/$4,037/$5,148 — base = the bare nationwide anchor (which was
+    # DERIVED from his national pricing, so it already prices the scope), and
+    # steps of 38% of base (the same ratio as his ecom quote). At national
+    # scope the volume add and zero-ranking uplift are tautological — every
+    # nationwide client has >10k volume and ranks for almost nothing on
+    # national SERPs — so stacking them double-counts the scope (+$1,327
+    # client on Skidmore). Multiplier below zeroes both extras for nationwide
+    # NON-industry-rule clients; ecommerce keeps its own calibrated path.
+    "nationwide_service_extras": 0.0,
     # Brendan steps his ladder in FLAT dollars (~$900-1,000 client per tier),
     # not proportionally — the old 38% ratio made the gap widen with every tier
     # (+15/18/20% on Keller, +13/24/34% on Waytek). Flat $700 hard = ~$950
@@ -1516,12 +1527,23 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if rule:
         base_pre += int(rule.get("anchor_add", 0))
 
+    # Nationwide service clients: the anchor already prices national scope
+    # (see CFG note) — dampen the scope-tautological extras.
+    nw_service = (band == "nationwide" and rule is None)
+    if nw_service and vol_add:
+        _mult = float(CFG.get("nationwide_service_extras", 0.0))
+        base_pre -= vol_add
+        vol_add = int(round(vol_add * _mult))
+        base_pre += vol_add
+
     # --- tiered zero-ranking uplift (% of head terms not ranking) ---
     zr_uplift = 0
     if pct_not_ranking is not None:
         zr_uplift = _tier_uplift(pct_not_ranking, CFG.get("zero_ranking_tiers", []))
     elif zero_ranking:
         zr_uplift = CFG.get("zero_ranking_tiers", [[0, 0]])[0][1]
+    if nw_service and zr_uplift:
+        zr_uplift = zr_uplift * float(CFG.get("nationwide_service_extras", 0.0))
 
     # MANUAL OVERRIDE: set the hard base directly; the ladder recomputes from it.
     manual_base = base_override is not None and str(base_override) != ""
@@ -1534,6 +1556,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     flat = CFG.get("tier_step_flat")
     if rule and rule.get("step_mode") == "ratio":
         # these ladders step proportionally (Brendan's ecom quote: 38% steps)
+        step = r50(base * CFG["step_ratio"])
+    elif band == "nationwide":
+        # Brendan's national ladder also steps proportionally — $1,500 client
+        # on a $3,950 base = the same 38% ratio (Skidmore, 2026-07-20)
         step = r50(base * CFG["step_ratio"])
     elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps
@@ -1645,6 +1671,10 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
     flat = CFG.get("tier_step_flat")
     if rule and rule.get("step_mode") == "ratio":
         # these ladders step proportionally (Brendan's ecom quote: 38% steps)
+        step = r50(base * CFG["step_ratio"])
+    elif band == "nationwide":
+        # Brendan's national ladder also steps proportionally — $1,500 client
+        # on a $3,950 base = the same 38% ratio (Skidmore, 2026-07-20)
         step = r50(base * CFG["step_ratio"])
     elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps

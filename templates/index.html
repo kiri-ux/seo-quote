@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.6</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.9</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -158,12 +158,12 @@
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
-    <label>Ecommerce / national product client</label>
-    <div class="help">Pulls from RZ line item (product type) — this toggle is the demo stand-in. Ecommerce prices as product SEO: higher base, proportional (38%) tier steps instead of flat. One calibration datapoint; sanity-check the result.</div>
+    <label>Ecommerce / product-based client</label>
+    <div class="help">What the client <b>is</b>, not where they target — independent of Geo scope (a nationwide service business leaves this OFF). Pulls from RZ line item (product type) — this toggle is the demo stand-in. Ecommerce prices as product SEO: higher base, proportional (38%) tier steps instead of flat. One calibration datapoint; sanity-check the result.</div>
     <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
       <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
 
-    <label>Geographic targeting areas<span class="req">*</span> <span style="font-weight:400;color:var(--muted)">(except Nationwide)</span></label>
+    <label>Geographic targeting areas<span class="req" id="georeq">*</span> <span style="font-weight:400;color:var(--muted)" id="georeq_note">(except Nationwide)</span></label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
 
@@ -232,7 +232,7 @@
 <!-- ============ CONFIG REVIEW (internal) ============ -->
 <div class="card" style="margin-top:24px;border:2px dashed #b06fc9;background:#faf6fc">
   <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — admin config, not partner-facing</div>
-  <div class="help" style="margin:0 0 8px">In adtini every constant below lives in admin-side configuration — partners never see or edit pricing internals. Values are calibrated to actual proposals (2026-07-20, fit within ~7% across eight clients), so edits here are pricing-policy decisions, not tuning knobs.</div>
+  <div class="help" style="margin:0 0 8px">In adtini every constant below lives in admin-side configuration — partners never see or edit pricing internals. Values are calibrated to actual proposals (2026-07-20, fit within ~7% across nine clients), so edits here are pricing-policy decisions, not tuning knobs.</div>
   <h2 style="cursor:pointer;user-select:none" id="cfgToggle">⚙ Pricing config — review &amp; tweak <span id="cfgChevron" style="font-weight:400;color:var(--muted)">▸ click to expand</span></h2>
   <div id="cfgBody" class="hidden">
     <p class="why" style="margin-bottom:16px">Every number the pricing engine uses, grouped by the step it affects. Edit any value and click <b>Apply</b> to update the live session, then re-run a quote to see the effect. Changes last until the app restarts (they don't overwrite the code defaults) — note what works and we'll bake it in.</p>
@@ -305,7 +305,7 @@ function renderSvcChips(data, out){
   const bd=document.getElementById('business_desc');
   if(data.site_description && bd && !bd.value.trim()){
     out.insertAdjacentHTML('beforeend',
-      `<div style="margin-top:8px;background:#eef4fb;border:1px solid var(--atlas);border-radius:8px;padding:8px 11px;font-size:12.5px">
+      `<div id="sitedescBox" style="margin-top:8px;background:#eef4fb;border:1px solid var(--atlas);border-radius:8px;padding:8px 11px;font-size:12.5px">
         The site describes itself as: <i>“${data.site_description.replace(/</g,'&lt;')}”</i>
         <button id="useSiteDesc" type="button" style="margin-left:8px;background:var(--atlas);color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Use as business description</button>
         <span class="nf" style="font-size:11px;display:block;margin-top:3px">Marketing copy says what they ARE — add what they aren't ("no implant focus") if you know it.</span></div>`);
@@ -314,7 +314,10 @@ function renderSvcChips(data, out){
       bd.value=data.site_description;
       if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.business_desc=data.site_description; }
       try{scheduleAutoSave();}catch(e){}
-      sdBtn.textContent='✓ Added'; sdBtn.disabled=true;
+      // the text now sits in the field right below — collapse the note so the
+      // same sentence isn't on screen twice
+      const box=document.getElementById('sitedescBox');
+      if(box) box.outerHTML='<div class="nf" style="margin-top:6px;font-size:11.5px">✓ Site self-description added to Business description below — edit it there (add what they are NOT, if you know it).</div>';
     };
   }
   out.querySelectorAll('.svc-chip').forEach(ch=>{
@@ -565,7 +568,7 @@ function renderStep1(){
   panel('p1',`
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
-    ${kw.business_desc?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
+    ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
     ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
       <summary style="cursor:pointer;user-select:none"><b>Grid:</b> ${kw.services.length} services × cities${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}`:''} <span class="nf">— click for the service list</span>${kw.total_volume?'':`<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data${kw.volume_error?` — ${escapeHtml(kw.volume_error)}`:''}. The volume part of pricing will be $0.</span></div>`}</summary>
@@ -1005,7 +1008,7 @@ function renderStep4(p){
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. 12-month minimum term)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending)</span>':''}</div>`:''}
-    <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
+    <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
     <details style="margin:4px 0">
     <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);cursor:pointer;user-select:none">Hard cost (internal)${ai?' — Core SEO + AI Search combined':''} — click to expand</summary>
@@ -1018,7 +1021,8 @@ function renderStep4(p){
       + competitive adder <code>+${money(p.adder)}</code>${p.industry_rule?` + industry (${p.industry_rule}) <code>+${money(p.industry_anchor_add)}</code>`:''} = <code>${money(p.base_pre_uplift)}</code>
       ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not in the top 100)</span>`:''}
-      <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
+      ${p.band==='nationwide'&&!p.industry_rule?`<br><span class="nf">nationwide: the anchor already prices national scope — the volume and zero-ranking extras don't stack (they'd double-count it), and the ladder steps proportionally (38%) like Brendan's national quotes</span>`:''}
+      <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (${p.base?Math.round(p.step/p.base*100):0}% of base)</div></div>
     </details>
 
     <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:10px 0">
@@ -1557,6 +1561,16 @@ function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
 // Keep post-build form edits from being silently lost on save. ST.inputs is
 // captured when Step 1 runs; if these fields change afterward, sync them in
 // so the autosaved snapshot (and any manual save) reflects the current form.
+// The geo-areas field is required for every scope EXCEPT Nationwide — keep
+// the star honest by hiding it (and flipping the note) when Nationwide is on.
+function syncGeoReq(){
+  const nw = $('geo_scope') && $('geo_scope').value === 'nationwide';
+  if($('georeq')) $('georeq').style.display = nw ? 'none' : '';
+  if($('georeq_note')) $('georeq_note').textContent = nw ? '(optional for Nationwide)' : '(except Nationwide)';
+}
+$('geo_scope').addEventListener('change', syncGeoReq);
+syncGeoReq();
+
 ['state','geo_scope','addon','markup','brand'].forEach(fid=>{
   const el=$(fid); if(!el) return;
   el.addEventListener('change',()=>{
