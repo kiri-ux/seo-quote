@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>adtini · Reputation Management Quote</title>
+<style>
+  :root{
+    --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
+    --parchment:#F6F1E7; --ink:#1a2231; --muted:#6b7686; --line:#dfe4ec;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--parchment);color:var(--ink);line-height:1.5}
+  header{background:var(--atlas);color:#fff;padding:18px 28px 0;}
+  .hrow{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
+  header h1 span{opacity:.7;font-size:13px;font-weight:400}
+  .tabs{display:flex;gap:4px;margin-top:14px}
+  .tabs a{display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;
+    font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)}
+  .tabs a.on{background:var(--parchment);color:var(--atlas)}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px 20px 60px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  @media(max-width:840px){.grid{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:20px}
+  .card h2{margin:0 0 14px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
+  label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
+  .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px;line-height:1.5}
+  input[type=text],input[type=number],select{width:100%;padding:9px 11px;border:1px solid var(--line);
+    border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+  input[type=number]{max-width:140px}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+  .row > div{flex:1;min-width:150px}
+  /* campaign type selector */
+  .ctypes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:700px){.ctypes{grid-template-columns:repeat(2,1fr)}}
+  .ctype{border:1.5px solid var(--line);border-radius:11px;padding:13px 12px;cursor:pointer;
+    background:#fff;text-align:center;user-select:none}
+  .ctype b{display:block;font-size:13.5px;color:var(--atlas)}
+  .ctype small{color:var(--muted);font-size:11.5px;line-height:1.35;display:block;margin-top:3px}
+  .ctype.on{border-color:var(--atlas);background:var(--atlas)}
+  .ctype.on b, .ctype.on small{color:#fff}
+  .ctype.on small{opacity:.8}
+  /* toggles */
+  .toggle-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .toggle-row .lbl{font-weight:600;font-size:13px}
+  .switch{position:relative;width:44px;height:24px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:#c7cedb;border-radius:24px;transition:.2s;cursor:pointer}
+  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .switch input:checked + .slider{background:var(--velocity)}
+  .switch input:checked + .slider:before{transform:translateX(20px)}
+  .btn{margin-top:22px;width:100%;background:var(--gold);color:#3a2c08;border:none;padding:13px;
+    border-radius:9px;font-size:15px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.55;cursor:wait}
+  .btn2{background:#fff;border:1.5px solid var(--atlas);color:var(--atlas);padding:8px 14px;
+    border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .hidden{display:none}
+  .pillnote{display:inline-block;background:#fde8c8;color:#7a5410;padding:3px 10px;border-radius:20px;
+    font-size:11.5px;font-weight:600;margin-left:8px}
+  /* results */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase}
+  td.amt,th.amt{text-align:right;white-space:nowrap}
+  .svc{font-weight:700;color:var(--atlas)}
+  .det{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .nlist{margin:4px 0 0;padding-left:16px;color:var(--muted);font-size:12px}
+  .phasehdr td{background:var(--parchment);font-weight:700;font-size:12px;color:var(--atlas);
+    text-transform:uppercase;letter-spacing:.5px;border-bottom:none}
+  .totals{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 6px}
+  @media(max-width:700px){.totals{grid-template-columns:1fr}}
+  .tot{border:1px solid var(--line);border-radius:11px;padding:16px;text-align:center;background:#fff}
+  .tot .name{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .tot .price{font-size:24px;font-weight:700;color:var(--atlas);margin:5px 0 0}
+  .warn{background:#fde8c8;border:1px solid #e8c98e;color:#7a5410;padding:10px 13px;border-radius:9px;
+    font-size:12.5px;margin:10px 0}
+  .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
+  .volrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .volrow > div:first-child{flex:1;min-width:220px}
+  .volnote{font-size:12px;color:var(--muted);margin-top:6px}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <h1>adtini · Reputation Management Quote <span>— internal · pay-on-success removals · volume-formula search protection</span></h1>
+  </div>
+  <nav class="tabs">
+    <a href="/">SEO Quote</a>
+    <a href="/reputation" class="on">Reputation Mgmt</a>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- campaign type -->
+  <div class="card">
+    <h2>1 · Campaign Type</h2>
+    <div class="ctypes" id="ctypes">
+      <div class="ctype" data-c="audit"><b>Audit</b><small>Fixed-price diagnostic, 3–5 days</small></div>
+      <div class="ctype on" data-c="reactive"><b>Reactive</b><small>Removals + suppression cleanup</small></div>
+      <div class="ctype" data-c="proactive"><b>Proactive</b><small>Brand Shield monthly bundle</small></div>
+      <div class="ctype" data-c="bundle"><b>Reactive + Proactive</b><small>Phased: cleanup → moat</small></div>
+    </div>
+    <div class="toggle-row" id="auditAddon">
+      <label class="switch"><input type="checkbox" id="includeAudit"><span class="slider"></span></label>
+      <span class="lbl">Lead with the Comprehensive Audit</span>
+      <span class="help" style="margin:0">$1,500 · credited toward the campaign</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <!-- client -->
+      <div class="card">
+        <h2>2 · Client</h2>
+        <label>Client / brand name</label>
+        <input type="text" id="brand" placeholder="e.g. Sage Dental">
+        <label>Brand search terms <span class="help" style="display:inline;margin:0">(for volume pull — one per line)</span></label>
+        <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
+      </div>
+
+      <!-- reactive inputs -->
+      <div class="card" id="secReactive">
+        <h2>3 · Reactive Cleanup</h2>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews" checked><span class="slider"></span></label><span class="lbl">Negative Review Removals</span></div>
+        <div id="reviewFields">
+          <div class="row">
+            <div>
+              <label>Partner</label>
+              <select id="partner">
+                <option value="partner_b">Partner B — ~100% success, ≈48 hrs (tiered $650→$550)</option>
+                <option value="partner_a">Partner A — 40–50% success, 30–60 days ($450 flat)</option>
+              </select>
+            </div>
+            <div>
+              <label># of reviews</label>
+              <input type="number" id="nReviews" min="0" value="10">
+            </div>
+          </div>
+          <p class="help">Partner B brackets apply to the whole order: 1–15 $650 · 16–30 $575 · 31–50 $560 · 51+ $550 per review. Pay on success — some sensitive content can't be removed.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl">Negative Article Removals</span><span class="pillnote">$ placeholder — Brendan</span></div>
+        <div id="articleFields" class="hidden">
+          <div class="row">
+            <div><label>Standard sites (DA ≤ 35)</label><input type="number" id="nArtStd" min="0" value="0"></div>
+            <div><label>Premium sites (DA > 35)</label><input type="number" id="nArtPrem" min="0" value="0"></div>
+          </div>
+          <p class="help">Premium = high-authority hosts (CNN-class). Pay on success, 1–6 month timelines.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSuppression"><span class="slider"></span></label><span class="lbl">Organic Search Suppression</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useAutosuggest"><span class="slider"></span></label><span class="lbl">Auto-Suggest &amp; Related Searches</span></div>
+        <div id="searchFields" class="hidden">
+          <label>Monthly brand search volume</label>
+          <div class="volrow">
+            <div><input type="number" id="volume" min="0" placeholder="e.g. 20000" style="max-width:none"></div>
+            <div style="flex:0"><button class="btn2" id="pullVol" type="button">Pull from DataForSEO</button></div>
+          </div>
+          <div class="volnote" id="volNote">Uses the brand terms above · US national exact-match volume.</div>
+          <div id="asExtra" class="hidden">
+            <label># of distinct term sets</label>
+            <input type="number" id="termSets" min="1" value="1">
+            <p class="help">Sage precedent: "Sage Dental" + "Sage Dental Reviews" = one term set at one monthly fee. A separate campaign target (e.g. an executive's name) = a second set (+50%).</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- proactive inputs -->
+      <div class="card hidden" id="secProactive">
+        <h2><span id="proNum">3</span> · Proactive Brand Shield <span class="pillnote">$ placeholder — Brendan</span></h2>
+        <p class="help">SEO "Moat" &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
+        <label># of locations (review generation)</label>
+        <input type="number" id="nLocations" min="1" value="1">
+      </div>
+
+      <button class="btn" id="go">Build quote</button>
+    </div>
+
+    <!-- results -->
+    <div>
+      <div class="card" id="outCard">
+        <h2>Quote</h2>
+        <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removal rates from partner rate cards; Search Protection formula solved against the Sage Dental sample ($3,450 suppression / $3,950 auto-suggest at an assumed ~20K/mo brand volume). Audit, article-removal, and Brand Shield dollars are placeholders pending Brendan.</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let campaign = 'reactive';
+
+function syncVisibility(){
+  const showReactive  = (campaign==='reactive'||campaign==='bundle');
+  const showProactive = (campaign==='proactive'||campaign==='bundle');
+  $('secReactive').classList.toggle('hidden', !showReactive);
+  $('secProactive').classList.toggle('hidden', !showProactive);
+  $('proNum').textContent = showReactive ? '4' : '3';
+  $('auditAddon').style.display = (campaign==='audit') ? 'none' : 'flex';
+  const searchOn = $('useSuppression').checked || $('useAutosuggest').checked;
+  $('searchFields').classList.toggle('hidden', !searchOn);
+  $('asExtra').classList.toggle('hidden', !$('useAutosuggest').checked);
+  $('reviewFields').classList.toggle('hidden', !$('useReviews').checked);
+  $('articleFields').classList.toggle('hidden', !$('useArticles').checked);
+}
+
+document.querySelectorAll('.ctype').forEach(el=>{
+  el.onclick = ()=>{
+    document.querySelectorAll('.ctype').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on'); campaign = el.dataset.c; syncVisibility();
+  };
+});
+['useReviews','useArticles','useSuppression','useAutosuggest'].forEach(id=>{
+  $(id).onchange = syncVisibility;
+});
+syncVisibility();
+
+$('pullVol').onclick = async ()=>{
+  const terms = $('terms').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!terms.length){ $('volNote').textContent = 'Enter at least one brand term above first.'; return; }
+  $('pullVol').disabled = true; $('volNote').textContent = 'Pulling volume…';
+  try{
+    const r = await fetch('/api/rep_volume', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({terms})});
+    const d = await r.json();
+    if(d.error){ $('volNote').textContent = d.error; }
+    else{
+      $('volume').value = d.total;
+      $('volNote').innerHTML = 'Total <b>' + d.total.toLocaleString() + '/mo</b> — ' +
+        Object.entries(d.per_term).map(([k,v])=>k+': '+v.toLocaleString()).join(' · ');
+    }
+  }catch(e){ $('volNote').textContent = 'Volume pull failed: '+e; }
+  $('pullVol').disabled = false;
+};
+
+$('go').onclick = async ()=>{
+  $('go').disabled = true;
+  const payload = {
+    campaign,
+    include_audit: (campaign!=='audit') && $('includeAudit').checked,
+    brand: $('brand').value.trim(),
+    reviews: $('useReviews').checked ? {partner: $('partner').value, count: +$('nReviews').value||0} : {count:0},
+    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0} : {},
+    search: {volume:+$('volume').value||0, suppression:$('useSuppression').checked,
+             autosuggest:$('useAutosuggest').checked, term_sets:+$('termSets').value||1},
+    shield: {locations:+$('nLocations').value||1},
+  };
+  try{
+    const r = await fetch('/api/rep_quote', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const d = await r.json();
+    if(d.error){ $('out').innerHTML = '<div class="err">'+d.error+'</div>'; }
+    else render(d, payload);
+  }catch(e){ $('out').innerHTML = '<div class="err">Request failed: '+e+'</div>'; }
+  $('go').disabled = false;
+};
+
+function money(x){ return '$'+x.toLocaleString(); }
+
+function render(d, payload){
+  let h = '';
+  (d.warnings||[]).forEach(w=> h += '<div class="warn">'+w+'</div>');
+
+  h += '<div class="totals">';
+  h += '<div class="tot"><div class="name">One-time / per-asset</div><div class="price">'+money(d.totals.one_time)+'</div></div>';
+  h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
+  const first = d.totals.one_time + d.totals.monthly;
+  h += '<div class="tot"><div class="name">First-month total</div><div class="price">'+money(first)+'</div></div>';
+  h += '</div>';
+
+  h += '<table><tr><th>Service</th><th>Timeline</th><th class="amt">Investment</th></tr>';
+  const isBundle = d.campaign === 'bundle';
+  let lastPhase = null;
+  d.lines.forEach(l=>{
+    if(isBundle && l.phase !== lastPhase){
+      lastPhase = l.phase;
+      const nm = l.phase===0 ? 'Audit' : l.phase===1 ? 'Phase 1 · Triage & Cleanup (Months 1–3)' : 'Phase 2 · Moat Building & Shielding (Months 4+)';
+      h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
+    }
+    const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
+    h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
+       + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
+       + '</td><td>'+l.timeline+'</td><td class="amt">'+money(l.total)+per+'</td></tr>';
+  });
+  h += '</table>';
+
+  if(payload.brand){
+    h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
+  }
+  $('out').innerHTML = h;
+}
+</script>
+</body>
+</html>

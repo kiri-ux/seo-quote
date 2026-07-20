@@ -1,0 +1,66 @@
+diff --git a/app.py b/app.py
+index 8a51260..12f25b5 100644
+--- a/app.py
++++ b/app.py
+@@ -2979,6 +2979,42 @@ def api_quotes_version_load(vid):
+         return jsonify({"error": "Not found."}), 404
+     return jsonify(v)
+ 
++# ---------------------------------------------------------------------------
++# Reputation Management tab — separate template + pricing module (rep_pricing).
++# Shares this Render service and the DFS credentials; nothing else overlaps
++# with the SEO pipeline.
++# ---------------------------------------------------------------------------
++import rep_pricing
++
++@app.route("/reputation")
++def reputation():
++    return render_template("reputation.html")
++
++@app.route("/api/rep_quote", methods=["POST"])
++def api_rep_quote():
++    d = request.get_json(force=True)
++    try:
++        return jsonify(rep_pricing.build_rep_quote(d))
++    except Exception as e:
++        return jsonify({"error": f"Quote build failed: {e}"}), 500
++
++@app.route("/api/rep_volume", methods=["POST"])
++def api_rep_volume():
++    """US-national exact-match volume for the brand terms — drives the
++    Search Protection base+multiplier formula. Reuses fetch_exact_volume
++    (Labs keyword_overview, per-term exact volume)."""
++    d = request.get_json(force=True)
++    terms = [t.strip() for t in (d.get("terms") or []) if t and t.strip()]
++    if not terms:
++        return jsonify({"error": "No brand terms provided."}), 400
++    vols = fetch_exact_volume(terms, [], "")
++    if not vols:
++        return jsonify({"error": "DataForSEO returned no volume — check terms "
++                                 "or DFS credentials."}), 502
++    per_term = {t: vols.get(t.lower(), 0) for t in terms}
++    return jsonify({"per_term": per_term, "total": sum(per_term.values())})
++
++
+ # initialize the DB tables on startup (no-op when saving isn't enabled)
+ try:
+     storage.init_db()
+diff --git a/templates/index.html b/templates/index.html
+index 3b046da..e43f63b 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -106,9 +106,13 @@
+ </style>
+ </head>
+ <body>
+-<header>
++<header style="flex-wrap:wrap;padding-bottom:0">
+   <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.23</span></h1>
+   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
++  <nav style="flex-basis:100%;display:flex;gap:4px;margin-top:12px">
++    <a href="/" style="display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;font-weight:600;text-decoration:none;background:var(--parchment);color:var(--atlas)">SEO Quote</a>
++    <a href="/reputation" style="display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)">Reputation Mgmt</a>
++  </nav>
+ </header>
+ 
+ <!-- Saved quotes drawer -->
