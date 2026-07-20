@@ -15,7 +15,7 @@ Local run:
     DFS_LOGIN=... DFS_PASSWORD=... python app.py
     -> http://localhost:5000
 """
-import os, json, base64, statistics, time, re
+import os, json, base64, statistics, time, re, threading
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 import requests
@@ -284,7 +284,15 @@ def parse_market(m, default_state=""):
         elif t in STATE_ABBREV:                  # 'New Jersey'
             city, st = head, tail.title()
     if not st:
-        st = CITY_STATE.get(city.strip().lower(), "") or (default_state or "").strip()
+        cl = city.strip().lower()
+        st = CITY_STATE.get(cl, "")
+        if not st and cl.endswith(" county"):
+            # "san diego county" -> derive the state from "san diego". Counties
+            # are REAL DataForSEO locations ("San Diego County,California,
+            # United States") and real search phrasing ("bucks county roofing")
+            # — they just need the state attached to resolve.
+            st = CITY_STATE.get(cl[:-len(" county")].strip(), "")
+        st = st or (default_state or "").strip()
     return city.strip(), st
 
 def market_city(m, default_state=""):
@@ -299,7 +307,10 @@ def derive_state(markets, provided_state=""):
     if provided_state and provided_state.strip():
         return provided_state.strip()
     for mkt in markets:
-        s = CITY_STATE.get(mkt.strip().lower())
+        ml = mkt.strip().lower()
+        s = CITY_STATE.get(ml)
+        if not s and ml.endswith(" county"):
+            s = CITY_STATE.get(ml[:-len(" county")].strip())
         if s:
             return s
     return ""
@@ -2072,6 +2083,27 @@ def api_rankings_collect():
     return jsonify({"done": done, "pending": pending, "paa": paa[:40]})
 
 
+# (kw, location, domain, top_n) -> (pos, ts). In-memory: 1 gunicorn worker,
+# so every request sees it; restarts just mean a cold cache. TTL keeps a
+# calibration session fast without ever serving stale-day rankings.
+RANK_CACHE = {}
+RANK_CACHE_TTL = 6 * 3600
+RANK_CACHE_MAX = 8000
+_rank_cache_lock = threading.Lock()
+
+def _rank_cache_get(kw, loc, dom, top_n):
+    with _rank_cache_lock:
+        ent = RANK_CACHE.get((kw, loc, dom, top_n))
+    if ent and time.time() - ent[1] < RANK_CACHE_TTL:
+        return ent[0]
+    return "MISS"
+
+def _rank_cache_put(kw, loc, dom, top_n, pos):
+    with _rank_cache_lock:
+        if len(RANK_CACHE) > RANK_CACHE_MAX:
+            RANK_CACHE.clear()
+        RANK_CACHE[(kw, loc, dom, top_n)] = (pos, time.time())
+
 @app.route("/api/rankings", methods=["POST"])
 def api_rankings():
     """Step 3 — rank-check ONE small batch of keywords (frontend loops batches).
@@ -2084,12 +2116,21 @@ def api_rankings():
     brand   = (d.get("brand") or "").strip()
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
     top_n = CFG["zero_ranking_top_n"]
+    loc = loc_string(markets, state)
     results, paa = [], []
+    hits = {}
+    to_fetch = []
+    for kw in batch:
+        c = _rank_cache_get(kw, loc, dom, top_n)
+        if c != "MISS":
+            hits[kw] = c
+        else:
+            to_fetch.append(kw)
     try:
         with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
             batch_deadline = time.time() + 24   # stay well under the ~30s platform kill
             futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n,
-                              batch_deadline): kw for kw in batch}
+                              batch_deadline): kw for kw in to_fetch}
             done = {}
             for fut in futs:
                 kw = futs[fut]
@@ -2102,8 +2143,13 @@ def api_rankings():
                     # zero-ranking percentage and therefore the price.
                     pos, qs, err = None, [], True
                 done[kw] = (pos, qs, err)
+                if not err:
+                    _rank_cache_put(kw, loc, dom, top_n, pos)
         for kw in batch:
-            pos, qs, err = done.get(kw, (None, [], True))
+            if kw in hits:
+                pos, qs, err = hits[kw], [], False
+            else:
+                pos, qs, err = done.get(kw, (None, [], True))
             results.append({"kw": kw,
                             "pos": ("—" if err else (pos if pos is not None else "Not Found")),
                             "ranked_top": (not err and pos is not None and pos <= top_n),

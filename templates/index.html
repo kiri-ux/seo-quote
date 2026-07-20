@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.14</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.16</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -166,7 +166,8 @@
 
     <label>Industry <span style="font-weight:400;color:var(--muted)">(RZ line item — demo stand-in, optional)</span></label>
     <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring — e.g. "behavioral health" or "telehealth" carries Brendan's big-org card ($3,950/$5,450/$6,950 shape), "ecommerce" carries the product-SEO ladder. Blank = standard formula.</div>
-    <input type="text" id="industry" placeholder='e.g. behavioral health, telehealth, ecommerce'>
+    <input type="text" id="industry" list="rz_industries" placeholder='start typing — RZ category list'>
+    <datalist id="rz_industries"><option value="01 Other- No Matching Category Below"></option><option value="Adoption &amp; Foster Care"></option><option value="Adult Day Care"></option><option value="Advertising"></option><option value="Advocacy"></option><option value="Agriculture - Tractors / Equipment / Farming / Seeding"></option><option value="Airline Academy &amp; Training"></option><option value="Airports"></option><option value="Alcohol - Bars / Breweries"></option><option value="Alcohol - Wine &amp; Spirits"></option><option value="Alcohol - Winery"></option><option value="Apps"></option><option value="Arcade"></option><option value="Arts - Performing Arts Center / Music Hall / Dance / Orchestra / Theatre"></option><option value="Attractions - Halloween"></option><option value="Attractions - Waterpark / Theme Park"></option><option value="ATV Park/Trails"></option><option value="Auctions"></option><option value="Automobile - Golf Carts"></option><option value="Automotive -  Collision Center / Salvage / Auto Body Repair / Maintenance"></option><option value="Automotive -  Sports Vehicles / Motorcycles / Motor Sports"></option><option value="Automotive - Automotive Accessories"></option><option value="Automotive - Car Detailing and Automotive - Car Tinting"></option><option value="Automotive - Car washing"></option><option value="Automotive - Custom Car Design"></option><option value="Automotive - Disabilities Mobility"></option><option value="Automotive - Driving Education"></option><option value="Automotive - Luxury"></option><option value="Automotive - New or Used Cars"></option><option value="Automotive - Parts &amp; Services"></option><option value="Automotive - Registration services"></option><option value="Automotive - Rentals"></option><option value="Automotive - RVs &amp; Trailers"></option><option value="Automotive - Smog / Emmissions"></option><option value="Automotive - Tire Care"></option><option value="Automotive - Windshield Installation and Replacement"></option><option value="B2B -  Business Solutions / Small Business Development"></option><option value="B2B -  Insurance Business Solutions"></option><option value="B2B - Business IT / Communications / Security"></option><option value="B2B - Business Supplies"></option><option value="B2B - Coworking Space"></option><option value="B2B - Events"></option><option value="B2B - Food Retail"></option><option value="B2B - Hospitality"></option><option value="B2B - Other"></option><option value="Bail Bonds"></option><option value="Banking - Federal Credit Union / Bank"></option><option value="Banking - Mortgages"></option><option value="Banking - Personal / Title Loans"></option><option value="Banking - Other"></option><option value="Banking - Loans / Commercial Lending / Business Loans"></option><option value="Banking - Short Term / High Interest Loan"></option><option value="Boats"></option><option value="Bowling Alleys"></option><option value="Building Supplies"></option><option value="Butcher"></option><option value="Campground"></option><option value="Casino"></option><option value="Catering Services"></option><option value="CBD"></option><option value="Chamber of Commerce"></option><option value="Child and Youth Services"></option><option value="Child Care - Daycare / Day Camp / Summer Camp"></option><option value="Children's Fun Center"></option><option value="Chimney Cleaning"></option><option value="Cleaning Service"></option><option value="Clothing"></option><option value="Coffee Shop"></option><option value="Colleges &amp; Universities - Advanced Degrees Masters / Graduate / MBA / PHD"></option><option value="Colleges &amp; Universities - Continuing Studies / Certificates"></option><option value="Colleges &amp; Universities - Sports Event"></option><option value="Colleges &amp; Universities - Undergraduate"></option><option value="Commercial Roofing"></option><option value="Community Centers"></option><option value="Construction - Industrial"></option><option value="Construction - Rentals / Machinery"></option><option value="Construction - Supplies / Lumber / Building Materials"></option><option value="Consumer Packaged Goods (CPG)"></option><option value="Country Club"></option><option value="Cryptocurrency / Bitcoin"></option><option value="Dating Site / App"></option><option value="Dentistry - Family"></option><option value="Dentistry - General, Restorative, and Cosmetic"></option><option value="Dentistry - Orthodontics"></option><option value="Disability Services"></option><option value="Education - Career Advancement"></option><option value="Education - Enrichment Programs"></option><option value="Education - Private or Public K-12 school"></option><option value="Education - Religious"></option><option value="Education - Recruitment"></option><option value="Education - Vocational School"></option><option value="Electronics"></option><option value="Elevator Services"></option><option value="Engineering"></option><option value="Escape Room"></option><option value="Event Planning &amp; Catering"></option><option value="Event Venue - Special Events"></option><option value="Events - Conference"></option><option value="Events - Expo"></option><option value="Events - Festival"></option><option value="Events - Holiday"></option><option value="Events - Sports"></option><option value="Events - Wedding"></option><option value="Events - Concert"></option><option value="Fabrication"></option><option value="Family Support Services"></option><option value="Farm - Apple Orchard"></option><option value="Farmer's Market"></option><option value="Financial Services - Tax Preparer"></option><option value="Financial Services - Financial Advisor"></option><option value="Financial Services - Investment Planning"></option><option value="Financial Services - Residential Property Investor"></option><option value="Fire Protection"></option><option value="Food - Organization"></option><option value="Franchise Development"></option><option value="Fundraising"></option><option value="Funeral Services"></option><option value="Furniture"></option><option value="Furniture - Mattresses"></option><option value="Furniture - Repair"></option><option value="Gambling &amp; Lotteries"></option><option value="Generators"></option><option value="Gentlemen's Club"></option><option value="Go Karting"></option><option value="Golf Club"></option><option value="Government - Department of Education"></option><option value="Government - Parks &amp; Recreation Events"></option><option value="Government - Town Events promotion"></option><option value="Government - Census"></option><option value="Government - Economic Development"></option><option value="Government - Health / Safety"></option><option value="Government - Political"></option><option value="Government - Wildlife"></option><option value="Greenhouses"></option><option value="Grocery Store"></option><option value="Gun Shop"></option><option value="Hair &amp; Beauty"></option><option value="Health Services - Chiropractic"></option><option value="Health Services - Hair Restoration"></option><option value="Health Services - Hospice"></option><option value="Health Services - Hospital"></option><option value="Health Services - Maternity"></option><option value="Health Services - Physical Therapy"></option><option value="Health Services - Primary Care/Medical Group"></option><option value="Health Services - Rehabilitation"></option><option value="Health Services - Research / Medical Studies"></option><option value="Health Services - Skincare"></option><option value="Health Services - Urgent Care"></option><option value="Health Services - Cancer"></option><option value="Health Services - Weight Loss"></option><option value="Health Services - Hearing / Vision"></option><option value="Health Services - Heart &amp; Lung"></option><option value="Health Services - Medical Devices / Equipment / Software"></option><option value="Health Services - Men's Health"></option><option value="Health Services - Other"></option><option value="Health Services - Fitness Club"></option><option value="Health Services - Vascular &amp; Vein"></option><option value="Health Services - Home Care Services"></option><option value="Health Services - Pediatrics"></option><option value="Health Services - Pharmacy"></option><option value="Health Services - Senior Living Facilities"></option><option value="Health Services - Supplements"></option><option value="Health Services - Women's Health"></option><option value="Health Services - Podiatry"></option><option value="Hearing Aids"></option><option value="Hobbies"></option><option value="Home - Construction &amp; Renovation / Home Repair Contracting"></option><option value="Home - Bathroom Supplies"></option><option value="Home - Electrical"></option><option value="Home - Fire Places"></option><option value="Home - Flooring"></option><option value="Home - Garage Door"></option><option value="Home - Home &amp; Garden Design / Home Exterior Products"></option><option value="Home - Home Fuel"></option><option value="Home - Home Installations"></option><option value="Home - HVAC"></option><option value="Home - Interior Design"></option><option value="Home - Landscaping"></option><option value="Home - Lighting"></option><option value="Home - Patio / BBQ / Outdoors"></option><option value="Home - Pools &amp; Spas"></option><option value="Home - Roofing &amp; Insulation"></option><option value="Home - Roofing, Siding, and Windows"></option><option value="Home - Security"></option><option value="Home - Septic"></option><option value="Home - Shed / Garage Construction"></option><option value="Home - Kitchen"></option><option value="Home - Carpets"></option><option value="Hotel"></option><option value="Hunting"></option><option value="Insurance - Auto"></option><option value="Insurance - Business"></option><option value="Insurance - Health Insurance"></option><option value="Insurance - Home"></option><option value="Insurance - Life Insurance"></option><option value="Insurance - Settlement"></option><option value="Internal Media Promotion"></option><option value="Internet &amp; Phone - Internet Broadband Provider"></option><option value="Internet &amp; Phone - Authorized Dealer"></option><option value="Internet &amp; Phone - Internet, TV, and Phone Provider"></option><option value="Junk / Trash Removal"></option><option value="Laundromat"></option><option value="Lawn Care - Equipment"></option><option value="Legal - Defense"></option><option value="Legal - Fair claim"></option><option value="Legal - Fire Relief"></option><option value="Legal - Personal Injury"></option><option value="Legal - Workers Comp"></option><option value="Legal - Bankruptcy"></option><option value="Legal - CPA"></option><option value="Legal - Estate Planning"></option><option value="Legal - Family Law"></option><option value="Locksmith"></option><option value="Manufacturing"></option><option value="Marijuana / Cannabis"></option><option value="Med Spa"></option><option value="Medical - Blood/Lab"></option><option value="Medical - Orthopedics"></option><option value="Military"></option><option value="Internet &amp; Phone - Mobile Phones / Plans"></option><option value="Money Transfer Service"></option><option value="Movie Theater"></option><option value="Museum"></option><option value="Musical Artist / Musician"></option><option value="News"></option><option value="Nonprofit"></option><option value="Optometrist - Eyecare"></option><option value="Painting - Residential &amp; Commercial"></option><option value="Pawn Shop"></option><option value="Pest Control"></option><option value="Pet Care"></option><option value="Petroleum Provider / Bulk Fuel"></option><option value="Photography"></option><option value="Plumbing"></option><option value="Podcasting"></option><option value="Printing"></option><option value="Psychic"></option><option value="Public Adjuster"></option><option value="Public Library"></option><option value="Radio - Programming"></option><option value="Real Estate - Apartment"></option><option value="Real Estate - Commercial"></option><option value="Real Estate - Home"></option><option value="Real Estate - Luxury Apartments"></option><option value="Real Estate - Management"></option><option value="Real Estate - Property Management"></option><option value="Real Estate - Property Inspections"></option><option value="Real Estate - Agency"></option><option value="Real Estate - Builders"></option><option value="Real Estate - Investors"></option><option value="Recreation or Entertainment Venue"></option><option value="Recruitment"></option><option value="Recycling"></option><option value="Religion - Church / Place of Worship"></option><option value="Restaurants - Casual Dining"></option><option value="Restaurants - Chinese"></option><option value="Restaurants - Farmers Market"></option><option value="Restaurants - Fine Dining"></option><option value="Restaurants - Food Delivery"></option><option value="Restaurants - Ice Cream Parlor"></option><option value="Restaurants - Mexican"></option><option value="Restaurants - Pizza"></option><option value="Restaurants - Restaurant Supplier"></option><option value="Restaurants - Seafood"></option><option value="Restaurants - Burgers"></option><option value="Restaurants - Fast Food / Fast Casual"></option><option value="Restaurants - Quick Service"></option><option value="Restoration Services"></option><option value="Retail - Adult Store"></option><option value="Retail - Appliances"></option><option value="Retail - Art"></option><option value="Retail - Camera, Video"></option><option value="Retail - Collectibles"></option><option value="Retail - Convenience Stores"></option><option value="Retail - Discount"></option><option value="Retail - Flowers"></option><option value="Retail - Footwear"></option><option value="Retail - General / E-commerce"></option><option value="Retail - Gift"></option><option value="Retail - Household Cleaners / Laundry Supplies"></option><option value="Retail - Jewelry"></option><option value="Retail - Mall / Outlet Mall"></option><option value="Retail - Office Supplies"></option><option value="Retail - Shipping Center"></option><option value="Retail - Sporting Goods"></option><option value="Retail - Women's Clothing &amp; Accessories"></option><option value="Retail - Bicycle"></option><option value="Retail - Books"></option><option value="Retail - Toys"></option><option value="Retirement Home"></option><option value="Rock Climbing"></option><option value="Salon &amp; Spa"></option><option value="Senior Care / Senior Living Community"></option><option value="Sewing Machines"></option><option value="Solar Power"></option><option value="Spa &amp; Massage"></option><option value="Sporting Goods"></option><option value="Sports - Ski / Snowboard"></option><option value="Sports Betting"></option><option value="Storage"></option><option value="Tanning Salon"></option><option value="Tattoo Parlor"></option><option value="Technology"></option><option value="Technology - Tech Services"></option><option value="Therapy"></option><option value="Real Estate - Timeshares"></option><option value="Tourism"></option><option value="Towing"></option><option value="Transportation - Limo"></option><option value="Transportation - Moving Services"></option><option value="Transportation - Shipping"></option><option value="Transportation - Guided Tours"></option><option value="Transportation - Public Transportation"></option><option value="Transportation - Fleet"></option><option value="Tree Service"></option><option value="Truck Stop"></option><option value="TV - Programming"></option><option value="Unions"></option><option value="Utilities - Energy / Water / Electric"></option><option value="Vacation Rentals"></option><option value="Vape Shop"></option><option value="Veterans"></option><option value="Veterinarian"></option><option value="Virtual Reality Gaming Center"></option><option value="Volunteer"></option><option value="Waste Management/Utilities - Trash / Dumpster Rental"></option><option value="Water Sports"></option><option value="Water Well Builders"></option><option value="Wedding"></option><option value="Wholesale - Cleaning Supplies"></option><option value="Tobacco"></option><option value="E-Cigarettes"></option><option value="Fireworks"></option><option value="Government - Department of Public Works"></option><option value="Sports Marketing / NIL"></option><option value="Staffing"></option><option value="Real Estate - Mobile Homes"></option><option value="Warehousing / Fulfillment"></option><option value="Financial Services - Fund Advisor"></option><option value="Attractions - Circus"></option><option value="Appliance Repair"></option><option value="Raceway"></option><option value="Retail - Beef Food Products &amp; Boutique"></option><option value="Attractions - Historical"></option><option value="Estate Planning - Document Valut"></option><option value="Home - Fencing"></option></datalist>
 
     <label>Geographic targeting areas<span class="req" id="georeq">*</span> <span style="font-weight:400;color:var(--muted)" id="georeq_note">(except Nationwide)</span></label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
@@ -452,11 +453,15 @@ function collapseWhy(host){
   // move explanatory .why paragraphs into ⓘ hovers on their section header —
   // same treatment as the form's help text, keeps the quote column scannable
   host.querySelectorAll('.why').forEach(w=>{
-    const hdr=w.previousElementSibling;
+    // walk back to the nearest section header — boxes (grid details, context
+    // banners) may sit between it and the .why, and a floating orphan ⓘ in
+    // the middle of the panel looks broken
+    let hdr=w.previousElementSibling;
+    while(hdr && !(hdr.classList && hdr.classList.contains('sec'))) hdr=hdr.previousElementSibling;
     const tip=document.createElement('span');
     tip.className='tipwrap';
     tip.innerHTML=`<span class="tipicon">i</span><span class="help">${w.innerHTML}</span>`;
-    if(hdr&&hdr.classList&&hdr.classList.contains('sec')){ hdr.appendChild(tip); w.remove(); }
+    if(hdr){ hdr.appendChild(tip); w.remove(); }
     else { w.parentNode.insertBefore(tip, w); w.remove(); }
   });
 }
@@ -512,7 +517,7 @@ function preflightAdvice(inp){
     if(i!==j && allGeos[j].includes(allGeos[i]) && allGeos[i]!==allGeos[j]) overlaps.push(`“${allGeos[i]}” ⊆ “${allGeos[j]}”`);
   }
   if(overlaps.length){
-    tips.push(`<b>Overlapping geos</b> (${[...new Set(overlaps)].join(', ')}). Each variant crosses with every service, multiplying the grid with near-duplicates — and non-city variants (“county”, “area”) fail location validation, so their volume lookups fall back to broad locations and return inflated numbers. Keep ONE canonical geo per market; use Search-phrase geos for genuinely different granularity (suburbs, regions).`);
+    tips.push(`<b>Overlapping geos</b> (${[...new Set(overlaps)].join(', ')}). Each variant crosses with every service, multiplying the grid with near-duplicate keywords that split rankings and volume. Pick the ONE granularity this client actually sells to (city OR county), and use Search-phrase geos for genuinely different places (suburbs, regions) — not synonyms of the same market.`);
   }
   return tips;
 }
@@ -684,7 +689,7 @@ function step3Html(){
   // not count as "not ranking", since that would inflate the price.
   const checked = Math.max((ST.total||0) - (ST.errored||0), 0);
   const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
-  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
+  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
   const ctx=(ST.inputs&&ST.inputs.past_seo)
     ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
     : '';
@@ -694,9 +699,9 @@ function step3Html(){
       <div class="why">Checks where the client's site currently ranks (top 100 — proposal depth: a rank of 27 is a foothold worth showing, not "Not Found") for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks anywhere in the top 100, the client is genuinely starting from scratch.</div>
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
-        — ${ST.ranked}/${checked} found in top 100 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
+        — ${ST.ranked}/${checked} found in top 100 (${frac}%)${(()=>{const q=ST.table.filter(r=>r.queued).length;const f=ST.errored-q;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
       ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipicon">i</span><span class="help">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix.</span></span></div>`:''}
-      ${ST.errored?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
+      ${(ST.errored-ST.table.filter(r=>r.queued).length)>0?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`;
 }
@@ -719,6 +724,7 @@ async function runStep3(retryOnlyFailed){
 }
 
 async function _runStep3(retryOnlyFailed){
+  ST._gen=(ST._gen||0)+1;            // any new run supersedes background pollers
   $('step3') && ($('step3').disabled=true);
   const all=ST.kw.all.map(r=>r.kw);
   // Retry passes use smaller batches: each failed keyword shares the server's
@@ -774,41 +780,63 @@ async function _runStep3(retryOnlyFailed){
   // them trickle in. All-queue mode proved reliable but slow (~minutes).
   await _runStep3Live(todo, all, BATCH);
   const failedKws = ST.table.filter(r=>r.error).map(r=>r.kw);
+  let bgStarted=false;
   if(failedKws.length){
-    // pull the failed rows back out; the queue pass will replace them
+    // Slow crawls go to Google's queue — but the operator does NOT wait for
+    // them. Failed rows are already excluded from the pricing denominator, so
+    // render everything now and let a background poller fill them in.
     ST.table = ST.table.filter(r=>!r.error);
     ST.errored = 0;
-    const p0=$('rkprog');
-    if(p0) p0.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…  (${failedKws.length} slow lookup${failedKws.length>1?'s':''} finishing via Google's queue)`;
     try{
       const sub=await postJSON('/api/rankings_submit',{keywords:failedKws,
         geo_values:ST.inputs.geo_values, state:ST.inputs.state});
-      let pending=(sub.tasks||[]).filter(t=>t.task_id);
+      const pending=(sub.tasks||[]).filter(t=>t.task_id);
       (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
         ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++;
       });
-      const t0=Date.now();
-      while(pending.length && Date.now()-t0 < 90000){        // 90s for the tail
-        await new Promise(r=>setTimeout(r,2500));
-        let coll=null;
-        try{
-          coll=await postJSON('/api/rankings_collect',{tasks:pending,
-            domain:ST.inputs.domain, brand:ST.inputs.brand});
-        }catch(e){ continue; }
-        (coll.done||[]).forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
-        ST.paa.push(...(coll.paa||[]));
-        pending=coll.pending||[];
-        const p=$('rkprog');
-        if(p) p.textContent=`Checking ${Math.min(ST.table.length, all.length)}/${all.length}…`
-          +(pending.length?`  (${pending.length} still in Google's queue)`:'');
-      }
-      pending.forEach(t=>{ ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
+      pending.forEach(t=>{
+        ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true, queued:true}); ST.errored++;
+      });
+      if(pending.length){ bgStarted=true; _bgQueuePoll(pending, ST._gen); }
     }catch(e){
-      // queue unavailable: restore the failures for the normal retry passes
       failedKws.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
     }
   }
-  await _finishOrRetry(retryOnlyFailed, all);
+  if(bgStarted){ finishStep3(); }
+  else { await _finishOrRetry(retryOnlyFailed, all); }
+}
+
+async function _bgQueuePoll(pending, gen){
+  // Fills queued rows in behind the rendered panel. Aborts the moment a new
+  // run starts (generation counter), so it can never write stale rows.
+  const t0=Date.now();
+  while(pending.length && Date.now()-t0 < 240000){
+    await new Promise(r=>setTimeout(r,4000));
+    if(ST._gen!==gen) return;
+    let coll=null;
+    try{
+      coll=await postJSON('/api/rankings_collect',{tasks:pending,
+        domain:ST.inputs.domain, brand:ST.inputs.brand});
+    }catch(e){ continue; }
+    if(ST._gen!==gen) return;
+    let landed=false;
+    (coll.done||[]).forEach(row=>{
+      const i=ST.table.findIndex(r=>r.kw===row.kw && r.queued);
+      if(i>=0){ ST.table.splice(i,1); ST.errored=Math.max(0,ST.errored-1); }
+      ST.table.push(row);
+      if(row.ranked_top) ST.ranked++;
+      if(row.error) ST.errored++;
+      landed=true;
+    });
+    pending=coll.pending||[];
+    if(landed && $('p3')) finishStep3();
+  }
+  if(ST._gen!==gen) return;
+  if(ST.table.some(r=>r.queued)){
+    // timed out for real — demote to plain failed rows; the Retry button covers them
+    ST.table=ST.table.map(r=>r.queued?{kw:r.kw,pos:'—',ranked_top:false,error:true}:r);
+    if($('p3')) finishStep3();
+  }
 }
 
 async function _runStep3Live(todo, all, BATCH){
