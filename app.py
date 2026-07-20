@@ -363,8 +363,10 @@ def fetch_site_pages(domain, limit=30):
             candidates += re.findall(r"(?im)^sitemap:\s*(\S+)", rr.text)
     except Exception:
         pass
-    candidates += [f"https://{dom}/sitemap.xml", f"https://{dom}/sitemap_index.xml",
-                   f"https://{dom}/wp-sitemap.xml", f"https://{dom}/page-sitemap.xml"]
+    _dom = dom
+    for base_dom in dict.fromkeys([_dom, re.sub(r"^www\.", "", _dom)]):
+        candidates += [f"https://{base_dom}/sitemap.xml", f"https://{base_dom}/sitemap_index.xml",
+                       f"https://{base_dom}/wp-sitemap.xml", f"https://{base_dom}/page-sitemap.xml"]
     seen_sm = set()
 
     def _blogish(url):
@@ -2423,7 +2425,10 @@ def api_site_services():
     html = ""
     fetch_err = None
     diag = []
-    for url in (f"https://{dom}", f"https://www.{dom}"):
+    # try both host variants regardless of how the pill was entered — and never
+    # double the www. prefix (www.www.example.org is how that bug looks)
+    bare = re.sub(r"^www\.", "", dom)
+    for url in dict.fromkeys([f"https://{dom}", f"https://{bare}", f"https://www.{bare}"]):
         for ua_name, ua in _UAS:
             try:
                 r = requests.get(url, timeout=10, allow_redirects=True,
