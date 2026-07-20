@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.11</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.12</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -1031,7 +1031,7 @@ function renderStep4(p){
         <input type="text" id="base_override" value="${p.manual_base?p.base:''}" placeholder="e.g. 4000"
           style="width:90px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
         <button id="base_apply" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Apply</button>
-        ${p.manual_base?`<button id="base_clear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Clear</button> <span style="color:#1c5fa8;font-size:12px">✓ manual base active — tiers & markup recomputed from it</span>`:'<span class="nf" style="font-size:12px">for niche clients the formula doesn\u2019t fit — sets the hard base directly; everything else recomputes</span>'}
+        ${p.manual_base?`<button id="base_clear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Clear</button> <span style="color:#1c5fa8;font-size:12px">✓ manual base active — tiers & markup recomputed from it</span>`:'<span class="nf" style="font-size:12px">for niche clients the formula doesn\u2019t fit — sets the hard base directly; everything else recomputes. Override ladders step at 38% (Brendan\u2019s premium-card shape): ~2930 reproduces his $3,950/$5,450/$6,950 card</span>'}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">

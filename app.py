@@ -86,8 +86,13 @@ CFG = {
     # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
     # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
     # Evaluated high-to-low; first threshold met wins. Replaces the flat bonus.
-    # Calibrated against Serene Health (84% not ranking -> +14%, which with the
-    # volume uplift reproduces the real $3,950/$5,450/$6,950 proposal).
+    # (2026-07-20) Serene Health RECLASSIFIED out of the auto-fit ledger: its
+    # $3,950/$5,450/$6,950 is the same ladder as Skidmore's national card —
+    # Brendan's premium/big-org card (multi-site telehealth), not a computed
+    # response to keywords. Honest per-city volumes total ~2k/mo (the original
+    # "fit" dated from the inflated-volume lookup bug). Handle via the manual
+    # hard-base override (~$2,930 -> his card, ratio steps apply). The tiers
+    # below remain calibrated on the zero-ranking signal itself.
     "zero_ranking_tiers": [
         [80, 14],   # 80%+ not ranking -> +14%
         [65, 9],    # 65-80% -> +9%
@@ -1416,7 +1421,12 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None):
             raise last_err or TimeoutError("rank-check batch budget exhausted")
         tmo = min(14 if attempt == 0 else remaining - 1, remaining, 20)
         try:
-            data = dfs_post("/serp/google/organic/live/advanced", payload, timeout=tmo)
+            # /regular, not /advanced: organic-only, ~10x smaller JSON. Depth-100
+            # advanced responses are megabyte-scale and parsing 20 of them
+            # serializes on Render free tier's 0.1 vCPU; regular is also cheaper.
+            # Cost: no PAA items — only ever used for the non-grid long-tail
+            # top-up, an acceptable trade.
+            data = dfs_post("/serp/google/organic/live/regular", payload, timeout=tmo)
             break
         except Exception as e:
             last_err = e
@@ -1555,7 +1565,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         base = r50(base_pre * (1.0 + zr_uplift / 100.0))
 
     flat = CFG.get("tier_step_flat")
-    if rule and rule.get("step_mode") == "ratio":
+    if manual_base:
+        # A manual override is the operator setting a Brendan-style base
+        # directly — his premium cards ($3,950/$5,450/$6,950: Serene, Skidmore)
+        # step at 38% of base, so the override ladder should too. Overriding to
+        # ~$2,930 hard reproduces that card's upper tiers exactly at 35%.
+        step = r50(base * CFG["step_ratio"])
+    elif rule and rule.get("step_mode") == "ratio":
         # these ladders step proportionally (Brendan's ecom quote: 38% steps)
         step = r50(base * CFG["step_ratio"])
     elif band == "nationwide":
@@ -1670,7 +1686,13 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
 
     base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
     flat = CFG.get("tier_step_flat")
-    if rule and rule.get("step_mode") == "ratio":
+    if manual_base:
+        # A manual override is the operator setting a Brendan-style base
+        # directly — his premium cards ($3,950/$5,450/$6,950: Serene, Skidmore)
+        # step at 38% of base, so the override ladder should too. Overriding to
+        # ~$2,930 hard reproduces that card's upper tiers exactly at 35%.
+        step = r50(base * CFG["step_ratio"])
+    elif rule and rule.get("step_mode") == "ratio":
         # these ladders step proportionally (Brendan's ecom quote: 38% steps)
         step = r50(base * CFG["step_ratio"])
     elif band == "nationwide":
@@ -1996,7 +2018,7 @@ def api_rankings_collect():
     done, pending, paa = [], [], []
 
     def one(t):
-        data = dfs_post(f"/serp/google/organic/task_get/advanced/{t['task_id']}",
+        data = dfs_post(f"/serp/google/organic/task_get/regular/{t['task_id']}",
                         None, timeout=12, method="GET")
         task0 = (data.get("tasks") or [{}])[0]
         sc = task0.get("status_code")
