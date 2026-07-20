@@ -24,6 +24,9 @@
   .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
   label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
   .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
+  /* dev note rail: steps 2-4 are one pipeline call in adtini */
+  #p2,#p3,#p3b,#p4{border-left:3px dashed #cf9fe0;padding-left:12px}
+  #pdev{margin-top:6px}
   /* helper text collapsed behind an i-icon: hover (or tap) to reveal */
   .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
   .tipicon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
@@ -577,7 +580,15 @@ function step2Html(m){
       ${stepBtn('step3','3 · Check rankings')}`;
 }
 
+function devPipelineNote(){
+  if(document.getElementById('pdev')) return;
+  panel('pdev', `<div style="border:2px dashed #b06fc9;border-radius:9px;padding:8px 12px;background:#faf6fc;font-size:12px">
+    <span style="font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Dev note — demo only</span><br>
+    Steps 2–4 below (competition → rankings → price) run as <b>one pipeline call</b> in adtini, triggered at line-item submission and returning the full quote object. They're broken out here so each stage's output is reviewable and no single request outlives the platform timeout. The dashed rail marks the pipeline's scope.</div>`);
+}
+
 async function runStep2(){
+  devPipelineNote();
   $('step2').disabled=true; $('step2').textContent='Scoring…';
   try{
     const m=await postJSON('/api/metrics',{phrase_geos:ST.inputs.phrase_geos||[],
@@ -1196,6 +1207,9 @@ async function loadConfig(){
       `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
       cfgRow('CPC multiplier','cf_cpcmult',c.cpc_adder_mult,'$ of adder per $1 of median CPC (e.g. 3 → a $150 CPC adds $450)')+
       cfgRow('CPC adder cap ($)','cf_cpccap',c.cpc_adder_cap,'max adder so a freak CPC can\u2019t explode the price')+
+      cfgRow('CPC knee ($)','cf_cpcknee',c.cpc_adder_knee,'CPC above this earns the premium rate — carrier-tier clients')+
+      cfgRow('CPC premium $/CPC','cf_cpchigh',c.cpc_adder_mult_high,'$/CPC above the knee (normal rate below)')+
+      cfgRow('Step % of base (floor)','cf_steppct',c.tier_step_pct_of_base,'step = max(flat $, this % of hard base) — big ladders step bigger')+
       cfgRow('CPC free-below ($)','cf_cpcfree',c.cpc_adder_free_below,'CPC at/below this adds nothing')+
       cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'flat fallback: under this → +$0')+
       cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'flat fallback: over this → top adder')+
@@ -1238,7 +1252,7 @@ $('cfgApply').addEventListener('click', async()=>{
     zero_ranking_tiers:readTierRows('cf_zr'),
     vol_free_below:v('cf_volfree'),
     volume_brackets:readVolBrackets(),
-    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
+    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
     default_markup_pct:v('cf_markup'),
   };
   $('cfgStatus').textContent='Applying…';
@@ -1365,6 +1379,7 @@ function restoreQuote(p){
   // Step 1 — keyword list
   if(ST.kw){ try{ renderStep1(); }catch(e){} }
   // Step 2 — competition summary (rebuild from saved metrics)
+  if(p.m2||p.table||p.pricing){ try{ devPipelineNote(); }catch(e){} }
   if(p.m2){ ST._m2=p.m2; try{ panel('p2', step2Html(p.m2)); $('step3')&&($('step3').onclick=()=>runStep3()); }catch(e){} }
   else if(ST.adder!=null){
     try{ panel('p2', step2Html({adder:ST.adder, score:ST.score, adder_basis:ST.adder_basis, cpc_used:ST.cpc_used})); }catch(e){}

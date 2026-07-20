@@ -61,7 +61,9 @@ CFG = {
     # SEO is worth more. adder = median_cpc × cpc_adder_mult, rounded to $50, capped.
     # When there's NO bid data, fall back to the flat score buckets above.
     "cpc_adder_enabled": True,
-    "cpc_adder_mult": 3.0,                     # $ of hard-cost adder per $1 of median CPC
+    "cpc_adder_mult": 3.0,                     # $ of hard-cost adder per $1 of median CPC (up to the knee)
+    "cpc_adder_knee": 62.0,                    # CPC above this earns the premium rate (just above Waytek's $60 — the highest "normal" client observed)
+    "cpc_adder_mult_high": 14.0,               # $/CPC above the knee (insurance-carrier tier)
     "cpc_adder_cap": 1500,                     # max adder (hard cost) so a freak CPC can't explode price
     "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
@@ -104,6 +106,7 @@ CFG = {
     # (+15/18/20% on Keller, +13/24/34% on Waytek). Flat $700 hard = ~$950
     # client at 35% markup. step_ratio remains as fallback if flat is nulled.
     "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
+    "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
     "client_floor": 0,                        # no floor — raised anchors carry pricing
     "addon_market_ratio": 0.42,
@@ -1302,7 +1305,14 @@ def stage3_metrics(head, markets, state):
         cpc_used = med_cpc
         free = CFG.get("cpc_adder_free_below", 5.0)
         if med_cpc > free:
-            raw = med_cpc * CFG.get("cpc_adder_mult", 3.0)
+            # Piecewise: $/CPC at the normal rate up to the knee, then a much
+            # steeper rate above it. Brendan's premium grows super-linearly with
+            # CPC — dental ($18) +$400 over card, Waytek ($60) +$500, Rockingham
+            # ($121, insurance carrier) +$2,500. A single multiplier can't fit
+            # both ends; the knee can.
+            knee = CFG.get("cpc_adder_knee", 50.0)
+            raw = (min(med_cpc, knee) * CFG.get("cpc_adder_mult", 3.0)
+                   + max(0.0, med_cpc - knee) * CFG.get("cpc_adder_mult_high", 14.0))
             capped = min(raw, CFG.get("cpc_adder_cap", 1500))
             adder = int(round(capped / 50.0) * 50)
             adder_basis = "cpc"
@@ -1454,7 +1464,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         base = r50(base_pre * (1.0 + zr_uplift / 100.0))
 
     flat = CFG.get("tier_step_flat")
-    step = r50(flat) if flat else r50(base * CFG["step_ratio"])
+    if flat:
+        # flat floor, scaling with base for premium clients: Brendan steps
+        # ~$950 client on standard quotes but ~$1,300 on his biggest ladder —
+        # roughly a quarter of the hard base once the base outgrows the floor.
+        pct = CFG.get("tier_step_pct_of_base", 0.24)
+        step = max(r50(flat), r50(base * pct))
+    else:
+        step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
 
     client_base = r50(base * m)
@@ -1531,7 +1548,14 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
 
     base = CFG["geo_anchor"][band] + adder + CFG["zero_ranking_bonus"]
     flat = CFG.get("tier_step_flat")
-    step = r50(flat) if flat else r50(base * CFG["step_ratio"])
+    if flat:
+        # flat floor, scaling with base for premium clients: Brendan steps
+        # ~$950 client on standard quotes but ~$1,300 on his biggest ladder —
+        # roughly a quarter of the hard base once the base outgrows the floor.
+        pct = CFG.get("tier_step_pct_of_base", 0.24)
+        step = max(r50(flat), r50(base * pct))
+    else:
+        step = r50(base * CFG["step_ratio"])
     tiers = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
     addon_per = {k: r50(v * CFG["addon_market_ratio"]) for k, v in tiers.items()}
 
@@ -1964,6 +1988,9 @@ def api_config_get():
         "cpc_adder_enabled": CFG.get("cpc_adder_enabled", True),
         "cpc_adder_mult": CFG.get("cpc_adder_mult", 3.0),
         "cpc_adder_cap": CFG.get("cpc_adder_cap", 1500),
+        "cpc_adder_knee": CFG.get("cpc_adder_knee", 62.0),
+        "cpc_adder_mult_high": CFG.get("cpc_adder_mult_high", 14.0),
+        "tier_step_pct_of_base": CFG.get("tier_step_pct_of_base", 0.24),
         "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
         "zero_ranking_bonus": CFG["zero_ranking_bonus"],
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
@@ -2040,7 +2067,8 @@ def api_config_set():
                             ("default_markup_pct", float), ("ultra_bucket_size", int),
                             ("competitive_bucket_size", int), ("longtail_target", int),
                             ("cpc_adder_mult", float), ("cpc_adder_cap", int),
-                            ("cpc_adder_free_below", float)]:
+                            ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
+                            ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
         # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;
