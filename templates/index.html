@@ -41,6 +41,7 @@
     padding:9px 12px;margin:0;font-size:12px;font-weight:400;font-style:normal;color:var(--muted);
     white-space:normal;text-transform:none;letter-spacing:0;text-align:left;line-height:1.55}
   .tipwrap:hover .help,.tipwrap.open .help{display:block}
+  .req{color:#b3261e;font-weight:700;margin-left:3px}
   .tierhelp{font-size:12px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
   .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
   .tiertext{font-size:13px;color:#333}
@@ -98,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.3</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -123,11 +124,11 @@
     <label>Brand name <span style="font-weight:400;color:var(--muted)">(excluded from keywords + rank check)</span></label>
     <input type="text" id="brand" placeholder="VersAbility">
 
-    <label>Website(s) needing SEO</label>
+    <label>Website(s) needing SEO<span class="req">*</span></label>
     <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
 
-    <label>Keyword / Vertical Focus</label>
+    <label>Keyword / Vertical Focus<span class="req">*</span></label>
     <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
     <button id="siteSvcBtn" type="button" style="margin-top:7px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button>
@@ -135,7 +136,7 @@
     <div id="siteSvcOut" style="margin-top:7px"></div>
 
 
-    <label>Business description <span style="font-weight:400;color:var(--muted)">(optional — helps AI exclude off-target terms)</span></label>
+    <label>Business description</label>
     <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
     <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
 
@@ -162,7 +163,7 @@
     <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
       <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
 
-    <label>Geographic targeting areas</label>
+    <label>Geographic targeting areas<span class="req">*</span> <span style="font-weight:400;color:var(--muted)">(except Nationwide)</span></label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
 
@@ -411,6 +412,7 @@ const ST = {inputs:null, kw:null, adder:null, score:null,
 function collectInputs(){
   ['sites_in','kw_in','geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
   const scope=$('geo_scope').value;
+  if(!stores.sites.length){renderErr('Add the client website — the rank check needs a domain to look for. Without one every keyword reads "Not Found" and the zero-ranking uplift wrongly inflates the price.');return null;}
   if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return null;}
   if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return null;}
   return {
@@ -676,8 +678,16 @@ let STEP3_RUNNING = false;
 async function runStep3(retryOnlyFailed){
   if(STEP3_RUNNING) return;          // a second click must not start a parallel run
   STEP3_RUNNING = true;
+  const b=$('step3');
+  if(b){ b.disabled=true; b.textContent='Checking rankings…'; }
   try{ await _runStep3(retryOnlyFailed); }
-  finally{ STEP3_RUNNING = false; }
+  finally{
+    STEP3_RUNNING = false;
+    const b2=$('step3');
+    // relabel so it's obvious the button is safe to press again — a re-press
+    // now deliberately re-checks everything (fresh depth/config/keywords)
+    if(b2){ b2.disabled=false; b2.textContent='3 · Re-check rankings'; }
+  }
 }
 
 async function _runStep3(retryOnlyFailed){
@@ -705,20 +715,28 @@ async function _runStep3(retryOnlyFailed){
     ST.errored=ST.table.filter(r=>r.error).length;
   }
   ST.total=all.length;
-  const haveGood=new Set(ST.table.filter(r=>!r.error).map(r=>r.kw));
   if(retryOnlyFailed){
     // drop the failed rows so they can be re-fetched cleanly
     ST.table=ST.table.filter(r=>!r.error);
     ST.errored=0;
   }
   const done=new Set(ST.table.map(r=>r.kw));
-  const todo=all.filter(k=>!done.has(k));
+  let todo=all.filter(k=>!done.has(k));
+  let fullRerun=false;
 
-  if(!todo.length){ finishStep3(); return; }
+  if(!todo.length){
+    if(retryOnlyFailed){ finishStep3(); return; }
+    // Every keyword already has a result, so this click is a DELIBERATE re-run
+    // (e.g. after a config/depth change). Clear and re-fetch everything —
+    // resuming here would silently re-render stale rows as if fresh.
+    fullRerun=true;
+    ST.table=[]; ST.paa=[]; ST.ranked=0; ST.errored=0;
+    todo=all.slice();
+  }
 
   panel('p3',`<h4 class="sec">Step 3 · Rankings</h4>
     <div class="why">Checks where the client's site currently ranks for each keyword in their market. Fast live lookups for the bulk; a slow one finishes via Google's queue instead of failing.</div>
-    <div class="calc" id="rkprog">Checking ${haveGood.size}/${all.length}…</div>`);
+    <div class="calc" id="rkprog">${fullRerun?'Re-checking':'Checking'} ${ST.table.filter(r=>!r.error).length}/${all.length}…</div>`);
 
   // ---- HYBRID: live-first for speed, queue only for the slow tail ----
   // Live lookups answer in seconds for most keywords; their only failure mode
