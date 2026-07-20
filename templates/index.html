@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.3</span></h1>
+  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.4</span></h1>
   <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
 </header>
 
@@ -620,7 +620,7 @@ function step2Html(m){
     : '';
   return `
       <h4 class="sec">Step 2 · Competition</h4>
-      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand). <b>Keyword difficulty</b> (organic ranking difficulty, 1-100) is shown alongside for comparison.</div>
+      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand).</div>
       ${marketWarn}
       ${bidLine}
       <div class="calc">${m.adder_basis==='cpc'
@@ -639,7 +639,8 @@ function devPipelineNote(){
 
 async function runStep2(){
   devPipelineNote();
-  $('step2').disabled=true; $('step2').textContent='Scoring…';
+  const b2s=$('step2');
+  if(b2s){ b2s.disabled=true; b2s.textContent='Scoring…'; }
   try{
     const m=await postJSON('/api/metrics',{phrase_geos:ST.inputs.phrase_geos||[],
       head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
@@ -649,6 +650,10 @@ async function runStep2(){
     panel('p2', step2Html(m));
     $('step3').onclick = ()=>runStep3();
   }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
+  finally{
+    const b=$('step2');
+    if(b){ b.disabled=false; b.textContent='2 · Re-score competition'; }
+  }
 }
 
 function step3Html(){
@@ -1197,7 +1202,8 @@ function renderStep4(p){
 }
 
 async function runStep4(){
-  $('step4').disabled=true; $('step4').textContent='Pricing…';
+  const b4=$('step4');
+  if(b4){ b4.disabled=true; b4.textContent='Pricing…'; }
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
   // Calibration inputs: total head-term volume, and % of terms NOT ranking.
   // In grid mode the same service volume appears on every city row, so summing
@@ -1218,6 +1224,12 @@ async function runStep4(){
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
     renderStep4(p);
   }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
+  finally{
+    // ALWAYS hand the button back — pricing is instant and idempotent, so a
+    // re-click is a legitimate re-price (fresh rankings, edited markup, etc.)
+    const b=$('step4');
+    if(b){ b.disabled=false; b.textContent='4 · Re-price'; }
+  }
 }
 // ---- config review panel (internal) ----
 $('cfgToggle').addEventListener('click', async()=>{
