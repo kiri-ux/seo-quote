@@ -436,7 +436,8 @@ function preflightAdvice(inp){
   }
   // 3) Single-city local client without neighborhood phrase geos (Brendan's
   //    dental pattern: half the terms target "northeast philadelphia").
-  if((inp.geo_values||[]).length===1 && !(inp.phrase_geos||[]).length){
+  const localScope=!['statewide','nationwide'].includes(inp.geo_scope||'');
+  if(localScope && (inp.geo_values||[]).length===1 && !(inp.phrase_geos||[]).length){
     tips.push('<b>Single city, no search-phrase geos.</b> Local practices often win at NEIGHBORHOOD level — if the client serves a specific area ("northeast philadelphia", "fishtown"), add it to Search-phrase geos so the grid targets both granularities.');
   }
   // 4) Brand exclusion only works if the brand is right.

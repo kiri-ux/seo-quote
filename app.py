@@ -783,9 +783,26 @@ def build_grid(services, markets, state, prepicked=False):
         for city in cities:
             c_name, c_state = parse_market(city, state)
             c = c_name.strip().lower()
-            # don't append the state if the "city" IS the state
-            sfx = "" if (c_state and c == c_state.strip().lower()) else city_suffix(c, c_state)
-            buckets[tier].append({"keyword": f"{svc} {c}{sfx}".strip(),
+            svc_l = f" {svc.lower()} "
+            # DMO-style seeds carry the destination INSIDE the service ("things
+            # to do in central pa") — appending the market again produces
+            # "central pa pennsylvania". If the service already contains this
+            # market, its state name, or ends with the state abbr, keep the
+            # service as-is for this crossing.
+            st_of_market = (c_state or "").strip().lower() or (c if c in STATE_ABBREV else "")
+            ab = STATE_ABBREV.get(st_of_market, "")
+            already = (f" {c} " in svc_l
+                       or (st_of_market and f" {st_of_market}" in svc_l.rstrip())
+                       or (ab and svc.lower().rstrip().endswith(" " + ab)))
+            if already:
+                kw = svc
+            else:
+                # don't append the state if the "city" IS the state
+                sfx = "" if (c_state and c == c_state.strip().lower()) else city_suffix(c, c_state)
+                kw = f"{svc} {c}{sfx}".strip()
+            if any(r["keyword"] == kw for r in buckets[tier]):
+                continue                      # same term from two crossings
+            buckets[tier].append({"keyword": kw,
                                   "volume": 0, "src": "grid",
                                   "origin": "added", "service": svc, "city": c})
     return buckets
@@ -1110,7 +1127,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "volume_error": vol_err,
             "volume_location": loc_string(markets, state),
             "state_missing": bool(cities) and not state
-                             and not any(market_state(c) for c in cities),
+                             and not any(market_state(c)
+                                         or c.strip().lower() in STATE_ABBREV
+                                         for c in cities),
             "grid_cities": cities,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
