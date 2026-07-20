@@ -43,8 +43,10 @@ CFG = {
     # Media Venue datapoint (2026-07-20, RFP bid): Brendan $2,925/$4,040/$5,150
     # vs formula $3,450/$4,400/$5,350 (+18/+9/+4%). His base sits BELOW his own
     # $2,950 card and his steps run ~$1,110 (vs his usual ~$1,000) — consistent
-    # with a sharpened competitive-RFP base, not a formula miss. No constants
-    # changed on this datapoint; revisit if non-RFP quotes repeat the pattern.
+    # with a sharpened competitive-RFP base. Root cause of the +18%: the top-20
+    # rank check scored his page-3-5 footholds as "not ranking" and fired the
+    # +14% zero-ranking uplift. Fix: top-N deepened to 100 (see below) — without
+    # the uplift the formula lands $3,037/$3,983/$4,928, within ~4% per tier.
     "geo_anchor": {
         # single_city raised to match contiguous after the Dental Excellence
         # datapoint (2026-07-20): Brendan's single-city Philadelphia quote was
@@ -73,7 +75,13 @@ CFG = {
     "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
     "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
-    "zero_ranking_top_n": 20,
+    # top-N deepened 20 -> 100 (2026-07-20, Media Venue): a client with page-3-5
+    # footholds (ranks 25/27/33/51 in Brendan's own table) was scoring "80% not
+    # ranking" and drawing the +14% uplift, +18% over his base. "Not in top 20"
+    # and "starting from scratch" are different claims — the uplift keys off the
+    # latter. Depth <=100 is the same DataForSEO billing unit, so no cost change.
+    # Tier thresholds unchanged; re-run Serene Health to confirm its fit holds.
+    "zero_ranking_top_n": 100,
     "zero_ranking_frac": 0.10,
     # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
     # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
@@ -1382,7 +1390,7 @@ def stage3_metrics(head, markets, state):
 # ---------------------------------------------------------------------------
 def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None):
     """One keyword's SERP call. Returns (position_or_None, [paa questions]).
-    Depth tracks top_n (not 100). Works within a shared batch DEADLINE: the
+    Depth tracks top_n (<=100 is one DataForSEO unit either way). Works within a shared batch DEADLINE: the
     platform kills any request near ~30s, so retrying past the budget doesn't
     save this keyword — it kills the WHOLE batch, failing keywords that had
     already finished. Better to fail one fast and let the retry pass get it."""
