@@ -2979,6 +2979,42 @@ def api_quotes_version_load(vid):
         return jsonify({"error": "Not found."}), 404
     return jsonify(v)
 
+# ---------------------------------------------------------------------------
+# Reputation Management tab — separate template + pricing module (rep_pricing).
+# Shares this Render service and the DFS credentials; nothing else overlaps
+# with the SEO pipeline.
+# ---------------------------------------------------------------------------
+import rep_pricing
+
+@app.route("/reputation")
+def reputation():
+    return render_template("reputation.html")
+
+@app.route("/api/rep_quote", methods=["POST"])
+def api_rep_quote():
+    d = request.get_json(force=True)
+    try:
+        return jsonify(rep_pricing.build_rep_quote(d))
+    except Exception as e:
+        return jsonify({"error": f"Quote build failed: {e}"}), 500
+
+@app.route("/api/rep_volume", methods=["POST"])
+def api_rep_volume():
+    """US-national exact-match volume for the brand terms — drives the
+    Search Protection base+multiplier formula. Reuses fetch_exact_volume
+    (Labs keyword_overview, per-term exact volume)."""
+    d = request.get_json(force=True)
+    terms = [t.strip() for t in (d.get("terms") or []) if t and t.strip()]
+    if not terms:
+        return jsonify({"error": "No brand terms provided."}), 400
+    vols = fetch_exact_volume(terms, [], "")
+    if not vols:
+        return jsonify({"error": "DataForSEO returned no volume — check terms "
+                                 "or DFS credentials."}), 502
+    per_term = {t: vols.get(t.lower(), 0) for t in terms}
+    return jsonify({"per_term": per_term, "total": sum(per_term.values())})
+
+
 # initialize the DB tables on startup (no-op when saving isn't enabled)
 try:
     storage.init_db()
