@@ -942,7 +942,10 @@ function renderStep4(p){
     .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
     .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})));
   window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
-  const h=p.hard_tiers, c=p.client_tiers;
+  // Core SEO + AI Search is ONE PRODUCT: the tier cards show the combined
+  // price (that IS the product's price); the SEO vs GEO split is internal.
+  const ai=p.ai_search;
+  const h=ai?ai.hard_total:p.hard_tiers, c=ai?ai.client_total:p.client_tiers;
   let addon='';
   if(p.addon_markets>0){
     const ha=p.hard_addon_per_market, ca=p.client_addon_per_market;
@@ -952,10 +955,10 @@ function renderStep4(p){
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
-    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(GEO add-on = ${(p.ai_search&&p.ai_search.uplift_pct)||90}% of the Core SEO quote, added on top — combined totals below)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending Brendan)</span>':''}</div>`:''}
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. 12-month minimum term)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending Brendan)</span>':''}</div>`:''}
     <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)${ai?' — Core SEO + AI Search combined':''}</div>
     <div class="tiers">
       <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${money(h.base)}</div><div class="mo">/month</div></div>
       <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div></div>
@@ -989,31 +992,31 @@ function renderStep4(p){
 
     <div style="margin-top:14px;background:#f7f7f9;border:1px solid var(--line);border-radius:9px;padding:12px 14px">
     ${p.ai_search?`<div style="background:#eef4fb;border:1px solid var(--atlas);border-radius:9px;padding:10px 12px;margin:10px 0">
-      <b style="color:var(--atlas)">Core SEO + AI Search — combined totals</b>
-      <span class="nf">(GEO = ${p.ai_search.uplift_pct}% of Core SEO, added on top)</span><br>
+      <b style="color:var(--atlas)">Internal breakdown — SEO vs GEO</b>
+      <span class="nf">${p.ai_search.mode==='card'?'(GEO at the bundled rate card; the client sees one product price — the cards above)':`(GEO = ${p.ai_search.uplift_pct}% of Core SEO)`}</span><br>
       <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
         <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
-        <tr><td style="padding:2px 12px 2px 0">Core SEO (client)</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
-        <tr><td style="padding:2px 12px 2px 0">AI Search / GEO add</td><td style="text-align:right">+${money(p.ai_search.client_add.base)}</td><td style="text-align:right">+${money(p.ai_search.client_add.intermediate)}</td><td style="text-align:right">+${money(p.ai_search.client_add.advanced)}</td></tr>
-        <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 12px 2px 0;border-top:1px solid var(--line)">Combined</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.base)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.intermediate)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.advanced)}</td></tr>
+        <tr><td style="padding:2px 12px 2px 0">Core SEO component</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
+        <tr><td style="padding:2px 12px 2px 0">AI Search / GEO component</td><td style="text-align:right">+${money(p.ai_search.client_add.base)}</td><td style="text-align:right">+${money(p.ai_search.client_add.intermediate)}${(p.ai_search.client_list&&p.ai_search.client_list.intermediate>p.ai_search.client_add.intermediate)?`<span class="nf" style="font-size:10.5px"> (list ${money(p.ai_search.client_list.intermediate)})</span>`:''}</td><td style="text-align:right">+${money(p.ai_search.client_add.advanced)}</td></tr>
+        <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 12px 2px 0;border-top:1px solid var(--line)">Product price (client)</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.base)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.intermediate)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.advanced)}</td></tr>
       </table>
-      <div class="nf" style="font-size:11.5px;margin-top:4px">Hard-cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}. Compare panel below still tracks the Core SEO ladder.</div>
+      <div class="nf" style="font-size:11.5px;margin-top:4px">Hard-cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}.${p.ai_search.min_term_months?` GEO carries a <b>${p.ai_search.min_term_months}-month minimum term</b> (SEO is 6).`:''} Compare panel below still tracks the Core SEO ladder.</div>
     </div>`:''}
       <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to Brendan's actual quote</div>
-      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.</div>
+      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.${ai?' <b>Tracks the Core SEO component</b> — all of Brendan\'s calibration actuals are Core SEO quotes; enter his SEO ladder here, not a combined price.':''}</div>
       <table style="font-size:12.5px;width:100%">
         <thead><tr>
           <th style="text-align:left">Tier</th><th style="text-align:right">Formula</th>
           <th style="text-align:right">Brendan's actual</th><th style="text-align:right">Difference</th>
         </tr></thead>
         <tbody>
-          <tr><td>Base</td><td style="text-align:right">${money(c.base)}</td>
+          <tr><td>Base</td><td style="text-align:right">${money(p.client_tiers.base)}</td>
             <td style="text-align:right"><input type="number" id="act_base" value="${(ST.actual&&ST.actual.base)||''}" placeholder="—" style="width:88px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;text-align:right"></td>
             <td style="text-align:right" id="diff_base">—</td></tr>
-          <tr><td>Intermediate</td><td style="text-align:right">${money(c.intermediate)}</td>
+          <tr><td>Intermediate</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td>
             <td style="text-align:right"><input type="number" id="act_int" value="${(ST.actual&&ST.actual.intermediate)||''}" placeholder="—" style="width:88px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;text-align:right"></td>
             <td style="text-align:right" id="diff_int">—</td></tr>
-          <tr><td>Advanced</td><td style="text-align:right">${money(c.advanced)}</td>
+          <tr><td>Advanced</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td>
             <td style="text-align:right"><input type="number" id="act_adv" value="${(ST.actual&&ST.actual.advanced)||''}" placeholder="—" style="width:88px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;text-align:right"></td>
             <td style="text-align:right" id="diff_adv">—</td></tr>
         </tbody>
@@ -1046,7 +1049,7 @@ function renderStep4(p){
 
     <div class="note">Generated quote — route to a human for final manual check before sending. Hard-cost base × markup = client price.</div>`);
   renderSaveRow();
-  wireCompare(c);
+  wireCompare(p.client_tiers);
   scheduleAutoSave();
   // live markup recompute (re-hits /api/price; pure math, instant)
   $('markup_live').addEventListener('change', async()=>{

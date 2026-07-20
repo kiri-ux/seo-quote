@@ -115,9 +115,16 @@ CFG = {
         "ecommerce":  {"anchor_add": 250, "step_mode": "ratio"},
         "e-commerce": {"anchor_add": 250, "step_mode": "ratio"},
     },
-    # Core SEO + AI Search: GEO is quoted at this % of the Core SEO price,
-    # added on top (per adtini product definition).
-    "ai_search_uplift_pct": 90,
+    # Core SEO + AI Search: GEO is its OWN rate card, not a % of the SEO quote
+    # (Brendan GEO proposal, 2026-07-20): $2,950 / $4,050 / $5,250 bundled with
+    # SEO — intermediate is "discounted from $4,250 in conjunction with the SEO
+    # campaign" — and carries a 12-MONTH minimum term (SEO is 6). One datapoint;
+    # unknown whether the card flexes for premium clients the way SEO does.
+    "geo_pricing_mode": "card",               # "card" (Brendan) or "pct" (legacy)
+    "geo_card": {"base": 2950, "intermediate": 4050, "advanced": 5250},
+    "geo_card_list": {"base": 2950, "intermediate": 4250, "advanced": 5250},
+    "geo_min_term_months": 12,
+    "ai_search_uplift_pct": 75,               # legacy pct mode only
     "ecom_anchor_add": 250,                   # legacy alias; industry_pricing supersedes
     "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
@@ -1542,10 +1549,20 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # price, added on top — reported per tier so the quote shows the breakdown.
     ai = None
     if ai_search:
-        pct = CFG.get("ai_search_uplift_pct", 90) / 100.0
-        ai = {"uplift_pct": CFG.get("ai_search_uplift_pct", 90),
-              "hard_add":   {k: r50(v * pct) for k, v in hard.items()},
-              "client_add": {k: r50(v * pct) for k, v in client.items()}}
+        if CFG.get("geo_pricing_mode", "card") == "card":
+            card = CFG.get("geo_card", {})
+            card_list = CFG.get("geo_card_list", card)
+            ai = {"mode": "card",
+                  "min_term_months": CFG.get("geo_min_term_months", 12),
+                  "client_add":  {k: int(card.get(k, 0)) for k in client},
+                  "client_list": {k: int(card_list.get(k, 0)) for k in client},
+                  "hard_add":    {k: r50(int(card.get(k, 0)) / m) for k in client}}
+        else:
+            pct = CFG.get("ai_search_uplift_pct", 75) / 100.0
+            ai = {"mode": "pct",
+                  "uplift_pct": CFG.get("ai_search_uplift_pct", 75),
+                  "hard_add":   {k: r50(v * pct) for k, v in hard.items()},
+                  "client_add": {k: r50(v * pct) for k, v in client.items()}}
         ai["hard_total"]   = {k: hard[k] + ai["hard_add"][k] for k in hard}
         ai["client_total"] = {k: client[k] + ai["client_add"][k] for k in client}
 
@@ -2068,6 +2085,9 @@ def api_config_get():
         "cpc_adder_mult_high": CFG.get("cpc_adder_mult_high", 14.0),
         "tier_step_pct_of_base": CFG.get("tier_step_pct_of_base", 0.24),
         "ecom_anchor_add": CFG.get("ecom_anchor_add", 250),
+        "geo_pricing_mode": CFG.get("geo_pricing_mode", "card"),
+        "geo_card": CFG.get("geo_card", {}),
+        "geo_min_term_months": CFG.get("geo_min_term_months", 12),
         "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
         "zero_ranking_bonus": CFG["zero_ranking_bonus"],
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
