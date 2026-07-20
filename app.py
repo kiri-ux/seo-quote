@@ -2424,6 +2424,22 @@ def api_site_services():
     except Exception:
         pass
 
+    # The homepage's own self-description — meta description (or og:description)
+    # — is the business's one-line answer to "what are you?", which is exactly
+    # what the business-description field wants. Offered as a prefill, never
+    # silently applied: it's marketing copy, so a human should glance at it.
+    def _meta(name_attr, name_val):
+        m = re.search(
+            r'<meta[^>]+' + name_attr + r'\s*=\s*["\']' + name_val +
+            r'["\'][^>]*content\s*=\s*["\']([^"\']+)["\']', html, re.I)
+        if not m:
+            m = re.search(
+                r'<meta[^>]+content\s*=\s*["\']([^"\']+)["\'][^>]*' + name_attr +
+                r'\s*=\s*["\']' + name_val + r'["\']', html, re.I)
+        return (m.group(1).strip() if m else "")
+    site_desc = _meta("name", "description") or _meta("property", "og:description")
+    site_desc = re.sub(r"\s+", " ", site_desc)[:400]
+
     def _clean(t):
         t = re.sub(r"[»›→▸▾▼+]+$", "", t).strip()
         return t
@@ -2500,6 +2516,7 @@ def api_site_services():
 
     return jsonify({"domain": dom, "services": out,
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,
+                    "site_description": site_desc,
                     "n_nav_links": len(p.nav_links), "diag": diag})
 
 
