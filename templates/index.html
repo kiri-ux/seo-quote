@@ -160,16 +160,17 @@
     </select>
 
     <label>Strategy</label>
-    <div class="help">Pulls from RZ line item. In adtini the strategy arrives with the order — this selector is the demo stand-in. Core SEO is the priced product; the AI Search add-on and Website Audit are captured for the reviewer and the proposal, with pricing hooks to be added once Brendan prices them.</div>
+    <div class="help">Pulls from RZ line item. In adtini the strategy arrives with the order — this selector is the demo stand-in. Core SEO is the priced product; the AI Search add-on and Website Audit are captured for the reviewer and the proposal, with pricing hooks to be added priced once actual quotes exist.</div>
     <div id="strategies">
       <label class="strat"><input type="radio" name="strategy" value="Core SEO" checked> Core SEO</label>
       <label class="strat"><input type="radio" name="strategy" value="Core SEO + AI Search"> Core SEO + AI Search</label>
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
-    <label>Industry</label>
-    <div class="help">Pulls from the RZ order form. Certain industries carry additional tiered pricing — currently <b>ecommerce</b> (higher base, proportional 38% steps; one calibration datapoint). Matching is by keyword, so "DTC ecommerce supplements" prices as ecommerce. More industries get rules as Brendan prices them; anything unmatched prices on the standard ladder.</div>
-    <input type="text" id="industry" placeholder="e.g. ecommerce supplements, dental practice, insurance carrier">
+    <label>Ecommerce / national product client</label>
+    <div class="help">Pulls from RZ line item (product type) — this toggle is the demo stand-in. Ecommerce prices as product SEO: higher base, proportional (38%) tier steps instead of flat. One calibration datapoint; sanity-check the result.</div>
+    <div class="toggle-row"><label class="switch"><input type="checkbox" id="ecommerce"><span class="slider"></span></label>
+      <span id="ecommerce_lbl" style="cursor:pointer" onclick="var p=document.getElementById('ecommerce');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span></div>
 
     <label>Geographic targeting areas</label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
@@ -224,10 +225,10 @@
   </div>
 </div>
 
-<!-- ============ CONFIG REVIEW (Brendan) ============ -->
+<!-- ============ CONFIG REVIEW (internal) ============ -->
 <div class="card" style="margin-top:24px;border:2px dashed #b06fc9;background:#faf6fc">
   <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — admin config, not partner-facing</div>
-  <div class="help" style="margin:0 0 8px">In adtini every constant below lives in admin-side configuration — partners never see or edit pricing internals. Values encode Brendan-calibrated pricing (2026-07-20, fit to three actual proposals within ~5%), so edits here are pricing-policy decisions, not tuning knobs.</div>
+  <div class="help" style="margin:0 0 8px">In adtini every constant below lives in admin-side configuration — partners never see or edit pricing internals. Values are calibrated to actual proposals (2026-07-20, fit within ~7% across eight clients), so edits here are pricing-policy decisions, not tuning knobs.</div>
   <h2 style="cursor:pointer;user-select:none" id="cfgToggle">⚙ Pricing config — review &amp; tweak <span id="cfgChevron" style="font-weight:400;color:var(--muted)">▸ click to expand</span></h2>
   <div id="cfgBody" class="hidden">
     <p class="why" style="margin-bottom:16px">Every number the pricing engine uses, grouped by the step it affects. Edit any value and click <b>Apply</b> to update the live session, then re-run a quote to see the effect. Changes last until the app restarts (they don't overwrite the code defaults) — note what works and we'll bake it in.</p>
@@ -371,6 +372,12 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
 
 // ---- toggle ----
 const pastseo=document.getElementById('pastseo');
+document.getElementById('ecommerce').addEventListener('change',()=>{
+  const el=document.getElementById('ecommerce');
+  document.getElementById('ecommerce_lbl').textContent=el.checked?'Yes':'No';
+  if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.ecommerce=el.checked; }
+  try{scheduleAutoSave();}catch(e){}
+});
 document.querySelectorAll('#strategies input').forEach(x=>x.addEventListener('change',()=>{
   if(typeof ST!=='undefined'&&ST.inputs){
     ST.inputs.strategy=(document.querySelector('#strategies input:checked')||{}).value||'Core SEO';
@@ -412,7 +419,6 @@ function collectInputs(){
     markup_pct: parseFloat($('markup').value||'35'),
     phrase_geos: stores.spgeo.slice(),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
-    industry: ($('industry')&&$('industry').value.trim())||'',
     ecommerce: !!($('ecommerce')&&$('ecommerce').checked),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
@@ -428,10 +434,23 @@ async function postJSON(url, body, method){
 }
 
 // progressive panel: each step appends/updates its own block by id
+function collapseWhy(host){
+  // move explanatory .why paragraphs into ⓘ hovers on their section header —
+  // same treatment as the form's help text, keeps the quote column scannable
+  host.querySelectorAll('.why').forEach(w=>{
+    const hdr=w.previousElementSibling;
+    const tip=document.createElement('span');
+    tip.className='tipwrap';
+    tip.innerHTML=`<span class="tipdot">ⓘ</span><span class="tipbox">${w.innerHTML}</span>`;
+    if(hdr&&hdr.classList&&hdr.classList.contains('sec')){ hdr.appendChild(tip); w.remove(); }
+    else { w.parentNode.insertBefore(tip, w); w.remove(); }
+  });
+}
 function panel(id, html){
   let el=$(id);
   if(!el){ el=document.createElement('div'); el.id=id; $('out').appendChild(el); }
   el.innerHTML=html;
+  try{collapseWhy(el);}catch(e){}
 }
 function stepBtn(id, label, disabled){
   return `<button class="btn" id="${id}" style="margin-top:10px" ${disabled?'disabled':''}>${label}</button>`;
@@ -439,7 +458,7 @@ function stepBtn(id, label, disabled){
 function kwlist(arr){return arr.length?`<ul>${arr.map(x=>`<li>${x.kw}${x.vol?` <span class="nf">(${x.vol})</span>`:''}</li>`).join('')}</ul>`:'<p class="nf">—</p>';}
 
 // ---------- PRE-FLIGHT ADVISOR ----------
-// The lessons from comparing runs against Brendan's real proposals, checked
+// The lessons from comparing runs against actual proposals, checked
 // automatically at build time so they're applied BEFORE the run instead of
 // discovered after. Advisory, never blocking.
 function preflightAdvice(inp){
@@ -459,7 +478,7 @@ function preflightAdvice(inp){
   if(seedN>=3 && dom && dom[1]/seedN>0.6){
     tips.push(`<b>Seeds lean hard on “${dom[0]}”</b> (${dom[1]}/${seedN}). Unless that's genuinely the client's focus, add their bread-and-butter services too — the everyday services usually hold their existing rankings.`);
   }
-  // 3) Single-city local client without neighborhood phrase geos (Brendan's
+  // 3) Single-city local client without neighborhood phrase geos (the proposal
   //    dental pattern: half the terms target "northeast philadelphia").
   const localScope=!['statewide','nationwide'].includes(inp.geo_scope||'');
   if(localScope && (inp.geo_values||[]).length===1 && !(inp.phrase_geos||[]).length){
@@ -480,7 +499,7 @@ $('step1').addEventListener('click', async()=>{
   const tips=preflightAdvice(inp);
   if(tips.length){
     panel('p0adv',`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:9px 12px;border-radius:9px;font-size:12.5px;margin-bottom:10px">
-      <b>✈ Pre-flight suggestions</b> <span class="nf">(patterns from Brendan's proposals — the run continues either way)</span>
+      <b>✈ Pre-flight suggestions</b> <span class="nf">(patterns from actual proposals — the run continues either way)</span>
       <ul style="margin:6px 0 0 18px;padding:0">${tips.map(t=>`<li style="margin:3px 0">${t}</li>`).join('')}</ul></div>`);
   }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
@@ -584,7 +603,7 @@ function renderStep1(){
 // ---------- STEP 2 ----------
 function step2Html(m){
   const kdLine = (m.median_kd!=null)
-    ? `<div class="calc">median keyword difficulty <code>${m.median_kd}</code><span class="nf">/100 (organic ranking difficulty — informational, not yet driving price)</span></div>`
+    ? ``
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
   const bs=m.bid_stats, br=m.breaks||[5,15];
   const bidLine = bs
@@ -643,7 +662,7 @@ function step3Html(){
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
         — ${ST.ranked}/${checked} rank in top 20 (${frac}%)${ST.errored?` <span class="nf">· ${ST.errored} lookup${ST.errored>1?'s':''} failed and ${ST.errored>1?'were':'was'} excluded</span>`:''}</div>
-      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all.</b> That can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix. This applies the largest zero-ranking uplift, so it <b>raises the price</b>. Spot-check one keyword in Google before quoting.</div>`:''}
+      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipdot">ⓘ</span><span class="tipbox">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix.</span></span></div>`:''}
       ${ST.errored?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <table><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table>
       ${stepBtn('step4','4 · Price it')}`;
@@ -955,10 +974,11 @@ function renderStep4(p){
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
-    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. 12-month minimum term)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending Brendan)</span>':''}</div>`:''}
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. 12-month minimum term)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending)</span>':''}</div>`:''}
     <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then a 40% step builds the tiers. The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 4px">Hard cost (internal)${ai?' — Core SEO + AI Search combined':''}</div>
+    <details style="margin:4px 0">
+    <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);cursor:pointer;user-select:none">Hard cost (internal)${ai?' — Core SEO + AI Search combined':''} — click to expand</summary>
     <div class="tiers">
       <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${money(h.base)}</div><div class="mo">/month</div></div>
       <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div></div>
@@ -969,6 +989,7 @@ function renderStep4(p){
       ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not ranking)</span>`:''}
       <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (38%)</div></div>
+    </details>
 
     <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:10px 0">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1006,12 +1027,12 @@ function renderStep4(p){
       </table>
       <div class="nf" style="font-size:11.5px;margin-top:4px">Hard-cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}.${p.ai_search.min_term_months?` GEO carries a <b>${p.ai_search.min_term_months}-month minimum term</b> (SEO is 6).`:''} Compare panel below still tracks the Core SEO ladder.</div>
     </div>`:''}
-      <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to Brendan's actual quote</div>
-      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.${ai?' <b>Tracks the Core SEO component</b> — all of Brendan\'s calibration actuals are Core SEO quotes; enter his SEO ladder here, not a combined price.':''}</div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to actual quote</div>
+      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.${ai?' <b>Tracks the Core SEO component</b> — the calibration actuals are Core SEO quotes; enter the actual SEO ladder here, not a combined price.':''}</div>
       <table style="font-size:12.5px;width:100%">
         <thead><tr>
           <th style="text-align:left">Tier</th><th style="text-align:right">Formula</th>
-          <th style="text-align:right">Brendan's actual</th><th style="text-align:right">Difference</th>
+          <th style="text-align:right">Actual</th><th style="text-align:right">Difference</th>
         </tr></thead>
         <tbody>
           <tr><td>Base</td><td style="text-align:right">${money(p.client_tiers.base)}</td>
@@ -1030,13 +1051,12 @@ function renderStep4(p){
     ${addon}
     <h4 class="sec" style="margin-top:18px">Keyword table</h4>
     <table style="font-size:12.5px">
-      <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th><th>Difficulty</th></tr></thead>
+      <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
       <tbody>${exp.map(r=>`<tr>
         <td>${r.kw}</td>
         <td class="${r.rank==='Not Found'?'nf':''}">${r.rank}</td>
         <td>${r.comp}</td>
         <td>${r.cpc?('$'+Number(r.cpc).toFixed(2)):'<span class="nf">—</span>'}</td>
-        <td>${r.kd!==''&&r.kd!=null?(r.kd+'/100'):'<span class="nf">—</span>'}</td>
       </tr>`).join('')}</tbody>
     </table>
     <button id="csvbtn" style="margin-top:12px;background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
@@ -1059,7 +1079,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -1071,7 +1091,7 @@ function renderStep4(p){
     ST.baseOverride = val;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -1156,7 +1176,7 @@ function renderStep4(p){
 async function runStep4(){
   $('step4').disabled=true; $('step4').textContent='Pricing…';
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
-  // Brendan #4/#5 inputs: total head-term volume, and % of terms NOT ranking.
+  // Calibration inputs: total head-term volume, and % of terms NOT ranking.
   // In grid mode the same service volume appears on every city row, so summing
   // rows would multiply it by the city count. Use the deduplicated per-service
   // total the backend computed.
@@ -1169,14 +1189,14 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
     renderStep4(p);
   }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
 }
-// ---- config review panel (Brendan) ----
+// ---- config review panel (internal) ----
 $('cfgToggle').addEventListener('click', async()=>{
   const body=$('cfgBody'), chev=$('cfgChevron');
   const open=body.classList.toggle('hidden')===false;
@@ -1285,7 +1305,7 @@ async function loadConfig(){
       cfgRow('Non-contiguous region','cf_ga_noncontig',ga.non_contiguous_region)+
       cfgRow('Statewide','cf_ga_state',ga.statewide)+
       cfgRow('Nationwide','cf_ga_nation',ga.nationwide)+
-      cfgRow('Tier step — flat $ (hard)','cf_stepflat',c.tier_step_flat==null?'':c.tier_step_flat,'Brendan-calibrated: 700 ≈ $950 client/tier. Blank = use ratio below')+
+      cfgRow('Tier step — flat $ (hard)','cf_stepflat',c.tier_step_flat==null?'':c.tier_step_flat,'calibrated to actual quotes: 700 ≈ $950 client/tier. Blank = use ratio below')+
       cfgRow('Step ratio (fallback)','cf_step',c.step_ratio,'0.38 = 38% — only used when flat step is blank')+
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
@@ -1405,7 +1425,6 @@ function snapshotQuote(){
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
     strategy: (document.querySelector('#strategies input:checked')||{}).value||ST.inputs.strategy||'Core SEO',
-    industry: $('industry') ? $('industry').value.trim() : (ST.inputs.industry||''),
     ecommerce: $('ecommerce') ? $('ecommerce').checked : !!ST.inputs.ecommerce,
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
     past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
@@ -1475,7 +1494,11 @@ function reflectInputs(inp){
     strat = strat || 'Core SEO';
     document.querySelectorAll('#strategies input').forEach(x=>{ x.checked = (x.value===strat); });
   }
-  if($('industry')) $('industry').value = inp.industry || (inp.ecommerce ? 'ecommerce' : '');
+  if($('ecommerce')){
+    const ec = !!inp.ecommerce || /ecommerce|e-commerce/i.test(inp.industry||'');
+    $('ecommerce').checked=ec;
+    const el=$('ecommerce_lbl'); if(el) el.textContent=ec?'Yes':'No';
+  }
   if($('pastseo')){
     $('pastseo').checked = !!inp.past_seo;
     const l=$('pastseo_lbl'); if(l) l.textContent = inp.past_seo?'Yes':'No';
@@ -1497,7 +1520,7 @@ function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
 // Keep post-build form edits from being silently lost on save. ST.inputs is
 // captured when Step 1 runs; if these fields change afterward, sync them in
 // so the autosaved snapshot (and any manual save) reflects the current form.
-['state','geo_scope','addon','markup','brand','industry'].forEach(fid=>{
+['state','geo_scope','addon','markup','brand'].forEach(fid=>{
   const el=$(fid); if(!el) return;
   el.addEventListener('change',()=>{
     if(!ST.inputs) return;
@@ -1506,7 +1529,6 @@ function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
     else if(fid==='addon')     ST.inputs.addon_markets=parseInt(el.value||'0',10);
     else if(fid==='markup')    ST.inputs.markup_pct=parseFloat(el.value||'35');
     else if(fid==='brand')     ST.inputs.brand=el.value;
-    else if(fid==='industry')  ST.inputs.industry=el.value.trim();
     // A state change after the keyword build means the list no longer matches
     // the form — nudge toward a re-run rather than quoting a mismatched list.
     if(fid==='state' && ST.kw){
@@ -1517,7 +1539,7 @@ function money0(n){ return n==null?'—':'$'+Number(n).toLocaleString(); }
   });
 });
 
-// Live comparison: formula tiers vs Brendan's actual quote, with deltas.
+// Live comparison: formula tiers vs the actual quote, with deltas.
 function wireCompare(c){
   const fields=[['act_base','diff_base','base'],['act_int','diff_int','intermediate'],['act_adv','diff_adv','advanced']];
   if(!ST.actual) ST.actual={};
@@ -1529,7 +1551,7 @@ function wireCompare(c){
       const formula=c[key];
       ST.actual[key]= isNaN(actual)? null : actual;
       if(isNaN(actual)||!formula){ out.innerHTML='<span class="nf">—</span>'; return; }
-      const diff=formula-actual;                 // + = formula higher than Brendan
+      const diff=formula-actual;                 // + = formula higher than the actual quote
       const pct=actual? Math.round((diff/actual)*100) : 0;
       n++; pctSum+=pct;
       if(diff>0) anyOver++; else if(diff<0) anyUnder++;
@@ -1541,9 +1563,9 @@ function wireCompare(c){
     if(!n){ s.innerHTML='<span class="nf">Enter the actual prices above to compare.</span>'; return; }
     const avg=Math.round(pctSum/n);
     let verdict;
-    if(Math.abs(avg)<=5) verdict=`<span style="color:#2a7a4a">Formula is within ${Math.abs(avg)}% of Brendan on average — good match.</span>`;
-    else if(avg>0) verdict=`<span style="color:#b04a4a">Formula runs ~${avg}% HIGHER than Brendan on this client.</span>`;
-    else verdict=`<span style="color:#b04a4a">Formula runs ~${Math.abs(avg)}% LOWER than Brendan on this client.</span>`;
+    if(Math.abs(avg)<=5) verdict=`<span style="color:#2a7a4a">Formula is within ${Math.abs(avg)}% of the actual quote on average — good match.</span>`;
+    else if(avg>0) verdict=`<span style="color:#b04a4a">Formula runs ~${avg}% HIGHER than the actual quote on this client.</span>`;
+    else verdict=`<span style="color:#b04a4a">Formula runs ~${Math.abs(avg)}% LOWER than the actual quote on this client.</span>`;
     s.innerHTML=verdict;
   };
   fields.forEach(([inId])=>{ const el=$(inId); if(el) el.addEventListener('input', recompute); });
