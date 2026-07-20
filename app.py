@@ -896,8 +896,9 @@ RULES:
 4. USE THE WEBSITE PAGES as your primary guide to what this business actually offers. For each real service page, ensure there is a strong head keyword targeting it (geo-modified where local). ADD any the candidate list missed — these are high-priority SEO opportunities.
 5. ADD other high-value keywords this business should target, consistent with their pages and services.
 6. Keep the city modifier on local-intent terms where the market is local.
-7. Bucket by ranking difficulty: "ultra" (hardest/highest value), "competitive" (moderate), "long_tail" (longer/question-style).
-8. Do NOT invent search volumes. Only real, searchable terms.
+7. BALANCE THE VOCABULARY: the ultra/competitive buckets must carry the everyday words customers actually type (for a therapy practice: "therapist [city]", "therapy [city]", "counseling [city]", "mental health services [city]") — these hold the search volume. Clinical, technical, or page-template phrasings ("[condition] treatment [city]") belong in long_tail, and no single template word should dominate the list. If the seeds themselves are templated, FIX the vocabulary rather than propagating it.
+8. Bucket by ranking difficulty: "ultra" (hardest/highest value), "competitive" (moderate), "long_tail" (longer/question-style).
+9. Do NOT invent search volumes. Only real, searchable terms.
 
 Return ONLY valid JSON in exactly this shape. Each keyword item is [keyword, origin] where origin is "kept" or "added". The "business" field is your one-sentence read of what the business does and does not offer:
 {{"business": "one sentence", "ultra": [["keyword","kept"], ...], "competitive": [["keyword","added"], ...], "long_tail": [["keyword","kept"], ...]}}"""
@@ -2417,6 +2418,8 @@ MENU LABELS: {json.dumps(labels, ensure_ascii=False)}
 Rules:
 - Sector/industry labels get the core service appended: for a commercial builder, "Healthcare" -> "healthcare construction company", "Self-Storage" -> "self storage construction".
 - Labels that already read like a service ("Commercial Construction") may pass through nearly as-is, normalized to how people search.
+- USE THE CUSTOMER'S VOCABULARY, not the site's page template. If most labels share one template word (a menu of "X Treatment & Therapy" condition pages, "Y Repair Services" pages), do NOT echo that word into every term — a person with anxiety types "anxiety therapist" or "anxiety therapy", not "anxiety treatment therapy". Vary the phrasing to match real searches.
+- When the labels are all variations of ONE parent service (conditions, specialties, sub-services), ALSO make sure the parent's everyday head terms are represented — the bread-and-butter words customers actually type ("therapist", "therapy", "counseling", "mental health clinic" for a behavioral-health practice) — by mapping the most general labels to those instead of to another templated variant.
 - Map to null anything that is NOT a purchasable service: careers, press, blog, media, "our process", team pages, generic CTAs.
 - Lowercase, no geo, 2-5 words each.
 
