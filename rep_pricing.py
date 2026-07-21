@@ -17,8 +17,6 @@ Pricing sources (Rep Mgmt Proposal Template doc + Sage Dental sample, June 2026)
     $3,950/mo  ->  base $2,950 / $3,450 + $25 per 1K monthly searches.
     The 20K assumption is a guess — re-solve the bases once Brendan confirms
     Sage's real volume.
-  * Audit — fixed price, 3-5 days, optionally credited toward campaign.
-    "$[Fixed Price]" in doc; placeholder below.
   * Proactive Brand Shield — single monthly bundle. "$[Monthly Price]" in doc;
     placeholder below.
 """
@@ -30,13 +28,6 @@ def r50(x):
 
 
 REP_CFG = {
-    # ------------------------------------------------------------------ audit
-    "audit": {
-        "price": 1500,                    # PLACEHOLDER — "$[Fixed Price]" in doc
-        "timeline": "3\u20135 days",
-        "credit_toward_campaign": True,   # doc: "(credit towards full campaign?)"
-    },
-
     # ------------------------------------------------------- review removals
     "review_removal": {
         "partner_a": {
@@ -244,24 +235,10 @@ def price_shield(locations=1):
     }
 
 
-def price_audit():
-    cfg = REP_CFG["audit"]
-    return {
-        "service": "Comprehensive Reputation Audit",
-        "detail": "SERP analysis (pp. 1\u20133) \u00b7 review sentiment audit \u00b7 "
-                  "backlink & asset authority check \u00b7 threat assessment",
-        "kind": "one_time", "total": cfg["price"],
-        "timeline": cfg["timeline"],
-        "notes": (["Credited toward a full campaign if engaged."]
-                  if cfg["credit_toward_campaign"] else []),
-    }
-
-
 def build_rep_quote(payload):
     """
     payload = {
-      campaign: 'audit' | 'reactive' | 'proactive' | 'bundle',
-      include_audit: bool,
+      campaign: 'reactive' | 'proactive' | 'bundle',
       reviews: {partner: 'partner_a'|'partner_b', count: int},
       articles: {standard: int, premium: int},
       search: {volume: int, suppression: bool, autosuggest: bool, term_sets: int},
@@ -272,9 +249,6 @@ def build_rep_quote(payload):
     campaign = payload.get("campaign", "reactive")
     lines, warnings = [], []
     phase1, phase2 = [], []
-
-    if payload.get("include_audit") or campaign == "audit":
-        lines.append(dict(price_audit(), phase=0))
 
     if campaign in ("reactive", "bundle"):
         rv = payload.get("reviews") or {}
