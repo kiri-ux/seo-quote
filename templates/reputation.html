@@ -127,8 +127,6 @@
         <input type="text" id="brand" placeholder="e.g. Sage Dental">
         <label>Website <span class="help" style="display:inline;margin:0">(for owned-asset tagging in the SERP scan)</span></label>
         <input type="text" id="domain" placeholder="e.g. mysagedental.com">
-        <label>Brand search terms <span class="help" style="display:inline;margin:0">(for volume pull — one per line)</span></label>
-        <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
         <button class="btn" id="scanBtn" type="button" style="margin-top:14px;background:var(--velocity);color:#fff">🔍 Scan brand</button>
         <p class="help" style="margin-top:8px">Runs the full diagnostic: brand-term universe with negative-modifier volumes, "{brand} reviews" SERP threat table, related-search &amp; auto-suggest flags, and Google location discovery. ~3 DFS calls, a few cents.</p>
         <div id="scanProg" class="help hidden"></div>
@@ -171,11 +169,14 @@
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useAutosuggest"><span class="slider"></span></label><span class="lbl">Auto-Suggest &amp; Related Searches</span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
-          <div class="volrow">
-            <div><input type="number" id="volume" min="0" placeholder="e.g. 20000" style="max-width:none"></div>
-            <div style="flex:0"><button class="btn2" id="pullVol" type="button">Pull from DataForSEO</button></div>
-          </div>
-          <div class="volnote" id="volNote">Uses the brand terms above · US national exact-match volume.</div>
+          <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
+          <div class="volnote" id="volNote">Auto-filled by <b>Scan brand</b>.</div>
+          <details style="margin-top:8px">
+            <summary style="font-size:12.5px;color:var(--muted);cursor:pointer">Manual volume pull (no scan)</summary>
+            <label style="margin-top:8px">Brand search terms <span class="help" style="display:inline;margin:0">(one per line)</span></label>
+            <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
+            <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
+          </details>
           <div id="asExtra" class="hidden">
             <label># of distinct term sets</label>
             <input type="number" id="termSets" min="1" value="1">
@@ -364,11 +365,21 @@ function renderSerp(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   let h = '<div class="scanhdr">SERP Threats · "'+d.query+'"</div>';
   h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled.</p>';
+  if(d.ai_overview){
+    const cls = (d.ai_negative && d.ai_negative.length) ? 'warn' : 'help';
+    h += '<div class="'+cls+'" style="margin:6px 0">AI Overview'
+       + (d.ai_negative && d.ai_negative.length ? ' — negative terms: <b>'+d.ai_negative.join('</b>, <b>')+'</b>' : '')
+       + '<div class="help" style="margin:4px 0 0">'+d.ai_overview.slice(0,300)+'…</div></div>';
+  }
   h += '<table class="stbl"><tr><th>#</th><th>Result</th><th style="text-align:right">Rating</th></tr>';
   d.organic.forEach(o=>{
     h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')
        + '<div class="help" style="margin:0">'+ (o.title||'') +'</div></td>'
-       + '<td class="n">'+(o.rating? o.rating+'★ ('+(o.votes||0).toLocaleString()+')':'—')+'</td></tr>';
+       + '<td class="n">'+(o.rating? o.rating+'★'+(o.votes?' ('+o.votes.toLocaleString()+')':''):'—')+'</td></tr>';
+  });
+  (d.forums||[]).forEach(f=>{
+    h += '<tr><td>'+(f.pos||'—')+'</td><td>'+f.domain+'<span class="third">forum</span>'
+       + '<div class="help" style="margin:0">'+(f.title||'')+'</div></td><td class="n">—</td></tr>';
   });
   h += '</table>';
   if(d.negative_related && d.negative_related.length)
@@ -386,7 +397,7 @@ function renderLocs(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
-  if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">None found in the listings database.</p>'; return; }
+  if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">'+(d.error_detail||'None found in the listings database.')+'</p>'; return; }
   h += '<table class="stbl"><tr><th></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
   scanLocations.slice(0,60).forEach((l,i)=>{
     h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+((l.rating||5)<4?'checked':'')+'></td>'
