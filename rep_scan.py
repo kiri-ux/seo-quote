@@ -329,10 +329,11 @@ def reviews_collect(task_ids):
             res = (task.get("result") or [None])[0]
             if task.get("status_code") == 20000 and res:
                 items = res.get("items") or []
-                n12 = sum(1 for i in items
-                          if ((i.get("rating") or {}).get("value") or 5) <= 2)
-                n3 = sum(1 for i in items
-                         if ((i.get("rating") or {}).get("value") or 5) == 3)
+                vals = [((i.get("rating") or {}).get("value") or 5) for i in items]
+                n1 = sum(1 for v in vals if v <= 1)
+                n2 = sum(1 for v in vals if v == 2)
+                n12 = n1 + n2
+                n3 = sum(1 for v in vals if v == 3)
                 done.append({
                     "id": tid,
                     "place_id": (task.get("data") or {}).get("tag"),
@@ -340,7 +341,7 @@ def reviews_collect(task_ids):
                     "profile_rating": (res.get("rating") or {}).get("value"),
                     "profile_reviews": res.get("reviews_count"),
                     "pulled": len(items),
-                    "neg_1_2": n12, "weak_3": n3,
+                    "neg_1": n1, "neg_2": n2, "neg_1_2": n12, "weak_3": n3,
                     "truncated": n12 >= len(items) and len(items) > 0,
                 })
             else:

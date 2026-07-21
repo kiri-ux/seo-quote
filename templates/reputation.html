@@ -412,12 +412,19 @@ function render(d, payload){
   let h = '';
   (d.warnings||[]).forEach(w=> h += '<div class="warn">'+w+'</div>');
 
-  h += '<div class="totals">';
-  h += '<div class="tot"><div class="name">One-time / per-asset (max)</div><div class="price">'+money(d.totals.one_time)+'</div></div>';
+  h += '<div class="totals" style="grid-template-columns:repeat(2,1fr)">';
+  const rl = d.lines.find(l=>l.unit_label);
+  const perAsset = d.lines.filter(l=>l.kind==='per_asset');
+  if(rl){
+    h += '<div class="tot"><div class="name">Pay-on-success</div><div class="price">'+rl.unit_label.replace('/removed review','')+'<span style="font-size:13px;color:var(--muted)">/removed review</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+rl.qty.toLocaleString()+' flagged reviews</div></div>';
+  }else if(perAsset.length){
+    h += '<div class="tot"><div class="name">Pay-on-success items</div><div class="price">'+perAsset.length+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">billed per completed removal</div></div>';
+  }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
-  const first = d.totals.one_time + d.totals.monthly;
-  h += '<div class="tot"><div class="name">First-month total</div><div class="price">'+money(first)+'</div></div>';
   h += '</div>';
+  if(d.totals.one_time > 0){
+    h += '<p class="help" style="margin:2px 0 10px">Success-based lines are billed only per completed removal — nothing is committed up front. Full detail per line below.</p>';
+  }
 
   h += '<table><tr><th>Service</th><th>Timeline</th><th class="amt">Investment</th></tr>';
   const isBundle = d.campaign === 'bundle';
@@ -466,6 +473,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
   window._reco = []; window._negPhrases = new Set();
+  window._scanData = {}; window._negDone = null; window._scanProv = null;
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
   async function fetchJSON(url, o){
@@ -479,10 +487,10 @@ $('scanBtn').onclick = async ()=>{
     try{ await fn(); }
     catch(e){ $('scanOut').innerHTML += '<div class="err">'+label+' failed: '+e+'</div>'; }
   };
-  await step('1/4 — pulling brand term universe…', async ()=> renderTerms(await fetchJSON('/api/rep_scan_terms', {brand})));
-  await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=> renderSerp(await fetchJSON('/api/rep_scan_serp', {brand, domain})));
-  await step('3/4 — checking auto-suggest…', async ()=> renderAutocomplete(await fetchJSON('/api/rep_scan_autocomplete', {brand})));
-  await step('4/4 — discovering Google locations…', async ()=> renderLocs(await fetchJSON('/api/rep_scan_locations', {brand})));
+  await step('1/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
+  await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
+  await step('3/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
+  await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand}); if(!r.error) window._scanData.locations = r; renderLocs(r); });
   renderReco();
   $('scanProg').textContent = 'Scan complete.';
   $('scanBtn').disabled = false;
@@ -641,26 +649,34 @@ async function pollNegCount(attempt, doneMap){
   }catch(e){ setTimeout(()=>pollNegCount(attempt+1, doneMap), 5000); }
 }
 
-function renderNegCounts(done){
-  if(!done.length) return;
-  const tot12 = done.reduce((s,d)=>s+d.neg_1_2,0), tot3 = done.reduce((s,d)=>s+d.weak_3,0);
-  $('nReviews').value = tot12;
+function applyThreshold(done, th){
+  const tot = done.reduce((s,d)=>s + (th==='1' ? (d.neg_1||0) : d.neg_1_2), 0);
+  $('nReviews').value = tot;
   window._scanProv = {
     locations: done.map(d=>d.title||d.place_id),
     total_locations: scanLocations.length,
     truncated: done.some(d=>d.truncated),
-    flagged: tot12,
+    flagged: tot,
   };
+  return tot;
+}
+function renderNegCounts(done){
+  if(!done.length) return;
+  window._negDone = done;
+  const th = (document.getElementById('negTh')||{}).value || '12';
+  const tot12 = applyThreshold(done, th), tot3 = done.reduce((s,d)=>s+d.weak_3,0);
   let h = '<div class="scanhdr" style="margin-top:12px">Negative Review Counts</div>';
-  h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>'+tot12.toLocaleString()+'</b> reviews at 1–2★ (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>';
-  h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1–2★</th><th style="text-align:right">3★</th></tr>';
+  h += '<div class="row" style="margin:4px 0 6px"><div style="flex:0 0 240px"><label style="margin-top:0">Flag threshold</label><select id="negTh"><option value="12"'+(th==='12'?' selected':'')+'>1–2★ reviews</option><option value="1"'+(th==='1'?' selected':'')+'>1★ only</option></select></div></div>';
+  h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>'+tot12.toLocaleString()+'</b> reviews flagged at the selected threshold (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>';
+  h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1★</th><th style="text-align:right">2★</th><th style="text-align:right">3★</th></tr>';
   done.forEach(d=>{
     h += '<tr><td>'+(d.title||d.place_id)+(d.truncated?' <span class="third">more beyond depth</span>':'')+'</td>'
        + '<td class="n">'+(d.profile_rating||'—')+'★ / '+(d.profile_reviews||0).toLocaleString()+'</td>'
-       + '<td class="n">'+d.neg_1_2+'</td><td class="n">'+d.weak_3+'</td></tr>';
+       + '<td class="n">'+(d.neg_1||0)+'</td><td class="n">'+(d.neg_2||0)+'</td><td class="n">'+d.weak_3+'</td></tr>';
   });
   h += '</table>';
   $('negOut').innerHTML = h;
+  document.getElementById('negTh').onchange = ()=> renderNegCounts(window._negDone);
 }
 
 // ---------------- saving (mirrors SEO tool: auto-save when priced) ----------------
@@ -699,7 +715,9 @@ function restoreForm(f){
 async function autoSave(){
   if(!await savingStatus() || !lastQuote) return;
   const name = CURRENT_QUOTE_NAME || (($('brand').value.trim()||'Rep quote')+' — '+new Date().toLocaleDateString());
-  const payload = {form: collectForm(), quote: lastQuote, rep_totals: lastQuote.totals};
+  const payload = {form: collectForm(), quote: lastQuote, rep_totals: lastQuote.totals,
+                   scan: (window._scanData && Object.keys(window._scanData).length)
+                     ? {data: window._scanData, negDone: window._negDone, prov: window._scanProv} : null};
   try{
     let r;
     if(CURRENT_QUOTE_ID){
@@ -769,10 +787,30 @@ async function loadSavedList(){
     $('savedList').innerHTML = h;
   }catch(e){ $('savedList').innerHTML = 'Failed to load: '+e; }
 }
+function restoreScan(sc){
+  if(!sc || !sc.data) return;
+  window._scanData = sc.data;
+  window._reco = []; window._negPhrases = new Set();
+  $('scanCard').classList.remove('hidden');
+  $('scanOut').innerHTML = '';
+  $('scanProg').classList.remove('hidden');
+  if(sc.data.terms) renderTerms(sc.data.terms);
+  if(sc.data.serp) renderSerp(sc.data.serp);
+  if(sc.data.autocomplete) renderAutocomplete(sc.data.autocomplete);
+  if(sc.data.locations) renderLocs(sc.data.locations);
+  renderReco();
+  if(sc.negDone && sc.negDone.length && document.getElementById('negOut')){
+    window._negDone = sc.negDone;
+    renderNegCounts(sc.negDone);
+  }
+  window._scanProv = sc.prov || window._scanProv;
+  $('scanProg').textContent = 'Restored from saved quote — no API calls made. Re-run Scan brand for fresh data.';
+}
 async function loadSavedQuote(id){
   const q = await (await fetch('/api/quotes/'+id)).json();
   if(q.error){ alert(q.error); return; }
   CURRENT_QUOTE_ID = q.id; CURRENT_QUOTE_NAME = q.name;
+  restoreScan((q.payload||{}).scan);
   restoreForm((q.payload||{}).form);
   lastQuote = (q.payload||{}).quote || null;
   if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
@@ -791,6 +829,7 @@ async function loadVersion(vid){
   const v = await (await fetch('/api/quotes/version/'+vid)).json();
   if(v.error){ alert(v.error); return; }
   CURRENT_QUOTE_ID = v.quote_id;
+  restoreScan((v.payload||{}).scan);
   restoreForm((v.payload||{}).form);
   lastQuote = (v.payload||{}).quote || null;
   if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
