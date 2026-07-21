@@ -252,10 +252,11 @@
 
       <div class="card hidden" id="secProactive">
         <h2><span id="proNum">3</span> · Proactive</h2>
-        <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">$ placeholder — Brendan</span></p>
+        <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — Brendan to review</span></p>
         <p class="help">SEO "Moat" &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
+        <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
       </div>
 
       <button class="btn" id="go">Build quote</button>
@@ -397,6 +398,18 @@ function render(d, payload){
 
 // ---------------- brand scan ----------------
 let scanLocations = [], reviewTasks = [], pollTimer = null;
+// Shield location prefill: mirror the checked scan locations into nLocations
+// until the user types their own number (then leave it alone).
+let nLocDirty = false;
+document.addEventListener('DOMContentLoaded', ()=>{
+  const nl = $('nLocations'); if(nl) nl.addEventListener('input', ()=>{ nLocDirty = true; });
+});
+function syncShieldLocs(){
+  if(nLocDirty) return;
+  const n = document.querySelectorAll('.locck:checked').length;
+  const nl = $('nLocations');
+  if(nl && n > 0) nl.value = n;
+}
 
 $('scanBtn').onclick = async ()=>{
   const brand = $('brand').value.trim();
@@ -685,7 +698,9 @@ function renderLocs(d){
      + '<div id="negOut"></div>';
   $('scanOut').innerHTML += h;
   $('countNegBtn').onclick = submitNegCount;
-  $('lockAll').onchange = e => document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; });
+  $('lockAll').onchange = e => { document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; }); syncShieldLocs(); };
+  document.querySelectorAll('.locck').forEach(c=>{ c.addEventListener('change', syncShieldLocs); });
+  syncShieldLocs();
 }
 
 async function submitNegCount(){
@@ -773,6 +788,7 @@ function collectForm(){
 }
 function restoreForm(f){
   if(!f) return;
+  nLocDirty = true;  // restored value wins over later scan auto-fill
   Object.keys(f).forEach(k=>{
     const el = $(k); if(!el) return;
     if(el.type === 'checkbox') el.checked = !!f[k]; else el.value = f[k] ?? '';
@@ -894,8 +910,17 @@ async function showVersions(id, btn){
   const r = await (await fetch('/api/quotes/'+id+'/versions')).json();
   const vs = r.versions || [];
   if(!vs.length){ box.innerHTML = '<div class="help" style="margin-top:6px">No prior versions.</div>'; return; }
-  box.innerHTML = vs.map(v=>'<div class="help" style="margin-top:6px">'+new Date(v.snapshot_at).toLocaleString()
-    + ' — <a href="#" onclick="loadVersion('+v.id+');return false">restore</a></div>').join('');
+  box.innerHTML = vs.map(v=>'<div class="help" style="margin-top:6px" id="vrow'+v.id+'">'+new Date(v.snapshot_at).toLocaleString()
+    + ' — <a href="#" onclick="loadVersion('+v.id+');return false">restore</a>'
+    + ' · <a href="#" style="color:#b3261e" onclick="deleteVersion('+v.id+');return false">delete</a></div>').join('');
+}
+async function deleteVersion(vid){
+  if(!confirm('Delete this history version? This cannot be undone.')) return;
+  const r = await fetch('/api/quotes/version/'+vid, {method:'DELETE'});
+  const d = await r.json().catch(()=>({}));
+  if(d.error){ alert(d.error); return; }
+  const row = document.getElementById('vrow'+vid);
+  if(row) row.remove();
 }
 async function loadVersion(vid){
   const v = await (await fetch('/api/quotes/version/'+vid)).json();

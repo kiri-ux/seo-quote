@@ -119,13 +119,18 @@ REP_CFG = {
 
     # ------------------------------------------------- proactive brand shield
     "shield": {
-        "monthly": 2950,                  # PLACEHOLDER — "$[Monthly Price]" in doc
+        # ESTIMATE (July 2026) — Brendan to review. Doc says "$[Monthly Price]";
+        # derived from actuals we hold: SEO moat/asset-building anchored to the
+        # suppression base ($2,900/mo — same positive-asset work minus crisis
+        # targeting, monitoring folded in) + one Google review-gen batch
+        # ($105 × 5/mo min, Goldstone 2021 actual) = r50(2900+525) = $3,450.
+        "monthly": 3450,                  # ESTIMATE — confirm with Brendan
         "included": ["SEO \u201cMoat\u201d & Asset Building",
                      "Automated Review Generation & Sentiment Routing",
                      "24/7 Brand Monitoring & Threat Detection"],
         # Review-gen outreach scales with locations; first N included.
         "included_locations": 1,
-        "per_extra_location": 0,          # PLACEHOLDER — 0 until Brendan sets it
+        "per_extra_location": 525,        # ESTIMATE — one review-gen batch/location
     },
 
     # ---------------------------------------------------------------- bundle
@@ -519,7 +524,10 @@ def price_shield(locations=1):
         "service": "Proactive Brand Shield",
         "detail": det, "kind": "monthly", "total": total,
         "timeline": "Ongoing",
-        "notes": cfg["included"],
+        "notes": cfg["included"] + [
+            "\u26a0 ESTIMATED pricing \u2014 Brendan to review. Basis: SEO moat "
+            "anchored to the $2,900 suppression base + $525/mo Google "
+            "review-gen batch per location (Goldstone 2021 actuals)."],
     }
 
 
@@ -563,6 +571,10 @@ def build_rep_quote(payload):
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}
         phase2.append(price_shield(sh.get("locations", 1)))
+        warnings.append(
+            "Brand Shield pricing is an internal ESTIMATE (moat @ $2,900 "
+            "suppression base + $525/location review-gen batch) \u2014 flag "
+            "to Brendan for review before sending.")
 
     # bundle discount on recurring lines when both phases present
     if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:
@@ -571,6 +583,10 @@ def build_rep_quote(payload):
             if ln["kind"] == "monthly":
                 ln["total"] = r50(ln["total"] * (1 - pct))
         warnings.append(f"Bundle discount applied to recurring lines: {int(pct*100)}%.")
+    elif campaign == "bundle":
+        warnings.append(
+            "No bundle discount applied \u2014 whether Reactive + Proactive "
+            "earns a recurring-line discount is unconfirmed; flag to Brendan.")
 
     for ln in phase1:
         ln["phase"] = 1
