@@ -574,7 +574,7 @@ function renderFacsimiles(ac){
   // dominated by neutral location suggestions.
   acKeys.forEach(k=>{
     const a = ac[k] || {};
-    const via = a.via ? ' <span style="font-weight:400;text-transform:none">(via '+a.via+' fallback)</span>' : '';
+    const via = '';
     if(a.error){
       h += '<p class="help">Auto-suggest · "'+k+'" — lookup failed: '+a.error+' <button class="btn2 acRetry" type="button">Retry</button></p>';
     }else if(!(a.suggestions||[]).length){
