@@ -197,7 +197,7 @@
           <p class="help">Standard: Visions actuals, whole-order — 1–3 $5,950 · 4–6 $5,750 · 7–10 $5,350 · 11–15 $5,150 · 16+ $4,950 per removed site. Premium: $7,500 flat (Tru North actual). Pay on success. Always custom-quoted after human review.</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle"><span class="slider"></span></label><span class="lbl">Search Protection Bundle</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl">Search Protection Bundle</span><span class="help" style="margin:0">included in all proposals</span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
           <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
@@ -209,6 +209,16 @@
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
           <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — the sum of Brendan's Sage components; confirm bundle discount).</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search</span><span class="pillnote">pricing structure — confirm w/ Brendan</span></div>
+        <div id="geoFields" class="hidden">
+          <label>Phase</label>
+          <select id="geoPhase">
+            <option value="setup" selected>Setup — $4,950/mo (1–2 quarters)</option>
+            <option value="scale">Scale — $9,950/mo (ongoing)</option>
+          </select>
+          <p class="help">Shapes AI Overview / LLM answers about the brand — targets the negative AI result the scan detects. Matches the "AI Search" naming from the SEO product line. Dollar figures are the Sage Digital Partner <i>GEO</i> card; the reputational application was never separately priced — confirm with Brendan.</p>
         </div>
 
       </div>
@@ -233,7 +243,7 @@
     </div>
   </div>
 
-  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula calibrated to Brendan\u2019s Sage actuals at the MEASURED 51,330/mo volume \u2014 $2,900/$3,400 base + $10/1K lands $3,450/$3,950 exactly. Simplified menu (July 2026): Reactive = Review Removals · Website/Article Removals · Search Protection Bundle; Proactive = Brand Shield Bundle. Bundle formula $6,300 + $20/1K = sum of Brendan's Sage components ($7,400/mo replay — confirm bundle discount). Retired tactic pricing (tiers, guaranteed phrases, engines, BBB, GEO, PR, review gen, video) is preserved in rep_pricing.py for custom blends. Open Brendan questions: bundle discount, Brand Shield $, Visions $500→$250 direct vs Vici hard $585+ rate-card reconciliation.</p>
+  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula calibrated to Brendan\u2019s Sage actuals at the MEASURED 51,330/mo volume \u2014 $2,900/$3,400 base + $10/1K lands $3,450/$3,950 exactly. Simplified menu (July 2026): Reactive = Review Removals · Website/Article Removals · Search Protection Bundle; Proactive = Brand Shield Bundle. Bundle formula $6,300 + $20/1K = sum of Brendan's Sage components ($7,400/mo replay — confirm bundle discount). Reputational AI Search priced off the Sage GEO card ($4,950/$9,950 — reputational structure unconfirmed, ask Brendan). Retired tactic pricing (tiers, guaranteed phrases, engines, BBB, PR, review gen, video) is preserved in rep_pricing.py for custom blends. Open Brendan questions: bundle discount, Brand Shield $, Visions $500→$250 direct vs Vici hard $585+ rate-card reconciliation.</p>
 </div>
 
 <script>
@@ -249,6 +259,7 @@ function syncVisibility(){
   $('reviewFields').classList.toggle('hidden', !$('useReviews').checked);
   $('articleFields').classList.toggle('hidden', !$('useArticles').checked);
   $('searchFields').classList.toggle('hidden', !$('useSearchBundle').checked);
+  $('geoFields').classList.toggle('hidden', !$('useGeo').checked);
 }
 
 document.querySelectorAll('.ctype').forEach(el=>{
@@ -257,7 +268,7 @@ document.querySelectorAll('.ctype').forEach(el=>{
     el.classList.add('on'); campaign = el.dataset.c; syncVisibility();
   };
 });
-['useReviews','useArticles','useSearchBundle'].forEach(id=>{
+['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{
   $(id).onchange = syncVisibility;
 });
 syncVisibility();
@@ -289,6 +300,7 @@ $('go').onclick = async ()=>{
       scan_meta: (window._scanProv && window._scanProv.flagged === (+$('nReviews').value||0)) ? window._scanProv : null} : {count:0},
     articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0} : {},
     search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked},
+    geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
     shield: {locations:+$('nLocations').value||1},
   };
   try{
@@ -420,11 +432,12 @@ function renderSerp(d){
   const siteRemovals = (d.organic||[]).filter(o=>o.tactic==='site removal').length + (d.forums||[]).filter(f=>f.tactic==='site removal').length;
   if(siteRemovals) reco('useArticles','Negative Website/Article Removals', siteRemovals+' removable pages in the threat table', {nArtStd: siteRemovals});
   if(d.owned_in_top10 <= 2) reco('useSearchBundle','Search Protection Bundle', d.owned_in_top10+' of top 10 client-controlled');
+  if(d.ai_negative && d.ai_negative.length) reco('useGeo','Reputational AI Search','negative AI Overview detected');
   if(d.negative_related && d.negative_related.length) reco('useSearchBundle','Search Protection Bundle', d.negative_related.length+' negative related searches');
   if(d.ai_overview){
     const cls = (d.ai_negative && d.ai_negative.length) ? 'warn' : 'help';
     h += '<div class="'+cls+'" style="margin:6px 0">AI Overview'
-       + (d.ai_negative && d.ai_negative.length ? ' — negative terms: <b>'+d.ai_negative.join('</b>, <b>')+'</b> → consider <b>Reputational GEO</b>' : '')
+       + (d.ai_negative && d.ai_negative.length ? ' — negative terms: <b>'+d.ai_negative.join('</b>, <b>')+'</b> → consider <b>Reputational AI Search</b>' : '')
        + '<div class="help" style="margin:4px 0 0">'+d.ai_overview.slice(0,300)+'…</div></div>';
   }
   h += '<table class="stbl"><tr><th>#</th><th>Result</th><th style="text-align:right">Rating</th></tr>';
@@ -583,10 +596,10 @@ async function savingStatus(){
 
 function collectForm(){
   const f = {};
-  ['brand','domain','terms','nReviews','marginPct','nArtStd','nArtPrem','volume','nLocations'].forEach(id=>{
+  ['brand','domain','terms','nReviews','marginPct','nArtStd','nArtPrem','volume','nLocations','geoPhase'].forEach(id=>{
     const el = $(id); if(el) f[id] = el.value;
   });
-  ['useReviews','useArticles','useSearchBundle'].forEach(id=>{ f[id] = $(id).checked; });
+  ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{ f[id] = $(id).checked; });
   f.campaign = campaign;
   return f;
 }

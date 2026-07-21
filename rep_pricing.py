@@ -436,11 +436,14 @@ GEO = {"setup": {"monthly": 4950, "timeline": "First 1\u20132 quarters \u2014 LL
 
 def price_geo(phase="setup"):
     p = GEO.get(phase) or GEO["setup"]
-    return {"service": "Reputational GEO (AI Search)",
+    return {"service": "Reputational AI Search",
             "detail": f"{phase.capitalize()} phase \u2014 shapes AI Overview / LLM "
-                      "answers about the brand (Sage actuals)",
+                      "answers about the brand",
             "kind": "monthly", "total": p["monthly"], "timeline": p["timeline"],
             "notes": ["Targets the negative AI-generated result the scan detects.",
+                      "Pricing is the Sage Digital Partner GEO card ($4,950 setup / "
+                      "$9,950 scale) \u2014 the reputational application was never "
+                      "separately priced; CONFIRM structure with Brendan.",
                       "Recommend setup phase 1\u20132 quarters, then scale."]}
 
 
@@ -550,6 +553,9 @@ def build_rep_quote(payload):
                     f"Brand volume {vol:,}/mo exceeds the "
                     f"{sp['review_above_volume']:,} review threshold \u2014 "
                     "confirm out-search capacity before quoting.")
+        ge = payload.get("geo") or {}
+        if ge.get("enabled"):
+            phase1.append(price_geo(ge.get("phase") or "setup"))
 
 
     if campaign in ("proactive", "bundle"):
