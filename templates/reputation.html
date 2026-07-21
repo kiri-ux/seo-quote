@@ -436,7 +436,12 @@ function reco(toggle, label, reason, sets){
 }
 function renderTerms(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
-  if(d.negative_volume > 0) reco('useSearchBundle','Search Protection Bundle', d.negative_volume.toLocaleString()+'/mo of negative-modifier search volume');
+  if(d.negative_volume > 0){
+    const negs = (d.terms||[]).filter(x=>x.class==='negative').slice(0,4)
+      .map(x=>x.term+' ('+x.volume.toLocaleString()+')').join(' + ');
+    reco('useSearchBundle','Search Protection Bundle',
+      d.negative_volume.toLocaleString()+'/mo negative-modifier volume'+(negs?' — '+negs:''));
+  }
   if(d.total_volume){
     $('volume').value = d.total_volume;
     $('volNote').innerHTML = 'Auto-filled from scan: <b>'+d.total_volume.toLocaleString()+'/mo</b> total brand volume.';
@@ -457,7 +462,12 @@ function renderSerp(d){
   let h = '<div class="scanhdr">SERP Threats · "'+d.query+'"</div>';
   h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled. Review counts in the removal quote cover <b>Google Business reviews only</b> — reviews on the sites below are not in that count; each routes to the tactic shown.</p>';
   const siteRemovals = (d.organic||[]).filter(o=>o.tactic==='site removal').length + (d.forums||[]).filter(f=>f.tactic==='site removal').length;
-  if(siteRemovals) reco('useArticles','Negative Website/Article Removals', siteRemovals+' removable pages in the threat table', {nArtStd: siteRemovals});
+  if(siteRemovals){
+    const pages = [...(d.organic||[]).filter(o=>o.tactic==='site removal').map(o=>'#'+o.pos+' '+o.domain),
+                   ...(d.forums||[]).filter(f=>f.tactic==='site removal').map(f=>'#'+(f.pos||'—')+' '+f.domain)];
+    reco('useArticles','Negative Website/Article Removals',
+      siteRemovals+' removable pages — '+pages.slice(0,5).join(', '), {nArtStd: siteRemovals});
+  }
   if(d.owned_in_top10 <= 2) reco('useSearchBundle','Search Protection Bundle', d.owned_in_top10+' of top 10 client-controlled');
   if(d.ai_negative && d.ai_negative.length) reco('useGeo','Reputational AI Search','negative AI Overview detected');
   if(d.negative_related && d.negative_related.length) reco('useSearchBundle','Search Protection Bundle', d.negative_related.length+' negative related searches');
