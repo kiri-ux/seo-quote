@@ -514,29 +514,44 @@ $('scanOut').addEventListener('click', e => {
 });
 
 async function captureShot(keyword){
-  $('shotBtn').disabled = true;
-  $('shotProg').textContent = 'Queuing…';
-  try{
-    const q = await (await fetch('/api/serp_queue', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({keyword, geo_values: [], device: 'desktop', width: 1600, scale: 2})})).json();
-    if(q.error){ $('shotProg').textContent = q.error; $('shotBtn').disabled=false; return; }
-    let tries = 0;
-    const poll = async ()=>{
-      if(++tries > 24){ $('shotProg').textContent = 'Timed out — try again shortly.'; $('shotBtn').disabled=false; return; }
-      const r = await (await fetch('/api/serp_fetch', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({task_id: q.task_id, keyword, device:'desktop', width: 1600, scale: 2, trim: true, max_h: 1200})})).json();
-      if(r.error){ $('shotProg').textContent = r.error; $('shotBtn').disabled=false; return; }
-      if(!r.ready){ $('shotProg').textContent = 'Rendering… ('+tries+')'; setTimeout(poll, 5000); return; }
-      window._scanData = window._scanData || {};
-      window._scanData.shots = window._scanData.shots || {};
-      window._scanData.shots[keyword] = r.data_url;
-      $('shotOut').innerHTML = '<img class="shotimg" src="'+r.data_url+'">'
-        + '<div class="help"><a href="'+r.data_url+'" download="serp-'+keyword.replace(/\s+/g,'-')+'.png">Download PNG</a> — saves with the quote.</div>';
-      $('shotProg').textContent = 'Captured.';
-      $('shotBtn').disabled = false;
-    };
-    poll();
-  }catch(e){ $('shotProg').textContent = 'Failed: '+e; $('shotBtn').disabled=false; }
+  if(window._shotBusy){ return; }                 // ignore double-clicks
+  window._shotBusy = true;
+  const status = m => { const el = $('shotProg'); if(el) el.textContent = m; };
+  const done = m => { status(m); window._shotBusy = false; const b = $('shotBtn'); if(b) b.disabled = false; };
+  const b0 = $('shotBtn'); if(b0) b0.disabled = true;
+  const timedFetch = (url, body, ms) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), ms);
+    return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body), signal: ctl.signal})
+      .then(async r => { clearTimeout(timer);
+        const txt = await r.text();
+        try{ return JSON.parse(txt); }
+        catch(e){ return {error:'HTTP '+r.status+' non-JSON: '+txt.slice(0,100)}; } })
+      .catch(e => { clearTimeout(timer);
+        return {error: e.name === 'AbortError' ? 'request timed out ('+(ms/1000)+'s)' : String(e)}; });
+  };
+  status('Queuing the render…');
+  const q = await timedFetch('/api/serp_queue', {keyword, geo_values: [], device: 'desktop', width: 1600, scale: 2}, 25000);
+  if(q.error){ done('Queue failed: '+q.error); return; }
+  if(!q.task_id){ done('Queue returned no task id.'); return; }
+  status('Queued (task '+String(q.task_id).slice(0,8)+'…) — rendering…');
+  let tries = 0;
+  const poll = async ()=>{
+    if(++tries > 24){ done('Timed out after '+tries+' polls — try again shortly.'); return; }
+    const r = await timedFetch('/api/serp_fetch',
+      {task_id: q.task_id, keyword, device:'desktop', width: 1600, scale: 2, trim: true, max_h: 1200}, 25000);
+    if(r.error){ done('Fetch failed: '+r.error); return; }
+    if(!r.ready){ status('Rendering… (poll '+tries+'/24'+(r.status?' · '+r.status:'')+')'); setTimeout(poll, 5000); return; }
+    window._scanData = window._scanData || {};
+    window._scanData.shots = window._scanData.shots || {};
+    window._scanData.shots[keyword] = r.data_url;
+    const out = $('shotOut');
+    if(out) out.innerHTML = '<img class="shotimg" src="'+r.data_url+'">'
+      + '<div class="help"><a href="'+r.data_url+'" download="serp-'+keyword.replace(/\s+/g,'-')+'.jpg">Download</a> — saves with the quote.</div>';
+    done('Captured.');
+  };
+  poll();
 }
 
 function boldMod(text, brand){
@@ -653,14 +668,17 @@ function renderLocs(d){
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
   if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">'+(d.error_detail||'None found in the listings database.')+'</p>'; return; }
-  h += '<p class="help" style="margin:2px 0 6px">Locations under 4.0★ are pre-checked — those are the likely removal targets. Check others to include them in the count.</p>';
+  const prechecked = scanLocations.slice(0,60).filter(l=>(l.rating||5)<4).length;
+  h += '<details class="locwrap"><summary style="cursor:pointer;font-size:13px;color:var(--atlas);font-weight:600;padding:6px 0">'
+     + prechecked+' location'+(prechecked!==1?'s':'')+' pre-checked (under 4.0★ — the likely removal targets) · expand to review all '+Math.min(scanLocations.length,60)+'</summary>';
+  h += '<p class="help" style="margin:2px 0 6px">Check others to include them in the count.</p>';
   h += '<table class="stbl"><tr><th><input type="checkbox" id="lockAll" title="Select all"></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
   scanLocations.slice(0,60).forEach((l,i)=>{
     h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+((l.rating||5)<4?'checked':'')+'></td>'
        + '<td>'+l.title+'<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
-  h += '</table>';
+  h += '</table></details>';
   h += '<div class="row" style="margin-top:10px"><div style="flex:0 0 130px"><label style="margin-top:0">Pull depth</label><input type="number" id="pullDepth" min="10" max="4490" value="200"></div>'
      + '<div><button class="btn2" id="countNegBtn" type="button">Count negatives for checked locations</button>'
      + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location at depth 200 · results in ~1 min.</div></div></div>'
