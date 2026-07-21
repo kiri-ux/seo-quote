@@ -169,7 +169,7 @@ def scan_serp(brand, domain=""):
                 "language_code": "en", "depth": 10}]
     data = _post("/serp/google/organic/live/advanced", payload, timeout=45)
     own = _domain(domain)
-    organic, related, forums = [], [], []
+    organic, related, forums, pasf = [], [], [], []
     ai_text = ""
     for it in (data["tasks"][0]["result"] or [{}])[0].get("items") or []:
         t = it.get("type")
@@ -207,13 +207,17 @@ def scan_serp(brand, domain=""):
             ai_text = " ".join(parts)[:1200]
         elif t == "related_searches":
             related = [x for x in (it.get("items") or []) if x][:10]
+        elif t == "people_also_search":
+            pasf += [x for x in (it.get("items") or []) if isinstance(x, str)][:8]
     neg_related = [x for x in related
                    if any(m in x.lower() for m in NEG_MODIFIERS)]
+    neg_pasf = [x for x in pasf if any(m in x.lower() for m in NEG_MODIFIERS)]
     ai_negative = [m for m in NEG_MODIFIERS if m in ai_text.lower()]
     owned_top10 = sum(1 for o in organic if o["owned"])
     return {"query": kw, "organic": organic[:10], "forums": forums,
             "ai_overview": ai_text, "ai_negative": ai_negative,
             "related": related, "negative_related": neg_related,
+            "pasf": pasf, "negative_pasf": neg_pasf,
             "owned_in_top10": owned_top10}
 
 

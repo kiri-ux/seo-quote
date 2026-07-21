@@ -66,6 +66,16 @@
     background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
     padding:9px 12px;font-size:12px;font-weight:400;color:var(--muted);line-height:1.55}
   .tipwrap:hover .tip{display:block}
+  .gmock{background:#202124;border-radius:12px;padding:14px;margin:8px 0;max-width:520px}
+  .gmock .gtitle{color:#bdc1c6;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .acrow{display:flex;align-items:center;gap:10px;color:#e8eaed;font-size:14px;padding:6px 10px;border-radius:6px}
+  .acrow.negx{background:#3c1f1f;color:#f6b8b8}
+  .acrow .mag{opacity:.55;font-size:12px}
+  .pasfgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pasftile{display:flex;align-items:center;justify-content:space-between;background:#303134;color:#e8eaed;
+    font-size:13px;padding:10px 12px;border-radius:8px}
+  .pasftile.negx{background:#3c1f1f;color:#f6b8b8}
+  .shotimg{max-width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px}
   .tac{display:inline-block;background:#eef4fb;color:var(--atlas);padding:1px 8px;border-radius:20px;
     font-size:11px;font-weight:700;margin-left:6px}
   .pillnote{display:inline-block;background:#fde8c8;color:#7a5410;padding:3px 10px;border-radius:20px;
@@ -456,7 +466,82 @@ function renderSerp(d){
     d.negative_related.forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
+  if(d.negative_pasf && d.negative_pasf.length){
+    h += '<div class="warn" style="margin-top:8px">Negative "People also search for" tiles: <b>'+d.negative_pasf.join('</b> · <b>')+'</b></div>';
+    d.negative_pasf.forEach(x=>window._negPhrases.add(x.toLowerCase()));
+    bumpNegPhrases();
+  }
+  h += '<div style="margin-top:8px"><button class="btn2" id="shotBtn" type="button">📸 Capture real SERP screenshot</button>'
+     + ' <span class="help" id="shotProg" style="margin-left:8px">Proposal-ready image via DFS (~30–60s).</span></div>'
+     + '<div id="shotOut">' + (window._scanData && window._scanData.shots && window._scanData.shots[d.query]
+        ? '<img class="shotimg" src="'+window._scanData.shots[d.query]+'"><div class="help">Restored from saved quote.</div>' : '') + '</div>';
   $('scanOut').innerHTML += h;
+}
+
+// Delegated: later innerHTML+= appends re-parse #scanOut and destroy
+// property-assigned handlers, so the shot button binds at the container.
+$('scanOut').addEventListener('click', e => {
+  if (e.target && e.target.id === 'shotBtn')
+    captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
+});
+
+async function captureShot(keyword){
+  $('shotBtn').disabled = true;
+  $('shotProg').textContent = 'Queuing…';
+  try{
+    const q = await (await fetch('/api/serp_queue', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({keyword, geo_values: [], device: 'desktop'})})).json();
+    if(q.error){ $('shotProg').textContent = q.error; $('shotBtn').disabled=false; return; }
+    let tries = 0;
+    const poll = async ()=>{
+      if(++tries > 24){ $('shotProg').textContent = 'Timed out — try again shortly.'; $('shotBtn').disabled=false; return; }
+      const r = await (await fetch('/api/serp_fetch', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({task_id: q.task_id, keyword, device:'desktop'})})).json();
+      if(r.error){ $('shotProg').textContent = r.error; $('shotBtn').disabled=false; return; }
+      if(!r.ready){ $('shotProg').textContent = 'Rendering… ('+tries+')'; setTimeout(poll, 5000); return; }
+      window._scanData = window._scanData || {};
+      window._scanData.shots = window._scanData.shots || {};
+      window._scanData.shots[keyword] = r.data_url;
+      $('shotOut').innerHTML = '<img class="shotimg" src="'+r.data_url+'">'
+        + '<div class="help"><a href="'+r.data_url+'" download="serp-'+keyword.replace(/\s+/g,'-')+'.png">Download PNG</a> — saves with the quote.</div>';
+      $('shotProg').textContent = 'Captured.';
+      $('shotBtn').disabled = false;
+    };
+    poll();
+  }catch(e){ $('shotProg').textContent = 'Failed: '+e; $('shotBtn').disabled=false; }
+}
+
+function boldMod(text, brand){
+  const b = (brand||$('brand').value||'').toLowerCase();
+  const t = text.toLowerCase();
+  if(b && t.startsWith(b)) return text.slice(0, b.length) + '<b>' + text.slice(b.length) + '</b>';
+  return text;
+}
+
+function renderFacsimiles(ac){
+  const serp = (window._scanData||{}).serp || {};
+  const brand = $('brand').value.trim();
+  let h = '';
+  const acKeys = Object.keys(ac||{}).filter(k=>ac[k] && !ac[k].error && (ac[k].suggestions||[]).length);
+  acKeys.forEach(k=>{
+    h += '<div class="gmock"><div class="gtitle">Auto-suggest · "'+k+'" (rendered from live data)</div>';
+    (ac[k].suggestions||[]).slice(0,12).forEach(sg=>{
+      const neg = (ac[k].negative||[]).includes(sg);
+      h += '<div class="acrow'+(neg?' negx':'')+'"><span class="mag">🔍</span><span>'+boldMod(sg, brand)+'</span></div>';
+    });
+    h += '</div>';
+  });
+  const tiles = (serp.pasf && serp.pasf.length) ? serp.pasf : (serp.related||[]).slice(0,8);
+  if(tiles.length){
+    const negs = new Set([...(serp.negative_pasf||[]), ...(serp.negative_related||[])].map(x=>x.toLowerCase()));
+    h += '<div class="gmock"><div class="gtitle">People also search for (rendered from live data)</div><div class="pasfgrid">';
+    tiles.forEach(x=>{
+      h += '<div class="pasftile'+(negs.has(x.toLowerCase())?' negx':'')+'"><span>'+boldMod(x, brand)+'</span><span class="mag">🔍</span></div>';
+    });
+    h += '</div></div>';
+  }
+  if(h) $('scanOut').innerHTML += '<div class="scanhdr">Proposal Visuals</div>'
+    + '<div class="help" style="margin:2px 0 4px">Facsimiles rendered from live DFS data — negatives highlighted. The 📸 button above captures the real SERP as an image.</div>' + h;
 }
 
 function bumpNegPhrases(){
@@ -478,6 +563,7 @@ function renderAutocomplete(ac){
   });
   if(h) h = '<div class="scanhdr">Auto-Suggest</div>' + h;
   $('scanOut').innerHTML += h;
+  renderFacsimiles(ac);
 }
 
 function renderReco(){
