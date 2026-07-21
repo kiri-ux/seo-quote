@@ -81,6 +81,17 @@
   .volrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .volrow > div:first-child{flex:1;min-width:220px}
   .volnote{font-size:12px;color:var(--muted);margin-top:6px}
+  .intl{margin-top:6px;padding:5px 9px;border:1px dashed #cf9fe0;border-radius:7px;
+    font-size:11.5px;color:#7a4f8a;background:#faf6fc;display:inline-block}
+  .scanhdr{margin:16px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  .scanhdr:first-child{margin-top:0}
+  .neg{color:#8a2b2b;font-weight:700} .watch{color:#7a5410;font-weight:600}
+  .own{display:inline-block;background:#e3eee3;color:#2f6b34;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700;margin-left:6px}
+  .third{display:inline-block;background:#fbe6e6;color:#8a2b2b;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700;margin-left:6px}
+  .stbl{width:100%;border-collapse:collapse;font-size:12.5px}
+  .stbl th,.stbl td{padding:5px 7px;border-bottom:1px solid var(--line);text-align:left}
+  .stbl th{color:var(--muted);font-size:11px;text-transform:uppercase}
+  .stbl td.n{text-align:right;white-space:nowrap}
   .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
 </style>
 </head>
@@ -114,8 +125,18 @@
         <h2>2 · Client</h2>
         <label>Client / brand name</label>
         <input type="text" id="brand" placeholder="e.g. Sage Dental">
+        <label>Website <span class="help" style="display:inline;margin:0">(for owned-asset tagging in the SERP scan)</span></label>
+        <input type="text" id="domain" placeholder="e.g. mysagedental.com">
         <label>Brand search terms <span class="help" style="display:inline;margin:0">(for volume pull — one per line)</span></label>
         <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
+        <button class="btn" id="scanBtn" type="button" style="margin-top:14px;background:var(--velocity);color:#fff">🔍 Scan brand</button>
+        <p class="help" style="margin-top:8px">Runs the full diagnostic: brand-term universe with negative-modifier volumes, "{brand} reviews" SERP threat table, related-search &amp; auto-suggest flags, and Google location discovery. ~3 DFS calls, a few cents.</p>
+        <div id="scanProg" class="help hidden"></div>
+      </div>
+
+      <div class="card hidden" id="scanCard">
+        <h2>Scan Results</h2>
+        <div id="scanOut"></div>
       </div>
 
       <!-- reactive inputs -->
@@ -126,18 +147,15 @@
         <div id="reviewFields">
           <div class="row">
             <div>
-              <label>Partner</label>
-              <select id="partner">
-                <option value="partner_b">Partner B — ~100% success, ≈48 hrs (tiered $650→$550)</option>
-                <option value="partner_a">Partner A — 40–50% success, 30–60 days ($450 flat)</option>
-              </select>
-            </div>
-            <div>
               <label># of reviews</label>
               <input type="number" id="nReviews" min="0" value="10">
             </div>
+            <div>
+              <label>Margin % <span class="help" style="display:inline;margin:0">(of gross)</span></label>
+              <input type="number" id="marginPct" min="0" max="90" step="1" value="35">
+            </div>
           </div>
-          <p class="help">Partner B brackets apply to the whole order: 1–15 $650 · 16–30 $575 · 31–50 $560 · 51+ $550 per review. Pay on success — some sensitive content can't be removed.</p>
+          <p class="help">Vici rate card, whole-order hard-cost brackets: 1–25 $585 · 26–50 $552.50 · 51–100 $520 · 101–250 $487.50 · 251–350 $455 · 351–500 $422.50 per review. Client gross = hard ÷ (1 − margin); at 35% that's $900 → $650. Pay on success — some sensitive content can't be removed.</p>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl">Negative Article Removals</span><span class="pillnote">$ placeholder — Brendan</span></div>
@@ -186,7 +204,7 @@
     </div>
   </div>
 
-  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removal rates from partner rate cards; Search Protection formula solved against the Sage Dental sample ($3,450 suppression / $3,950 auto-suggest at an assumed ~20K/mo brand volume). Article-removal and Brand Shield dollars are placeholders pending Brendan.</p>
+  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula solved against the Sage Dental sample ($3,450 suppression / $3,950 auto-suggest at an assumed ~20K/mo brand volume). Article-removal and Brand Shield dollars are placeholders pending Brendan.</p>
 </div>
 
 <script>
@@ -240,7 +258,7 @@ $('go').onclick = async ()=>{
   const payload = {
     campaign,
     brand: $('brand').value.trim(),
-    reviews: $('useReviews').checked ? {partner: $('partner').value, count: +$('nReviews').value||0} : {count:0},
+    reviews: $('useReviews').checked ? {count: +$('nReviews').value||0, margin_pct: (+$('marginPct').value||35)/100} : {count:0},
     articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0} : {},
     search: {volume:+$('volume').value||0, suppression:$('useSuppression').checked,
              autosuggest:$('useAutosuggest').checked, term_sets:+$('termSets').value||1},
@@ -279,8 +297,15 @@ function render(d, payload){
       h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
     }
     const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
+    let internal = '';
+    if(l.internal){
+      internal = '<div class="intl">Internal · hard cost '+money(Math.round(l.internal.hard_total))
+               + ' ($'+l.internal.hard_per.toLocaleString()+'/review) · margin '
+               + money(Math.round(l.internal.profit_total))+' ('+Math.round(l.internal.margin_pct*100)+'% of gross)</div>';
+    }
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
+       + internal
        + '</td><td>'+l.timeline+'</td><td class="amt">'+money(l.total)+per+'</td></tr>';
   });
   h += '</table>';
@@ -289,6 +314,141 @@ function render(d, payload){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
   }
   $('out').innerHTML = h;
+}
+
+// ---------------- brand scan ----------------
+let scanLocations = [], reviewTasks = [], pollTimer = null;
+
+$('scanBtn').onclick = async ()=>{
+  const brand = $('brand').value.trim();
+  if(!brand){ alert('Enter the client / brand name first.'); return; }
+  const domain = $('domain').value.trim();
+  $('scanBtn').disabled = true;
+  $('scanCard').classList.remove('hidden');
+  $('scanProg').classList.remove('hidden');
+  $('scanOut').innerHTML = '';
+  const body = o => ({method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(o)});
+  try{
+    $('scanProg').textContent = '1/3 — pulling brand term universe…';
+    const terms = await (await fetch('/api/rep_scan_terms', body({brand}))).json();
+    renderTerms(terms);
+    $('scanProg').textContent = '2/3 — scanning "'+brand+' reviews" SERP + auto-suggest…';
+    const serp = await (await fetch('/api/rep_scan_serp', body({brand, domain}))).json();
+    renderSerp(serp);
+    $('scanProg').textContent = '3/3 — discovering Google locations…';
+    const locs = await (await fetch('/api/rep_scan_locations', body({brand}))).json();
+    renderLocs(locs);
+    $('scanProg').textContent = 'Scan complete.';
+  }catch(e){ $('scanOut').innerHTML += '<div class="err">Scan failed: '+e+'</div>'; }
+  $('scanBtn').disabled = false;
+};
+
+function renderTerms(d){
+  if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  if(d.total_volume){
+    $('volume').value = d.total_volume;
+    $('volNote').innerHTML = 'Auto-filled from scan: <b>'+d.total_volume.toLocaleString()+'/mo</b> total brand volume.';
+  }
+  let h = '<div class="scanhdr">Brand Term Universe · '+d.total_volume.toLocaleString()+'/mo total</div>';
+  h += '<div class="warn">Negative-modifier volume: <b>'+d.negative_volume.toLocaleString()+'/mo</b> — the auto-suggest campaign succeeds only while contracted positive searches exceed this. Watch-term volume ("reviews", "legit"…): '+d.watch_volume.toLocaleString()+'/mo.</div>';
+  const flagged = d.terms.filter(t=>t.class!=='neutral').slice(0,15);
+  if(flagged.length){
+    h += '<table class="stbl"><tr><th>Term</th><th>Class</th><th style="text-align:right">Vol/mo</th></tr>';
+    flagged.forEach(t=>{ h += '<tr><td>'+t.term+'</td><td class="'+(t.class==='negative'?'neg':'watch')+'">'+t.class+'</td><td class="n">'+t.volume.toLocaleString()+'</td></tr>'; });
+    h += '</table>';
+  }
+  $('scanOut').innerHTML += h;
+}
+
+function renderSerp(d){
+  if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  let h = '<div class="scanhdr">SERP Threats · "'+d.query+'"</div>';
+  h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled.</p>';
+  h += '<table class="stbl"><tr><th>#</th><th>Result</th><th style="text-align:right">Rating</th></tr>';
+  d.organic.forEach(o=>{
+    h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')
+       + '<div class="help" style="margin:0">'+ (o.title||'') +'</div></td>'
+       + '<td class="n">'+(o.rating? o.rating+'★ ('+(o.votes||0).toLocaleString()+')':'—')+'</td></tr>';
+  });
+  h += '</table>';
+  if(d.negative_related && d.negative_related.length)
+    h += '<div class="warn" style="margin-top:8px">Negative related searches: <b>'+d.negative_related.join('</b> · <b>')+'</b></div>';
+  const ac = d.autocomplete || {};
+  Object.keys(ac).forEach(k=>{
+    const a = ac[k]; if(!a || a.error) return;
+    if(a.negative && a.negative.length)
+      h += '<div class="warn">Auto-suggest for "'+k+'" flags: <b>'+a.negative.join('</b> · <b>')+'</b></div>';
+  });
+  $('scanOut').innerHTML += h;
+}
+
+function renderLocs(d){
+  if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  scanLocations = d.locations || [];
+  let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
+  if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">None found in the listings database.</p>'; return; }
+  h += '<table class="stbl"><tr><th></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
+  scanLocations.slice(0,60).forEach((l,i)=>{
+    h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+((l.rating||5)<4?'checked':'')+'></td>'
+       + '<td>'+l.title+'<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
+       + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
+  });
+  h += '</table>';
+  h += '<div class="row" style="margin-top:10px"><div style="flex:0 0 130px"><label style="margin-top:0">Pull depth</label><input type="number" id="pullDepth" min="10" max="4490" value="200"></div>'
+     + '<div><button class="btn2" id="countNegBtn" type="button">Count negatives for checked locations</button>'
+     + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location at depth 200 · results in ~1 min.</div></div></div>'
+     + '<div id="negOut"></div>';
+  $('scanOut').innerHTML += h;
+  $('countNegBtn').onclick = submitNegCount;
+}
+
+async function submitNegCount(){
+  const pids = [...document.querySelectorAll('.locck:checked')].map(c=>scanLocations[+c.dataset.i].place_id).filter(Boolean);
+  if(!pids.length){ $('negProg').textContent = 'Check at least one location.'; return; }
+  $('countNegBtn').disabled = true;
+  $('negProg').textContent = 'Queuing '+pids.length+' pulls…';
+  try{
+    const r = await (await fetch('/api/rep_reviews_submit', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({place_ids: pids, depth: +$('pullDepth').value||200})})).json();
+    if(r.error){ $('negProg').textContent = r.error; $('countNegBtn').disabled=false; return; }
+    reviewTasks = r.tasks.filter(t=>t.ok).map(t=>t.id);
+    $('negProg').textContent = 'Queued '+reviewTasks.length+' — polling…';
+    pollNegCount(0, {});
+  }catch(e){ $('negProg').textContent = 'Submit failed: '+e; $('countNegBtn').disabled=false; }
+}
+
+async function pollNegCount(attempt, doneMap){
+  if(attempt > 40){ $('negProg').textContent = 'Timed out with '+reviewTasks.length+' pulls still pending — try again shortly.'; $('countNegBtn').disabled=false; return; }
+  try{
+    const r = await (await fetch('/api/rep_reviews_collect', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({task_ids: reviewTasks})})).json();
+    (r.done||[]).forEach(d=>{ doneMap[d.id]=d; });
+    reviewTasks = r.pending || [];
+    renderNegCounts(Object.values(doneMap));
+    if(reviewTasks.length){
+      $('negProg').textContent = Object.keys(doneMap).length+' done · '+reviewTasks.length+' pending…';
+      setTimeout(()=>pollNegCount(attempt+1, doneMap), 5000);
+    }else{
+      $('negProg').textContent = 'Complete.';
+      $('countNegBtn').disabled = false;
+    }
+  }catch(e){ setTimeout(()=>pollNegCount(attempt+1, doneMap), 5000); }
+}
+
+function renderNegCounts(done){
+  if(!done.length) return;
+  const tot12 = done.reduce((s,d)=>s+d.neg_1_2,0), tot3 = done.reduce((s,d)=>s+d.weak_3,0);
+  $('nReviews').value = tot12;
+  let h = '<div class="scanhdr" style="margin-top:12px">Negative Review Counts</div>';
+  h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>'+tot12.toLocaleString()+'</b> reviews at 1–2★ (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>';
+  h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1–2★</th><th style="text-align:right">3★</th></tr>';
+  done.forEach(d=>{
+    h += '<tr><td>'+(d.title||d.place_id)+(d.truncated?' <span class="third">more beyond depth</span>':'')+'</td>'
+       + '<td class="n">'+(d.profile_rating||'—')+'★ / '+(d.profile_reviews||0).toLocaleString()+'</td>'
+       + '<td class="n">'+d.neg_1_2+'</td><td class="n">'+d.weak_3+'</td></tr>';
+  });
+  h += '</table>';
+  $('negOut').innerHTML = h;
 }
 </script>
 </body>

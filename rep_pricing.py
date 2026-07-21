@@ -5,9 +5,11 @@ Separate module so app.py stays SEO-only. All Brendan-calibration constants
 live in REP_CFG at the top; everything below is mechanics.
 
 Pricing sources (Rep Mgmt Proposal Template doc + Sage Dental sample, June 2026):
-  * Review removals — Partner A $450 flat (40-50% success, 30-60 days);
-    Partner B whole-order brackets 1-15 $650 / 16-30 $575 / 31-50 $560 /
-    51+ $550 (near-100% success, ~48 hrs). Pay on success.
+  * Review removals — Vici rate card (July 2026 chart): whole-order hard-cost
+    brackets $585 -> $422.50 across 1-500 reviews, editable margin (default 35%
+    of gross) reproducing the chart's $900 -> $650 gross column. Supersedes the
+    Partner A ($450 flat) / Partner B ($650->$550 tiers) client pricing from
+    Brendan's Sage proposal; A/B is now internal fulfillment routing only.
   * Article removals — priced per removed article, tiered on domain authority:
     DA <= 35 standard, DA > 35 premium (CNN-class). Dollar figures below are
     PLACEHOLDERS — doc says "$[Custom Price]"; calibrate with Brendan.
@@ -29,30 +31,24 @@ def r50(x):
 
 REP_CFG = {
     # ------------------------------------------------------- review removals
+    # Vici rate card (July 2026 chart) replaces the Partner A/B client pricing.
+    # HARD COST (Vici net) is canonical; gross = hard / (1 - margin). At the
+    # suggested 35% margin this reproduces the chart's gross column exactly:
+    # $900 / $850 / $800 / $750 / $700 / $650. Margin is % OF GROSS (chart
+    # convention) — NOT markup-on-cost like the SEO tool's x1.35.
+    # Partner A/B remain internal fulfillment routing, not client pricing.
     "review_removal": {
-        "partner_a": {
-            "label": "Partner A \u2014 volume cleanup",
-            "per_review": 450,
-            "success": "40\u201350% success rate",
-            "timeline": "30\u201360 days",
-            "note": ("Best when shoring up a location's overall rating across "
-                     "many reviews, with no single must-remove review."),
-        },
-        "partner_b": {
-            "label": "Partner B \u2014 high-certainty",
-            # Whole-order brackets: the rate for the total count applies to
-            # EVERY review in the order (doc: "16 to 30 reviews: $575 per").
-            "brackets": [
-                {"min": 1,  "max": 15,   "per": 650},
-                {"min": 16, "max": 30,   "per": 575},
-                {"min": 31, "max": 50,   "per": 560},
-                {"min": 51, "max": None, "per": 550},
-            ],
-            "success": "\u2248100% success rate",
-            "timeline": "\u224848 hours per request",
-            "note": "More expensive but fast and near-certain.",
-        },
-        "pay_on_success": True,   # billed per REMOVED review; no removal guarantee
+        "default_margin_pct": 0.35,
+        "brackets": [                       # whole-order: rate applies to all
+            {"min": 1,   "max": 25,   "hard": 585.00},
+            {"min": 26,  "max": 50,   "hard": 552.50},
+            {"min": 51,  "max": 100,  "hard": 520.00},
+            {"min": 101, "max": 250,  "hard": 487.50},
+            {"min": 251, "max": 350,  "hard": 455.00},
+            {"min": 351, "max": 500,  "hard": 422.50},
+        ],
+        "timeline": "\u224848 hours\u201360 days depending on fulfillment routing",
+        "pay_on_success": True,
     },
 
     # ------------------------------------------------------ article removals
@@ -117,32 +113,45 @@ REP_CFG = {
 # mechanics
 # ---------------------------------------------------------------------------
 
-def price_reviews(partner, n):
-    """Return dict for a review-removal line. Whole-order bracket for B."""
+def price_reviews(n, margin_pct=None):
+    """Review-removal line off the Vici rate card. Whole-order bracket on the
+    HARD cost; client gross derived from the editable margin (% of gross).
+    Returns the client-facing line plus an `internal` block (hard / profit)."""
     n = max(0, int(n or 0))
     if n == 0:
         return None
     cfg = REP_CFG["review_removal"]
-    if partner == "partner_a":
-        per = cfg["partner_a"]["per_review"]
-        meta = cfg["partner_a"]
-    else:
-        per = None
-        for b in cfg["partner_b"]["brackets"]:
-            if n >= b["min"] and (b["max"] is None or n <= b["max"]):
-                per = b["per"]
-                break
-        meta = cfg["partner_b"]
-    total = per * n
-    return {
+    m = cfg["default_margin_pct"] if margin_pct is None else float(margin_pct)
+    m = min(0.90, max(0.0, m))                      # sanity clamp
+    hard_per, over_chart = None, False
+    for b in cfg["brackets"]:
+        if n >= b["min"] and (b["max"] is None or n <= b["max"]):
+            hard_per = b["hard"]
+            break
+    if hard_per is None:                            # beyond 500 — extend top tier
+        hard_per = cfg["brackets"][-1]["hard"]
+        over_chart = True
+    gross_per = round(hard_per / (1.0 - m) / 5.0) * 5   # clean $5 steps
+    total = int(round(gross_per * n))
+    hard_total = round(hard_per * n, 2)
+    line = {
         "service": "Negative Review Removals",
-        "detail": f"{meta['label']} \u00b7 {n} review{'s' if n != 1 else ''} @ ${per:,}/removed review",
-        "qty": n, "unit": per, "kind": "per_asset",
+        "detail": f"{n} review{'s' if n != 1 else ''} @ ${gross_per:,.0f}/removed review",
+        "qty": n, "unit": gross_per, "kind": "per_asset",
         "total": total,
-        "timeline": meta["timeline"],
-        "notes": [meta["success"],
-                  "Pay on success \u2014 billed per removed review; removal is not guaranteed."],
+        "timeline": cfg["timeline"],
+        "notes": ["Pay on success \u2014 billed per removed review; removal is not guaranteed.",
+                  "Some sensitive content cannot be removed."],
+        "internal": {
+            "hard_per": hard_per, "hard_total": hard_total,
+            "profit_total": round(total - hard_total, 2),
+            "margin_pct": m,
+        },
     }
+    if over_chart:
+        line["notes"].append(f"{n} reviews exceeds the 500-review rate card \u2014 "
+                             "top-tier rate extended; confirm with fulfillment partner.")
+    return line
 
 
 def price_articles(n_standard, n_premium):
@@ -239,7 +248,7 @@ def build_rep_quote(payload):
     """
     payload = {
       campaign: 'reactive' | 'proactive' | 'bundle',
-      reviews: {partner: 'partner_a'|'partner_b', count: int},
+      reviews: {count: int, margin_pct: float (0.35 = 35% of gross)},
       articles: {standard: int, premium: int},
       search: {volume: int, suppression: bool, autosuggest: bool, term_sets: int},
       shield: {locations: int},
@@ -252,7 +261,7 @@ def build_rep_quote(payload):
 
     if campaign in ("reactive", "bundle"):
         rv = payload.get("reviews") or {}
-        ln = price_reviews(rv.get("partner", "partner_b"), rv.get("count", 0))
+        ln = price_reviews(rv.get("count", 0), rv.get("margin_pct"))
         if ln:
             phase1.append(ln)
         ar = payload.get("articles") or {}

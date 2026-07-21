@@ -2985,6 +2985,70 @@ def api_quotes_version_load(vid):
 # with the SEO pipeline.
 # ---------------------------------------------------------------------------
 import rep_pricing
+import rep_scan
+rep_scan.init(dfs_post)
+
+@app.route("/api/rep_scan_terms", methods=["POST"])
+def api_rep_scan_terms():
+    """Brand term universe + negative-modifier volumes (one KFK live call)."""
+    d = request.get_json(force=True)
+    brand = (d.get("brand") or "").strip()
+    if not brand:
+        return jsonify({"error": "Brand name required."}), 400
+    try:
+        return jsonify(rep_scan.scan_terms(brand))
+    except Exception as e:
+        return jsonify({"error": f"Term scan failed: {e}"}), 502
+
+@app.route("/api/rep_scan_serp", methods=["POST"])
+def api_rep_scan_serp():
+    """'{brand} reviews' top-10 threat table + related searches + autosuggest."""
+    d = request.get_json(force=True)
+    brand = (d.get("brand") or "").strip()
+    if not brand:
+        return jsonify({"error": "Brand name required."}), 400
+    try:
+        out = rep_scan.scan_serp(brand, (d.get("domain") or "").strip())
+        out["autocomplete"] = rep_scan.scan_autocomplete(brand)
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": f"SERP scan failed: {e}"}), 502
+
+@app.route("/api/rep_scan_locations", methods=["POST"])
+def api_rep_scan_locations():
+    """Google Business location discovery (instant, database-backed)."""
+    d = request.get_json(force=True)
+    brand = (d.get("brand") or "").strip()
+    if not brand:
+        return jsonify({"error": "Brand name required."}), 400
+    try:
+        return jsonify(rep_scan.scan_locations(brand))
+    except Exception as e:
+        return jsonify({"error": f"Location scan failed: {e}"}), 502
+
+@app.route("/api/rep_reviews_submit", methods=["POST"])
+def api_rep_reviews_submit():
+    """Queue worst-first review pulls for selected locations (priority ~1min)."""
+    d = request.get_json(force=True)
+    pids = [p for p in (d.get("place_ids") or []) if p]
+    if not pids:
+        return jsonify({"error": "No locations selected."}), 400
+    try:
+        return jsonify(rep_scan.reviews_submit(pids, int(d.get("depth") or 200)))
+    except Exception as e:
+        return jsonify({"error": f"Review submit failed: {e}"}), 502
+
+@app.route("/api/rep_reviews_collect", methods=["POST"])
+def api_rep_reviews_collect():
+    d = request.get_json(force=True)
+    tids = [t for t in (d.get("task_ids") or []) if t]
+    if not tids:
+        return jsonify({"error": "No task ids."}), 400
+    try:
+        return jsonify(rep_scan.reviews_collect(tids))
+    except Exception as e:
+        return jsonify({"error": f"Review collect failed: {e}"}), 502
+
 
 @app.route("/reputation")
 def reputation():
