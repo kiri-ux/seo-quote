@@ -341,19 +341,24 @@ $('scanBtn').onclick = async ()=>{
   $('scanCard').classList.remove('hidden');
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
-  const body = o => ({method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(o)});
-  try{
-    $('scanProg').textContent = '1/3 — pulling brand term universe…';
-    const terms = await (await fetch('/api/rep_scan_terms', body({brand}))).json();
-    renderTerms(terms);
-    $('scanProg').textContent = '2/3 — scanning "'+brand+' reviews" SERP + auto-suggest…';
-    const serp = await (await fetch('/api/rep_scan_serp', body({brand, domain}))).json();
-    renderSerp(serp);
-    $('scanProg').textContent = '3/3 — discovering Google locations…';
-    const locs = await (await fetch('/api/rep_scan_locations', body({brand}))).json();
-    renderLocs(locs);
-    $('scanProg').textContent = 'Scan complete.';
-  }catch(e){ $('scanOut').innerHTML += '<div class="err">Scan failed: '+e+'</div>'; }
+  // Steps run independently — one failure can't kill the rest — and non-JSON
+  // responses (Render timeout pages etc.) surface as readable errors.
+  async function fetchJSON(url, o){
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(o)});
+    const txt = await r.text();
+    try{ return JSON.parse(txt); }
+    catch(e){ return {error: 'HTTP '+r.status+' — server returned non-JSON (likely a timeout page): '+txt.slice(0,120)}; }
+  }
+  const step = async (label, fn) => {
+    $('scanProg').textContent = label;
+    try{ await fn(); }
+    catch(e){ $('scanOut').innerHTML += '<div class="err">'+label+' failed: '+e+'</div>'; }
+  };
+  await step('1/4 — pulling brand term universe…', async ()=> renderTerms(await fetchJSON('/api/rep_scan_terms', {brand})));
+  await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=> renderSerp(await fetchJSON('/api/rep_scan_serp', {brand, domain})));
+  await step('3/4 — checking auto-suggest…', async ()=> renderAutocomplete(await fetchJSON('/api/rep_scan_autocomplete', {brand})));
+  await step('4/4 — discovering Google locations…', async ()=> renderLocs(await fetchJSON('/api/rep_scan_locations', {brand})));
+  $('scanProg').textContent = 'Scan complete.';
   $('scanBtn').disabled = false;
 };
 
@@ -397,12 +402,18 @@ function renderSerp(d){
   h += '</table>';
   if(d.negative_related && d.negative_related.length)
     h += '<div class="warn" style="margin-top:8px">Negative related searches: <b>'+d.negative_related.join('</b> · <b>')+'</b></div>';
-  const ac = d.autocomplete || {};
+  $('scanOut').innerHTML += h;
+}
+
+function renderAutocomplete(ac){
+  if(ac.error){ $('scanOut').innerHTML += '<div class="err">'+ac.error+'</div>'; return; }
+  let h = '';
   Object.keys(ac).forEach(k=>{
     const a = ac[k]; if(!a || a.error) return;
     if(a.negative && a.negative.length)
       h += '<div class="warn">Auto-suggest for "'+k+'" flags: <b>'+a.negative.join('</b> · <b>')+'</b></div>';
   });
+  if(h) h = '<div class="scanhdr">Auto-Suggest</div>' + h;
   $('scanOut').innerHTML += h;
 }
 

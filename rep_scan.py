@@ -115,7 +115,7 @@ def scan_serp(brand, domain=""):
     kw = f"{brand} reviews".lower()
     payload = [{"keyword": kw, "location_code": 2840,
                 "language_code": "en", "depth": 10}]
-    data = _post("/serp/google/organic/live/advanced", payload, timeout=60)
+    data = _post("/serp/google/organic/live/advanced", payload, timeout=45)
     own = _domain(domain)
     organic, related, forums = [], [], []
     ai_text = ""
@@ -162,24 +162,30 @@ def scan_serp(brand, domain=""):
 
 
 def scan_autocomplete(brand):
-    """Auto-suggest for the brand and '{brand} reviews' — negative flags."""
+    """Auto-suggest for the brand and '{brand} reviews' — negative flags.
+    Both keywords go in ONE DFS request (two tasks) to halve latency; this
+    lives on its own endpoint so a slow autocomplete can't drag the SERP
+    call past Render's ~100s proxy timeout."""
+    kws = [brand.lower(), f"{brand} reviews".lower()]
+    payload = [{"keyword": k, "location_code": 2840, "language_code": "en"}
+               for k in kws]
     out = {}
-    for kw in (brand.lower(), f"{brand} reviews".lower()):
-        payload = [{"keyword": kw, "location_code": 2840, "language_code": "en"}]
-        try:
-            data = _post("/serp/google/autocomplete/live/advanced",
-                         payload, timeout=60)
+    try:
+        data = _post("/serp/google/autocomplete/live/advanced", payload,
+                     timeout=30)
+        for task in data.get("tasks") or []:
+            kw = ((task.get("data") or {}).get("keyword") or "").lower()
             sugg = []
-            for it in (data["tasks"][0]["result"] or [{}])[0].get("items") or []:
-                if it.get("type") == "autocomplete":
-                    s = it.get("suggestion")
-                    if s:
-                        sugg.append(s)
+            for res in task.get("result") or []:
+                for it in (res or {}).get("items") or []:
+                    if it.get("type") == "autocomplete" and it.get("suggestion"):
+                        sugg.append(it["suggestion"])
             out[kw] = {"suggestions": sugg,
-                       "negative": [s for s in sugg
-                                    if any(m in s.lower() for m in NEG_MODIFIERS)]}
-        except Exception as e:
-            out[kw] = {"error": str(e)}
+                       "negative": [x for x in sugg
+                                    if any(m in x.lower() for m in NEG_MODIFIERS)]}
+    except Exception as e:
+        for k in kws:
+            out.setdefault(k, {"error": str(e)})
     return out
 
 

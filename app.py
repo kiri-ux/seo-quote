@@ -3010,11 +3010,22 @@ def api_rep_scan_serp():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        out = rep_scan.scan_serp(brand, (d.get("domain") or "").strip())
-        out["autocomplete"] = rep_scan.scan_autocomplete(brand)
-        return jsonify(out)
+        return jsonify(rep_scan.scan_serp(brand, (d.get("domain") or "").strip()))
     except Exception as e:
         return jsonify({"error": f"SERP scan failed: {e}"}), 502
+
+@app.route("/api/rep_scan_autocomplete", methods=["POST"])
+def api_rep_scan_autocomplete():
+    """Auto-suggest flags — separate endpoint so its latency never stacks
+    onto the SERP call (Render's proxy cuts requests around 100s)."""
+    d = request.get_json(force=True)
+    brand = (d.get("brand") or "").strip()
+    if not brand:
+        return jsonify({"error": "Brand name required."}), 400
+    try:
+        return jsonify(rep_scan.scan_autocomplete(brand))
+    except Exception as e:
+        return jsonify({"error": f"Autocomplete scan failed: {e}"}), 502
 
 @app.route("/api/rep_scan_locations", methods=["POST"])
 def api_rep_scan_locations():
