@@ -55,21 +55,51 @@ def classify_term(term, brand):
     return "neutral"
 
 
+PROBE_MODIFIERS = ["lawsuit", "complaints", "scam", "fraud", "class action",
+                   "settlement", "reviews", "legit"]
+
 def scan_terms(brand):
-    """Brand term universe via keywords_for_keywords (US national).
-    Returns terms classified neutral/watch/negative with volumes."""
-    payload = [{"keywords": [brand.lower()], "location_code": 2840,
+    """Brand term universe via keywords_for_keywords (US national), PLUS an
+    exact-match probe of the canonical negative/watch variants. KFK returns
+    GROUPED volumes that merge close variants (the same quirk the SEO tool
+    works around) — so '{brand} lawsuit' can vanish into the parent term and
+    silently undercount negative volume. The probe re-pulls those terms from
+    the Labs keyword database, which returns per-term exact volume."""
+    b = brand.lower()
+    payload = [{"keywords": [b], "location_code": 2840,
                 "language_code": "en", "sort_by": "search_volume"}]
     data = _post("/keywords_data/google_ads/keywords_for_keywords/live",
                  payload, timeout=90)
-    rows = []
+    by_term = {}
     for it in (data["tasks"][0]["result"] or []):
         kw = (it.get("keyword") or "").lower()
         vol = it.get("search_volume") or 0
         cls = classify_term(kw, brand)
         if cls:
-            rows.append({"term": kw, "volume": vol, "class": cls})
-    rows.sort(key=lambda r: -r["volume"])
+            by_term[kw] = {"term": kw, "volume": vol, "class": cls, "src": "kfk"}
+
+    # exact-match probe: canonical variants + any flagged KFK terms
+    probes = [f"{b} {m}" for m in PROBE_MODIFIERS]
+    probes += [t for t, r in by_term.items() if r["class"] != "neutral"]
+    probes = sorted(set(probes))
+    try:
+        pdata = _post("/dataforseo_labs/google/keyword_overview/live",
+                      [{"keywords": probes, "location_code": 2840,
+                        "language_code": "en"}], timeout=45)
+        for block in (pdata["tasks"][0]["result"] or []):
+            for it in (block.get("items") or []):
+                kw = (it.get("keyword") or "").lower()
+                vol = ((it.get("keyword_info") or {}).get("search_volume")) or 0
+                cls = classify_term(kw, brand)
+                if not cls:
+                    continue
+                # exact volume overrides the grouped KFK number
+                by_term[kw] = {"term": kw, "volume": vol, "class": cls,
+                               "src": "exact"}
+    except Exception:
+        pass                      # probe is enrichment — never fail the scan
+
+    rows = sorted(by_term.values(), key=lambda r: -r["volume"])
     tot = {c: sum(r["volume"] for r in rows if r["class"] == c)
            for c in ("neutral", "watch", "negative")}
     return {"terms": rows[:120],
