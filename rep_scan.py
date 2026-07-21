@@ -116,6 +116,30 @@ def _domain(d):
     d = d.split("/")[0].split("?")[0].split(":")[0]
     return d[4:] if d.startswith("www.") else d
 
+# Domain -> recommended tactic for the SERP threat table. Review counts in
+# the removal quote are GOOGLE Business reviews only; these third-party pages
+# route to other tactics (Visions precedent: complaint boards / Reddit /
+# Trustpilot pages can be removed at the PAGE level via Website Removal).
+ROUTES = [
+    (("yelp.",), "review gen / deindex"),
+    (("glassdoor.", "indeed."), "suppression"),
+    (("bbb.",), "BBB remediation"),
+    (("trustpilot.", "complaintsboard.", "pissedconsumer.", "scampulse.",
+      "ripoffreport.", "gripeo.", "reddit.", "quora."), "site removal"),
+    (("facebook.", "instagram.", "x.com", "twitter.", "tiktok.",
+      "linkedin."), "suppression"),
+]
+
+def route_tactic(domain, owned=False, forum=False):
+    if owned:
+        return "owned \u2014 boost"
+    d = (domain or "").lower()
+    for prefixes, tactic in ROUTES:
+        if any(p in d for p in prefixes):
+            return tactic
+    return "site removal" if forum else "suppress / custom review"
+
+
 def _rating_from_text(*texts):
     """Google rarely returns structured star snippets now — the rating usually
     lives in the description text ('average rating of 2.6 from 90 reviews',
@@ -162,13 +186,17 @@ def scan_serp(brand, domain=""):
                     it.get("description"), it.get("title")),
                 "votes": rat.get("votes_count"),
                 "owned": bool(own) and own == _domain(it.get("domain")),
+                "tactic": route_tactic(_domain(it.get("domain")),
+                                       bool(own) and own == _domain(it.get("domain"))),
             })
         elif t in ("discussions_and_forums", "found_on_web"):
             for el in (it.get("items") or [])[:6]:
+                dom = _domain(el.get("domain") or el.get("source"))
                 forums.append({
                     "pos": it.get("rank_absolute"),
-                    "domain": _domain(el.get("domain") or el.get("source")),
+                    "domain": dom,
                     "title": el.get("title"),
+                    "tactic": route_tactic(dom, forum=True),
                 })
         elif t == "ai_overview":
             parts = []

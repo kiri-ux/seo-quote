@@ -58,6 +58,16 @@
   .btn2{background:#fff;border:1.5px solid var(--atlas);color:var(--atlas);padding:8px 14px;
     border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer}
   .hidden{display:none}
+  .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
+  .tipicon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    border-radius:50%;border:1px solid var(--atlas);color:var(--atlas);font-size:10.5px;font-weight:700;
+    cursor:help;user-select:none;background:#fff;line-height:1;font-style:normal}
+  .tipwrap .tip{display:none;position:absolute;left:-10px;top:20px;z-index:60;width:280px;max-width:72vw;
+    background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
+    padding:9px 12px;font-size:12px;font-weight:400;color:var(--muted);line-height:1.55}
+  .tipwrap:hover .tip{display:block}
+  .tac{display:inline-block;background:#eef4fb;color:var(--atlas);padding:1px 8px;border-radius:20px;
+    font-size:11px;font-weight:700;margin-left:6px}
   .pillnote{display:inline-block;background:#fde8c8;color:#7a5410;padding:3px 10px;border-radius:20px;
     font-size:11.5px;font-weight:600;margin-left:8px}
   /* results */
@@ -156,7 +166,7 @@
         <div id="reviewFields">
           <div class="row">
             <div>
-              <label># of reviews</label>
+              <label># of reviews<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Reviews need a manual review to ensure they are removable.</span></span></label>
               <input type="number" id="nReviews" min="0" value="10">
             </div>
             <div>
@@ -164,7 +174,6 @@
               <input type="number" id="marginPct" min="0" max="90" step="1" value="35">
             </div>
           </div>
-          <p class="help">Vici rate card, whole-order hard-cost brackets: 1–25 $585 · 26–50 $552.50 · 51–100 $520 · 101–250 $487.50 · 251–350 $455 · 351–500 $422.50 per review. Client gross = hard ÷ (1 − margin); at 35% that's $900 → $650. Pay on success. <b>Every order needs a human review first</b> to confirm the reviews are actually removable (Brendan).</p>
           <details style="margin:4px 0 10px">
             <summary style="font-size:12.5px;color:var(--atlas);cursor:pointer;font-weight:600">What can and can't be removed</summary>
             <div class="help" style="margin-top:6px">
@@ -497,7 +506,7 @@ function renderTerms(d){
 function renderSerp(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   let h = '<div class="scanhdr">SERP Threats · "'+d.query+'"</div>';
-  h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled.</p>';
+  h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled. Review counts in the removal quote cover <b>Google Business reviews only</b> — reviews on the sites below are not in that count; each routes to the tactic shown.</p>';
   if(d.ai_overview){
     const cls = (d.ai_negative && d.ai_negative.length) ? 'warn' : 'help';
     h += '<div class="'+cls+'" style="margin:6px 0">AI Overview'
@@ -506,12 +515,12 @@ function renderSerp(d){
   }
   h += '<table class="stbl"><tr><th>#</th><th>Result</th><th style="text-align:right">Rating</th></tr>';
   d.organic.forEach(o=>{
-    h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')
+    h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')+(o.tactic?'<span class="tac">→ '+o.tactic+'</span>':'')
        + '<div class="help" style="margin:0">'+ (o.title||'') +'</div></td>'
        + '<td class="n">'+(o.rating? o.rating+'★'+(o.votes?' ('+o.votes.toLocaleString()+')':''):'—')+'</td></tr>';
   });
   (d.forums||[]).forEach(f=>{
-    h += '<tr><td>'+(f.pos||'—')+'</td><td>'+f.domain+'<span class="third">forum</span>'
+    h += '<tr><td>'+(f.pos||'—')+'</td><td>'+f.domain+'<span class="third">forum</span>'+(f.tactic?'<span class="tac">→ '+f.tactic+'</span>':'')
        + '<div class="help" style="margin:0">'+(f.title||'')+'</div></td><td class="n">—</td></tr>';
   });
   h += '</table>';
