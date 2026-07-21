@@ -14,9 +14,14 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     background:var(--parchment);color:var(--ink);line-height:1.5}
-  header{background:var(--atlas);color:#fff;padding:22px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+  header{background:var(--atlas);color:#fff;padding:14px 28px 0;position:sticky;top:0;z-index:95}
+  .hrow{display:flex;align-items:center;justify-content:space-between;gap:16px}
   header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
-  header span{opacity:.7;font-size:13px}
+  header h1 span{opacity:.7;font-size:13px;font-weight:400}
+  .tabs{display:flex;gap:4px;margin-top:12px}
+  .tabs a{display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;
+    font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)}
+  .tabs a.on{background:var(--parchment);color:var(--atlas)}
   .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
@@ -106,17 +111,19 @@
 </style>
 </head>
 <body>
-<header style="flex-wrap:wrap;padding-bottom:0">
-  <h1>adtini · SEO Quote Tool <span>— internal demo · spring ladder · live DataForSEO · build 2026-07-20.23</span></h1>
-  <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
-  <nav style="flex-basis:100%;display:flex;gap:4px;margin-top:12px">
-    <a href="/" style="display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;font-weight:600;text-decoration:none;background:var(--parchment);color:var(--atlas)">SEO Quote</a>
-    <a href="/reputation" style="display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)">Reputation Mgmt</a>
+<header>
+  <div class="hrow">
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— SEO · spring ladder · live DataForSEO · build 2026-07-20.23</span></h1>
+    <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
+  </div>
+  <nav class="tabs">
+    <a href="/" class="on">SEO Quote</a>
+    <a href="/reputation">Reputation Mgmt</a>
   </nav>
 </header>
 
 <!-- Saved quotes drawer -->
-<div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:50;overflow-y:auto;padding:20px">
+<div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:200;overflow-y:auto;padding:20px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
     <h2 style="margin:0;color:var(--atlas);font-size:15px">Saved quotes</h2>
     <button id="savedClose" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">×</button>

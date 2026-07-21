@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>adtini · Reputation Management Quote</title>
+<title>adtini · SEO &amp; Rep Mgmt Quote Builder</title>
 <style>
   :root{
     --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
@@ -13,11 +13,11 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     background:var(--parchment);color:var(--ink);line-height:1.5}
-  header{background:var(--atlas);color:#fff;padding:18px 28px 0;}
+  header{background:var(--atlas);color:#fff;padding:14px 28px 0;position:sticky;top:0;z-index:95}
   .hrow{display:flex;align-items:center;justify-content:space-between;gap:16px}
   header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
   header h1 span{opacity:.7;font-size:13px;font-weight:400}
-  .tabs{display:flex;gap:4px;margin-top:14px}
+  .tabs{display:flex;gap:4px;margin-top:12px}
   .tabs a{display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;
     font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)}
   .tabs a.on{background:var(--parchment);color:var(--atlas)}
@@ -98,13 +98,24 @@
 <body>
 <header>
   <div class="hrow">
-    <h1>adtini · Reputation Management Quote <span>— internal · pay-on-success removals · volume-formula search protection</span></h1>
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— Rep Mgmt · pay-on-success removals · volume-formula search protection</span></h1>
+    <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
   </div>
   <nav class="tabs">
     <a href="/">SEO Quote</a>
     <a href="/reputation" class="on">Reputation Mgmt</a>
   </nav>
 </header>
+
+<!-- Saved quotes drawer -->
+<div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:200;overflow-y:auto;padding:20px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <h2 style="margin:0;color:var(--atlas);font-size:15px">Saved rep quotes</h2>
+    <button id="savedClose" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">×</button>
+  </div>
+  <input type="text" id="savedSearch" placeholder="Search by name or client…" style="width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:12px">
+  <div id="savedList" class="help">Loading…</div>
+</div>
 
 <div class="wrap">
 
@@ -270,7 +281,7 @@ $('go').onclick = async ()=>{
       headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const d = await r.json();
     if(d.error){ $('out').innerHTML = '<div class="err">'+d.error+'</div>'; }
-    else render(d, payload);
+    else{ lastQuote = d; lastPayload = payload; render(d, payload); autoSave(); }
   }catch(e){ $('out').innerHTML = '<div class="err">Request failed: '+e+'</div>'; }
   $('go').disabled = false;
 };
@@ -314,7 +325,9 @@ function render(d, payload){
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
   }
+  h += renderSaveBox();
   $('out').innerHTML = h;
+  wireSaveBox();
 }
 
 // ---------------- brand scan ----------------
@@ -460,6 +473,146 @@ function renderNegCounts(done){
   });
   h += '</table>';
   $('negOut').innerHTML = h;
+}
+
+// ---------------- saving (mirrors SEO tool: auto-save when priced) ----------------
+let CURRENT_QUOTE_ID = null, CURRENT_QUOTE_NAME = '', SAVING_ENABLED = null, lastQuote = null, lastPayload = null;
+const jbody = o => ({method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(o)});
+
+async function savingStatus(){
+  if(SAVING_ENABLED !== null) return SAVING_ENABLED;
+  try{ SAVING_ENABLED = (await (await fetch('/api/quotes/status')).json()).enabled; }
+  catch(e){ SAVING_ENABLED = false; }
+  return SAVING_ENABLED;
+}
+
+function collectForm(){
+  const f = {};
+  ['brand','domain','terms','nReviews','marginPct','nArtStd','nArtPrem','volume','termSets','nLocations'].forEach(id=>{
+    const el = $(id); if(el) f[id] = el.value;
+  });
+  ['useReviews','useArticles','useSuppression','useAutosuggest'].forEach(id=>{ f[id] = $(id).checked; });
+  f.campaign = campaign;
+  return f;
+}
+function restoreForm(f){
+  if(!f) return;
+  Object.keys(f).forEach(k=>{
+    const el = $(k); if(!el) return;
+    if(el.type === 'checkbox') el.checked = !!f[k]; else el.value = f[k] ?? '';
+  });
+  if(f.campaign){
+    campaign = f.campaign;
+    document.querySelectorAll('.ctype').forEach(x=>x.classList.toggle('on', x.dataset.c===campaign));
+  }
+  syncVisibility();
+}
+
+async function autoSave(){
+  if(!await savingStatus() || !lastQuote) return;
+  const name = CURRENT_QUOTE_NAME || (($('brand').value.trim()||'Rep quote')+' — '+new Date().toLocaleDateString());
+  const payload = {form: collectForm(), quote: lastQuote, rep_totals: lastQuote.totals};
+  try{
+    let r;
+    if(CURRENT_QUOTE_ID){
+      r = await (await fetch('/api/quotes/'+CURRENT_QUOTE_ID, {method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({payload, name, client: $('brand').value.trim()})})).json();
+    }else{
+      r = await (await fetch('/api/quotes', jbody({payload, name, client: $('brand').value.trim(), tool:'rep'}))).json();
+      if(r.id){ CURRENT_QUOTE_ID = r.id; CURRENT_QUOTE_NAME = name; }
+    }
+    const st = $('saveStatus');
+    if(st) st.textContent = r.error ? ('Save failed: '+r.error)
+      : '✓ Auto-saved as “'+(CURRENT_QUOTE_NAME||name)+'” (quote #'+CURRENT_QUOTE_ID+'). Each update snapshots the prior version to history.';
+  }catch(e){ const st=$('saveStatus'); if(st) st.textContent='Save failed: '+e; }
+}
+
+function renderSaveBox(){
+  return '<div style="margin-top:16px;border-top:1px dashed var(--line);padding-top:12px">'
+    + '<div class="row"><div><label style="margin-top:0">Quote name</label>'
+    + '<input type="text" id="qname" value="'+(CURRENT_QUOTE_NAME||'').replace(/"/g,'&quot;')+'" placeholder="e.g. Sage Dental — rep cleanup"></div>'
+    + '<div style="flex:0 0 auto;display:flex;gap:8px;align-items:flex-end">'
+    + '<button class="btn2" id="saveBtn" type="button">'+(CURRENT_QUOTE_ID?'Update':'Save')+'</button>'
+    + (CURRENT_QUOTE_ID?'<button class="btn2" id="saveNewBtn" type="button">Save as new</button>':'')
+    + '</div></div><div class="help" id="saveStatus" style="margin-top:6px"></div></div>';
+}
+function wireSaveBox(){
+  const b = $('saveBtn'); if(!b) return;
+  b.onclick = async ()=>{
+    CURRENT_QUOTE_NAME = $('qname').value.trim() || CURRENT_QUOTE_NAME;
+    await autoSave();
+  };
+  const nb = $('saveNewBtn');
+  if(nb) nb.onclick = async ()=>{
+    CURRENT_QUOTE_ID = null;
+    CURRENT_QUOTE_NAME = $('qname').value.trim() || '';
+    await autoSave();
+  };
+}
+
+// drawer
+$('savedBtn').onclick = openSaved;
+$('savedClose').onclick = ()=>{ $('savedPanel').style.display='none'; };
+$('savedSearch').oninput = ()=>{ clearTimeout(window._st); window._st=setTimeout(loadSavedList, 300); };
+async function openSaved(){
+  $('savedPanel').style.display='block';
+  loadSavedList();
+}
+async function loadSavedList(){
+  const q = $('savedSearch').value.trim();
+  try{
+    const r = await (await fetch('/api/quotes?tool=rep'+(q?('&q='+encodeURIComponent(q)):''))).json();
+    if(!r.enabled){ $('savedList').innerHTML = 'Saving isn\'t enabled — attach a Postgres database in Render.'; return; }
+    if(!r.quotes.length){ $('savedList').innerHTML = 'No saved rep quotes yet.'; return; }
+    let h = '';
+    r.quotes.forEach(x=>{
+      h += '<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px">'
+        + '<b style="color:var(--atlas);font-size:13.5px">'+x.name+'</b>'
+        + (x.client? '<span class="help" style="display:inline;margin:0"> · '+x.client+'</span>':'')
+        + '<div class="help" style="margin:3px 0 6px">'
+        + (x.base!=null? 'One-time $'+x.base.toLocaleString()+' · ':'')
+        + (x.intermediate!=null? '$'+x.intermediate.toLocaleString()+'/mo · ':'')
+        + new Date(x.updated_at).toLocaleDateString()+'</div>'
+        + '<button class="btn2" onclick="loadSavedQuote('+x.id+')">Open</button> '
+        + '<button class="btn2" onclick="showVersions('+x.id+', this)">History</button> '
+        + '<button class="btn2" style="border-color:#e7a9a9;color:#8a2b2b" onclick="deleteSavedQuote('+x.id+')">Delete</button>'
+        + '<div class="vlist"></div></div>';
+    });
+    $('savedList').innerHTML = h;
+  }catch(e){ $('savedList').innerHTML = 'Failed to load: '+e; }
+}
+async function loadSavedQuote(id){
+  const q = await (await fetch('/api/quotes/'+id)).json();
+  if(q.error){ alert(q.error); return; }
+  CURRENT_QUOTE_ID = q.id; CURRENT_QUOTE_NAME = q.name;
+  restoreForm((q.payload||{}).form);
+  lastQuote = (q.payload||{}).quote || null;
+  if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
+  $('savedPanel').style.display='none';
+}
+async function showVersions(id, btn){
+  const box = btn.parentElement.querySelector('.vlist');
+  if(box.innerHTML){ box.innerHTML=''; return; }
+  const r = await (await fetch('/api/quotes/'+id+'/versions')).json();
+  const vs = r.versions || [];
+  if(!vs.length){ box.innerHTML = '<div class="help" style="margin-top:6px">No prior versions.</div>'; return; }
+  box.innerHTML = vs.map(v=>'<div class="help" style="margin-top:6px">'+new Date(v.snapshot_at).toLocaleString()
+    + ' — <a href="#" onclick="loadVersion('+v.id+');return false">restore</a></div>').join('');
+}
+async function loadVersion(vid){
+  const v = await (await fetch('/api/quotes/version/'+vid)).json();
+  if(v.error){ alert(v.error); return; }
+  CURRENT_QUOTE_ID = v.quote_id;
+  restoreForm((v.payload||{}).form);
+  lastQuote = (v.payload||{}).quote || null;
+  if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
+  $('savedPanel').style.display='none';
+}
+async function deleteSavedQuote(id){
+  if(!confirm('Delete this saved quote and its history?')) return;
+  await fetch('/api/quotes/'+id, {method:'DELETE'});
+  if(CURRENT_QUOTE_ID === id){ CURRENT_QUOTE_ID = null; CURRENT_QUOTE_NAME=''; }
+  loadSavedList();
 }
 </script>
 </body>

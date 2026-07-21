@@ -90,6 +90,8 @@ def init_db():
     # Share-token column for read-only review links (idempotent for existing DBs).
     with _conn() as conn, conn.cursor() as cur:
         cur.execute("ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;")
+        # Which tab owns the quote: 'seo' (default keeps legacy rows) or 'rep'.
+        cur.execute("ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tool TEXT NOT NULL DEFAULT 'seo';")
         conn.commit()
 
 
@@ -124,22 +126,27 @@ def load_by_token(token):
 
 
 def _tiers(payload):
-    """Pull the 3 client-tier prices out of a saved quote for list display."""
+    """Pull display prices for the saved-quotes list. SEO quotes: the three
+    client tiers. Rep quotes: one-time -> base, monthly -> intermediate (the
+    columns are reused rather than widening the schema)."""
     try:
+        rt = payload.get("rep_totals")
+        if rt:
+            return rt.get("one_time"), rt.get("monthly"), None
         ct = payload.get("pricing", {}).get("client_tiers", {})
         return ct.get("base"), ct.get("intermediate"), ct.get("advanced")
     except Exception:
         return None, None, None
 
 
-def save_quote(name, client, payload):
+def save_quote(name, client, payload, tool="seo"):
     """Create a new saved quote. Returns its id."""
     b, i, a = _tiers(payload)
     with _conn() as conn, conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO quotes (name, client, payload, base, intermediate, advanced) "
-            "VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
-            (name, client or "", json.dumps(payload), b, i, a))
+            "INSERT INTO quotes (name, client, payload, base, intermediate, advanced, tool) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+            (name, client or "", json.dumps(payload), b, i, a, tool or "seo"))
         qid = cur.fetchone()[0]
         conn.commit()
         return qid
@@ -223,19 +230,20 @@ def delete_version(version_id):
         return True
 
 
-def list_quotes(search=""):
-    """List saved quotes (newest first), optionally filtered by name/client."""
+def list_quotes(search="", tool="seo"):
+    """List saved quotes for one tool (newest first), optionally filtered by
+    name/client. Default 'seo' keeps the SEO drawer's behavior unchanged."""
     with _conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         if search:
             like = f"%{search}%"
             cur.execute(
                 "SELECT id, name, client, base, intermediate, advanced, created_at, updated_at "
-                "FROM quotes WHERE name ILIKE %s OR client ILIKE %s ORDER BY updated_at DESC",
-                (like, like))
+                "FROM quotes WHERE tool=%s AND (name ILIKE %s OR client ILIKE %s) "
+                "ORDER BY updated_at DESC", (tool or "seo", like, like))
         else:
             cur.execute(
                 "SELECT id, name, client, base, intermediate, advanced, created_at, updated_at "
-                "FROM quotes ORDER BY updated_at DESC")
+                "FROM quotes WHERE tool=%s ORDER BY updated_at DESC", (tool or "seo",))
         out = []
         for r in cur.fetchall():
             d = dict(r)

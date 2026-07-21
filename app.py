@@ -2844,7 +2844,8 @@ def api_quotes_list():
     if not storage.enabled():
         return jsonify({"enabled": False, "quotes": []})
     search = (request.args.get("q") or "").strip()
-    return jsonify({"enabled": True, "quotes": storage.list_quotes(search)})
+    tool = (request.args.get("tool") or "seo").strip()
+    return jsonify({"enabled": True, "quotes": storage.list_quotes(search, tool)})
 
 def _json_error_guard(fn):
     """Saves were failing as opaque 'Server 500 (timeout or non-JSON)' — a bare
@@ -2872,7 +2873,8 @@ def api_quotes_save():
         return jsonify({"error": "Give the quote a name."}), 400
     client = (d.get("client") or "").strip()
     payload = d.get("payload") or {}
-    qid = storage.save_quote(name, client, payload)
+    tool = (d.get("tool") or "seo").strip()
+    qid = storage.save_quote(name, client, payload, tool)
     return jsonify({"ok": True, "id": qid})
 
 @app.route("/api/quotes/<int:qid>", methods=["GET"])
