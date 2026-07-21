@@ -51,12 +51,20 @@ REP_CFG = {
         "pay_on_success": True,
     },
 
-    # ------------------------------------------------------ article removals
+    # ------------------------------------------------ website/article removals
+    # Whole-order brackets = Brendan's Visions Electronics actuals (2024).
+    # Premium (DA>35 / news-legal class) = Tru North actual $7,500. Brendan's
+    # notes: always custom quoted + human review — these are starting anchors.
     "article_removal": {
-        # DA > 35 = premium (doc). Dollar figures are PLACEHOLDERS.
-        "standard": {"label": "Standard site (DA \u2264 35)", "per_article": 2500},
-        "premium":  {"label": "Premium site (DA > 35 \u2014 CNN-class)", "per_article": 7500},
-        "timeline": "1\u20136 months",
+        "brackets": [
+            {"min": 1,  "max": 3,    "per": 5950},
+            {"min": 4,  "max": 6,    "per": 5750},
+            {"min": 7,  "max": 10,   "per": 5350},
+            {"min": 11, "max": 15,   "per": 5150},
+            {"min": 16, "max": None, "per": 4950},
+        ],
+        "premium_per": 7500,
+        "timeline": "2\u20133 months average, up to 6",
         "pay_on_success": True,
     },
 
@@ -64,30 +72,49 @@ REP_CFG = {
     # monthly = base + per_1k * (monthly brand search volume / 1000), CEIL50,
     # clamped to [floor, cap]. Components can be quoted together or singly.
     "search_protection": {
-        # Recalibrated 2026-07-21: original solve assumed Sage at ~20K/mo;
-        # the live scan measured 51,330/mo. base + $10/1K reproduces Brendan's
-        # Sage actuals EXACTLY at the measured volume: $3,450 / $3,950.
         "suppression": {                       # organic search suppression
             "label": "Organic Search Suppression",
             "base": 2900, "per_1k": 10,
             "floor": 2900, "cap": 7500,
-            "timeline": "4\u20136 months, then evaluate (may extend to 12)",
+            # Intensity tiers per Brendan's Tru North structure: same work,
+            # different monthly volume -> speed. Steps are his exact ±$1,000.
+            "tiers": {
+                "base":     {"offset": -1000, "timeline": "10\u201314 months to results"},
+                "standard": {"offset": 0,     "timeline": "8\u201310 months to results"},
+                "advanced": {"offset": 1000,  "timeline": "7\u20139 months to results"},
+            },
         },
-        "autosuggest": {                       # auto-suggest + related searches
-            "label": "Auto-Suggest & Related Search Manipulation",
+        "autosuggest": {
+            "label": "Auto-Suggest Manipulation",
             "base": 3400, "per_1k": 10,
             "floor": 3400, "cap": 7950,
             "timeline": "2\u20133 months to results, then 3\u20136 months maintenance",
-            # Priced PER TERM SET (Sage: "Sage Dental" + "Sage Dental Reviews"
-            # was one $3,950 campaign). Additional distinct term sets scale.
-            "per_extra_term_set_pct": 0.50,    # each extra set adds 50% of computed monthly
+            "included_negatives": 3,
+            "per_extra_negative": 250,          # GUESS
+            # Guaranteed per-phrase actuals span $4,125 (Goldstone 2020, 2
+            # phrases) to $9,250 (Goldstone 2021, 1 complex phrase) —
+            # complexity-driven per Brendan's notes. Editable per quote.
+            "guaranteed_per_phrase": 4125,
+            "guaranteed_timeline": "45\u201360 days\u20136 months, pay on success",
+            "maintenance_monthly": 750,          # Goldstone actual, 6-mo minimum
         },
-        # Volume-feasibility warning: campaign only works if our contracted
-        # searches exceed the negative-modifier searches. Below this monthly
-        # brand volume we flag it as low-signal / easy win; above the cap
-        # threshold we flag for manual review.
+        # Related Searches — priced SEPARATELY in every Brendan example
+        # (Goldstone '21, Bing/DDG '25, Visions '24, Sage '26). Google uses
+        # the same volume formula; maintenance = Visions actual $2,150/mo.
+        "related": {
+            "label": "Related Search Manipulation",
+            "base": 3400, "per_1k": 10,
+            "floor": 3400, "cap": 7950,
+            "timeline": "\u224885% success over 6 months (per keyword)",
+            "maintenance_monthly": 2150,
+            "maintenance_timeline": "3\u20136 months post-removal maintenance",
+        },
+        # Bing/DuckDuckGo are FLAT monthlies (Goldstone 2025 actuals), not a
+        # multiplier on the Google formula: each engine is its own campaign.
+        "alt_engine_flat": {"autosuggest": 1500, "related": 1250},
+        "alt_engine_timeline": "6\u20138 months to fully resolve, then maintenance",
         "review_above_volume": 150000,
-        "bundle_discount_pct": 0.0,            # optional discount when both components run
+        "bundle_discount_pct": 0.0,
     },
 
     # ------------------------------------------------- proactive brand shield
@@ -158,22 +185,34 @@ def price_reviews(n, margin_pct=None):
 
 
 def price_articles(n_standard, n_premium):
-    """Article removals split by DA tier."""
+    """Website/article removals. Standard sites use the Visions whole-order
+    bracket; premium (DA>35 / news-legal) at the Tru North flat rate."""
     cfg = REP_CFG["article_removal"]
     lines = []
-    for key, n in (("standard", n_standard), ("premium", n_premium)):
-        n = max(0, int(n or 0))
-        if n == 0:
-            continue
-        per = cfg[key]["per_article"]
+    n = max(0, int(n_standard or 0))
+    if n:
+        per = next(b["per"] for b in cfg["brackets"]
+                   if n >= b["min"] and (b["max"] is None or n <= b["max"]))
         lines.append({
-            "service": "Negative Article Removals",
-            "detail": f"{cfg[key]['label']} \u00b7 {n} article{'s' if n != 1 else ''} @ ${per:,}/removed article",
-            "qty": n, "unit": per, "kind": "per_asset",
-            "total": per * n,
+            "service": "Negative Website/Article Removals",
+            "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed "
+                      "(whole-order bracket, Visions actuals)",
+            "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
-            "notes": ["Pay on success \u2014 billed per removed article.",
-                      "Some sensitive content cannot be removed."],
+            "notes": ["Pay on success \u2014 billed only for sites removed.",
+                      "Always custom-quoted after human review (Brendan)."],
+        })
+    p = max(0, int(n_premium or 0))
+    if p:
+        lines.append({
+            "service": "Negative Website/Article Removals",
+            "detail": f"{p} premium site{'s' if p != 1 else ''} (DA > 35 / news-legal) "
+                      f"@ ${cfg['premium_per']:,}/removed (Tru North actual)",
+            "qty": p, "unit": cfg["premium_per"], "kind": "per_asset",
+            "total": cfg["premium_per"] * p,
+            "timeline": "10\u201314 weeks typical (12-month contract window)",
+            "notes": ["Pay on success \u2014 ~50% success on premium hosts.",
+                      "Always custom-quoted after human review (Brendan)."],
         })
     return lines
 
@@ -185,50 +224,222 @@ def _vol_monthly(component, volume):
     return min(c["cap"], max(c["floor"], r50(raw)))
 
 
-def price_search_protection(volume, use_suppression, use_autosuggest, term_sets=1):
-    """Monthly recurring lines for the Search Protection components."""
+def price_search_protection(volume, use_suppression, use_autosuggest,
+                            suppression_tier="standard", as_mode="ongoing",
+                            n_negatives=3, engine="google",
+                            use_related=False, guaranteed_per_phrase=None):
+    """Suppression / auto-suggest / related-search lines.
+    engine: google (volume formula) | bing | ddg (flat monthlies, Goldstone
+    2025 actuals — each engine is its own campaign)."""
     sp = REP_CFG["search_protection"]
     lines, warnings = [], []
     if volume and volume > sp["review_above_volume"]:
         warnings.append(
             f"Brand volume {volume:,}/mo exceeds the {sp['review_above_volume']:,} "
-            "review threshold \u2014 auto-suggest feasibility depends on out-searching "
-            "the negative modifiers; confirm capacity before quoting.")
+            "review threshold \u2014 confirm out-search capacity before quoting.")
+    eng_name = {"google": "Google", "bing": "Bing", "ddg": "DuckDuckGo"}.get(engine, "Google")
+
     if use_suppression:
-        m = _vol_monthly("suppression", volume)
+        c = sp["suppression"]
+        tier = c["tiers"].get(suppression_tier) or c["tiers"]["standard"]
+        m = min(c["cap"], max(c["floor"], r50(c["base"] + c["per_1k"] * (max(0, volume) / 1000.0))))
+        m = max(1000, r50(m + tier["offset"]))
         lines.append({
             "service": "Search Protection \u2014 Organic Search Suppression",
-            "detail": f"${sp['suppression']['base']:,} base + $"
-                      f"{sp['suppression']['per_1k']}/1K searches on {volume:,}/mo brand volume",
-            "kind": "monthly", "total": m,
-            "timeline": sp["suppression"]["timeline"],
-            "notes": ["Targeted link building + optimized owned assets to push "
-                      "negative media down the results."],
+            "detail": f"{suppression_tier.capitalize()} intensity \u00b7 ${c['base']:,} base "
+                      f"+ ${c['per_1k']}/1K on {volume:,}/mo brand volume "
+                      f"{'+' if tier['offset'] >= 0 else '\u2212'}${abs(tier['offset']):,} tier",
+            "kind": "monthly", "total": m, "timeline": tier["timeline"],
+            "notes": ["Positive content, link building, and owned-asset optimization "
+                      "to push negative media down.",
+                      "Tier changes monthly work volume \u2014 higher tiers reach results faster."],
         })
+
+    def _vol(c):
+        return min(c["cap"], max(c["floor"], r50(c["base"] + c["per_1k"] * (max(0, volume) / 1000.0))))
+
     if use_autosuggest:
-        m = _vol_monthly("autosuggest", volume)
-        extra = max(0, int(term_sets or 1) - 1)
-        total = r50(m * (1 + extra * sp["autosuggest"]["per_extra_term_set_pct"]))
-        det = (f"${sp['autosuggest']['base']:,} base + $"
-               f"{sp['autosuggest']['per_1k']}/1K searches on {volume:,}/mo brand volume")
-        if extra:
-            det += (f" \u00b7 {term_sets} term sets "
-                    f"(+{int(sp['autosuggest']['per_extra_term_set_pct']*100)}% per extra set)")
-        lines.append({
-            "service": "Search Protection \u2014 Auto-Suggest & Related Searches",
-            "detail": det, "kind": "monthly", "total": total,
-            "timeline": sp["autosuggest"]["timeline"],
-            "notes": ["Includes Branded Search Append.",
-                      "Succeeds only while our contracted search volume exceeds "
-                      "the negative-modifier volume."],
-        })
-    # optional bundle discount when both components run
-    if use_suppression and use_autosuggest and sp["bundle_discount_pct"]:
+        c = sp["autosuggest"]
+        n = max(1, int(n_negatives or 1))
+        if engine in ("bing", "ddg"):
+            lines.append({
+                "service": f"Search Protection \u2014 Auto-Suggest ({eng_name})",
+                "detail": f"${sp['alt_engine_flat']['autosuggest']:,}/mo flat "
+                          "(Goldstone 2025 actual)",
+                "kind": "monthly", "total": sp["alt_engine_flat"]["autosuggest"],
+                "timeline": sp["alt_engine_timeline"],
+                "notes": ["Each engine is a separate campaign."],
+            })
+        elif as_mode == "guaranteed":
+            per = int(guaranteed_per_phrase or c["guaranteed_per_phrase"])
+            lines.append({
+                "service": "Search Protection \u2014 Guaranteed Phrase Removal",
+                "detail": f"{n} negative phrase{'s' if n != 1 else ''} @ ${per:,}/phrase "
+                          "(actuals span $4,125\u2013$9,250 by complexity)",
+                "kind": "per_asset", "total": per * n,
+                "timeline": c["guaranteed_timeline"],
+                "notes": ["Pay on success \u2014 nothing upfront; billed only for "
+                          "phrases removed."],
+            })
+            lines.append({
+                "service": "Search Protection \u2014 Phrase Maintenance",
+                "detail": f"${c['maintenance_monthly']:,}/mo following removal",
+                "kind": "monthly", "total": c["maintenance_monthly"],
+                "timeline": "6-month minimum, 9\u201312 months recommended",
+                "notes": ["Keeps removed phrases suppressed (Goldstone actual)."],
+            })
+        else:
+            m = _vol(c)
+            extra = max(0, n - c["included_negatives"])
+            m = r50(m + extra * c["per_extra_negative"])
+            det = (f"${c['base']:,} base + ${c['per_1k']}/1K on {volume:,}/mo "
+                   f"brand volume \u00b7 {n} negative phrase{'s' if n != 1 else ''}")
+            if extra:
+                det += f" (+${c['per_extra_negative']}/phrase beyond {c['included_negatives']} \u2014 guess)"
+            lines.append({
+                "service": "Search Protection \u2014 Auto-Suggest Manipulation",
+                "detail": det, "kind": "monthly", "total": m, "timeline": c["timeline"],
+                "notes": ["Includes Branded Search Append.",
+                          "Succeeds only while contracted search volume exceeds "
+                          "the negative-modifier volume."],
+            })
+
+    if use_related:
+        c = sp["related"]
+        if engine in ("bing", "ddg"):
+            lines.append({
+                "service": f"Search Protection \u2014 Related Searches ({eng_name})",
+                "detail": f"${sp['alt_engine_flat']['related']:,}/mo flat "
+                          "(Goldstone 2025 actual)",
+                "kind": "monthly", "total": sp["alt_engine_flat"]["related"],
+                "timeline": sp["alt_engine_timeline"],
+                "notes": ["Each engine is a separate campaign."],
+            })
+        else:
+            lines.append({
+                "service": "Search Protection \u2014 Related Search Manipulation",
+                "detail": f"${c['base']:,} base + ${c['per_1k']}/1K on {volume:,}/mo "
+                          "brand volume \u00b7 until negative removed",
+                "kind": "monthly", "total": _vol(c), "timeline": c["timeline"],
+                "notes": ["Priced per keyword carrying negatives."],
+            })
+            lines.append({
+                "service": "Search Protection \u2014 Related Search Maintenance",
+                "detail": f"${c['maintenance_monthly']:,}/mo after removal (Visions actual)",
+                "kind": "monthly", "total": c["maintenance_monthly"],
+                "timeline": c["maintenance_timeline"],
+                "notes": ["Not billed concurrently with the active phase \u2014 "
+                          "sequential: active \u2192 maintenance."],
+            })
+
+    if use_suppression and (use_autosuggest or use_related) and sp["bundle_discount_pct"]:
         for ln in lines:
-            ln["total"] = r50(ln["total"] * (1 - sp["bundle_discount_pct"]))
-        warnings.append(f"Search Protection bundle discount applied: "
-                        f"{int(sp['bundle_discount_pct']*100)}%.")
+            if ln["kind"] == "monthly":
+                ln["total"] = r50(ln["total"] * (1 - sp["bundle_discount_pct"]))
     return lines, warnings
+
+
+# --------------------------------------------------------- bbb remediation
+# Brendan's July notes: "BBB remediation — tiers based on # of complaints."
+# NO pricing datapoint exists — every number below is a GUESS to confirm.
+BBB_BRACKETS = [
+    {"min": 1,  "max": 5,    "per": 650},
+    {"min": 6,  "max": 15,   "per": 550},
+    {"min": 16, "max": None, "per": 450},
+]
+
+def price_bbb(n):
+    n = max(0, int(n or 0))
+    if n == 0:
+        return None
+    per = next(b["per"] for b in BBB_BRACKETS
+               if n >= b["min"] and (b["max"] is None or n <= b["max"]))
+    return {
+        "service": "BBB Remediation",
+        "detail": f"{n} complaint{'s' if n != 1 else ''} @ ${per:,}/complaint "
+                  "(whole-order bracket)",
+        "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
+        "timeline": "Via BBB dispute process \u2014 timeline varies",
+        "notes": ["GUESS pricing \u2014 no Brendan datapoint yet; confirm brackets.",
+                  "BBB complaints cannot be bought off the platform \u2014 "
+                  "remediation works the BBB's own dispute/response process."],
+    }
+
+
+# Sage Digital Partner proposal actuals (Sept 2025): GEO $4,950/mo setup
+# phase, $9,950/mo scale phase. Applied here as reputational GEO — shaping
+# AI-overview / LLM answers about the brand.
+GEO = {"setup": {"monthly": 4950, "timeline": "First 1\u20132 quarters \u2014 LLM "
+                "setup, citations, AI-crawlable positive assets"},
+       "scale": {"monthly": 9950, "timeline": "Ongoing \u2014 scaled citation and "
+                 "content program as AI search share grows"}}
+
+def price_geo(phase="setup"):
+    p = GEO.get(phase) or GEO["setup"]
+    return {"service": "Reputational GEO (AI Search)",
+            "detail": f"{phase.capitalize()} phase \u2014 shapes AI Overview / LLM "
+                      "answers about the brand (Sage actuals)",
+            "kind": "monthly", "total": p["monthly"], "timeline": p["timeline"],
+            "notes": ["Targets the negative AI-generated result the scan detects.",
+                      "Recommend setup phase 1\u20132 quarters, then scale."]}
+
+
+# Hobart Wealth actuals (2021): PR pay-per-placement.
+PR = {"premium": 8000, "secondary": 4500, "release": 1500}
+
+def price_pr(premium=0, secondary=0, releases=0):
+    lines = []
+    for key, n, label in (("premium", premium, "Premium placement (Newsweek/WSJ-class)"),
+                          ("secondary", secondary, "Secondary placement (regional/niche)"),
+                          ("release", releases, "Press release")):
+        n = max(0, int(n or 0))
+        if n:
+            lines.append({"service": "PR Placements",
+                          "detail": f"{n} \u00d7 {label} @ ${PR[key]:,} each",
+                          "qty": n, "unit": PR[key], "kind": "per_asset",
+                          "total": PR[key] * n,
+                          "timeline": "Quarterly cadence recommended",
+                          "notes": ["Pay per placement \u2014 only successful "
+                                    "placements are billed (Hobart actuals)."]})
+    return lines
+
+
+# Goldstone Yelp actuals: $790/stuck Yelp review (2021, pay on success);
+# Google $105/review min 5/mo (2021). Dated — confirm with Brendan.
+REVIEW_GEN = {"yelp": {"per": 790, "label": "Yelp (stuck reviews)", "min": 1},
+              "google": {"per": 105, "label": "Google", "min": 5}}
+
+def price_review_gen(platform="google", count=0):
+    n = max(0, int(count or 0))
+    if n == 0:
+        return None
+    c = REVIEW_GEN.get(platform) or REVIEW_GEN["google"]
+    n = max(n, c["min"])
+    return {"service": "Review Generation",
+            "detail": f"{c['label']} \u00b7 {n} reviews @ ${c['per']:,}/review"
+                      + (f" (min {c['min']}/mo)" if c["min"] > 1 else ""),
+            "qty": n, "unit": c["per"], "kind": "per_asset", "total": c["per"] * n,
+            "timeline": "4\u20136 months (Yelp) / monthly batches (Google)",
+            "notes": ["Pay on successful posting (Goldstone actuals, 2020\u201321 "
+                      "\u2014 dated, confirm current rates).",
+                      "Yelp alternative when reviews can't stick: page deindexing "
+                      "from Google, \u2248$10,000 one-time."]}
+
+
+# Kim Anami actuals (2021): $4,950 + $6,250 per video — midpoint $5,600
+# default; always custom quoted per Brendan's notes.
+def price_video(count=0, per_video=5600):
+    n = max(0, int(count or 0))
+    if n == 0:
+        return None
+    per = int(per_video or 5600)
+    return {"service": "Negative Video Removals",
+            "detail": f"{n} video{'s' if n != 1 else ''} @ ${per:,}/video "
+                      "(Kim Anami actuals: $4,950\u2013$6,250)",
+            "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
+            "timeline": "Guaranteed \u2014 pay on success",
+            "notes": ["Removes from YouTube AND Google for the listed search terms.",
+                      "Always custom-quoted by complexity (Brendan)."]}
 
 
 def price_shield(locations=1):
@@ -273,9 +484,31 @@ def build_rep_quote(payload):
         sp_lines, sp_warn = price_search_protection(
             int(se.get("volume") or 0),
             bool(se.get("suppression")), bool(se.get("autosuggest")),
-            int(se.get("term_sets") or 1))
+            se.get("suppression_tier") or "standard",
+            se.get("as_mode") or "ongoing",
+            int(se.get("n_negatives") or 3),
+            se.get("engine") or "google",
+            bool(se.get("related")),
+            se.get("guaranteed_per_phrase"))
         phase1 += sp_lines
         warnings += sp_warn
+        bb = payload.get("bbb") or {}
+        bln = price_bbb(bb.get("count", 0))
+        if bln:
+            phase1.append(bln)
+        ge = payload.get("geo") or {}
+        if ge.get("enabled"):
+            phase1.append(price_geo(ge.get("phase") or "setup"))
+        pr = payload.get("pr") or {}
+        phase1 += price_pr(pr.get("premium", 0), pr.get("secondary", 0), pr.get("releases", 0))
+        rg = payload.get("review_gen") or {}
+        rln = price_review_gen(rg.get("platform") or "google", rg.get("count", 0))
+        if rln:
+            phase1.append(rln)
+        vd = payload.get("video") or {}
+        vln = price_video(vd.get("count", 0), vd.get("per_video") or 5600)
+        if vln:
+            phase1.append(vln)
 
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}

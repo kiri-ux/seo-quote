@@ -164,19 +164,89 @@
               <input type="number" id="marginPct" min="0" max="90" step="1" value="35">
             </div>
           </div>
-          <p class="help">Vici rate card, whole-order hard-cost brackets: 1–25 $585 · 26–50 $552.50 · 51–100 $520 · 101–250 $487.50 · 251–350 $455 · 351–500 $422.50 per review. Client gross = hard ÷ (1 − margin); at 35% that's $900 → $650. Pay on success — some sensitive content can't be removed.</p>
+          <p class="help">Vici rate card, whole-order hard-cost brackets: 1–25 $585 · 26–50 $552.50 · 51–100 $520 · 101–250 $487.50 · 251–350 $455 · 351–500 $422.50 per review. Client gross = hard ÷ (1 − margin); at 35% that's $900 → $650. Pay on success. <b>Every order needs a human review first</b> to confirm the reviews are actually removable (Brendan).</p>
+          <details style="margin:4px 0 10px">
+            <summary style="font-size:12.5px;color:var(--atlas);cursor:pointer;font-weight:600">What can and can't be removed</summary>
+            <div class="help" style="margin-top:6px">
+              <b>Removable (this service):</b> Google Business reviews — the removal partners work Google exclusively.<br><br>
+              <b>NOT removable via review removal</b> — route to the noted alternative instead:<br>
+              · <b>Yelp</b> — reviews can't be removed → Review Generation ($790/stuck review) or page deindexing from Google (≈$10,000 one-time)<br>
+              · <b>Glassdoor / Indeed</b> — employment reviews, removal only via legal process → suppression<br>
+              · <b>BBB</b> — complaints can't be bought off the platform → BBB Remediation (below)<br>
+              · <b>Trustpilot / Ripoff Report / complaint boards / Reddit threads</b> — can't remove the review itself, but the whole page can often be removed from Google via Website Removal (Visions precedent: complaintsboard, pissedconsumer, Reddit, Trustpilot pages)<br>
+              · <b>News articles / legal databases</b> — that's the Article Removal service, not review removal
+            </div>
+          </details>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl">Negative Article Removals</span><span class="pillnote">$ placeholder — Brendan</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl">Negative Website/Article Removals</span></div>
         <div id="articleFields" class="hidden">
           <div class="row">
-            <div><label>Standard sites (DA ≤ 35)</label><input type="number" id="nArtStd" min="0" value="0"></div>
-            <div><label>Premium sites (DA > 35)</label><input type="number" id="nArtPrem" min="0" value="0"></div>
+            <div><label>Standard sites</label><input type="number" id="nArtStd" min="0" value="0"></div>
+            <div><label>Premium sites (DA > 35 / news-legal)</label><input type="number" id="nArtPrem" min="0" value="0"></div>
           </div>
-          <p class="help">Premium = high-authority hosts (CNN-class). Pay on success, 1–6 month timelines.</p>
+          <p class="help">Standard: Visions actuals, whole-order — 1–3 $5,950 · 4–6 $5,750 · 7–10 $5,350 · 11–15 $5,150 · 16+ $4,950 per removed site. Premium: $7,500 flat (Tru North actual). Pay on success. Always custom-quoted after human review.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational GEO (AI Search)</span></div>
+        <div id="geoFields" class="hidden">
+          <label>Phase</label>
+          <select id="geoPhase">
+            <option value="setup" selected>Setup — $4,950/mo (Sage actual, 1–2 quarters)</option>
+            <option value="scale">Scale — $9,950/mo (Sage actual, ongoing)</option>
+          </select>
+          <p class="help">Shapes AI Overview / LLM answers about the brand — targets the negative AI-generated result the scan detects.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="usePr"><span class="slider"></span></label><span class="lbl">PR Placements</span></div>
+        <div id="prFields" class="hidden">
+          <div class="row">
+            <div><label>Premium ($8,000)</label><input type="number" id="nPrPrem" min="0" value="0"></div>
+            <div><label>Secondary ($4,500)</label><input type="number" id="nPrSec" min="0" value="0"></div>
+            <div><label>Releases ($1,500)</label><input type="number" id="nPrRel" min="0" value="0"></div>
+          </div>
+          <p class="help">Hobart actuals, pay per successful placement. Recommended cadence: 1 premium + 1–2 secondary + 1–2 releases per quarter.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useRevGen"><span class="slider"></span></label><span class="lbl">Review Generation</span><span class="pillnote">2020–21 rates — confirm</span></div>
+        <div id="revGenFields" class="hidden">
+          <div class="row">
+            <div>
+              <label>Platform</label>
+              <select id="rgPlatform">
+                <option value="google" selected>Google — $105/review, min 5/mo</option>
+                <option value="yelp">Yelp — $790/stuck review, pay on success</option>
+              </select>
+            </div>
+            <div><label># of reviews</label><input type="number" id="nRevGen" min="0" value="0"></div>
+          </div>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useVideo"><span class="slider"></span></label><span class="lbl">Negative Video Removals</span></div>
+        <div id="videoFields" class="hidden">
+          <div class="row">
+            <div><label># of videos</label><input type="number" id="nVideo" min="0" value="0"></div>
+            <div><label>$/video</label><input type="number" id="perVideo" min="0" step="50" value="5600"></div>
+          </div>
+          <p class="help">Kim Anami actuals: $4,950–$6,250/video, guaranteed pay-on-success, removes from YouTube + Google. Always custom-quoted — edit $/video per case.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useBbb"><span class="slider"></span></label><span class="lbl">BBB Remediation</span><span class="pillnote">$ guess — Brendan</span></div>
+        <div id="bbbFields" class="hidden">
+          <label># of BBB complaints</label>
+          <input type="number" id="nBbb" min="0" value="0">
+          <p class="help">Works the BBB's own dispute/response process — complaints can't be paid off the platform. Bracket guesses: 1–5 $650 · 6–15 $550 · 16+ $450 per complaint.</p>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSuppression"><span class="slider"></span></label><span class="lbl">Organic Search Suppression</span></div>
+        <div id="suppFields" class="hidden">
+          <label>Intensity <span class="pillnote">± steps — Brendan's Tru North tiers</span></label>
+          <select id="suppTier">
+            <option value="base">Base — slower (10–14 mo to results, −$1,000/mo)</option>
+            <option value="standard" selected>Standard — 8–10 mo to results</option>
+            <option value="advanced">Advanced — fastest (7–9 mo, +$1,000/mo)</option>
+          </select>
+        </div>
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useAutosuggest"><span class="slider"></span></label><span class="lbl">Auto-Suggest &amp; Related Searches</span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
@@ -189,9 +259,27 @@
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
           <div id="asExtra" class="hidden">
-            <label># of distinct term sets</label>
-            <input type="number" id="termSets" min="1" value="1">
-            <p class="help">Sage precedent: "Sage Dental" + "Sage Dental Reviews" = one term set at one monthly fee. A separate campaign target (e.g. an executive's name) = a second set (+50%).</p>
+            <div class="row">
+              <div>
+                <label>Approach</label>
+                <select id="asMode">
+                  <option value="ongoing" selected>Ongoing manipulation — monthly (Sage model)</option>
+                  <option value="guaranteed">Guaranteed phrase removal — one-time, pay on success (Goldstone model)</option>
+                </select>
+              </div>
+              <div>
+                <label># of negative phrases</label>
+                <input type="number" id="nNegPhrases" min="1" value="3">
+              </div>
+              <div>
+                <label>Search engine</label>
+                <select id="asEngine">
+                  <option value="google" selected>Google</option>
+                  <option value="bing_ddg">Bing / DuckDuckGo (×0.65 — guess)</option>
+                </select>
+              </div>
+            </div>
+            <p class="help" id="negPhraseNote">Per Brendan: priced on # of negatives + searches/mo for those terms; scan auto-fills the count. Ongoing includes 3 phrases (+$250/mo each beyond — guess). Guaranteed actuals span $4,125–$9,250/phrase by complexity — edit per quote; + $750/mo maintenance, 6-mo min. Related is a separate campaign per every Brendan example: Google runs the volume formula until removed, then $2,150/mo maintenance (Visions actual). Bing/DDG: flat monthlies per engine.</p>
           </div>
         </div>
       </div>
@@ -216,7 +304,7 @@
     </div>
   </div>
 
-  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula calibrated to Brendan\u2019s Sage actuals at the MEASURED 51,330/mo volume \u2014 $2,900/$3,400 base + $10/1K lands $3,450/$3,950 exactly. Article-removal and Brand Shield dollars are placeholders pending Brendan.</p>
+  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula calibrated to Brendan\u2019s Sage actuals at the MEASURED 51,330/mo volume \u2014 $2,900/$3,400 base + $10/1K lands $3,450/$3,950 exactly. Anchored to Brendan actuals across 7 proposals: Sage '26 (volume formula), Tru North (premium article $7,500, ±$1,000 suppression tiers), Goldstone '20/'21/'25 (guaranteed $4,125–$9,250/phrase, $750 maintenance, Bing/DDG flats), Visions (site brackets $5,950→$4,950, related maintenance $2,150), Kim Anami (video $4,950–$6,250), Hobart (PR $8,000/$4,500/$1,500), Sage Digital Partner (GEO $4,950/$9,950). Remaining guesses: BBB brackets, +$250/extra phrase, review-gen currency (2020–21 rates), Brand Shield $. Open Brendan question: Visions review removals ran $500→$250 direct vs Vici hard cost $585+ — reconcile the rate card.</p>
 </div>
 
 <script>
@@ -229,10 +317,18 @@ function syncVisibility(){
   $('secReactive').classList.toggle('hidden', !showReactive);
   $('secProactive').classList.toggle('hidden', !showProactive);
   $('proNum').textContent = showReactive ? '4' : '3';
-  const searchOn = $('useSuppression').checked || $('useAutosuggest').checked;
-  $('searchFields').classList.toggle('hidden', !searchOn);
   $('asExtra').classList.toggle('hidden', !$('useAutosuggest').checked);
+  $('suppFields').classList.toggle('hidden', !$('useSuppression').checked);
+  $('bbbFields').classList.toggle('hidden', !$('useBbb').checked);
   $('reviewFields').classList.toggle('hidden', !$('useReviews').checked);
+  $('geoFields').classList.toggle('hidden', !$('useGeo').checked);
+  $('prFields').classList.toggle('hidden', !$('usePr').checked);
+  $('revGenFields').classList.toggle('hidden', !$('useRevGen').checked);
+  $('videoFields').classList.toggle('hidden', !$('useVideo').checked);
+  const searchOn2 = $('useSuppression').checked || $('useAutosuggest').checked || $('useRelated').checked;
+  $('searchFields').classList.toggle('hidden', !searchOn2);
+  $('asExtra').classList.toggle('hidden', !($('useAutosuggest').checked || $('useRelated').checked));
+  $('gppWrap').classList.toggle('hidden', $('asMode').value !== 'guaranteed');
   $('articleFields').classList.toggle('hidden', !$('useArticles').checked);
 }
 
@@ -242,9 +338,10 @@ document.querySelectorAll('.ctype').forEach(el=>{
     el.classList.add('on'); campaign = el.dataset.c; syncVisibility();
   };
 });
-['useReviews','useArticles','useSuppression','useAutosuggest'].forEach(id=>{
+['useReviews','useArticles','useSuppression','useAutosuggest','useRelated','useBbb','useGeo','usePr','useRevGen','useVideo'].forEach(id=>{
   $(id).onchange = syncVisibility;
 });
+$('asMode').onchange = syncVisibility;
 syncVisibility();
 
 $('pullVol').onclick = async ()=>{
@@ -273,7 +370,15 @@ $('go').onclick = async ()=>{
     reviews: $('useReviews').checked ? {count: +$('nReviews').value||0, margin_pct: (+$('marginPct').value||35)/100} : {count:0},
     articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0} : {},
     search: {volume:+$('volume').value||0, suppression:$('useSuppression').checked,
-             autosuggest:$('useAutosuggest').checked, term_sets:+$('termSets').value||1},
+             suppression_tier:$('suppTier').value, autosuggest:$('useAutosuggest').checked,
+             as_mode:$('asMode').value, n_negatives:+$('nNegPhrases').value||3,
+             engine:$('asEngine').value, related:$('useRelated').checked,
+             guaranteed_per_phrase:+$('gppPrice').value||4125},
+    geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
+    pr: $('usePr').checked ? {premium:+$('nPrPrem').value||0, secondary:+$('nPrSec').value||0, releases:+$('nPrRel').value||0} : {},
+    review_gen: $('useRevGen').checked ? {platform:$('rgPlatform').value, count:+$('nRevGen').value||0} : {},
+    video: $('useVideo').checked ? {count:+$('nVideo').value||0, per_video:+$('perVideo').value||5600} : {},
+    bbb: $('useBbb').checked ? {count:+$('nBbb').value||0} : {},
     shield: {locations:+$('nLocations').value||1},
   };
   try{
@@ -386,7 +491,7 @@ function renderSerp(d){
   if(d.ai_overview){
     const cls = (d.ai_negative && d.ai_negative.length) ? 'warn' : 'help';
     h += '<div class="'+cls+'" style="margin:6px 0">AI Overview'
-       + (d.ai_negative && d.ai_negative.length ? ' — negative terms: <b>'+d.ai_negative.join('</b>, <b>')+'</b>' : '')
+       + (d.ai_negative && d.ai_negative.length ? ' — negative terms: <b>'+d.ai_negative.join('</b>, <b>')+'</b> → consider <b>Reputational GEO</b>' : '')
        + '<div class="help" style="margin:4px 0 0">'+d.ai_overview.slice(0,300)+'…</div></div>';
   }
   h += '<table class="stbl"><tr><th>#</th><th>Result</th><th style="text-align:right">Rating</th></tr>';
@@ -400,13 +505,26 @@ function renderSerp(d){
        + '<div class="help" style="margin:0">'+(f.title||'')+'</div></td><td class="n">—</td></tr>';
   });
   h += '</table>';
-  if(d.negative_related && d.negative_related.length)
+  if(d.negative_related && d.negative_related.length){
     h += '<div class="warn" style="margin-top:8px">Negative related searches: <b>'+d.negative_related.join('</b> · <b>')+'</b></div>';
+    d.negative_related.forEach(x=>window._negPhrases.add(x.toLowerCase()));
+    bumpNegPhrases();
+  }
   $('scanOut').innerHTML += h;
 }
 
+window._negPhrases = new Set();
+function bumpNegPhrases(){
+  if(window._negPhrases.size){
+    $('nNegPhrases').value = window._negPhrases.size;
+    $('negPhraseNote').innerHTML = '<b>'+window._negPhrases.size+' negative phrases auto-counted from scan:</b> '
+      + [...window._negPhrases].join(' · ')+'. Ongoing includes 3 (+$250/mo each beyond — guess). Guaranteed: $4,125/phrase one-time + $750/mo maintenance.';
+  }
+}
 function renderAutocomplete(ac){
   if(ac.error){ $('scanOut').innerHTML += '<div class="err">'+ac.error+'</div>'; return; }
+  Object.values(ac).forEach(a=>{ (a && a.negative || []).forEach(x=>window._negPhrases.add(x.toLowerCase())); });
+  bumpNegPhrases();
   let h = '';
   Object.keys(ac).forEach(k=>{
     const a = ac[k]; if(!a || a.error) return;
@@ -501,10 +619,10 @@ async function savingStatus(){
 
 function collectForm(){
   const f = {};
-  ['brand','domain','terms','nReviews','marginPct','nArtStd','nArtPrem','volume','termSets','nLocations'].forEach(id=>{
+  ['brand','domain','terms','nReviews','marginPct','nArtStd','nArtPrem','volume','nNegPhrases','nBbb','nLocations','suppTier','asMode','asEngine','gppPrice','geoPhase','nPrPrem','nPrSec','nPrRel','rgPlatform','nRevGen','nVideo','perVideo'].forEach(id=>{
     const el = $(id); if(el) f[id] = el.value;
   });
-  ['useReviews','useArticles','useSuppression','useAutosuggest'].forEach(id=>{ f[id] = $(id).checked; });
+  ['useReviews','useArticles','useSuppression','useAutosuggest','useRelated','useBbb','useGeo','usePr','useRevGen','useVideo'].forEach(id=>{ f[id] = $(id).checked; });
   f.campaign = campaign;
   return f;
 }
