@@ -66,15 +66,17 @@
     background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
     padding:9px 12px;font-size:12px;font-weight:400;color:var(--muted);line-height:1.55}
   .tipwrap:hover .tip{display:block}
-  .gmock{background:#202124;border-radius:12px;padding:14px;margin:8px 0;max-width:520px}
-  .gmock .gtitle{color:#bdc1c6;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-  .acrow{display:flex;align-items:center;gap:10px;color:#e8eaed;font-size:14px;padding:6px 10px;border-radius:6px}
-  .acrow.negx{background:#3c1f1f;color:#f6b8b8}
-  .acrow .mag{opacity:.55;font-size:12px}
+  .gmock{background:#fff;border:1px solid #dfe1e5;border-radius:12px;padding:14px;margin:8px 0;max-width:520px;
+    box-shadow:0 1px 6px rgba(32,33,36,.08)}
+  .gmock .gtitle{color:#70757a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .acrow{display:flex;align-items:center;gap:10px;color:#202124;font-size:14px;padding:6px 10px;border-radius:6px}
+  .acrow.negx{background:#fce8e6;color:#c5221f}
+  .acrow .mag{opacity:.45;font-size:12px}
+  .acrow.emptyk{color:#9aa0a6;font-style:italic}
   .pasfgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .pasftile{display:flex;align-items:center;justify-content:space-between;background:#303134;color:#e8eaed;
+  .pasftile{display:flex;align-items:center;justify-content:space-between;background:#f1f3f4;color:#202124;
     font-size:13px;padding:10px 12px;border-radius:8px}
-  .pasftile.negx{background:#3c1f1f;color:#f6b8b8}
+  .pasftile.negx{background:#fce8e6;color:#c5221f}
   .shotimg{max-width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px}
   .tac{display:inline-block;background:#eef4fb;color:var(--atlas);padding:1px 8px;border-radius:20px;
     font-size:11px;font-weight:700;margin-left:6px}
@@ -490,13 +492,13 @@ async function captureShot(keyword){
   $('shotProg').textContent = 'Queuing…';
   try{
     const q = await (await fetch('/api/serp_queue', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({keyword, geo_values: [], device: 'desktop'})})).json();
+      body: JSON.stringify({keyword, geo_values: [], device: 'desktop', width: 1600, scale: 2})})).json();
     if(q.error){ $('shotProg').textContent = q.error; $('shotBtn').disabled=false; return; }
     let tries = 0;
     const poll = async ()=>{
       if(++tries > 24){ $('shotProg').textContent = 'Timed out — try again shortly.'; $('shotBtn').disabled=false; return; }
       const r = await (await fetch('/api/serp_fetch', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({task_id: q.task_id, keyword, device:'desktop'})})).json();
+        body: JSON.stringify({task_id: q.task_id, keyword, device:'desktop', width: 1600, scale: 2, trim: true, max_h: 1200})})).json();
       if(r.error){ $('shotProg').textContent = r.error; $('shotBtn').disabled=false; return; }
       if(!r.ready){ $('shotProg').textContent = 'Rendering… ('+tries+')'; setTimeout(poll, 5000); return; }
       window._scanData = window._scanData || {};
@@ -522,11 +524,17 @@ function renderFacsimiles(ac){
   const serp = (window._scanData||{}).serp || {};
   const brand = $('brand').value.trim();
   let h = '';
-  const acKeys = Object.keys(ac||{}).filter(k=>ac[k] && !ac[k].error && (ac[k].suggestions||[]).length);
+  // "{brand} reviews" is the money query (Brendan's exhibit) — render it first,
+  // and show empty/errored terms explicitly instead of silently skipping them.
+  const revKey = (brand+' reviews').toLowerCase();
+  const acKeys = Object.keys(ac||{}).sort((a,b)=> (a===revKey?-1:0) - (b===revKey?-1:0));
   acKeys.forEach(k=>{
+    const a = ac[k] || {};
     h += '<div class="gmock"><div class="gtitle">Auto-suggest · "'+k+'" (rendered from live data)</div>';
-    (ac[k].suggestions||[]).slice(0,12).forEach(sg=>{
-      const neg = (ac[k].negative||[]).includes(sg);
+    if(a.error){ h += '<div class="acrow emptyk">lookup failed: '+a.error+'</div>'; }
+    else if(!(a.suggestions||[]).length){ h += '<div class="acrow emptyk">no suggestions returned — retry Scan brand</div>'; }
+    else (a.suggestions||[]).slice(0,12).forEach(sg=>{
+      const neg = (a.negative||[]).includes(sg);
       h += '<div class="acrow'+(neg?' negx':'')+'"><span class="mag">🔍</span><span>'+boldMod(sg, brand)+'</span></div>';
     });
     h += '</div>';

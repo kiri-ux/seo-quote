@@ -2380,6 +2380,56 @@ def api_serp_queue():
         return jsonify({"error": f"Unexpected error: {e}"}), 500
 
 @app.route("/api/serp_fetch", methods=["POST"])
+def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110, keep=36):
+    """Collapse tall near-blank horizontal bands in a SERP screenshot (the AI
+    Mode 'Thinking' placeholder leaves hundreds of empty pixels), optionally
+    cap the final height, and re-encode as JPEG. Blank detection samples a
+    40px-wide downscale per row, so it's fast even on 8000px pages."""
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    w, h = im.size
+    strip = im.resize((40, h))
+    px = strip.load()
+    blank = []
+    for y in range(h):
+        row_ok = True
+        for x in range(40):
+            r, g, b = px[x, y]
+            if r < blank_thresh or g < blank_thresh or b < blank_thresh:
+                row_ok = False
+                break
+        blank.append(row_ok)
+    segments, y = [], 0
+    while y < h:
+        if blank[y]:
+            start = y
+            while y < h and blank[y]:
+                y += 1
+            run = y - start
+            if run > collapse_over:
+                segments.append((start, start + keep))       # keep a sliver
+            else:
+                segments.append((start, y))
+        else:
+            start = y
+            while y < h and not blank[y]:
+                y += 1
+            segments.append((start, y))
+    new_h = sum(b - a2 for a2, b in segments)
+    out = Image.new("RGB", (w, new_h), (255, 255, 255))
+    cy = 0
+    for a2, b in segments:
+        band = im.crop((0, a2, w, b))
+        out.paste(band, (0, cy))
+        cy += b - a2
+    if max_h and out.size[1] > max_h:
+        out = out.crop((0, 0, w, max_h))
+    buf = io.BytesIO()
+    out.save(buf, "JPEG", quality=85)
+    return buf.getvalue()
+
+
 def api_serp_fetch():
     """Step B — try to fetch the screenshot for a queued task_id. Returns the
     image if ready, or {ready:false} if still processing. Frontend polls this.
@@ -2408,9 +2458,19 @@ def api_serp_fetch():
         tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
         img = requests.get(image_url, headers={"Authorization": f"Basic {tok}"}, timeout=60)
         img.raise_for_status()
-        b64 = base64.b64encode(img.content).decode()
+        content, mime = img.content, "image/png"
+        if d.get("trim"):
+            # Rep-tool proposal shots: collapse blank bands (AI-overview
+            # placeholder renders as a huge white gap), cap height for a
+            # landscape-ish exhibit, JPEG to keep saved-quote payloads sane.
+            try:
+                content = _trim_serp_image(content, max_h=int(d.get("max_h") or 0) or None)
+                mime = "image/jpeg"
+            except Exception as _te:
+                print(f"[serp trim] skipped: {_te}")
+        b64 = base64.b64encode(content).decode()
         return jsonify({"ready": True, "keyword": keyword,
-                        "data_url": f"data:image/png;base64,{b64}"})
+                        "data_url": f"data:{mime};base64,{b64}"})
     except requests.HTTPError as e:
         # screenshot endpoint returns an error while the task is still running;
         # treat as not-ready rather than a hard failure so the poll continues
