@@ -2379,7 +2379,6 @@ def api_serp_queue():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
 
-@app.route("/api/serp_fetch", methods=["POST"])
 def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110, keep=36):
     """Collapse tall near-blank horizontal bands in a SERP screenshot (the AI
     Mode 'Thinking' placeholder leaves hundreds of empty pixels), optionally
@@ -2430,6 +2429,7 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
     return buf.getvalue()
 
 
+@app.route("/api/serp_fetch", methods=["POST"])
 def api_serp_fetch():
     """Step B — try to fetch the screenshot for a queued task_id. Returns the
     image if ready, or {ready:false} if still processing. Frontend polls this.
