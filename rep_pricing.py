@@ -257,11 +257,12 @@ def _vol_monthly(component, volume):
 # no longer wired into build_rep_quote.
 # =====================================================================
 SEARCH_BUNDLE = {
-    # Sum of the former components: suppression ($2,900 + $10/1K) +
-    # auto-suggest/related ($3,400 + $10/1K). Sage replay: $7,400/mo —
-    # identical to Brendan quoting the two lines separately. Confirm with
-    # Brendan whether the bundle should carry a discount vs components.
-    "base": 6300, "per_1k": 20, "floor": 6300, "cap": 15450,
+    # Sum of the former components: suppression + auto-suggest/related, each
+    # CEIL50'd before summing. Sage replay: $3,450 + $3,950 = $7,400/mo —
+    # identical to Brendan quoting the two lines separately. All keys below
+    # are editable live via /api/rep_config.
+    "supp_base": 2900, "as_base": 3400, "comp_per_1k": 10,
+    "floor": 6300, "cap": 15450,
     "timeline": "4\u20136 months, then evaluate (may extend to 12)",
 }
 
@@ -270,12 +271,13 @@ def price_search_bundle(volume):
     # this replays Brendan's Sage quote exactly ($3,450 + $3,950 = $7,400);
     # rounding the summed formula instead lands $50 low.
     v = max(0, volume) / 1000.0
-    m = r50(2900 + 10 * v) + r50(3400 + 10 * v)
+    m = (r50(SEARCH_BUNDLE["supp_base"] + SEARCH_BUNDLE["comp_per_1k"] * v)
+         + r50(SEARCH_BUNDLE["as_base"] + SEARCH_BUNDLE["comp_per_1k"] * v))
     m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], m))
     return {
         "service": "Search Protection Bundle",
-        "detail": f"${SEARCH_BUNDLE['base']:,} base + ${SEARCH_BUNDLE['per_1k']}/1K "
-                  f"on {volume:,}/mo brand volume",
+        "detail": f"${SEARCH_BUNDLE['supp_base'] + SEARCH_BUNDLE['as_base']:,} base "
+                  f"+ ${SEARCH_BUNDLE['comp_per_1k'] * 2}/1K on {volume:,}/mo brand volume",
         "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
         "notes": ["Includes Organic Search Suppression, Auto-Suggest & Related "
                   "Search Manipulation, and Branded Search Append.",

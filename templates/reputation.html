@@ -121,7 +121,10 @@
 <header>
   <div class="hrow">
     <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— Rep Mgmt · pay-on-success removals · volume-formula search protection</span></h1>
+    <div style="display:flex;gap:8px">
+    <button id="cfgBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
     <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
+    </div>
   </div>
   <nav class="tabs">
     <a href="/">SEO Quote</a>
@@ -137,6 +140,18 @@
   </div>
   <input type="text" id="savedSearch" placeholder="Search by name or client…" style="width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:12px">
   <div id="savedList" class="help">Loading…</div>
+</div>
+
+<!-- Pricing config drawer -->
+<div id="cfgPanel" style="display:none;position:fixed;top:0;right:0;width:460px;max-width:92vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:200;overflow-y:auto;padding:20px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+    <h2 style="margin:0;color:var(--atlas);font-size:15px">Pricing config</h2>
+    <button id="cfgClose" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">×</button>
+  </div>
+  <p class="help" style="margin:0 0 12px">Applies to the running session for live tuning — a redeploy reverts to the file defaults. Rebuild the quote after applying.</p>
+  <div id="cfgBody" class="help">Loading…</div>
+  <button class="btn" id="cfgApply" style="margin-top:14px">Apply</button>
+  <div class="help" id="cfgStatus" style="margin-top:8px"></div>
 </div>
 
 <div class="wrap">
@@ -839,6 +854,64 @@ async function deleteSavedQuote(id){
   if(CURRENT_QUOTE_ID === id){ CURRENT_QUOTE_ID = null; CURRENT_QUOTE_NAME=''; }
   loadSavedList();
 }
+
+// ---------------- pricing config panel ----------------
+$('cfgBtn').onclick = openCfg;
+$('cfgClose').onclick = ()=>{ $('cfgPanel').style.display='none'; };
+let CFG_CACHE = null;
+async function openCfg(){
+  $('cfgPanel').style.display='block';
+  try{
+    CFG_CACHE = await (await fetch('/api/rep_config')).json();
+    renderCfg(CFG_CACHE);
+  }catch(e){ $('cfgBody').innerHTML = 'Failed to load: '+e; }
+}
+const cfgIn = (id, val, step) => '<input type="number" step="'+(step||50)+'" id="'+id+'" value="'+val+'" style="width:110px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;text-align:right">';
+function cfgRow(label, inner){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0"><span style="font-size:13px;color:var(--ink)">'+label+'</span><span>'+inner+'</span></div>'; }
+function cfgHdr(txt){ return '<div class="scanhdr" style="margin-top:14px">'+txt+'</div>'; }
+function renderCfg(c){
+  let h = cfgHdr('Review Removals (hard cost / review)');
+  h += cfgRow('Default margin (% of gross)', cfgIn('c_margin', Math.round(c.review_margin_pct*100), 1));
+  c.review_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_rb'+i, b.hard, 12.5)); });
+  h += cfgHdr('Website Removals ($ / site)');
+  c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
+  h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
+  h += cfgHdr('Search Protection Bundle');
+  h += cfgRow('Suppression component base', cfgIn('c_supp', c.bundle.supp_base));
+  h += cfgRow('Auto-suggest/related component base', cfgIn('c_as', c.bundle.as_base));
+  h += cfgRow('$ per 1K volume (each component)', cfgIn('c_p1k', c.bundle.comp_per_1k, 1));
+  h += cfgRow('Floor / Cap', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
+  h += cfgHdr('Proactive Brand Shield');
+  h += cfgRow('Monthly', cfgIn('c_shield', c.shield_monthly));
+  h += cfgRow('Per extra location', cfgIn('c_shloc', c.shield_per_extra_location));
+  h += cfgHdr('Reputational AI Search');
+  h += cfgRow('Setup /mo', cfgIn('c_geos', c.geo.setup));
+  h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));
+  h += cfgHdr('Reactive + Proactive bundle');
+  h += cfgRow('Recurring-line discount %', cfgIn('c_bdisc', Math.round(c.bundle_discount_pct*100), 1));
+  $('cfgBody').innerHTML = h;
+}
+$('cfgApply').onclick = async ()=>{
+  if(!CFG_CACHE) return;
+  const v = id => +document.getElementById(id).value || 0;
+  const payload = {
+    review_margin_pct: v('c_margin')/100,
+    review_brackets: CFG_CACHE.review_brackets.map((b,i)=>({hard: v('c_rb'+i)})),
+    site_brackets: CFG_CACHE.site_brackets.map((b,i)=>({per: v('c_sb'+i)})),
+    site_premium_per: v('c_sprem'),
+    bundle: {supp_base: v('c_supp'), as_base: v('c_as'), comp_per_1k: v('c_p1k'),
+             floor: v('c_floor'), cap: v('c_cap')},
+    shield_monthly: v('c_shield'), shield_per_extra_location: v('c_shloc'),
+    geo: {setup: v('c_geos'), scale: v('c_geoc')},
+    bundle_discount_pct: v('c_bdisc')/100,
+  };
+  $('cfgStatus').textContent = 'Applying…';
+  try{
+    const r = await (await fetch('/api/rep_config', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)})).json();
+    $('cfgStatus').textContent = r.error ? ('Failed: '+r.error) : '✓ Applied to the running session — rebuild the quote to see new pricing. Also update the margin field in the form if you changed the default.';
+  }catch(e){ $('cfgStatus').textContent = 'Failed: '+e; }
+};
 </script>
 </body>
 </html>

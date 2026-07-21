@@ -3127,6 +3127,61 @@ def api_rep_reviews_collect():
 def reputation():
     return render_template("reputation.html")
 
+@app.route("/api/rep_config", methods=["GET"])
+def api_rep_config_get():
+    """Expose the rep-tool tunables for the pricing panel — mirror of the
+    SEO tool's /api/config."""
+    rc = rep_pricing.REP_CFG
+    return jsonify({
+        "review_margin_pct": rc["review_removal"]["default_margin_pct"],
+        "review_brackets": rc["review_removal"]["brackets"],
+        "site_brackets": rc["article_removal"]["brackets"],
+        "site_premium_per": rc["article_removal"]["premium_per"],
+        "bundle": {k: rep_pricing.SEARCH_BUNDLE[k]
+                   for k in ("supp_base", "as_base", "comp_per_1k", "floor", "cap")},
+        "shield_monthly": rc["shield"]["monthly"],
+        "shield_per_extra_location": rc["shield"]["per_extra_location"],
+        "geo": {p: rep_pricing.GEO[p]["monthly"] for p in ("setup", "scale")},
+        "bundle_discount_pct": rc["bundle"]["recurring_discount_pct"],
+    })
+
+@app.route("/api/rep_config", methods=["POST"])
+def api_rep_config_set():
+    """Apply edited constants to the running session (not persisted — a
+    restart reverts to file defaults). Same live-tuning model as the SEO tool."""
+    d = request.get_json(force=True)
+    rc = rep_pricing.REP_CFG
+    try:
+        if "review_margin_pct" in d:
+            rc["review_removal"]["default_margin_pct"] = min(0.90, max(0.0, float(d["review_margin_pct"])))
+        if "review_brackets" in d and isinstance(d["review_brackets"], list):
+            for i, b in enumerate(d["review_brackets"]):
+                if i < len(rc["review_removal"]["brackets"]) and "hard" in b:
+                    rc["review_removal"]["brackets"][i]["hard"] = float(b["hard"])
+        if "site_brackets" in d and isinstance(d["site_brackets"], list):
+            for i, b in enumerate(d["site_brackets"]):
+                if i < len(rc["article_removal"]["brackets"]) and "per" in b:
+                    rc["article_removal"]["brackets"][i]["per"] = int(float(b["per"]))
+        if "site_premium_per" in d:
+            rc["article_removal"]["premium_per"] = int(float(d["site_premium_per"]))
+        if "bundle" in d and isinstance(d["bundle"], dict):
+            for k in ("supp_base", "as_base", "comp_per_1k", "floor", "cap"):
+                if k in d["bundle"]:
+                    rep_pricing.SEARCH_BUNDLE[k] = int(float(d["bundle"][k])) if k != "comp_per_1k" else float(d["bundle"][k])
+        if "shield_monthly" in d:
+            rc["shield"]["monthly"] = int(float(d["shield_monthly"]))
+        if "shield_per_extra_location" in d:
+            rc["shield"]["per_extra_location"] = int(float(d["shield_per_extra_location"]))
+        if "geo" in d and isinstance(d["geo"], dict):
+            for p in ("setup", "scale"):
+                if p in d["geo"]:
+                    rep_pricing.GEO[p]["monthly"] = int(float(d["geo"][p]))
+        if "bundle_discount_pct" in d:
+            rc["bundle"]["recurring_discount_pct"] = min(0.9, max(0.0, float(d["bundle_discount_pct"])))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": f"Config apply failed: {e}"}), 400
+
 @app.route("/api/rep_quote", methods=["POST"])
 def api_rep_quote():
     d = request.get_json(force=True)
