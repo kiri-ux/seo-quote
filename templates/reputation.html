@@ -247,7 +247,8 @@
             <option value="advanced">Advanced — fastest (7–9 mo, +$1,000/mo)</option>
           </select>
         </div>
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useAutosuggest"><span class="slider"></span></label><span class="lbl">Auto-Suggest &amp; Related Searches</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useAutosuggest"><span class="slider"></span></label><span class="lbl">Auto-Suggest Manipulation</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useRelated"><span class="slider"></span></label><span class="lbl">Related Search Manipulation</span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
           <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
@@ -274,9 +275,14 @@
               <div>
                 <label>Search engine</label>
                 <select id="asEngine">
-                  <option value="google" selected>Google</option>
-                  <option value="bing_ddg">Bing / DuckDuckGo (×0.65 — guess)</option>
+                  <option value="google" selected>Google — volume formula</option>
+                  <option value="bing">Bing — flat $1,500/$1,250 per mo (actual)</option>
+                  <option value="ddg">DuckDuckGo — flat $1,500/$1,250 per mo (actual)</option>
                 </select>
+              </div>
+              <div id="gppWrap" class="hidden">
+                <label>Guaranteed $/phrase</label>
+                <input type="number" id="gppPrice" min="0" step="125" value="4125">
               </div>
             </div>
             <p class="help" id="negPhraseNote">Per Brendan: priced on # of negatives + searches/mo for those terms; scan auto-fills the count. Ongoing includes 3 phrases (+$250/mo each beyond — guess). Guaranteed actuals span $4,125–$9,250/phrase by complexity — edit per quote; + $750/mo maintenance, 6-mo min. Related is a separate campaign per every Brendan example: Google runs the volume formula until removed, then $2,150/mo maintenance (Visions actual). Bing/DDG: flat monthlies per engine.</p>
@@ -317,7 +323,6 @@ function syncVisibility(){
   $('secReactive').classList.toggle('hidden', !showReactive);
   $('secProactive').classList.toggle('hidden', !showProactive);
   $('proNum').textContent = showReactive ? '4' : '3';
-  $('asExtra').classList.toggle('hidden', !$('useAutosuggest').checked);
   $('suppFields').classList.toggle('hidden', !$('useSuppression').checked);
   $('bbbFields').classList.toggle('hidden', !$('useBbb').checked);
   $('reviewFields').classList.toggle('hidden', !$('useReviews').checked);
