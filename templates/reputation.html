@@ -216,7 +216,7 @@
     </div>
   </div>
 
-  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula solved against the Sage Dental sample ($3,450 suppression / $3,950 auto-suggest at an assumed ~20K/mo brand volume). Article-removal and Brand Shield dollars are placeholders pending Brendan.</p>
+  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula calibrated to Brendan\u2019s Sage actuals at the MEASURED 51,330/mo volume \u2014 $2,900/$3,400 base + $10/1K lands $3,450/$3,950 exactly. Article-removal and Brand Shield dollars are placeholders pending Brendan.</p>
 </div>
 
 <script>
@@ -293,7 +293,7 @@ function render(d, payload){
   (d.warnings||[]).forEach(w=> h += '<div class="warn">'+w+'</div>');
 
   h += '<div class="totals">';
-  h += '<div class="tot"><div class="name">One-time / per-asset</div><div class="price">'+money(d.totals.one_time)+'</div></div>';
+  h += '<div class="tot"><div class="name">One-time / per-asset (max)</div><div class="price">'+money(d.totals.one_time)+'</div></div>';
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   const first = d.totals.one_time + d.totals.monthly;
   h += '<div class="tot"><div class="name">First-month total</div><div class="price">'+money(first)+'</div></div>';
@@ -318,7 +318,7 @@ function render(d, payload){
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
        + internal
-       + '</td><td>'+l.timeline+'</td><td class="amt">'+money(l.total)+per+'</td></tr>';
+       + '</td><td>'+l.timeline+'</td><td class="amt">'+(l.kind==='per_asset'?'up to ':'')+money(l.total)+per+'</td></tr>';
   });
   h += '</table>';
 
@@ -422,7 +422,8 @@ function renderLocs(d){
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
   if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">'+(d.error_detail||'None found in the listings database.')+'</p>'; return; }
-  h += '<table class="stbl"><tr><th></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
+  h += '<p class="help" style="margin:2px 0 6px">Locations under 4.0★ are pre-checked — those are the likely removal targets. Check others to include them in the count.</p>';
+  h += '<table class="stbl"><tr><th><input type="checkbox" id="lockAll" title="Select all"></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
   scanLocations.slice(0,60).forEach((l,i)=>{
     h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+((l.rating||5)<4?'checked':'')+'></td>'
        + '<td>'+l.title+'<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
@@ -435,6 +436,7 @@ function renderLocs(d){
      + '<div id="negOut"></div>';
   $('scanOut').innerHTML += h;
   $('countNegBtn').onclick = submitNegCount;
+  $('lockAll').onchange = e => document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; });
 }
 
 async function submitNegCount(){

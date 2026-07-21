@@ -64,16 +64,19 @@ REP_CFG = {
     # monthly = base + per_1k * (monthly brand search volume / 1000), CEIL50,
     # clamped to [floor, cap]. Components can be quoted together or singly.
     "search_protection": {
+        # Recalibrated 2026-07-21: original solve assumed Sage at ~20K/mo;
+        # the live scan measured 51,330/mo. base + $10/1K reproduces Brendan's
+        # Sage actuals EXACTLY at the measured volume: $3,450 / $3,950.
         "suppression": {                       # organic search suppression
             "label": "Organic Search Suppression",
-            "base": 2950, "per_1k": 25,
-            "floor": 2950, "cap": 7500,
+            "base": 2900, "per_1k": 10,
+            "floor": 2900, "cap": 7500,
             "timeline": "4\u20136 months, then evaluate (may extend to 12)",
         },
         "autosuggest": {                       # auto-suggest + related searches
             "label": "Auto-Suggest & Related Search Manipulation",
-            "base": 3450, "per_1k": 25,
-            "floor": 3450, "cap": 7950,
+            "base": 3400, "per_1k": 10,
+            "floor": 3400, "cap": 7950,
             "timeline": "2\u20133 months to results, then 3\u20136 months maintenance",
             # Priced PER TERM SET (Sage: "Sage Dental" + "Sage Dental Reviews"
             # was one $3,950 campaign). Additional distinct term sets scale.
