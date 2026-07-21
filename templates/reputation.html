@@ -465,6 +465,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanCard').classList.remove('hidden');
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
+  window._reco = []; window._negPhrases = new Set();
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
   async function fetchJSON(url, o){
@@ -482,12 +483,18 @@ $('scanBtn').onclick = async ()=>{
   await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=> renderSerp(await fetchJSON('/api/rep_scan_serp', {brand, domain})));
   await step('3/4 — checking auto-suggest…', async ()=> renderAutocomplete(await fetchJSON('/api/rep_scan_autocomplete', {brand})));
   await step('4/4 — discovering Google locations…', async ()=> renderLocs(await fetchJSON('/api/rep_scan_locations', {brand})));
+  renderReco();
   $('scanProg').textContent = 'Scan complete.';
   $('scanBtn').disabled = false;
 };
 
+function reco(toggle, label, reason, sets){
+  if(!(window._reco||[]).some(r=>r.toggle===toggle))
+    window._reco.push({toggle, label, reason, sets: sets||{}});
+}
 function renderTerms(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  if(d.negative_volume > 0) reco('useSuppression','Organic Search Suppression', d.negative_volume.toLocaleString()+'/mo of negative-modifier search volume');
   if(d.total_volume){
     $('volume').value = d.total_volume;
     $('volNote').innerHTML = 'Auto-filled from scan: <b>'+d.total_volume.toLocaleString()+'/mo</b> total brand volume.';
@@ -507,6 +514,13 @@ function renderSerp(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   let h = '<div class="scanhdr">SERP Threats · "'+d.query+'"</div>';
   h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled. Review counts in the removal quote cover <b>Google Business reviews only</b> — reviews on the sites below are not in that count; each routes to the tactic shown.</p>';
+  const siteRemovals = (d.organic||[]).filter(o=>o.tactic==='site removal').length + (d.forums||[]).filter(f=>f.tactic==='site removal').length;
+  if(siteRemovals) reco('useArticles','Negative Website/Article Removals', siteRemovals+' removable pages in the threat table', {nArtStd: siteRemovals});
+  if((d.organic||[]).some(o=>o.tactic==='review gen / deindex')) reco('useRevGen','Review Generation','Yelp page ranking in the threat table');
+  if((d.organic||[]).some(o=>o.tactic==='BBB remediation')) reco('useBbb','BBB Remediation','BBB page ranking in the threat table');
+  if(d.owned_in_top10 <= 2) reco('useSuppression','Organic Search Suppression', d.owned_in_top10+' of top 10 client-controlled');
+  if(d.negative_related && d.negative_related.length) reco('useRelated','Related Search Manipulation', d.negative_related.length+' negative related searches');
+  if(d.ai_negative && d.ai_negative.length) reco('useGeo','Reputational GEO','negative AI Overview detected');
   if(d.ai_overview){
     const cls = (d.ai_negative && d.ai_negative.length) ? 'warn' : 'help';
     h += '<div class="'+cls+'" style="margin:6px 0">AI Overview'
@@ -532,7 +546,6 @@ function renderSerp(d){
   $('scanOut').innerHTML += h;
 }
 
-window._negPhrases = new Set();
 function bumpNegPhrases(){
   if(window._negPhrases.size){
     $('nNegPhrases').value = window._negPhrases.size;
@@ -543,6 +556,7 @@ function bumpNegPhrases(){
 function renderAutocomplete(ac){
   if(ac.error){ $('scanOut').innerHTML += '<div class="err">'+ac.error+'</div>'; return; }
   Object.values(ac).forEach(a=>{ (a && a.negative || []).forEach(x=>window._negPhrases.add(x.toLowerCase())); });
+  if(window._negPhrases.size) reco('useAutosuggest','Auto-Suggest Manipulation', window._negPhrases.size+' negative phrases in auto-suggest');
   bumpNegPhrases();
   let h = '';
   Object.keys(ac).forEach(k=>{
@@ -554,6 +568,24 @@ function renderAutocomplete(ac){
   $('scanOut').innerHTML += h;
 }
 
+function renderReco(){
+  const rs = window._reco||[];
+  if(!rs.length) return;
+  let h = '<div class="scanhdr">Scan Recommendations</div><div class="help" style="margin:2px 0 8px">Nothing is turned on automatically — review and apply:</div>';
+  rs.forEach(r=>{ h += '<div style="font-size:12.5px;margin:3px 0"><b style="color:var(--atlas)">'+r.label+'</b> <span class="help" style="display:inline;margin:0">— '+r.reason+'</span></div>'; });
+  h += '<button class="btn2" id="applyReco" type="button" style="margin-top:8px">Apply recommendations</button><span class="help" id="recoDone" style="margin-left:8px"></span>';
+  const box = document.createElement('div');
+  box.innerHTML = h;
+  $('scanOut').prepend(box);
+  $('applyReco').onclick = ()=>{
+    rs.forEach(r=>{
+      const el = $(r.toggle); if(el) el.checked = true;
+      Object.entries(r.sets||{}).forEach(([id,v])=>{ const f=$(id); if(f && !(+f.value)) f.value = v; });
+    });
+    syncVisibility();
+    $('recoDone').textContent = '✓ Applied — toggles set below.';
+  };
+}
 function renderLocs(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   scanLocations = d.locations || [];
