@@ -223,26 +223,52 @@ def scan_serp(brand, domain=""):
 
 def scan_autocomplete(brand):
     """Auto-suggest for the brand and '{brand} reviews' — negative flags.
-    Both keywords go in ONE DFS request (two tasks) to halve latency; this
-    lives on its own endpoint so a slow autocomplete can't drag the SERP
-    call past Render's ~100s proxy timeout."""
+    Uses client=gws-wiz (the actual Google search-box client; the DFS default
+    returns a thinner set). Terms that come back empty get a fallback pass:
+    trailing-space (next-word suggestions, matching Brendan's screenshots)
+    then last-char-trimmed prefix. Extra calls only fire for empty terms."""
     kws = [brand.lower(), f"{brand} reviews".lower()]
-    payload = [{"keyword": k, "location_code": 2840, "language_code": "en"}
-               for k in kws]
-    out = {}
-    try:
+
+    def _pull(keywords):
+        payload = [{"keyword": k, "location_code": 2840, "language_code": "en",
+                    "client": "gws-wiz"} for k in keywords]
         data = _post("/serp/google/autocomplete/live/advanced", payload,
                      timeout=30)
+        res = {}
         for task in data.get("tasks") or []:
-            kw = ((task.get("data") or {}).get("keyword") or "").lower()
+            kw = ((task.get("data") or {}).get("keyword") or "")
             sugg = []
-            for res in task.get("result") or []:
-                for it in (res or {}).get("items") or []:
+            for block in task.get("result") or []:
+                for it in (block or {}).get("items") or []:
                     if it.get("type") == "autocomplete" and it.get("suggestion"):
                         sugg.append(it["suggestion"])
-            out[kw] = {"suggestions": sugg,
-                       "negative": [x for x in sugg
-                                    if any(m in x.lower() for m in NEG_MODIFIERS)]}
+            res[kw] = sugg
+        return res
+
+    out = {}
+    try:
+        first = _pull(kws)
+        for k in kws:
+            out[k] = {"suggestions": first.get(k, []) or first.get(k.strip(), [])}
+        # fallback pass for empties: "kw " (next-word) then "kw"[:-1] (prefix)
+        empties = [k for k in kws if not out[k]["suggestions"]]
+        if empties:
+            variants = {}
+            for k in empties:
+                variants[k + " "] = (k, "next-word")
+                variants[k[:-1]] = (k, "prefix")
+            fb = _pull(list(variants.keys()))
+            for vkey, sugg in fb.items():
+                orig, how = variants.get(vkey) or variants.get(vkey.strip(), (None, None))
+                if orig and sugg and not out[orig]["suggestions"]:
+                    # keep only suggestions still about the original term
+                    keep = [x for x in sugg if orig.split()[0] in x.lower()]
+                    if keep:
+                        out[orig]["suggestions"] = keep
+                        out[orig]["via"] = how
+        for k in kws:
+            out[k]["negative"] = [x for x in out[k]["suggestions"]
+                                  if any(m in x.lower() for m in NEG_MODIFIERS)]
     except Exception as e:
         for k in kws:
             out.setdefault(k, {"error": str(e)})

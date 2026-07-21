@@ -554,16 +554,26 @@ function renderFacsimiles(ac){
   // and show empty/errored terms explicitly instead of silently skipping them.
   const revKey = (brand+' reviews').toLowerCase();
   const acKeys = Object.keys(ac||{}).sort((a,b)=> (a===revKey?-1:0) - (b===revKey?-1:0));
+  // Facsimile cards only earn space when there's a negative to exhibit —
+  // clean or empty terms collapse to one line so a Sage-type scan isn't
+  // dominated by neutral location suggestions.
   acKeys.forEach(k=>{
     const a = ac[k] || {};
-    h += '<div class="gmock"><div class="gtitle">Auto-suggest · "'+k+'" (rendered from live data)</div>';
-    if(a.error){ h += '<div class="acrow emptyk">lookup failed: '+a.error+' <button class="btn2 acRetry" type="button">Retry</button></div>'; }
-    else if(!(a.suggestions||[]).length){ h += '<div class="acrow emptyk">no suggestions returned <button class="btn2 acRetry" type="button">Retry auto-suggest only</button></div>'; }
-    else (a.suggestions||[]).slice(0,12).forEach(sg=>{
-      const neg = (a.negative||[]).includes(sg);
-      h += '<div class="acrow'+(neg?' negx':'')+'"><span class="mag">🔍</span><span>'+boldMod(sg, brand)+'</span></div>';
-    });
-    h += '</div>';
+    const via = a.via ? ' <span style="font-weight:400;text-transform:none">(via '+a.via+' fallback)</span>' : '';
+    if(a.error){
+      h += '<p class="help">Auto-suggest · "'+k+'" — lookup failed: '+a.error+' <button class="btn2 acRetry" type="button">Retry</button></p>';
+    }else if(!(a.suggestions||[]).length){
+      h += '<p class="help">Auto-suggest · "'+k+'" — no suggestions returned, even via fallbacks; Google may be suppressing suggest on this query. <button class="btn2 acRetry" type="button">Retry</button></p>';
+    }else if(!(a.negative||[]).length){
+      h += '<p class="help">Auto-suggest · "'+k+'" — '+a.suggestions.length+' suggestions, none negative (clean).</p>';
+    }else{
+      h += '<div class="gmock"><div class="gtitle">Auto-suggest · "'+k+'" (rendered from live data)'+via+'</div>';
+      (a.suggestions||[]).slice(0,12).forEach(sg=>{
+        const neg = (a.negative||[]).includes(sg);
+        h += '<div class="acrow'+(neg?' negx':'')+'"><span class="mag">🔍</span><span>'+boldMod(sg, brand)+'</span></div>';
+      });
+      h += '</div>';
+    }
   });
   const tiles = (serp.pasf && serp.pasf.length) ? serp.pasf : (serp.related||[]).slice(0,8);
   if(tiles.length){
