@@ -540,7 +540,7 @@ async function captureShot(keyword){
   const poll = async ()=>{
     if(++tries > 24){ done('Timed out after '+tries+' polls — try again shortly.'); return; }
     const r = await timedFetch('/api/serp_fetch',
-      {task_id: q.task_id, keyword, device:'desktop', width: 1600, scale: 2, trim: true, max_h: 1200}, 25000);
+      {task_id: q.task_id, keyword, device:'desktop', width: 1600, scale: 2, trim: true, max_h: 1500}, 25000);
     if(r.error){ done('Fetch failed: '+r.error); return; }
     if(!r.ready){ status('Rendering… (poll '+tries+'/24'+(r.status?' · '+r.status:'')+')'); setTimeout(poll, 5000); return; }
     window._scanData = window._scanData || {};
