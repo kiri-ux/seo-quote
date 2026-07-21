@@ -125,7 +125,7 @@
     <div class="ctypes" id="ctypes">
       <div class="ctype on" data-c="reactive"><b>Reactive</b><small>Removals + suppression cleanup</small></div>
       <div class="ctype" data-c="proactive"><b>Proactive</b><small>Brand Shield monthly bundle</small></div>
-      <div class="ctype" data-c="bundle"><b>Reactive + Proactive</b><small>Phased: cleanup → moat</small></div>
+      <div class="ctype" data-c="bundle"><b>Reactive + Proactive</b><small>Phased: cleanup → brand shield</small></div>
     </div>
   </div>
 
@@ -367,7 +367,8 @@ $('go').onclick = async ()=>{
   const payload = {
     campaign,
     brand: $('brand').value.trim(),
-    reviews: $('useReviews').checked ? {count: +$('nReviews').value||0, margin_pct: (+$('marginPct').value||35)/100} : {count:0},
+    reviews: $('useReviews').checked ? {count: +$('nReviews').value||0, margin_pct: (+$('marginPct').value||35)/100,
+      scan_meta: (window._scanProv && window._scanProv.flagged === (+$('nReviews').value||0)) ? window._scanProv : null} : {count:0},
     articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0} : {},
     search: {volume:+$('volume').value||0, suppression:$('useSuppression').checked,
              suppression_tier:$('suppTier').value, autosuggest:$('useAutosuggest').checked,
@@ -410,7 +411,7 @@ function render(d, payload){
   d.lines.forEach(l=>{
     if(isBundle && l.phase !== lastPhase){
       lastPhase = l.phase;
-      const nm = l.phase===1 ? 'Phase 1 · Triage & Cleanup (Months 1–3)' : 'Phase 2 · Moat Building & Shielding (Months 4+)';
+      const nm = l.phase===1 ? 'Phase 1 · Triage & Cleanup (Months 1–3)' : 'Phase 2 · Brand Shield (Months 4+)';
       h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
     }
     const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
@@ -423,7 +424,11 @@ function render(d, payload){
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
        + internal
-       + '</td><td>'+l.timeline+'</td><td class="amt">'+(l.kind==='per_asset'?'up to ':'')+money(l.total)+per+'</td></tr>';
+       + '</td><td>'+l.timeline+'</td><td class="amt">'
+       + (l.unit_label
+          ? '<div style="font-weight:700;color:var(--atlas)">'+l.unit_label+'</div><div class="help" style="margin:3px 0 0;text-align:right">up to '+money(l.total)+'<br>'+l.qty.toLocaleString()+' flagged</div>'
+          : (l.kind==='per_asset'?'up to ':'')+money(l.total)+per)
+       + '</td></tr>';
   });
   h += '</table>';
 
@@ -594,6 +599,12 @@ function renderNegCounts(done){
   if(!done.length) return;
   const tot12 = done.reduce((s,d)=>s+d.neg_1_2,0), tot3 = done.reduce((s,d)=>s+d.weak_3,0);
   $('nReviews').value = tot12;
+  window._scanProv = {
+    locations: done.map(d=>d.title||d.place_id),
+    total_locations: scanLocations.length,
+    truncated: done.some(d=>d.truncated),
+    flagged: tot12,
+  };
   let h = '<div class="scanhdr" style="margin-top:12px">Negative Review Counts</div>';
   h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>'+tot12.toLocaleString()+'</b> reviews at 1–2★ (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>';
   h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1–2★</th><th style="text-align:right">3★</th></tr>';

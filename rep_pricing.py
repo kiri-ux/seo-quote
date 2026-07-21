@@ -143,43 +143,67 @@ REP_CFG = {
 # mechanics
 # ---------------------------------------------------------------------------
 
-def price_reviews(n, margin_pct=None):
+def price_reviews(n, margin_pct=None, scan_meta=None):
     """Review-removal line off the Vici rate card. Whole-order bracket on the
     HARD cost; client gross derived from the editable margin (% of gross).
-    Returns the client-facing line plus an `internal` block (hard / profit)."""
+    Presented per-removal-first: the total is a pay-on-success MAXIMUM, so the
+    per-review rate and the flagged count carry the line. scan_meta (from the
+    brand scan) adds provenance: which Google locations were counted and
+    whether the flag total covers all of them."""
     n = max(0, int(n or 0))
     if n == 0:
         return None
     cfg = REP_CFG["review_removal"]
     m = cfg["default_margin_pct"] if margin_pct is None else float(margin_pct)
-    m = min(0.90, max(0.0, m))                      # sanity clamp
+    m = min(0.90, max(0.0, m))
     hard_per, over_chart = None, False
     for b in cfg["brackets"]:
         if n >= b["min"] and (b["max"] is None or n <= b["max"]):
             hard_per = b["hard"]
             break
-    if hard_per is None:                            # beyond 500 — extend top tier
+    if hard_per is None:
         hard_per = cfg["brackets"][-1]["hard"]
         over_chart = True
-    gross_per = round(hard_per / (1.0 - m) / 5.0) * 5   # clean $5 steps
+    gross_per = round(hard_per / (1.0 - m) / 5.0) * 5
     total = int(round(gross_per * n))
     hard_total = round(hard_per * n, 2)
     line = {
         "service": "Negative Review Removals",
-        "detail": f"{n} review{'s' if n != 1 else ''} @ ${gross_per:,.0f}/removed review",
-        "qty": n, "unit": gross_per, "kind": "per_asset",
-        "total": total,
+        "detail": f"${gross_per:,.0f} per removed review \u00b7 "
+                  f"{n:,} flagged review{'s' if n != 1 else ''}",
+        "qty": n, "unit": gross_per,
+        "unit_label": f"${gross_per:,.0f}/removed review",
+        "kind": "per_asset", "total": total,
         "timeline": cfg["timeline"],
-        "notes": ["Pay on success \u2014 billed per removed review; removal is not guaranteed.",
-                  "Some sensitive content cannot be removed."],
+        "notes": ["Pay on success \u2014 billed per removed review; the total is "
+                  "a maximum, not a committed spend.",
+                  "Some sensitive content cannot be removed. Every order needs "
+                  "a human review first."],
         "internal": {
             "hard_per": hard_per, "hard_total": hard_total,
             "profit_total": round(total - hard_total, 2),
             "margin_pct": m,
         },
     }
+    if scan_meta:
+        locs = [l for l in (scan_meta.get("locations") or []) if l]
+        total_locs = int(scan_meta.get("total_locations") or 0)
+        if locs:
+            shown = ", ".join(locs[:6]) + ("\u2026" if len(locs) > 6 else "")
+            line["notes"].append(
+                f"Flag source: 1\u20132\u2605 count from Google review scan of "
+                f"{len(locs)} of {total_locs} location{'s' if total_locs != 1 else ''}: {shown}")
+            if total_locs > len(locs):
+                line["notes"].append(
+                    f"\u26a0 {total_locs - len(locs)} location"
+                    f"{'s' if total_locs - len(locs) != 1 else ''} not yet counted "
+                    "\u2014 the flagged total is a floor, not the full brand picture.")
+        if scan_meta.get("truncated"):
+            line["notes"].append(
+                "\u26a0 At least one location hit the pull depth \u2014 its "
+                "negative count may be understated; re-run at higher depth.")
     if over_chart:
-        line["notes"].append(f"{n} reviews exceeds the 500-review rate card \u2014 "
+        line["notes"].append(f"{n:,} reviews exceeds the 500-review rate card \u2014 "
                              "top-tier rate extended; confirm with fulfillment partner.")
     return line
 
@@ -475,7 +499,7 @@ def build_rep_quote(payload):
 
     if campaign in ("reactive", "bundle"):
         rv = payload.get("reviews") or {}
-        ln = price_reviews(rv.get("count", 0), rv.get("margin_pct"))
+        ln = price_reviews(rv.get("count", 0), rv.get("margin_pct"), rv.get("scan_meta"))
         if ln:
             phase1.append(ln)
         ar = payload.get("articles") or {}
