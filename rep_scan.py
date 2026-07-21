@@ -121,13 +121,11 @@ def _domain(d):
 # route to other tactics (Visions precedent: complaint boards / Reddit /
 # Trustpilot pages can be removed at the PAGE level via Website Removal).
 ROUTES = [
-    (("yelp.",), "review gen / deindex"),
-    (("glassdoor.", "indeed."), "suppression"),
-    (("bbb.",), "BBB remediation"),
+    (("yelp.", "glassdoor.", "indeed.", "bbb.",
+      "facebook.", "instagram.", "x.com", "twitter.", "tiktok.",
+      "linkedin."), "suppression"),
     (("trustpilot.", "complaintsboard.", "pissedconsumer.", "scampulse.",
       "ripoffreport.", "gripeo.", "reddit.", "quora."), "site removal"),
-    (("facebook.", "instagram.", "x.com", "twitter.", "tiktok.",
-      "linkedin."), "suppression"),
 ]
 
 def route_tactic(domain, owned=False, forum=False):
@@ -137,7 +135,7 @@ def route_tactic(domain, owned=False, forum=False):
     for prefixes, tactic in ROUTES:
         if any(p in d for p in prefixes):
             return tactic
-    return "site removal" if forum else "suppress / custom review"
+    return "site removal" if forum else "suppression"
 
 
 def _rating_from_text(*texts):

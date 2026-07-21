@@ -248,6 +248,42 @@ def _vol_monthly(component, volume):
     return min(c["cap"], max(c["floor"], r50(raw)))
 
 
+# =====================================================================
+# SIMPLIFIED TACTIC MENU (July 2026, per Kiri's template): Reactive =
+# review removals + article removals + Search Protection Bundle only.
+# Proactive = Brand Shield Bundle only. Everything below this block that
+# prices retired tactics (tiers, guaranteed phrases, engines, BBB, GEO,
+# PR, review gen, video) is KEPT for reference and custom blends but is
+# no longer wired into build_rep_quote.
+# =====================================================================
+SEARCH_BUNDLE = {
+    # Sum of the former components: suppression ($2,900 + $10/1K) +
+    # auto-suggest/related ($3,400 + $10/1K). Sage replay: $7,400/mo —
+    # identical to Brendan quoting the two lines separately. Confirm with
+    # Brendan whether the bundle should carry a discount vs components.
+    "base": 6300, "per_1k": 20, "floor": 6300, "cap": 15450,
+    "timeline": "4\u20136 months, then evaluate (may extend to 12)",
+}
+
+def price_search_bundle(volume):
+    # Each former component keeps its own CEIL50 rounding before summing —
+    # this replays Brendan's Sage quote exactly ($3,450 + $3,950 = $7,400);
+    # rounding the summed formula instead lands $50 low.
+    v = max(0, volume) / 1000.0
+    m = r50(2900 + 10 * v) + r50(3400 + 10 * v)
+    m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], m))
+    return {
+        "service": "Search Protection Bundle",
+        "detail": f"${SEARCH_BUNDLE['base']:,} base + ${SEARCH_BUNDLE['per_1k']}/1K "
+                  f"on {volume:,}/mo brand volume",
+        "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
+        "notes": ["Includes Organic Search Suppression, Auto-Suggest & Related "
+                  "Search Manipulation, and Branded Search Append.",
+                  "Auto-suggest succeeds only while contracted search volume "
+                  "exceeds the negative-modifier volume."],
+    }
+
+
 def price_search_protection(volume, use_suppression, use_autosuggest,
                             suppression_tier="standard", as_mode="ongoing",
                             n_negatives=3, engine="google",
@@ -505,41 +541,20 @@ def build_rep_quote(payload):
         ar = payload.get("articles") or {}
         phase1 += price_articles(ar.get("standard", 0), ar.get("premium", 0))
         se = payload.get("search") or {}
-        sp_lines, sp_warn = price_search_protection(
-            int(se.get("volume") or 0),
-            bool(se.get("suppression")), bool(se.get("autosuggest")),
-            se.get("suppression_tier") or "standard",
-            se.get("as_mode") or "ongoing",
-            int(se.get("n_negatives") or 3),
-            se.get("engine") or "google",
-            bool(se.get("related")),
-            se.get("guaranteed_per_phrase"))
-        phase1 += sp_lines
-        warnings += sp_warn
-        bb = payload.get("bbb") or {}
-        bln = price_bbb(bb.get("count", 0))
-        if bln:
-            phase1.append(bln)
-        ge = payload.get("geo") or {}
-        if ge.get("enabled"):
-            phase1.append(price_geo(ge.get("phase") or "setup"))
-        vd = payload.get("video") or {}
-        vln = price_video(vd.get("count", 0), vd.get("per_video") or 5600)
-        if vln:
-            phase1.append(vln)
+        if se.get("bundle"):
+            vol = int(se.get("volume") or 0)
+            phase1.append(price_search_bundle(vol))
+            sp = REP_CFG["search_protection"]
+            if vol > sp["review_above_volume"]:
+                warnings.append(
+                    f"Brand volume {vol:,}/mo exceeds the "
+                    f"{sp['review_above_volume']:,} review threshold \u2014 "
+                    "confirm out-search capacity before quoting.")
+
 
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}
         phase2.append(price_shield(sh.get("locations", 1)))
-        # Proactive asset-building tactics — Brendan's notes place review
-        # generation in the proactive bundle; PR is positive-asset creation
-        # (Hobart offered it as the optional companion service).
-        pr = payload.get("pr") or {}
-        phase2 += price_pr(pr.get("premium", 0), pr.get("secondary", 0), pr.get("releases", 0))
-        rg = payload.get("review_gen") or {}
-        rln = price_review_gen(rg.get("platform") or "google", rg.get("count", 0))
-        if rln:
-            phase2.append(rln)
 
     # bundle discount on recurring lines when both phases present
     if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:
