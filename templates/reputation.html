@@ -326,7 +326,7 @@ $('go').onclick = async ()=>{
     brand: $('brand').value.trim(),
     reviews: $('useReviews').checked ? {count: +$('nReviews').value||0, margin_pct: (+$('marginPct').value||35)/100,
       scan_meta: (window._scanProv && window._scanProv.flagged === (+$('nReviews').value||0)) ? window._scanProv : null} : {count:0},
-    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0} : {},
+    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0, classes: window._artClasses||null} : {},
     search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked},
     geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
     shield: {locations:+$('nLocations').value||1},
@@ -419,7 +419,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanCard').classList.remove('hidden');
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
-  window._reco = []; window._negPhrases = new Set();
+  window._reco = []; window._negPhrases = new Set(); window._artClasses = null;
   window._scanData = {}; window._negDone = null; window._scanProv = null;
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
@@ -476,8 +476,13 @@ function renderSerp(d){
   h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled. Review counts in the removal quote cover <b>Google Business reviews only</b> — reviews on the sites below are not in that count; each routes to the tactic shown.</p>';
   const siteRemovals = (d.organic||[]).filter(o=>o.tactic==='site removal').length + (d.forums||[]).filter(f=>f.tactic==='site removal').length;
   if(siteRemovals){
-    const pages = [...(d.organic||[]).filter(o=>o.tactic==='site removal').map(o=>'#'+o.pos+' '+o.domain),
-                   ...(d.forums||[]).filter(f=>f.tactic==='site removal').map(f=>'#'+(f.pos||'—')+' '+f.domain)];
+    const remPages = [...(d.organic||[]).filter(o=>o.tactic==='site removal'),
+                      ...(d.forums||[]).filter(f=>f.tactic==='site removal')];
+    const classOf = dm => /trustpilot\./.test(dm||'') ? 'review_platform'
+                    : /(reddit\.|quora\.)/.test(dm||'') ? 'forum' : 'gripe';
+    window._artClasses = {};
+    remPages.forEach(p=>{ const c = classOf(p.domain); window._artClasses[c] = (window._artClasses[c]||0)+1; });
+    const pages = remPages.map(p=>'#'+(p.pos||'—')+' '+p.domain);
     reco('useArticles','Negative Website/Article Removals',
       siteRemovals+' removable pages — '+pages.slice(0,5).join(', '), {nArtStd: siteRemovals});
   }
@@ -661,20 +666,29 @@ async function retryAutocomplete(){
 function renderReco(){
   const rs = window._reco||[];
   if(!rs.length) return;
-  let h = '<div class="scanhdr">Scan Recommendations</div><div class="help" style="margin:2px 0 8px">Nothing is turned on automatically — review and apply:</div>';
-  rs.forEach(r=>{ h += '<div style="font-size:12.5px;margin:3px 0"><b style="color:var(--atlas)">'+r.label+'</b> <span class="help" style="display:inline;margin:0">— '+r.reason+'</span></div>'; });
-  h += '<button class="btn2" id="applyReco" type="button" style="margin-top:8px">Apply recommendations</button><span class="help" id="recoDone" style="margin-left:8px"></span>';
+  let h = '<div class="scanhdr">Scan Recommendations</div><div class="help" style="margin:2px 0 8px">Applied automatically — uncheck any to remove:</div>';
+  rs.forEach((r,i)=>{
+    h += '<div style="font-size:12.5px;margin:3px 0"><label style="display:inline;font-weight:400;font-size:12.5px;cursor:pointer">'
+       + '<input type="checkbox" class="recock" data-i="'+i+'" checked style="vertical-align:-2px;margin-right:6px">'
+       + '<b style="color:var(--atlas)">'+r.label+'</b></label> <span class="help" style="display:inline;margin:0">— '+r.reason+'</span></div>';
+  });
   const box = document.createElement('div');
   box.innerHTML = h;
   $('scanOut').prepend(box);
-  $('applyReco').onclick = ()=>{
-    rs.forEach(r=>{
-      const el = $(r.toggle); if(el) el.checked = true;
-      Object.entries(r.sets||{}).forEach(([id,v])=>{ const f=$(id); if(f && !(+f.value)) f.value = v; });
-    });
-    syncVisibility();
-    $('recoDone').textContent = '✓ Applied — toggles set below.';
+  const applyOne = r=>{
+    const el = $(r.toggle); if(el) el.checked = true;
+    Object.entries(r.sets||{}).forEach(([id,v])=>{ const f=$(id); if(f && !(+f.value)) f.value = v; });
   };
+  rs.forEach(applyOne);            // on by default
+  syncVisibility();
+  box.querySelectorAll('.recock').forEach(c=>{
+    c.addEventListener('change', e=>{
+      const r = rs[+e.target.dataset.i];
+      if(e.target.checked){ applyOne(r); }
+      else { const el = $(r.toggle); if(el) el.checked = false; }
+      syncVisibility();
+    });
+  });
 }
 function renderLocs(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
@@ -878,7 +892,7 @@ async function loadSavedList(){
 function restoreScan(sc){
   if(!sc || !sc.data) return;
   window._scanData = sc.data;
-  window._reco = []; window._negPhrases = new Set();
+  window._reco = []; window._negPhrases = new Set(); window._artClasses = null;
   $('scanCard').classList.remove('hidden');
   $('scanOut').innerHTML = '';
   $('scanProg').classList.remove('hidden');

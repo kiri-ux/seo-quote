@@ -66,6 +66,29 @@ REP_CFG = {
         "premium_per": 7500,
         "timeline": "2\u20133 months average, up to 6",
         "pay_on_success": True,
+        # Site-class ESTIMATE bands (July 2026) — market research + Brendan
+        # anchors. Route determines cost: platform-policy flags are cheap,
+        # de-index/negotiation is mid, news-legal is expensive. Every page is
+        # still pending Brendan/contractor content review — the removal "hook"
+        # (fake / defamatory / PII / DMCA vs. truthful review) is the one
+        # variable that needs human eyes and can zero out feasibility.
+        "classes": {
+            "review_platform": {
+                "label": "Review platform page (Trustpilot-class)",
+                "low": 500, "high": 2500, "est": 1500,
+                "route": "platform policy flag \u2192 Content Integrity review",
+                "timeline": "2\u201310 weeks"},
+            "forum": {
+                "label": "Forum thread (Reddit / Quora)",
+                "low": 900, "high": 3000, "est": 1950,
+                "route": "sitewide-policy removal or Google de-index",
+                "timeline": "1\u20138 weeks"},
+            "gripe": {
+                "label": "Complaint board (RipoffReport-class)",
+                "low": 1000, "high": 8000, "est": 5350,   # Visions mid-bracket anchor
+                "route": "de-index / negotiated removal (no source removal on RoR)",
+                "timeline": "2\u20133 months average, up to 6"},
+        },
     },
 
     # ------------------------------------------------- search protection bundle
@@ -213,13 +236,33 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
     return line
 
 
-def price_articles(n_standard, n_premium):
-    """Website/article removals. Standard sites use the Visions whole-order
-    bracket; premium (DA>35 / news-legal) at the Tru North flat rate."""
+def price_articles(n_standard, n_premium, classes=None):
+    """Website/article removals. When the scan supplies per-site-class counts
+    (and the manual standard count wasn't overridden away from them), price
+    each class on its ESTIMATE band. Otherwise fall back to the legacy
+    Visions whole-order bracket. Premium (DA>35 / news-legal) unchanged."""
     cfg = REP_CFG["article_removal"]
     lines = []
     n = max(0, int(n_standard or 0))
-    if n:
+    cls_counts = {k: int(v) for k, v in (classes or {}).items()
+                  if k in cfg["classes"] and int(v or 0) > 0}
+    use_classes = cls_counts and sum(cls_counts.values()) == n
+    if use_classes:
+        for key, cnt in cls_counts.items():
+            c = cfg["classes"][key]
+            lines.append({
+                "service": "Negative Website/Article Removals",
+                "detail": f"{cnt} \u00d7 {c['label']} @ ~${c['est']:,}/page est. "
+                          f"(market band ${c['low']:,}\u2013${c['high']:,})",
+                "qty": cnt, "unit": c["est"], "kind": "per_asset",
+                "total": c["est"] * cnt, "timeline": c["timeline"],
+                "notes": [f"Route: {c['route']}.",
+                          "Pay on success \u2014 billed only for pages removed.",
+                          "\u26a0 ESTIMATE by site class \u2014 pending "
+                          "Brendan/contractor content review (the removal "
+                          "basis can change the price or zero out feasibility)."],
+            })
+    elif n:
         per = next(b["per"] for b in cfg["brackets"]
                    if n >= b["min"] and (b["max"] is None or n <= b["max"]))
         lines.append({
@@ -552,7 +595,15 @@ def build_rep_quote(payload):
         if ln:
             phase1.append(ln)
         ar = payload.get("articles") or {}
-        phase1 += price_articles(ar.get("standard", 0), ar.get("premium", 0))
+        art_lines = price_articles(ar.get("standard", 0), ar.get("premium", 0),
+                                   ar.get("classes"))
+        phase1 += art_lines
+        if any("\u26a0 ESTIMATE by site class" in nt
+               for ln in art_lines for nt in ln.get("notes", [])):
+            warnings.append(
+                "Website/Article Removal lines are ESTIMATED by site class "
+                "(market bands + Visions/Tru North anchors) \u2014 every page "
+                "pending Brendan/contractor content review before quoting.")
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
