@@ -207,30 +207,6 @@
           <p class="help">Shapes AI Overview / LLM answers about the brand — targets the negative AI-generated result the scan detects.</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="usePr"><span class="slider"></span></label><span class="lbl">PR Placements</span></div>
-        <div id="prFields" class="hidden">
-          <div class="row">
-            <div><label>Premium ($8,000)</label><input type="number" id="nPrPrem" min="0" value="0"></div>
-            <div><label>Secondary ($4,500)</label><input type="number" id="nPrSec" min="0" value="0"></div>
-            <div><label>Releases ($1,500)</label><input type="number" id="nPrRel" min="0" value="0"></div>
-          </div>
-          <p class="help">Hobart actuals, pay per successful placement. Recommended cadence: 1 premium + 1–2 secondary + 1–2 releases per quarter.</p>
-        </div>
-
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useRevGen"><span class="slider"></span></label><span class="lbl">Review Generation</span><span class="pillnote">2020–21 rates — confirm</span></div>
-        <div id="revGenFields" class="hidden">
-          <div class="row">
-            <div>
-              <label>Platform</label>
-              <select id="rgPlatform">
-                <option value="google" selected>Google — $105/review, min 5/mo</option>
-                <option value="yelp">Yelp — $790/stuck review, pay on success</option>
-              </select>
-            </div>
-            <div><label># of reviews</label><input type="number" id="nRevGen" min="0" value="0"></div>
-          </div>
-        </div>
-
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useVideo"><span class="slider"></span></label><span class="lbl">Negative Video Removals</span></div>
         <div id="videoFields" class="hidden">
           <div class="row">
@@ -301,10 +277,36 @@
 
       <!-- proactive inputs -->
       <div class="card hidden" id="secProactive">
-        <h2><span id="proNum">3</span> · Proactive Brand Shield <span class="pillnote">$ placeholder — Brendan</span></h2>
+        <h2><span id="proNum">3</span> · Proactive</h2>
+        <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">$ placeholder — Brendan</span></p>
         <p class="help">SEO "Moat" &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
+        <div style="border-top:1px dashed var(--line);margin:16px 0 4px"></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="usePr"><span class="slider"></span></label><span class="lbl">PR Placements</span></div>
+        <div id="prFields" class="hidden">
+          <div class="row">
+            <div><label>Premium ($8,000)</label><input type="number" id="nPrPrem" min="0" value="0"></div>
+            <div><label>Secondary ($4,500)</label><input type="number" id="nPrSec" min="0" value="0"></div>
+            <div><label>Releases ($1,500)</label><input type="number" id="nPrRel" min="0" value="0"></div>
+          </div>
+          <p class="help">Hobart actuals, pay per successful placement. Recommended cadence: 1 premium + 1–2 secondary + 1–2 releases per quarter.</p>
+        </div>
+
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useRevGen"><span class="slider"></span></label><span class="lbl">Review Generation</span><span class="pillnote">2020–21 rates — confirm</span></div>
+        <div id="revGenFields" class="hidden">
+          <div class="row">
+            <div>
+              <label>Platform</label>
+              <select id="rgPlatform">
+                <option value="google" selected>Google — $105/review, min 5/mo</option>
+                <option value="yelp">Yelp — $790/stuck review, pay on success</option>
+              </select>
+            </div>
+            <div><label># of reviews</label><input type="number" id="nRevGen" min="0" value="0"></div>
+          </div>
+        </div>
+
       </div>
 
       <button class="btn" id="go">Build quote</button>

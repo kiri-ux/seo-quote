@@ -523,12 +523,6 @@ def build_rep_quote(payload):
         ge = payload.get("geo") or {}
         if ge.get("enabled"):
             phase1.append(price_geo(ge.get("phase") or "setup"))
-        pr = payload.get("pr") or {}
-        phase1 += price_pr(pr.get("premium", 0), pr.get("secondary", 0), pr.get("releases", 0))
-        rg = payload.get("review_gen") or {}
-        rln = price_review_gen(rg.get("platform") or "google", rg.get("count", 0))
-        if rln:
-            phase1.append(rln)
         vd = payload.get("video") or {}
         vln = price_video(vd.get("count", 0), vd.get("per_video") or 5600)
         if vln:
@@ -537,6 +531,15 @@ def build_rep_quote(payload):
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}
         phase2.append(price_shield(sh.get("locations", 1)))
+        # Proactive asset-building tactics — Brendan's notes place review
+        # generation in the proactive bundle; PR is positive-asset creation
+        # (Hobart offered it as the optional companion service).
+        pr = payload.get("pr") or {}
+        phase2 += price_pr(pr.get("premium", 0), pr.get("secondary", 0), pr.get("releases", 0))
+        rg = payload.get("review_gen") or {}
+        rln = price_review_gen(rg.get("platform") or "google", rg.get("count", 0))
+        if rln:
+            phase2.append(rln)
 
     # bundle discount on recurring lines when both phases present
     if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:
