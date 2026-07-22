@@ -186,7 +186,7 @@
       </div>
 
       <div class="card hidden" id="scanCard">
-        <h2>Scan Results</h2>
+        <h2>Reputation Snapshot</h2>
         <div id="scanOut"></div>
       </div>
 
@@ -258,12 +258,7 @@
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO brand shield &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
-        <p class="help" style="background:#f5f7fa;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-family:ui-monospace,monospace;font-size:11.5px">
-          client/mo = r50( <b>reference</b> × 0.65 ÷ (1 − retail margin) )<br>
-          &nbsp;&nbsp;where <b>reference</b> = $3,450 base + $525 × (locations − 1)<br>
-          partner hard = reference × 0.65 &nbsp;·&nbsp; internal hard = partner × 20% <span style="color:#b3261e;font-weight:600">(TBD)</span><br>
-          <span style="font-family:inherit;color:var(--muted)">r50 = round up to the nearest $50 · base, per-location, and % values are editable in Pricing config · at 35% retail margin the client price equals the reference exactly</span>
-        </p>
+        <div class="help" id="shieldFormula" style="background:#f5f7fa;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px"></div>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
@@ -425,11 +420,34 @@ let nLocDirty = false;
 document.addEventListener('DOMContentLoaded', ()=>{
   const nl = $('nLocations'); if(nl) nl.addEventListener('input', ()=>{ nLocDirty = true; });
 });
+function updateShieldFormula(){
+  const box = document.getElementById('shieldFormula');
+  if(!box) return;
+  const n = Math.max(1, +($('nLocations')||{}).value || 1);
+  const m = Math.min(90, Math.max(0, +($('clientMargin')||{}).value || 35)) / 100;
+  const ref = 3450 + 525 * (n - 1);
+  const partner = ref * 0.65;
+  const internalC = partner * 0.20;
+  const client = Math.ceil((partner / (1 - m)) / 50) * 50;
+  const money = x => '$' + Math.round(x).toLocaleString();
+  box.innerHTML = '<b>Current calculation:</b> '
+    + money(3450) + ' base' + (n > 1 ? ' + $525 × ' + (n-1) + ' extra location' + (n>2?'s':'') : '')
+    + ' = <b>' + money(ref) + ' reference</b>. '
+    + 'Partner hard cost is 65% of that → <b>' + money(partner) + '/mo</b>. '
+    + 'Internal hard cost is 20% of partner → <b style="color:#b3261e">' + money(internalC) + '/mo (TBD)</b>. '
+    + 'Client price = partner cost ÷ (1 − ' + Math.round(m*100) + '% retail margin), rounded up to the nearest $50 → <b>' + money(client) + '/mo</b>.'
+    + '<div style="color:var(--muted);margin-top:3px">Base, per-location, and % values are editable in Pricing config.</div>';
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  updateShieldFormula();
+  ['nLocations','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateShieldFormula); });
+});
 function syncShieldLocs(){
   if(nLocDirty) return;
   const n = document.querySelectorAll('.locck:checked').length;
   const nl = $('nLocations');
   if(nl && n > 0) nl.value = n;
+  updateShieldFormula();
 }
 
 $('scanBtn').onclick = async ()=>{
@@ -482,7 +500,11 @@ function renderTerms(d){
     $('volNote').innerHTML = 'Auto-filled from scan: <b>'+d.total_volume.toLocaleString()+'/mo</b> total brand volume.';
   }
   let h = '<div class="scanhdr">Brand Term Universe · '+d.total_volume.toLocaleString()+'/mo total</div>';
-  h += '<div class="warn"><b>'+d.negative_volume.toLocaleString()+' searches/mo</b> use clearly negative terms (lawsuit, complaints…). The auto-suggest tactic works by outweighing these with positive searches — so the campaign needs to drive more than '+d.negative_volume.toLocaleString()+' positive searches/mo to hold. Another <b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way.</div>';
+  if(d.negative_volume > 0){
+    h += '<div class="warn"><b>'+d.negative_volume.toLocaleString()+' searches/mo</b> use clearly negative terms (lawsuit, complaints…). The auto-suggest tactic works by outweighing these with positive searches — so the campaign needs to drive more than '+d.negative_volume.toLocaleString()+' positive searches/mo to hold. Another <b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way.</div>';
+  }else{
+    h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>No negative-term search demand detected</b> — nobody is searching lawsuit/complaint-style terms for this brand right now. '+(d.watch_volume>0 ? '<b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way — worth protecting.' : 'Watch-term volume is also minimal.')+'</div>';
+  }
   const flagged = d.terms.filter(t=>t.class!=='neutral').slice(0,15);
   if(flagged.length){
     h += '<table class="stbl"><tr><th>Term</th><th>Class</th><th style="text-align:right">Vol/mo</th></tr>';
@@ -770,10 +792,30 @@ function renderReco(){
   syncVisibility();
 }
 function renderLocs(d, live){
-  if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  let box = document.getElementById('locsBlock');
+  if(!box){ box = document.createElement('div'); box.id = 'locsBlock'; $('scanOut').appendChild(box); }
+  if(d.error){ box.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
-  if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">'+(d.error_detail||'None found in the listings database.')+'</p>'; return; }
+  if(!scanLocations.length){
+    box.innerHTML = h
+      + '<p class="help">'+(d.error_detail||'None found in the listings database.')+' The Google Business listing often uses a different name than the client — try the exact listing name:</p>'
+      + '<div class="row"><input type="text" id="locAltName" placeholder="e.g. Cisney &amp; O\'Donnell Roofing" style="flex:1">'
+      + '<button class="btn2" id="locRetryBtn" type="button" style="flex:0 0 auto">Search listings again</button></div>'
+      + '<div class="help" id="locRetryProg" style="margin-top:4px"></div>';
+    document.getElementById('locRetryBtn').onclick = async ()=>{
+      const alt = document.getElementById('locAltName').value.trim();
+      if(!alt) return;
+      document.getElementById('locRetryProg').textContent = 'Searching listings for "'+alt+'"\u2026';
+      try{
+        const r = await (await fetch('/api/rep_scan_locations', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({brand: alt})})).json();
+        if(!r.error){ window._scanData = window._scanData || {}; window._scanData.locations = r; }
+        renderLocs(r, true);
+      }catch(e){ document.getElementById('locRetryProg').textContent = 'Search failed: '+e; }
+    };
+    return;
+  }
   const single = scanLocations.length === 1;
   const prechecked = single ? 1 : scanLocations.slice(0,60).filter(l=>(l.rating||5)<4).length;
   h += '<details class="locwrap"'+(single?' open':'')+'><summary style="cursor:pointer;font-size:13px;color:var(--atlas);font-weight:600;padding:6px 0">'
@@ -787,10 +829,11 @@ function renderLocs(d, live){
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
   h += '</table></details>';
-  h += '<div style="margin-top:10px"><button class="btn2" id="countNegBtn" type="button">Count negatives for checked locations</button>'
+  const counted = !!(window._negDone && window._negDone.length);
+  h += '<div style="margin-top:10px"><button class="btn2" id="countNegBtn" type="button">'+(counted?'Re-run count for checked locations':'Count negatives for checked locations')+'</button>'
      + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location · results in ~1 min. Pull depth is set in Pricing config.</div></div>'
      + '<div id="negOut"></div>';
-  $('scanOut').innerHTML += h;
+  box.innerHTML = h;
   $('countNegBtn').onclick = ()=>submitNegCount();
   $('lockAll').onchange = e => { document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; }); syncShieldLocs(); };
   document.querySelectorAll('.locck').forEach(c=>{ c.addEventListener('change', syncShieldLocs); });
@@ -856,6 +899,8 @@ function applyThreshold(done, th){
   return tot;
 }
 function renderNegCounts(done){
+  const cb = document.getElementById('countNegBtn');
+  if(cb && done && done.length) cb.textContent = 'Re-run count for checked locations';
   if(!done.length) return;
   window._negDone = done;
   const th = (document.getElementById('negTh')||{}).value || '12';
@@ -960,7 +1005,16 @@ function wireSaveBox(){
       const r = await (await fetch('/api/quotes/'+CURRENT_QUOTE_ID+'/share', {method:'POST'})).json();
       if(r.error){ if(st) st.textContent = 'Share failed: '+r.error; return; }
       let copied = false;
-      try{ await navigator.clipboard.writeText(r.url); copied = true; }catch(e){}
+      try{ await navigator.clipboard.writeText(r.url); copied = true; }
+      catch(e){
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = r.url; ta.style.position='fixed'; ta.style.opacity='0';
+          document.body.appendChild(ta); ta.select();
+          copied = document.execCommand('copy');
+          document.body.removeChild(ta);
+        }catch(e2){}
+      }
       if(st) st.innerHTML = (copied?'✓ Review link copied: ':'Review link (copy manually): ')
         + '<a href="'+r.url+'" target="_blank">'+r.url+'</a> — read-only; anyone with the link can view.';
     }catch(e){ if(st) st.textContent = 'Share failed: '+e; }
