@@ -304,6 +304,7 @@ document.querySelectorAll('.ctype').forEach(el=>{
     document.querySelectorAll('.ctype').forEach(x=>x.classList.remove('on'));
     el.classList.add('on'); campaign = el.dataset.c; syncVisibility();
     if(document.getElementById('brandReco')) renderBrandReco();
+    refreshQuoteNameStrategy();
   };
 });
 ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{
@@ -1026,6 +1027,20 @@ function restoreForm(f){
   syncVisibility();
 }
 
+
+// Keep auto-generated quote names in sync with the strategy: if the name
+// ends with a known strategy suffix, swap it when the strategy changes.
+// Custom names (no recognizable suffix) are never touched.
+function refreshQuoteNameStrategy(){
+  if(!CURRENT_QUOTE_NAME) return;
+  const strat = {reactive:'reactive', proactive:'proactive', bundle:'reactive + proactive'}[campaign] || campaign;
+  const m = CURRENT_QUOTE_NAME.match(/^(.*) - (reactive \+ proactive|reactive|proactive)$/);
+  if(m && m[2] !== strat){
+    CURRENT_QUOTE_NAME = m[1] + ' - ' + strat;
+    const q = $('qname'); if(q) q.value = CURRENT_QUOTE_NAME;
+    const st = $('saveStatus'); if(st) st.textContent = 'Strategy changed — name updated to \u201c'+CURRENT_QUOTE_NAME+'\u201d; Update or rebuild to save it.';
+  }
+}
 async function autoSave(){
   if(!await savingStatus()) return;
   const hasScan = window._scanData && Object.keys(window._scanData).length;
