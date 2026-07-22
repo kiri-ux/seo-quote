@@ -104,8 +104,11 @@
   .volrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .volrow > div:first-child{flex:1;min-width:220px}
   .volnote{font-size:12px;color:var(--muted);margin-top:6px}
-  .intl{margin-top:6px;padding:5px 9px;border:1px dashed #cf9fe0;border-radius:7px;
-    font-size:11.5px;color:#7a4f8a;background:#faf6fc;display:inline-block}
+  .intl{margin-top:8px;padding:7px 11px;border:1px solid #c6d2e1;border-radius:8px;
+    font-size:11.5px;color:#33445c;background:#eef2f7;display:block;width:100%;box-sizing:border-box}
+  .intlhdr{font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#5b6c84;margin-bottom:3px}
+  .intlrow{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
+  .intlrow span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
   .scanhdr{margin:16px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
   .scanhdr:first-child{margin-top:0}
   .neg{color:#8a2b2b;font-weight:700} .watch{color:#7a5410;font-weight:600}
@@ -191,7 +194,7 @@
       <div class="card" id="secReactive">
         <h2>3 · Reactive Cleanup</h2>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews"><span class="slider"></span></label><span class="lbl" title="Flagged 1–2★ Google Business reviews are submitted for removal — billed only per review successfully removed.">Negative Review Removals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews"><span class="slider"></span></label><span class="lbl">Negative Review Removals<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Flagged 1–2★ Google Business reviews are submitted for removal — billed only per review successfully removed.</span></span></span></div>
         <div id="reviewFields">
           <div class="row">
             <div>
@@ -214,7 +217,7 @@
           </details>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl" title="Whole negative pages (complaint boards, forum threads, articles) are removed from the source site or de-indexed from Google — pay on success.">Negative Website/Article Removals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl">Negative Website/Article Removals<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Whole negative pages (complaint boards, forum threads, articles) are removed from the source site or de-indexed from Google — pay on success.</span></span></span></div>
         <div id="articleFields" class="hidden">
           <div class="row">
             <div><label>Standard sites</label><input type="number" id="nArtStd" min="0" value="0"></div>
@@ -224,7 +227,7 @@
           <p class="help">Partner hard costs are canonical; client price = hard ÷ (1 − margin). At 35% this replays partner rates — rack $7,500 sliding to $4,950 bulk (16+), premium $12,500. Pay on success. Always custom-quoted after human review.</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl" title="Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.">Search Protection Bundle</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl">Search Protection Bundle<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.</span></span></span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
           <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
@@ -239,7 +242,7 @@
           <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — confirm bundle discount).</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl" title="Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.">Reputational AI Search</span><span class="pillnote">pricing structure — unconfirmed</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">pricing structure — unconfirmed</span></div>
         <div id="geoFields" class="hidden">
           <label>Phase</label>
           <select id="geoPhase">
@@ -378,7 +381,10 @@ function render(d, payload){
     const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
     let internal = '';
     if(l.internal && l.internal.rows){
-      internal = '<div class="intl">Internal · '+l.internal.rows.join('<br>')+'</div>';
+      const rows = l.internal.rows.map(r => typeof r === 'string'
+        ? '<div class="intlrow"><span>'+r+'</span></div>'
+        : '<div class="intlrow"><span>'+r.label+'</span><span>'+r.value+'</span></div>').join('');
+      internal = '<div class="intl"><div class="intlhdr">Internal</div>'+rows+'</div>';
     } else if(l.internal && l.internal.text){
       internal = '<div class="intl">Internal · '+l.internal.text+'</div>';
     } else if(l.internal){
@@ -775,9 +781,8 @@ function renderLocs(d, live){
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
   h += '</table></details>';
-  h += '<div class="row" style="margin-top:10px"><div style="flex:0 0 130px"><label style="margin-top:0" title="How many Google reviews to pull per location (worst-first) when counting 1–2★. Deeper = more complete count on high-review locations, slightly higher DFS cost.">Pull depth ⓘ</label><input type="number" id="pullDepth" min="10" max="4490" value="200"></div>'
-     + '<div><button class="btn2" id="countNegBtn" type="button">Count negatives for checked locations</button>'
-     + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location at depth 200 · results in ~1 min.</div></div></div>'
+  h += '<div style="margin-top:10px"><button class="btn2" id="countNegBtn" type="button">Count negatives for checked locations</button>'
+     + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location · results in ~1 min. Pull depth is set in Pricing config.</div></div>'
      + '<div id="negOut"></div>';
   $('scanOut').innerHTML += h;
   $('countNegBtn').onclick = ()=>submitNegCount();
@@ -806,7 +811,7 @@ async function submitNegCount(autoPids){
   $('negProg').textContent = 'Queuing '+pids.length+' pulls…';
   try{
     const r = await (await fetch('/api/rep_reviews_submit', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({place_ids: pids, depth: +$('pullDepth').value||200})})).json();
+      body: JSON.stringify({place_ids: pids})})).json();
     if(r.error){ $('negProg').textContent = r.error; $('countNegBtn').disabled=false; return; }
     reviewTasks = r.tasks.filter(t=>t.ok).map(t=>t.id);
     $('negProg').textContent = 'Queued '+reviewTasks.length+' — polling…';
@@ -1073,6 +1078,7 @@ function renderCfg(c){
   let h = cfgHdr('Review Removals (hard cost / review)', 'pricing confirmed', 'ok');
   h += cfgRow('Default margin (% of gross)', cfgIn('c_margin', Math.round(c.review_margin_pct*100), 1));
   c.review_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_rb'+i, b.hard, 12.5)); });
+  h += cfgRow('Review pull depth (per location)', cfgIn('c_pdepth', c.review_pull_depth||200, 10));
   h += cfgHdr('Website Removals ($ / site)', 'pricing from one example quote — need confirmation', 'warn');
   c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
   h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
@@ -1107,6 +1113,7 @@ $('cfgApply').onclick = async ()=>{
     geo: {setup: v('c_geos'), scale: v('c_geoc')},
     bundle_discount_pct: v('c_bdisc')/100,
     internal_cost_pct: v('c_intpct')/100,
+    review_pull_depth: v('c_pdepth'),
   };
   $('cfgStatus').textContent = 'Applying…';
   try{

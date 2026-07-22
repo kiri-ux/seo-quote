@@ -221,10 +221,12 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
             "hard_per": hard_per, "hard_total": hard_total,
             "profit_total": round(total - hard_total, 2),
             "margin_pct": m,
-            "rows": [f"partner hard cost ${hard_total:,.0f} (${hard_per:,.2f}/rev)",
-                     f"internal hard cost ${hard_total*INTERNAL_COST_PCT['pct']:,.0f} "
-                     f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev \u00b7 "
-                     f"{INTERNAL_COST_PCT['pct']:.0%} of partner)"],
+            "rows": [
+                {"label": "Partner hard cost",
+                 "value": f"${hard_total:,.0f} (${hard_per:,.2f}/rev)"},
+                {"label": f"Internal hard cost ({INTERNAL_COST_PCT['pct']:.0%})",
+                 "value": f"${hard_total*INTERNAL_COST_PCT['pct']:,.0f} "
+                          f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev)"}],
         },
     }
     if scan_meta:
@@ -261,15 +263,17 @@ ART_CAL_MARGIN = 0.35
 # Editable live via the pricing config panel.
 INTERNAL_COST_PCT = {"pct": 0.20}
 
+# Scan tunables surfaced in the pricing-config panel (rarely edited).
+SCAN_SETTINGS = {"review_pull_depth": 200}
+
 def _mrows(hard, unit_suffix="", total=None):
     """Two-row internal grid: partner hard cost + internal hard cost."""
     ip = INTERNAL_COST_PCT["pct"]
-    rows = [f"partner hard cost ${hard:,.0f}{unit_suffix}"
-            + (f" \u00b7 ${total:,.0f} total" if total is not None else ""),
-            f"internal hard cost ${hard*ip:,.0f}{unit_suffix}"
-            + (f" \u00b7 ${total*ip:,.0f} total" if total is not None else "")
-            + f" ({ip:.0%} of partner)"]
-    return rows
+    def v(x):
+        return f"${x:,.0f}{unit_suffix}" + (f" \u00b7 ${x/hard*total:,.0f} total"
+                                            if total is not None else "")
+    return [{"label": "Partner hard cost", "value": v(hard)},
+            {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip)}]
 
 def _art_hard(client_at_35):
     return client_at_35 * (1 - ART_CAL_MARGIN)

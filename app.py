@@ -3166,7 +3166,8 @@ def api_rep_reviews_submit():
     if not pids:
         return jsonify({"error": "No locations selected."}), 400
     try:
-        return jsonify(rep_scan.reviews_submit(pids, int(d.get("depth") or 200)))
+        return jsonify(rep_scan.reviews_submit(
+            pids, int(d.get("depth") or rep_pricing.SCAN_SETTINGS["review_pull_depth"])))
     except Exception as e:
         return jsonify({"error": f"Review submit failed: {e}"}), 502
 
@@ -3203,6 +3204,7 @@ def api_rep_config_get():
         "geo": {p: rep_pricing.GEO[p]["monthly"] for p in ("setup", "scale")},
         "bundle_discount_pct": rc["bundle"]["recurring_discount_pct"],
         "internal_cost_pct": rep_pricing.INTERNAL_COST_PCT["pct"],
+        "review_pull_depth": rep_pricing.SCAN_SETTINGS["review_pull_depth"],
     })
 
 @app.route("/api/rep_config", methods=["POST"])
@@ -3240,6 +3242,8 @@ def api_rep_config_set():
             rc["bundle"]["recurring_discount_pct"] = min(0.9, max(0.0, float(d["bundle_discount_pct"])))
         if "internal_cost_pct" in d:
             rep_pricing.INTERNAL_COST_PCT["pct"] = min(1.0, max(0.0, float(d["internal_cost_pct"])))
+        if "review_pull_depth" in d:
+            rep_pricing.SCAN_SETTINGS["review_pull_depth"] = min(4490, max(10, int(float(d["review_pull_depth"]))))
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": f"Config apply failed: {e}"}), 400
