@@ -445,7 +445,7 @@ $('scanBtn').onclick = async ()=>{
   await step('1/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
   await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
   await step('3/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
-  await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand}); if(!r.error) window._scanData.locations = r; renderLocs(r); });
+  await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand}); if(!r.error) window._scanData.locations = r; renderLocs(r, true); });
   renderReco();
   renderBrandReco();
   $('scanProg').textContent = 'Scan complete.';
@@ -757,7 +757,7 @@ function renderReco(){
   });
   syncVisibility();
 }
-function renderLocs(d){
+function renderLocs(d, live){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
@@ -780,14 +780,27 @@ function renderLocs(d){
      + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location at depth 200 · results in ~1 min.</div></div></div>'
      + '<div id="negOut"></div>';
   $('scanOut').innerHTML += h;
-  $('countNegBtn').onclick = submitNegCount;
+  $('countNegBtn').onclick = ()=>submitNegCount();
   $('lockAll').onchange = e => { document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; }); syncShieldLocs(); };
   document.querySelectorAll('.locck').forEach(c=>{ c.addEventListener('change', syncShieldLocs); });
   syncShieldLocs();
+  if(live){
+    // Auto-count the 3 lowest-rated locations on a fresh scan (cheap:
+    // ~$0.03 each). Check them so the selection is visible, then run.
+    const order = scanLocations.map((l,i)=>({i, r: l.rating||5, v: l.reviews||0}))
+      .sort((a,b)=> a.r - b.r || b.v - a.v).slice(0,3).map(x=>x.i);
+    order.forEach(i=>{ const c = document.querySelector('.locck[data-i="'+i+'"]'); if(c) c.checked = true; });
+    syncShieldLocs();
+    if(order.length){
+      $('negProg').textContent = 'Auto-counting the '+order.length+' lowest-rated location'+(order.length!==1?'s':'')+'\u2026';
+      submitNegCount(order.map(i=>scanLocations[i].place_id).filter(Boolean));
+    }
+  }
 }
 
-async function submitNegCount(){
-  const pids = [...document.querySelectorAll('.locck:checked')].map(c=>scanLocations[+c.dataset.i].place_id).filter(Boolean);
+async function submitNegCount(autoPids){
+  const pids = (autoPids && autoPids.length) ? autoPids
+    : [...document.querySelectorAll('.locck:checked')].map(c=>scanLocations[+c.dataset.i].place_id).filter(Boolean);
   if(!pids.length){ $('negProg').textContent = 'Check at least one location.'; return; }
   $('countNegBtn').disabled = true;
   $('negProg').textContent = 'Queuing '+pids.length+' pulls…';
