@@ -262,11 +262,10 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         locs = [l for l in (scan_meta.get("locations") or []) if l]
         total_locs = int(scan_meta.get("total_locations") or 0)
         if locs:
-            if total_locs > len(locs):
-                line["notes"].append(
-                    f"\u26a0 {total_locs - len(locs)} location"
-                    f"{'s' if total_locs - len(locs) != 1 else ''} not yet counted "
-                    "\u2014 the flagged total is a floor, not the full brand picture.")
+            # Surfaced in the summary card as "X/Y locations scanned"
+            # (replaces the old "not yet counted" warning note, July 2026).
+            line["locs_scanned"] = len(locs)
+            line["locs_total"] = max(total_locs, len(locs))
         if scan_meta.get("truncated"):
             line["notes"].append(
                 "\u26a0 At least one location hit the pull depth \u2014 its "

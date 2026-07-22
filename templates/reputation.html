@@ -390,7 +390,8 @@ function render(d, payload){
   const nCards = (rl?1:0) + (artLines.length?1:0) + 1 + (!rl && !artLines.length && perAsset.length ? 1 : 0);
   h += '<div class="totals" style="grid-template-columns:repeat('+nCards+',1fr)">';
   if(rl){
-    h += '<div class="tot"><div class="name">Review removals</div><div class="price">'+rl.unit_label.replace('/removed review','')+'<span style="font-size:13px;color:var(--muted)">/removed review</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+rl.qty.toLocaleString()+' flagged reviews</div></div>';
+    const locStr = (rl.locs_scanned && rl.locs_total) ? ' · '+rl.locs_scanned+'/'+rl.locs_total+' locations scanned' : '';
+    h += '<div class="tot"><div class="name">Review removals</div><div class="price">'+rl.unit_label.replace('/removed review','')+'<span style="font-size:13px;color:var(--muted)">/removed review</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+rl.qty.toLocaleString()+' flagged reviews'+locStr+'</div></div>';
   }else if(!artLines.length && perAsset.length){
     h += '<div class="tot"><div class="name">Removals</div><div class="price">'+perAsset.length+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">billed per completed removal</div></div>';
   }
@@ -398,17 +399,14 @@ function render(d, payload){
     const artTotal = artLines.reduce((a,l)=>a+l.total,0);
     const artPages = artLines.reduce((a,l)=>a+(l.qty||0),0);
     const units = [...new Set(artLines.map(l=>l.unit))];
-    const rate = (units.length===1? money(units[0]) : 'from '+money(Math.min.apply(null,units)));
+    const minUnit = Math.min.apply(null, units);
     const stdPg = artLines.filter(l=>l.service.indexOf('Premium')===-1).reduce((a,l)=>a+(l.qty||0),0);
     const premPg = artPages - stdPg;
     const mix = (stdPg && premPg) ? stdPg+' standard + '+premPg+' premium' : artPages+' page'+(artPages!==1?'s':'');
-    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' flagged · up to '+money(artTotal)+'</div></div>';
+    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price"><span style="font-size:12px;color:var(--muted);font-weight:400">starting at </span>'+money(minUnit)+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' flagged · up to '+money(artTotal)+'</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';
-  if(d.totals.one_time > 0){
-    h += '<p class="help" style="margin:2px 0 10px">Success-based lines are billed only per completed removal — nothing is committed up front. Full detail per line below.</p>';
-  }
 
   h += '<table><tr><th>Service</th><th>Timeline</th><th class="amt">Investment</th></tr>';
   const isBundle = d.campaign === 'bundle';
