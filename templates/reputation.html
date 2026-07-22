@@ -240,7 +240,7 @@
             <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
-          <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — confirm bundle discount).</p>
+          <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,050 base + $15/$10 per 1K suppression/auto-suggest — includes up to 3 negative phrases, count unconfirmed — confirm bundle discount). Post-result maintenance quotes automatically at 54.4% of the active rate (Visions actual).</p>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">estimated $ — pending review</span></div>
@@ -388,7 +388,7 @@ function render(d, payload){
       const nm = l.phase===1 ? 'Phase 1 · Triage & Cleanup (Months 1–3)' : 'Phase 2 · Brand Shield (Months 4+)';
       h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
     }
-    const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
+    const per = (l.kind==='monthly'||l.kind==='monthly_maint') ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
     let internal = '';
     if(l.internal && l.internal.rows){
       const rows = l.internal.rows.map(r => typeof r === 'string'
@@ -731,7 +731,7 @@ function renderFacsimiles(ac){
 function bumpNegPhrases(){
   if(window._negPhrases.size){
     $('negPhraseNote').innerHTML = '<b>'+window._negPhrases.size+' negative phrases auto-counted from scan:</b> '
-      + [...window._negPhrases].join(' · ')+'. Bundle: $6,300 base + $20/1K brand volume — confirm bundle discount.';
+      + [...window._negPhrases].join(' · ')+'. Bundle: $6,050 base + $15/$10 per 1K brand volume (incl. up to 3 phrases — unconfirmed) — confirm bundle discount.';
   }
 }
 function renderAutocomplete(ac){
@@ -1268,10 +1268,13 @@ function renderCfg(c){
   h += cfgHdr('Website Removals ($ / site)', 'pricing from one example quote — need confirmation', 'warn');
   c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
   h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
-  h += cfgHdr('Search Protection Bundle', 'totals match Sage actuals — formula split unconfirmed', 'warn');
+  h += cfgHdr('Search Protection Bundle', 'Sage replay exact · lower Tru North tier · 3-phrase inclusion + maintenance % unconfirmed', 'warn');
   h += cfgRow('Suppression component base', cfgIn('c_supp', c.bundle.supp_base));
   h += cfgRow('Auto-suggest/related component base', cfgIn('c_as', c.bundle.as_base));
-  h += cfgRow('$ per 1K volume (each component)', cfgIn('c_p1k', c.bundle.comp_per_1k, 1));
+  h += cfgRow('$ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
+  h += cfgRow('$ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
+  h += cfgRow('Included negative phrases <span style="font-weight:400;color:#9a6700">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
+  h += cfgRow('Maintenance % of active rate', cfgIn('c_maintpct', Math.round((c.bundle.maintenance_pct ?? 0.544)*1000)/10, 1));
   h += cfgRow('Floor / Cap', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
   h += cfgRow('Partner hard cost base /mo', cfgIn('c_shield', c.shield_monthly));
@@ -1295,7 +1298,9 @@ $('cfgApply').onclick = async ()=>{
     review_brackets: CFG_CACHE.review_brackets.map((b,i)=>({hard: v('c_rb'+i)})),
     site_brackets: CFG_CACHE.site_brackets.map((b,i)=>({per: v('c_sb'+i)})),
     site_premium_per: v('c_sprem'),
-    bundle: {supp_base: v('c_supp'), as_base: v('c_as'), comp_per_1k: v('c_p1k'),
+    bundle: {supp_base: v('c_supp'), as_base: v('c_as'),
+             supp_per_1k: v('c_p1ks'), as_per_1k: v('c_p1ka'),
+             included_negatives: v('c_incneg'), maintenance_pct: v('c_maintpct')/100,
              floor: v('c_floor'), cap: v('c_cap')},
     shield_monthly: v('c_shield'), shield_per_extra_location: v('c_shloc'),
     geo: {setup: v('c_geos'), scale: v('c_geoc')},

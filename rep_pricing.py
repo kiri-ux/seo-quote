@@ -39,13 +39,12 @@ REP_CFG = {
     # Partner A/B remain internal fulfillment routing, not client pricing.
     "review_removal": {
         "default_margin_pct": 0.35,
+        # Hard cost CONFIRMED (Kiri, July 2026): $400/review up to 100
+        # reviews, $300/review over 100. Whole-order: rate applies to all.
+        # At the 35% default margin: $615/rev and $460/rev client.
         "brackets": [                       # whole-order: rate applies to all
-            {"min": 1,   "max": 25,   "hard": 585.00},
-            {"min": 26,  "max": 50,   "hard": 552.50},
-            {"min": 51,  "max": 100,  "hard": 520.00},
-            {"min": 101, "max": 250,  "hard": 487.50},
-            {"min": 251, "max": 350,  "hard": 455.00},
-            {"min": 351, "max": 500,  "hard": 422.50},
+            {"min": 1,   "max": 100,  "hard": 400.00},
+            {"min": 101, "max": None, "hard": 300.00},
         ],
         "timeline": "\u224848 hours\u201360 days depending on fulfillment routing",
         "pay_on_success": True,
@@ -69,35 +68,33 @@ REP_CFG = {
             {"min": 11, "max": 15,   "per": 5350},   # observed bulk batch ~15 @ $4.5\u20135.5K
             {"min": 16, "max": None, "per": 4950},   # Visions bulk floor
         ],
-        "premium_per": 12500,                        # top-tier news actual (Gannett, trade press)
+        "premium_per": 12500,                        # top-tier news actual (insurancenewsnet,
+                                                     # Gannett in-depth — Goldstone list July 2026)
         "timeline": "2\u20133 months average, up to 6",
         "pay_on_success": True,
-        # Site-class ESTIMATE bands (July 2026) — market research + Brendan
-        # anchors. Route determines cost: platform-policy flags are cheap,
-        # de-index/negotiation is mid, news-legal is expensive. Every page is
-        # still pending Brendan/contractor content review — the removal "hook"
-        # (fake / defamatory / PII / DMCA vs. truthful review) is the one
-        # variable that needs human eyes and can zero out feasibility.
+        # Site classes are ROUTING/DESCRIPTION only as of July 2026 — pricing
+        # for every standard class comes off the whole-order brackets above.
+        # Basis: Brendan's Goldstone-cluster removal list (July 2026) prices
+        # YouTube videos, Medium posts, PacerMonitor PDFs, root domains, and
+        # standard news stories all in ONE channel: bulk $4,500\u2013$5,500,
+        # rack $7,500\u2013$10,000. The old market bands ($900\u2013$3,000
+        # forum, $500\u2013$2,500 review-platform) have no basis in his
+        # channel and under-quoted by ~3\u20134\u00d7. Top-tier/in-depth news
+        # = premium_per ($12,500 \u2014 same domain can be either tier
+        # depending on the piece).
         "classes": {
             "review_platform": {
                 "label": "Review platform page (Trustpilot-class)",
-                "low": 500, "high": 2500, "est": 1500,
                 "route": "platform policy flag \u2192 Content Integrity review",
                 "timeline": "2\u201310 weeks"},
-                # market band only \u2014 no Brendan actuals; his contractors
-                # quote everything at removal-channel rates ($4.5K+ bulk)
             "forum": {
                 "label": "Forum thread (Reddit / Quora)",
-                "low": 900, "high": 3000, "est": 1950,
                 "route": "sitewide-policy removal or Google de-index",
                 "timeline": "1\u20138 weeks"},
-                # market band only \u2014 see note above
             "gripe": {
                 "label": "Complaint board (RipoffReport-class)",
-                "low": 4500, "high": 10000, "est": 7500,   # Brendan actuals: gripeo.com
                 "route": "de-index / negotiated removal (no source removal on RoR)",
                 "timeline": "2\u20133 months average, up to 6"},
-                # bulk $4,500\u20135,500 / rack $7,500\u201310,000 (invoice list July 2026)
         },
     },
 
@@ -107,8 +104,11 @@ REP_CFG = {
     "search_protection": {
         "suppression": {                       # organic search suppression
             "label": "Organic Search Suppression",
-            "base": 2900, "per_1k": 10,
-            "floor": 2900, "cap": 7500,
+            # Recalibrated July 2026 to the LOWER Tru North tier: $2,650
+            # floor (his base campaign) + $15/1K still lands Sage's $3,450
+            # exactly at 51,330/mo.
+            "base": 2650, "per_1k": 15,
+            "floor": 2650, "cap": 7500,
             # Intensity tiers per Brendan's Tru North structure: same work,
             # different monthly volume -> speed. Steps are his exact ±$1,000.
             "tiers": {
@@ -122,8 +122,14 @@ REP_CFG = {
             "base": 3400, "per_1k": 10,
             "floor": 3400, "cap": 7950,
             "timeline": "2\u20133 months to results, then 3\u20136 months maintenance",
-            "included_negatives": 3,
+            "included_negatives": 3,            # ⚠ UNCONFIRMED — Sage actual
+                                                # covered 2 phrases at this rate
             "per_extra_negative": 250,          # GUESS
+            # Ongoing-mode maintenance mirrors the Visions related-search
+            # structure ($2,150/mo after results). The $750 below stays as
+            # the guaranteed-mode actual (Goldstone 2021).
+            "ongoing_maintenance_monthly": 2150,
+            "ongoing_maintenance_timeline": "3\u20136 months post-result hold",
             # Guaranteed per-phrase actuals span $4,125 (Goldstone 2020, 2
             # phrases) to $9,250 (Goldstone 2021, 1 complex phrase) —
             # complexity-driven per Brendan's notes. Editable per quote.
@@ -222,8 +228,7 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
                  "value": f"${hard_total:,.0f} (${hard_per:,.2f}/rev)"},
                 {"label": f"Internal hard cost ({INTERNAL_COST_PCT['pct']:.0%})",
                  "value": f"${hard_total*INTERNAL_COST_PCT['pct']:,.0f} "
-                          f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev)",
-                 "tbd": True}],
+                          f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev)"}],
         },
     }
     if scan_meta:
@@ -297,21 +302,27 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
                   if k in cfg["classes"] and int(v or 0) > 0}
     use_classes = cls_counts and sum(cls_counts.values()) == n
     if use_classes:
+        # Whole-order bracket rate by TOTAL standard count — Brendan's July
+        # 2026 list prices every standard page in one channel regardless of
+        # site type; the class only determines route/label/timeline.
+        per35 = next(b["per"] for b in cfg["brackets"]
+                     if n >= b["min"] and (b["max"] is None or n <= b["max"]))
+        hard = _art_hard(per35)
+        unit = _art_client(hard, m)
         for key, cnt in cls_counts.items():
             c = cfg["classes"][key]
-            hard = _art_hard(c["est"])
-            unit = _art_client(hard, m)
             lines.append({
                 "service": "Negative Website/Article Removals",
-                "detail": f"{cnt} \u00d7 {c['label']} @ ~${unit:,}/page est. "
-                          f"(market band ${c['low']:,}\u2013${c['high']:,})",
+                "detail": f"{cnt} \u00d7 {c['label']} @ ${unit:,}/page "
+                          f"(whole-order bracket \u00b7 {n} standard "
+                          f"page{'s' if n != 1 else ''} \u00b7 bulk slides to "
+                          f"${cfg['brackets'][-1]['per']:,} at "
+                          f"{cfg['brackets'][-1]['min']}+)",
                 "qty": cnt, "unit": unit, "kind": "per_asset",
                 "total": unit * cnt, "timeline": c["timeline"],
+                "estimated": True,
                 "notes": [f"Route: {c['route']}.",
-                          "Pay on success \u2014 billed only for pages removed.",
-                          "\u26a0 ESTIMATE by site class \u2014 pending "
-                          "content review (the removal basis can change "
-                          "the price or zero out feasibility)."],
+                          "Pay on success \u2014 billed only for pages removed."],
                 "internal": _art_internal(hard, cnt, unit, m),
             })
     elif n:
@@ -367,29 +378,90 @@ SEARCH_BUNDLE = {
     # CEIL50'd before summing. Sage replay: $3,450 + $3,950 = $7,400/mo —
     # identical to Brendan quoting the two lines separately. All keys below
     # are editable live via /api/rep_config.
-    "supp_base": 2900, "as_base": 3400, "comp_per_1k": 10,
-    "floor": 6300, "cap": 15450,
+    # Suppression recalibrated July 2026 to the LOWER Tru North tier:
+    # $2,650 floor (his base campaign) + $15/1K still lands the Sage
+    # standard actual exactly (2,650 + 15×51.33 = 3,420 → CEIL50 $3,450).
+    "supp_base": 2650, "as_base": 3400,
+    "supp_per_1k": 15, "as_per_1k": 10,
+    "floor": 6050, "cap": 15450,
+    # 3 negative suggest/related phrases baked into the base price.
+    # ⚠ UNCONFIRMED — Sage actual covered 2 phrases at this rate; 3 is an
+    # internal assumption pending Brendan's confirmation.
+    "included_negatives": 3,
+    # Maintenance phase per the actuals: full rate until results, then a
+    # drop. Visions 2024: $3,950 active → $2,150 maintenance = 0.544; the
+    # same ratio applied per component replays the $2,150 exactly on the
+    # auto-suggest side. (Suppression-side maintenance is INFERRED — no
+    # SSG actual exists for it.)
+    "maintenance_pct": 0.544,
+    "maintenance_timeline": "3\u20136 months post-result hold",
     "timeline": "4-12 months",
 }
+
+def _bundle_components(volume):
+    """Per-component monthlies, each CEIL50'd (replays Brendan's separate
+    lines). Falls back to legacy shared comp_per_1k if present in a saved
+    config."""
+    v = max(0, volume) / 1000.0
+    p_s = SEARCH_BUNDLE.get("supp_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 15))
+    p_a = SEARCH_BUNDLE.get("as_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 10))
+    return (r50(SEARCH_BUNDLE["supp_base"] + p_s * v),
+            r50(SEARCH_BUNDLE["as_base"] + p_a * v))
 
 def price_search_bundle(volume, margin_pct=None):
     # Each former component keeps its own CEIL50 rounding before summing —
     # this replays Brendan's Sage quote exactly ($3,450 + $3,950 = $7,400);
     # rounding the summed formula instead lands $50 low.
-    v = max(0, volume) / 1000.0
-    m = (r50(SEARCH_BUNDLE["supp_base"] + SEARCH_BUNDLE["comp_per_1k"] * v)
-         + r50(SEARCH_BUNDLE["as_base"] + SEARCH_BUNDLE["comp_per_1k"] * v))
-    m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], m))
+    supp_m, as_m = _bundle_components(volume)
+    m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], supp_m + as_m))
+    hard = m * (1 - ART_CAL_MARGIN)
+    mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
+    m = r50(hard / (1 - mg))
+    p_s = SEARCH_BUNDLE.get("supp_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 15))
+    p_a = SEARCH_BUNDLE.get("as_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 10))
+    inc = SEARCH_BUNDLE.get("included_negatives", 3)
+    return {
+        "service": "Search Protection Bundle",
+        "detail": f"${SEARCH_BUNDLE['supp_base'] + SEARCH_BUNDLE['as_base']:,} base "
+                  f"+ ${p_s}/${p_a} per 1K (suppression / auto-suggest) on "
+                  f"{volume:,}/mo brand volume",
+        "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
+        "notes": ["Includes Organic Search Suppression, Auto-Suggest & Related "
+                  "Search Manipulation, and Branded Search Append.",
+                  f"Covers up to {inc} negative suggest/related phrases at the "
+                  "base price.",
+                  f"\u26a0 {inc}-phrase inclusion is an internal assumption "
+                  "(Sage actual covered 2 at this rate) \u2014 confirm pricing "
+                  "with Brendan before sending."],
+        "internal": {"rows": _mrows(hard, "/mo")},
+    }
+
+
+def price_search_bundle_maintenance(volume, margin_pct=None):
+    """Post-result maintenance phase, per the actuals: full rate while
+    active, then a drop once negatives are cleared. Ratio 0.544 is derived
+    from the Visions 2024 actual ($3,950 active → $2,150 maintenance) and,
+    applied per component, replays the $2,150 exactly on the auto-suggest
+    side. Sequential — never billed alongside the active line."""
+    pct = SEARCH_BUNDLE.get("maintenance_pct", 0.544)
+    supp_m, as_m = _bundle_components(volume)
+    m = r50(supp_m * pct) + r50(as_m * pct)
     hard = m * (1 - ART_CAL_MARGIN)
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     m = r50(hard / (1 - mg))
     return {
-        "service": "Search Protection Bundle",
-        "detail": f"${SEARCH_BUNDLE['supp_base'] + SEARCH_BUNDLE['as_base']:,} base "
-                  f"+ ${SEARCH_BUNDLE['comp_per_1k'] * 2}/1K on {volume:,}/mo brand volume",
-        "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
-        "notes": ["Includes Organic Search Suppression, Auto-Suggest & Related "
-                  "Search Manipulation, and Branded Search Append."],
+        "service": "Search Protection \u2014 Maintenance Phase",
+        "detail": f"{int(pct*1000)/10}% of the active rate once negatives "
+                  "are cleared \u00b7 holds the result",
+        "kind": "monthly_maint", "total": m,
+        "timeline": SEARCH_BUNDLE.get("maintenance_timeline",
+                                      "3\u20136 months post-result hold"),
+        "notes": ["Sequential \u2014 replaces the active line after results; "
+                  "never billed concurrently (excluded from the monthly total).",
+                  "Auto-suggest side replays the Visions 2024 actual "
+                  "($3,950 \u2192 $2,150); the suppression-side drop is "
+                  "INFERRED \u2014 no SSG actual exists.",
+                  ],
         "internal": {"rows": _mrows(hard, "/mo")},
     }
 
@@ -471,7 +543,19 @@ def price_search_protection(volume, use_suppression, use_autosuggest,
                 "detail": det, "kind": "monthly", "total": m, "timeline": c["timeline"],
                 "notes": ["Includes Branded Search Append.",
                           "Succeeds only while contracted search volume exceeds "
-                          "the negative-modifier volume."],
+                          "the negative-modifier volume.",
+                          f"\u26a0 {c['included_negatives']}-phrase inclusion is an "
+                          "internal assumption (Sage actual covered 2) \u2014 "
+                          "confirm with Brendan."],
+            })
+            lines.append({
+                "service": "Search Protection \u2014 Auto-Suggest Maintenance",
+                "detail": f"${c['ongoing_maintenance_monthly']:,}/mo after results "
+                          "(mirrors Visions related-search actual)",
+                "kind": "monthly_maint", "total": c["ongoing_maintenance_monthly"],
+                "timeline": c["ongoing_maintenance_timeline"],
+                "notes": ["Sequential \u2014 replaces the active line; never "
+                          "billed concurrently."],
             })
 
     if use_related:
@@ -496,7 +580,7 @@ def price_search_protection(volume, use_suppression, use_autosuggest,
             lines.append({
                 "service": "Search Protection \u2014 Related Search Maintenance",
                 "detail": f"${c['maintenance_monthly']:,}/mo after removal (Visions actual)",
-                "kind": "monthly", "total": c["maintenance_monthly"],
+                "kind": "monthly_maint", "total": c["maintenance_monthly"],
                 "timeline": c["maintenance_timeline"],
                 "notes": ["Not billed concurrently with the active phase \u2014 "
                           "sequential: active \u2192 maintenance."],
@@ -668,8 +752,7 @@ def build_rep_quote(payload):
                                    ar.get("classes"),
                                    ar.get("margin_pct", payload.get("margin_pct")))
         phase1 += art_lines
-        if any("\u26a0 ESTIMATE by site class" in nt
-               for ln in art_lines for nt in ln.get("notes", [])):
+        if any(ln.get("estimated") for ln in art_lines):
             warnings.append(
                 "Website/Article Removal lines are ESTIMATED by site class "
                 "(market bands + calibrated actuals) \u2014 every page "
@@ -678,6 +761,7 @@ def build_rep_quote(payload):
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
             phase1.append(price_search_bundle(vol, payload.get("margin_pct")))
+            phase1.append(price_search_bundle_maintenance(vol, payload.get("margin_pct")))
             sp = REP_CFG["search_protection"]
             if vol > sp["review_above_volume"]:
                 warnings.append(
