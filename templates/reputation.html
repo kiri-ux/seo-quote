@@ -426,18 +426,21 @@ function updateShieldFormula(){
   if(!box) return;
   const n = Math.max(1, +($('nLocations')||{}).value || 1);
   const m = Math.min(90, Math.max(0, +($('clientMargin')||{}).value || 35)) / 100;
-  const ref = 3450 + 525 * (n - 1);
-  const partner = ref * 0.65;
-  const internalC = partner * 0.20;
-  const client = Math.ceil((partner / (1 - m)) / 50) * 50;
+  const baseHard = 2250, locHard = 450;
+  const r50 = x => Math.ceil(x/50)*50;
+  const baseClient = r50(baseHard * (1 + m));
+  const locClient = r50(locHard * (1 + m));
+  const client = baseClient + (n-1) * locClient;
+  const hardTotal = baseHard + (n-1) * locHard;
   const money = x => '$' + Math.round(x).toLocaleString();
   box.innerHTML = '<b>Current calculation:</b> '
-    + money(3450) + ' base' + (n > 1 ? ' + $525 × ' + (n-1) + ' extra location' + (n>2?'s':'') : '')
-    + ' = <b>' + money(ref) + ' reference</b>. '
-    + 'Partner hard cost is 65% of that → <b>' + money(partner) + '/mo</b>. '
-    + 'Internal hard cost is 20% of partner → <b>' + money(internalC) + '/mo</b>. '
-    + 'Client price = partner cost ÷ (1 − ' + Math.round(m*100) + '% retail margin), rounded up to the nearest $50 → <b>' + money(client) + '/mo</b>.'
-    + '<div style="color:var(--muted);margin-top:3px">Base, per-location, and % values are editable in Pricing config.</div>';
+    + money(baseHard) + ' partner hard cost base'
+    + (n > 1 ? ' + ' + money(locHard) + ' \u00d7 ' + (n-1) + ' extra location' + (n>2?'s':'') + ' = ' + money(hardTotal) + ' partner hard' : '')
+    + '. Client adds ' + Math.round(m*100) + '% on top of each component, rounded up to the nearest $50 \u2192 '
+    + money(baseClient) + ' base' + (n > 1 ? ' + ' + money(locClient) + '/extra location' : '')
+    + ' = <b>' + money(client) + '/mo</b>. '
+    + 'Internal hard cost is 20% of partner \u2192 <b>' + money(hardTotal*0.20) + '/mo</b>.'
+    + '<div style="color:var(--muted);margin-top:3px">Hard base, per-location, and % values are editable in Pricing config.</div>';
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   updateShieldFormula();
@@ -461,6 +464,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanOut').innerHTML = '';
   window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
   window._scanData = {}; window._negDone = null; window._scanProv = null; negGen++; reviewTasks = [];
+  $('scanOut').innerHTML = '<div id="termsBlock"></div><div id="serpBlock"></div><div id="locsBlock"></div>';
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
   async function fetchJSON(url, o, _retried){
@@ -480,7 +484,7 @@ $('scanBtn').onclick = async ()=>{
   const step = async (label, fn) => {
     $('scanProg').textContent = label;
     try{ await fn(); }
-    catch(e){ $('scanOut').innerHTML += '<div class="err">'+label+' failed: '+e+'</div>'; }
+    catch(e){ const ed = document.createElement('div'); ed.className='err'; ed.textContent = label+' failed: '+e; $('scanOut').appendChild(ed); }
   };
   // Locations run FIRST (instant database call) so a listing-name mismatch
   // can be caught and adopted BEFORE the SERP/term/suggest steps spend calls
@@ -495,6 +499,7 @@ $('scanBtn').onclick = async ()=>{
         if(confirm('Google lists this client as \u201c'+listName+'\u201d (found via their website).\n\nScan using that name instead of \u201c'+brand+'\u201d? The term universe, SERP, and auto-suggest results will be much more accurate under the name people actually search.')){
           brand = listName;
           $('brand').value = listName;
+          autoCountLowest();   // name settled — safe to spend on review pulls
         }
       }
     }
@@ -514,7 +519,8 @@ function reco(toggle, label, reason, sets){
     window._reco.push({toggle, label, reason, sets: sets||{}});
 }
 function renderTerms(d){
-  if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  const tb = document.getElementById('termsBlock') || $('scanOut');
+  if(d.error){ tb.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
   if(d.negative_volume > 0){
     const negs = (d.terms||[]).filter(x=>x.class==='negative').slice(0,4)
       .map(x=>x.term+' ('+x.volume.toLocaleString()+')').join(' + ');
@@ -537,11 +543,12 @@ function renderTerms(d){
     flagged.forEach(t=>{ h += '<tr><td>'+t.term+'</td><td class="'+(t.class==='negative'?'neg':'watch')+'">'+t.class+'</td><td class="n">'+t.volume.toLocaleString()+'</td></tr>'; });
     h += '</table>';
   }
-  $('scanOut').innerHTML += h;
+  tb.innerHTML = h;
 }
 
 function renderSerp(d){
-  if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
+  const sb = document.getElementById('serpBlock') || $('scanOut');
+  if(d.error){ sb.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
   let h = '<div class="scanhdr">Top Google Results · "'+d.query+'"</div>';
   h += '<p class="help" style="margin:2px 0 6px">The top 10 results (plus discussion threads ranking with them) when someone searches "'+d.query+'" — <b>'+d.owned_in_top10+' of 10</b> are client-controlled, and each gets the action shown.</p>';
   h += '<details style="margin:0 0 8px"><summary class="help" style="display:inline;cursor:pointer;margin:0">How results are classified ▸</summary>'
@@ -598,7 +605,7 @@ function renderSerp(d){
     d.negative_pasf.forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
-  $('scanOut').innerHTML += h;
+  sb.innerHTML = h;
   $('shotDock').innerHTML = '<p class="help" style="margin:0 0 6px">"'+d.query+'"</p>'
      + '<div><button class="btn2" id="shotBtn" type="button">📸 Capture real SERP screenshot</button>'
      + ' <span class="help" id="shotProg" style="margin-left:8px">Proposal-ready image via DFS (~30–60s).</span></div>'
@@ -871,6 +878,12 @@ function renderLocs(d, live){
      + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location · results in ~1 min. Pull depth is set in Pricing config.</div></div>'
      + '<div id="negOut"></div>';
   box.innerHTML = h;
+  if(!window._cntDelegated){
+    window._cntDelegated = true;
+    $('scanOut').addEventListener('click', e=>{
+      if(e.target && e.target.id === 'countNegBtn') submitNegCount();
+    });
+  }
   const uln = document.getElementById('useListName');
   if(uln) uln.onclick = (e)=>{
     e.preventDefault();
@@ -878,21 +891,32 @@ function renderLocs(d, live){
     const note = document.getElementById('listNameNote');
     if(note) note.innerHTML = '\u2713 Client name updated to \u201c'+(window._listName||'')+'\u201d — future scans use it (already-scanned terms/SERP used the old name).';
   };
-  $('countNegBtn').onclick = ()=>submitNegCount();
   $('lockAll').onchange = e => { document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; }); syncShieldLocs(); };
   document.querySelectorAll('.locck').forEach(c=>{ c.addEventListener('change', syncShieldLocs); });
   syncShieldLocs();
   if(live){
-    // Auto-count the 3 lowest-rated locations on a fresh scan (cheap:
-    // ~$0.03 each). Check them so the selection is visible, then run.
-    const order = scanLocations.map((l,i)=>({i, r: l.rating||5, v: l.reviews||0}))
-      .sort((a,b)=> a.r - b.r || b.v - a.v).slice(0,3).map(x=>x.i);
-    order.forEach(i=>{ const c = document.querySelector('.locck[data-i="'+i+'"]'); if(c) c.checked = true; });
-    syncShieldLocs();
-    if(order.length){
-      $('negProg').textContent = 'Auto-counting the '+order.length+' lowest-rated location'+(order.length!==1?'s':'')+'\u2026';
-      submitNegCount(order.map(i=>scanLocations[i].place_id).filter(Boolean));
+    const listName = ((scanLocations.slice().sort((a,b)=>(b.reviews||0)-(a.reviews||0))[0]||{}).title||'').trim();
+    const nameMismatch = d.strategy === 'domain'
+      && listName && listName.toLowerCase() !== ($('brand').value.trim().toLowerCase());
+    if(nameMismatch){
+      // Don't spend on review pulls until the name question is settled — the
+      // scan flow re-triggers the auto-count if the listing name is adopted.
+      $('negProg').textContent = 'Auto-count paused — the listing name differs from the client name.';
+    }else{
+      autoCountLowest();
     }
+  }
+}
+function autoCountLowest(){
+  // Auto-count the 3 lowest-rated locations (cheap: ~$0.03 each). Check them
+  // so the selection is visible, then run.
+  const order = scanLocations.map((l,i)=>({i, r: l.rating||5, v: l.reviews||0}))
+    .sort((a,b)=> a.r - b.r || b.v - a.v).slice(0,3).map(x=>x.i);
+  order.forEach(i=>{ const c = document.querySelector('.locck[data-i="'+i+'"]'); if(c) c.checked = true; });
+  syncShieldLocs();
+  if(order.length){
+    $('negProg').textContent = 'Auto-counting the '+order.length+' lowest-rated location'+(order.length!==1?'s':'')+'\u2026';
+    submitNegCount(order.map(i=>scanLocations[i].place_id).filter(Boolean));
   }
 }
 
@@ -1106,6 +1130,7 @@ function restoreScan(sc){
   if(!sc || !sc.data) return;
   window._scanData = sc.data;
   window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
+  $('scanOut').innerHTML = '<div id="termsBlock"></div><div id="serpBlock"></div><div id="locsBlock"></div>';
   $('scanCard').classList.remove('hidden');
   $('scanOut').innerHTML = '';
   $('scanProg').classList.remove('hidden');
@@ -1205,8 +1230,8 @@ function renderCfg(c){
   h += cfgRow('$ per 1K volume (each component)', cfgIn('c_p1k', c.bundle.comp_per_1k, 1));
   h += cfgRow('Floor / Cap', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
-  h += cfgRow('Monthly', cfgIn('c_shield', c.shield_monthly));
-  h += cfgRow('Per extra location', cfgIn('c_shloc', c.shield_per_extra_location));
+  h += cfgRow('Partner hard cost base /mo', cfgIn('c_shield', c.shield_monthly));
+  h += cfgRow('Partner hard cost per extra location /mo', cfgIn('c_shloc', c.shield_per_extra_location));
   h += cfgHdr('Reputational AI Search', 'Sage GEO card actuals — reputational use unconfirmed', 'warn');
   h += cfgRow('Setup /mo', cfgIn('c_geos', c.geo.setup));
   h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));

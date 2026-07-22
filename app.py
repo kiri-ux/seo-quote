@@ -3210,8 +3210,8 @@ def api_rep_config_get():
         "site_premium_per": rc["article_removal"]["premium_per"],
         "bundle": {k: rep_pricing.SEARCH_BUNDLE[k]
                    for k in ("supp_base", "as_base", "comp_per_1k", "floor", "cap")},
-        "shield_monthly": rc["shield"]["monthly"],
-        "shield_per_extra_location": rc["shield"]["per_extra_location"],
+        "shield_monthly": rc["shield"]["monthly_hard"],
+        "shield_per_extra_location": rc["shield"]["per_extra_location_hard"],
         "geo": {p: rep_pricing.GEO[p]["monthly"] for p in ("setup", "scale")},
         "bundle_discount_pct": rc["bundle"]["recurring_discount_pct"],
         "internal_cost_pct": rep_pricing.INTERNAL_COST_PCT["pct"],
@@ -3242,9 +3242,9 @@ def api_rep_config_set():
                 if k in d["bundle"]:
                     rep_pricing.SEARCH_BUNDLE[k] = int(float(d["bundle"][k])) if k != "comp_per_1k" else float(d["bundle"][k])
         if "shield_monthly" in d:
-            rc["shield"]["monthly"] = int(float(d["shield_monthly"]))
+            rc["shield"]["monthly_hard"] = int(float(d["shield_monthly"]))
         if "shield_per_extra_location" in d:
-            rc["shield"]["per_extra_location"] = int(float(d["shield_per_extra_location"]))
+            rc["shield"]["per_extra_location_hard"] = int(float(d["shield_per_extra_location"]))
         if "geo" in d and isinstance(d["geo"], dict):
             for p in ("setup", "scale"):
                 if p in d["geo"]:

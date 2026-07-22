@@ -151,19 +151,16 @@ REP_CFG = {
     },
 
     # ------------------------------------------------- proactive brand shield
+    # Partner-hard-cost canonical (Kiri, July 2026): $2,250/mo hard base +
+    # $450/mo hard per extra location. Client price = each component
+    # \u00d7 (1 + retail margin), rounded UP to the nearest $50 separately.
     "shield": {
-        # ESTIMATE (July 2026) — Brendan to review. Doc says "$[Monthly Price]";
-        # derived from actuals we hold: SEO moat/asset-building anchored to the
-        # suppression base ($2,900/mo — same positive-asset work minus crisis
-        # targeting, monitoring folded in) + one Google review-gen batch
-        # ($105 × 5/mo min, Goldstone 2021 actual) = r50(2900+525) = $3,450.
-        "monthly": 3450,                  # ESTIMATE — confirm with Brendan
+        "monthly_hard": 2250,             # partner hard cost, base (1 location)
         "included": ["SEO Brand Shield & Asset Building",
                      "Automated Review Generation & Sentiment Routing",
                      "24/7 Brand Monitoring & Threat Detection"],
-        # Review-gen outreach scales with locations; first N included.
         "included_locations": 1,
-        "per_extra_location": 525,        # ESTIMATE — one review-gen batch/location
+        "per_extra_location_hard": 450,   # partner hard cost per extra location
     },
 
     # ---------------------------------------------------------------- bundle
@@ -632,23 +629,22 @@ def price_shield(locations=1, margin_pct=None):
     cfg = REP_CFG["shield"]
     locations = max(1, int(locations or 1))
     extra = max(0, locations - cfg["included_locations"])
-    t35 = r50(cfg["monthly"] + extra * cfg["per_extra_location"])
-    hard = t35 * (1 - ART_CAL_MARGIN)
-    mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
-    total = r50(hard / (1 - mg))
+    m = 0.35 if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
+    base_hard = cfg["monthly_hard"]
+    loc_hard = cfg["per_extra_location_hard"]
+    base_client = r50(base_hard * (1 + m))
+    loc_client = r50(loc_hard * (1 + m))
+    total = base_client + extra * loc_client
+    hard_total = base_hard + extra * loc_hard
     det = "Proactive Brand Shield Bundle"
-    if extra and cfg["per_extra_location"]:
-        det += (f" \u00b7 {locations} locations "
-                f"(+${cfg['per_extra_location']:,}/extra location)")
+    if extra:
+        det += f" \u00b7 {locations} locations (+${loc_client:,}/extra location)"
     return {
         "service": "Proactive Brand Shield",
         "detail": det, "kind": "monthly", "total": total,
         "timeline": "Ongoing",
-        "notes": cfg["included"] + [
-            "\u26a0 ESTIMATED pricing \u2014 pending review. Basis: brand "
-            "shield anchored to the $2,900 suppression base + $525/mo Google "
-            "review-gen batch per location (Goldstone 2021 actuals)."],
-        "internal": {"rows": _mrows(hard, "/mo")},
+        "notes": list(cfg["included"]),
+        "internal": {"rows": _mrows(hard_total, "/mo")},
     }
 
 
