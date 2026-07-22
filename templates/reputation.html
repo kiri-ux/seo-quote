@@ -301,6 +301,7 @@ document.querySelectorAll('.ctype').forEach(el=>{
   el.onclick = ()=>{
     document.querySelectorAll('.ctype').forEach(x=>x.classList.remove('on'));
     el.classList.add('on'); campaign = el.dataset.c; syncVisibility();
+    if(document.getElementById('brandReco')) renderBrandReco();
   };
 });
 ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{
@@ -393,12 +394,12 @@ function render(d, payload){
     }
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
-       + internal
        + '</td><td>'+l.timeline+'</td><td class="amt">'
        + (l.unit_label
           ? '<div style="font-weight:700;color:var(--atlas)">'+l.unit_label+'</div><div class="help" style="margin:3px 0 0;text-align:right">up to '+money(l.total)+'<br>'+l.qty.toLocaleString()+' flagged</div>'
           : (l.kind==='per_asset'?'up to ':'')+money(l.total)+per)
        + '</td></tr>';
+    if(internal) h += '<tr class="intltr"><td colspan="3" style="border-top:none;padding-top:0">'+internal+'</td></tr>';
   });
   h += '</table>';
 
@@ -728,14 +729,13 @@ function renderBrandReco(){
   const matches = campaign === rec;
   box.innerHTML = '<div style="border:1px solid var(--velocity);background:#eef5fb;border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
     + '<b style="color:var(--atlas)">Recommended strategy: '+recLabel+'</b> \u2014 '+why+' '
-    + (matches ? '<span style="color:#137333;font-weight:600">\u2713 matches the selected strategy.</span>'
+    + (matches ? '<button class="btn2" type="button" disabled style="opacity:.5;cursor:default">\u2713 '+recLabel+' selected</button>'
                : '<button class="btn2" type="button" id="brandRecoBtn" data-rec="'+rec+'">Switch to '+recLabel+'</button>')
     + '</div>';
   const bb = document.getElementById('brandRecoBtn');
   if(bb) bb.onclick = ()=>{
     const el = document.querySelector('.ctype[data-c="'+bb.dataset.rec+'"]');
     if(el) el.click();
-    renderBrandReco();
   };
 }
 function renderReco(){
@@ -898,6 +898,7 @@ function restoreForm(f){
   if(f.campaign){
     campaign = f.campaign;
     document.querySelectorAll('.ctype').forEach(x=>x.classList.toggle('on', x.dataset.c===campaign));
+    if(document.getElementById('brandReco')) renderBrandReco();
   }
   syncVisibility();
 }
@@ -1095,7 +1096,9 @@ function renderCfg(c){
   h += cfgRow('Setup /mo', cfgIn('c_geos', c.geo.setup));
   h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));
   h += cfgHdr('Reactive + Proactive bundle', 'discount unconfirmed', 'warn');
-  h += cfgRow('Recurring-line discount %', cfgIn('c_bdisc', Math.round(c.bundle_discount_pct*100), 1));
+  h += '<div style="background:#fef3e2;border:1px solid #f1b434;border-radius:8px;padding:4px 10px;margin:4px 0">'
+     + cfgRow('Reactive+Proactive bundle discount % <span style="font-weight:400;color:#9a6700">(applies to recurring lines when both phases are sold — 0 = no discount)</span>', cfgIn('c_bdisc', Math.round(c.bundle_discount_pct*100), 1))
+     + '</div>';
   h += cfgHdr('Internal delivery cost');
   h += cfgRow('% of partner hard cost', cfgIn('c_intpct', Math.round((c.internal_cost_pct||0.2)*100), 1));
   $('cfgBody').innerHTML = h;
