@@ -477,7 +477,7 @@ $('scanBtn').onclick = async ()=>{
   await step('1/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
   await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
   await step('3/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
-  await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand}); if(!r.error) window._scanData.locations = r; renderLocs(r, true); });
+  await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand, domain: $('domain').value.trim()}); if(!r.error) window._scanData.locations = r; renderLocs(r, true); });
   renderReco();
   renderBrandReco();
   $('scanProg').textContent = 'Scan complete.';
@@ -798,10 +798,11 @@ function renderLocs(d, live){
   if(!box){ box = document.createElement('div'); box.id = 'locsBlock'; $('scanOut').appendChild(box); }
   if(d.error){ box.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
   scanLocations = d.locations || [];
-  let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
+  let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>'
+    + (d.strategy==='domain' ? '<p class="help" style="margin:2px 0 4px">Matched via the client website — the listing name differs from the client name.</p>' : '');
   if(!scanLocations.length){
     box.innerHTML = h
-      + '<p class="help">'+(d.error_detail||'None found in the listings database.')+' The Google Business listing often uses a different name than the client — try the exact listing name:</p>'
+      + '<p class="help">'+(d.error_detail||'None found in the listings database (searched by name and by the client website).')+' Try the exact Google Business listing name:</p>'
       + '<div class="row"><input type="text" id="locAltName" placeholder="e.g. Cisney &amp; O\'Donnell Roofing" style="flex:1">'
       + '<button class="btn2" id="locRetryBtn" type="button" style="flex:0 0 auto">Search listings again</button></div>'
       + '<div class="help" id="locRetryProg" style="margin-top:4px"></div>';
@@ -811,7 +812,7 @@ function renderLocs(d, live){
       document.getElementById('locRetryProg').textContent = 'Searching listings for "'+alt+'"\u2026';
       try{
         const r = await (await fetch('/api/rep_scan_locations', {method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({brand: alt})})).json();
+          body: JSON.stringify({brand: alt, domain: $('domain').value.trim()})})).json();
         if(!r.error){ window._scanData = window._scanData || {}; window._scanData.locations = r; }
         renderLocs(r, true);
       }catch(e){ document.getElementById('locRetryProg').textContent = 'Search failed: '+e; }

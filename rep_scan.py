@@ -284,11 +284,13 @@ def scan_autocomplete(brand):
 
 
 # ---------------------------------------------------------------- locations
-def scan_locations(brand, limit=200):
+def scan_locations(brand, limit=200, domain=None):
     """Google Business location discovery via the Business Listings database
-    (instant, no scrape). Uses the dedicated `title` search field, with a
-    filter-based fallback; surfaces the DFS error instead of returning an
-    empty list when the call itself failed."""
+    (instant, no scrape). Tries the `title` search field, filter fallbacks,
+    and — when the client website is known — a domain match, which finds the
+    listing even when its name differs from the client name."""
+    dom = (domain or "").lower().strip()
+    dom = re.sub(r"^https?://", "", dom).split("/")[0].replace("www.", "")
     attempts = [
         {"title": brand, "limit": limit,
          "order_by": ["rating.votes_count,desc"]},
@@ -297,9 +299,17 @@ def scan_locations(brand, limit=200):
         {"filters": [["title", "like", f"%{brand.lower()}%"]], "limit": limit,
          "order_by": ["rating.votes_count,desc"]},
     ]
+    if dom:
+        attempts += [
+            {"filters": [["domain", "=", dom]], "limit": limit,
+             "order_by": ["rating.votes_count,desc"], "_via_domain": True},
+            {"filters": [["url", "like", f"%{dom}%"]], "limit": limit,
+             "order_by": ["rating.votes_count,desc"], "_via_domain": True},
+        ]
     last_err = None
     b_tokens = [w for w in brand.lower().split() if len(w) > 1]
     for payload in attempts:
+        via_domain = payload.pop("_via_domain", False)
         try:
             data = _post("/business_data/business_listings/search/live",
                          [payload], timeout=90)
@@ -311,8 +321,9 @@ def scan_locations(brand, limit=200):
             locs = []
             for it in items:
                 title = (it.get("title") or "")
-                # keep only rows whose title actually contains the brand tokens
-                if not all(tok in title.lower() for tok in b_tokens):
+                # Title searches must contain the brand tokens; domain matches
+                # skip that gate — a name mismatch is exactly what they solve.
+                if not via_domain and not all(tok in title.lower() for tok in b_tokens):
                     continue
                 rat = it.get("rating") or {}
                 locs.append({
@@ -326,7 +337,8 @@ def scan_locations(brand, limit=200):
             if locs:
                 return {"locations": locs,
                         "total_reviews": sum(l["reviews"] for l in locs),
-                        "strategy": "title" if "title" in payload else "filter"}
+                        "strategy": "domain" if via_domain
+                                    else ("title" if "title" in payload else "filter")}
         except Exception as e:
             last_err = str(e)
     if last_err:

@@ -3160,7 +3160,7 @@ def api_rep_scan_locations():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        return jsonify(rep_scan.scan_locations(brand))
+        return jsonify(rep_scan.scan_locations(brand, domain=(d.get("domain") or "")))
     except Exception as e:
         return jsonify({"error": f"Location scan failed: {e}"}), 502
 
