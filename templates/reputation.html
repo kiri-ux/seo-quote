@@ -268,6 +268,10 @@
         <h2>Quote</h2>
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
+      <div class="card hidden" id="shotCard">
+        <h2>SERP Screenshot</h2>
+        <div id="shotDock"></div>
+      </div>
     </div>
   </div>
 
@@ -372,7 +376,9 @@ function render(d, payload){
     }
     const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
     let internal = '';
-    if(l.internal){
+    if(l.internal && l.internal.text){
+      internal = '<div class="intl">Internal · '+l.internal.text+'</div>';
+    } else if(l.internal){
       internal = '<div class="intl">Internal · hard cost '+money(Math.round(l.internal.hard_total))
                + ' ($'+l.internal.hard_per.toLocaleString()+'/review) · margin '
                + money(Math.round(l.internal.profit_total))+' ('+Math.round(l.internal.margin_pct*100)+'% of gross)</div>';
@@ -472,8 +478,8 @@ function renderTerms(d){
 
 function renderSerp(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
-  let h = '<div class="scanhdr">SERP Threats · "'+d.query+'"</div>';
-  h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled. Review counts in the removal quote cover <b>Google Business reviews only</b> — reviews on the sites below are not in that count; each routes to the tactic shown.</p>';
+  let h = '<div class="scanhdr">SERP Results · "'+d.query+'"</div>';
+  h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled — each result below routes to the tactic shown.</p>';
   const siteRemovals = (d.organic||[]).filter(o=>o.tactic==='site removal').length + (d.forums||[]).filter(f=>f.tactic==='site removal').length;
   if(siteRemovals){
     const remPages = [...(d.organic||[]).filter(o=>o.tactic==='site removal'),
@@ -516,17 +522,23 @@ function renderSerp(d){
     d.negative_pasf.forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
-  h += '<div style="margin-top:8px"><button class="btn2" id="shotBtn" type="button">📸 Capture real SERP screenshot</button>'
+  $('scanOut').innerHTML += h;
+  $('shotDock').innerHTML = '<p class="help" style="margin:0 0 6px">"'+d.query+'"</p>'
+     + '<div><button class="btn2" id="shotBtn" type="button">📸 Capture real SERP screenshot</button>'
      + ' <span class="help" id="shotProg" style="margin-left:8px">Proposal-ready image via DFS (~30–60s).</span></div>'
      + '<div id="shotOut">' + (window._scanData && window._scanData.shots && window._scanData.shots[d.query]
         ? '<img class="shotimg" src="'+window._scanData.shots[d.query]+'"><div class="help">Restored from saved quote.</div>' : '') + '</div>';
-  $('scanOut').innerHTML += h;
+  $('shotCard').classList.remove('hidden');
 }
 
 // Delegated: later innerHTML+= appends re-parse #scanOut and destroy
 // property-assigned handlers, so the shot button binds at the container.
 $('scanOut').addEventListener('click', e => {
   if (e.target && e.target.classList && e.target.classList.contains('acRetry')){ retryAutocomplete(); return; }
+  if (e.target && e.target.id === 'shotBtn')
+    captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
+});
+$('shotDock').addEventListener('click', e => {
   if (e.target && e.target.id === 'shotBtn')
     captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
 });
@@ -550,7 +562,7 @@ async function captureShot(keyword){
         return {error: e.name === 'AbortError' ? 'request timed out ('+(ms/1000)+'s)' : String(e)}; });
   };
   status('Queuing the render…');
-  const q = await timedFetch('/api/serp_queue', {keyword, geo_values: [], device: 'desktop', width: 1600, scale: 2}, 25000);
+  const q = await timedFetch('/api/serp_queue', {keyword, geo_values: [], device: 'desktop', width: 1200, scale: 2}, 25000);
   if(q.error){ done('Queue failed: '+q.error); return; }
   if(!q.task_id){ done('Queue returned no task id.'); return; }
   status('Queued (task '+String(q.task_id).slice(0,8)+'…) — rendering…');

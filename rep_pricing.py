@@ -246,6 +246,19 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
     return line
 
 
+def _art_internal(per, cnt):
+    """Internal basis line for removal pricing. Brendan's July 2026 invoice
+    list is the anchor, but whether those figures are contractor hard cost or
+    client billing is UNCONFIRMED \u2014 show both readings until he clarifies."""
+    m = REP_CFG["review_removal"]["default_margin_pct"]
+    gross = r50(per / (1 - m))
+    return (f"basis: Brendan invoice list (Jul 2026) \u2014 unconfirmed whether "
+            f"contractor hard cost or client billing. If hard cost: client "
+            f"${gross:,}/page at {int(m*100)}% margin "
+            f"(${gross*cnt:,} total); if client billing: margin unknown \u2014 "
+            f"ask Brendan for contractor cost.")
+
+
 def price_articles(n_standard, n_premium, classes=None):
     """Website/article removals. When the scan supplies per-site-class counts
     (and the manual standard count wasn't overridden away from them), price
@@ -271,6 +284,7 @@ def price_articles(n_standard, n_premium, classes=None):
                           "\u26a0 ESTIMATE by site class \u2014 pending "
                           "Brendan/contractor content review (the removal "
                           "basis can change the price or zero out feasibility)."],
+                "internal": {"text": _art_internal(c["est"], cnt)},
             })
     elif n:
         per = next(b["per"] for b in cfg["brackets"]
@@ -283,6 +297,7 @@ def price_articles(n_standard, n_premium, classes=None):
             "timeline": cfg["timeline"],
             "notes": ["Pay on success \u2014 billed only for sites removed.",
                       "Always custom-quoted after human review (Brendan)."],
+            "internal": {"text": _art_internal(per, n)},
         })
     p = max(0, int(n_premium or 0))
     if p:
@@ -295,6 +310,7 @@ def price_articles(n_standard, n_premium, classes=None):
             "timeline": "10\u201314 weeks typical (12-month contract window)",
             "notes": ["Pay on success \u2014 ~50% success on premium hosts.",
                       "Always custom-quoted after human review (Brendan)."],
+            "internal": {"text": _art_internal(cfg["premium_per"], p)},
         })
     return lines
 
@@ -341,6 +357,9 @@ def price_search_bundle(volume):
                   "Search Manipulation, and Branded Search Append.",
                   "Auto-suggest succeeds only while contracted search volume "
                   "exceeds the negative-modifier volume."],
+        "internal": {"text": "hard cost not on file \u2014 formula replays "
+                     "Brendan's client-facing Sage components ($3,450 + $3,950); "
+                     "delivery/fulfillment cost unknown \u2014 ask Brendan."},
     }
 
 
@@ -504,7 +523,10 @@ def price_geo(phase="setup"):
                       "Pricing is the Sage Digital Partner GEO card ($4,950 setup / "
                       "$9,950 scale) \u2014 the reputational application was never "
                       "separately priced; CONFIRM structure with Brendan.",
-                      "Recommend setup phase 1\u20132 quarters, then scale."]}
+                      "Recommend setup phase 1\u20132 quarters, then scale."],
+            "internal": {"text": "hard cost not on file \u2014 Sage GEO card is "
+                         "client-facing pricing; fulfillment cost unknown \u2014 "
+                         "ask Brendan."}}
 
 
 # Hobart Wealth actuals (2021): PR pay-per-placement.
@@ -581,6 +603,9 @@ def price_shield(locations=1):
             "\u26a0 ESTIMATED pricing \u2014 Brendan to review. Basis: SEO moat "
             "anchored to the $2,900 suppression base + $525/mo Google "
             "review-gen batch per location (Goldstone 2021 actuals)."],
+        "internal": {"text": "hard cost not on file \u2014 internal estimate "
+                     "built from client-facing anchors (suppression base + "
+                     "review-gen batch); delivery cost unknown \u2014 ask Brendan."},
     }
 
 
