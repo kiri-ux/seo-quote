@@ -56,14 +56,20 @@ REP_CFG = {
     # Premium (DA>35 / news-legal class) = Tru North actual $7,500. Brendan's
     # notes: always custom quoted + human review — these are starting anchors.
     "article_removal": {
+        # Recalibrated July 2026 from Brendan's contractor invoice list
+        # (19 URLs, Goldstone-cluster engagements): rack rate $7,500\u2013$10,000
+        # per page (his words), bulk orders $4,500\u2013$5,500, top-tier news
+        # $12,500. The Visions whole-order bracket ($5,950\u2192$4,950) matches
+        # the BULK rate \u2014 it was a 25+ site order \u2014 so small orders now
+        # start at rack and slide to the confirmed bulk floor.
         "brackets": [
-            {"min": 1,  "max": 3,    "per": 5950},
-            {"min": 4,  "max": 6,    "per": 5750},
-            {"min": 7,  "max": 10,   "per": 5350},
-            {"min": 11, "max": 15,   "per": 5150},
-            {"min": 16, "max": None, "per": 4950},
+            {"min": 1,  "max": 3,    "per": 7500},   # rack (observed: repost @ $7,500)
+            {"min": 4,  "max": 6,    "per": 6500},
+            {"min": 7,  "max": 10,   "per": 5750},
+            {"min": 11, "max": 15,   "per": 5350},   # observed bulk batch ~15 @ $4.5\u20135.5K
+            {"min": 16, "max": None, "per": 4950},   # Visions bulk floor
         ],
-        "premium_per": 7500,
+        "premium_per": 12500,                        # top-tier news actual (Gannett, trade press)
         "timeline": "2\u20133 months average, up to 6",
         "pay_on_success": True,
         # Site-class ESTIMATE bands (July 2026) — market research + Brendan
@@ -78,16 +84,20 @@ REP_CFG = {
                 "low": 500, "high": 2500, "est": 1500,
                 "route": "platform policy flag \u2192 Content Integrity review",
                 "timeline": "2\u201310 weeks"},
+                # market band only \u2014 no Brendan actuals; his contractors
+                # quote everything at removal-channel rates ($4.5K+ bulk)
             "forum": {
                 "label": "Forum thread (Reddit / Quora)",
                 "low": 900, "high": 3000, "est": 1950,
                 "route": "sitewide-policy removal or Google de-index",
                 "timeline": "1\u20138 weeks"},
+                # market band only \u2014 see note above
             "gripe": {
                 "label": "Complaint board (RipoffReport-class)",
-                "low": 1000, "high": 8000, "est": 5350,   # Visions mid-bracket anchor
+                "low": 4500, "high": 10000, "est": 7500,   # Brendan actuals: gripeo.com
                 "route": "de-index / negotiated removal (no source removal on RoR)",
                 "timeline": "2\u20133 months average, up to 6"},
+                # bulk $4,500\u20135,500 / rack $7,500\u201310,000 (invoice list July 2026)
         },
     },
 
