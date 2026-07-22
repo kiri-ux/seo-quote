@@ -257,7 +257,7 @@
       <div class="card hidden" id="secProactive">
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
-        <p class="help">SEO "Moat" &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
+        <p class="help">SEO brand shield &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
@@ -904,7 +904,8 @@ function restoreForm(f){
 
 async function autoSave(){
   if(!await savingStatus() || !lastQuote) return;
-  const name = CURRENT_QUOTE_NAME || (($('brand').value.trim()||'Rep quote')+' — '+new Date().toLocaleDateString());
+  const stratName = {reactive:'reactive', proactive:'proactive', bundle:'reactive + proactive'}[campaign] || campaign;
+  const name = CURRENT_QUOTE_NAME || (($('brand').value.trim()||'Rep quote')+' - '+new Date().toLocaleDateString()+' - '+stratName);
   const payload = {form: collectForm(), quote: lastQuote, rep_totals: lastQuote.totals,
                    scan: (window._scanData && Object.keys(window._scanData).length)
                      ? {data: window._scanData, negDone: window._negDone, prov: window._scanProv} : null};
