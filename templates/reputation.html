@@ -124,7 +124,7 @@
 <body>
 <header>
   <div class="hrow">
-    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— build 2026-07-22.1</span></h1>
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— {{ build }}</span></h1>
     <div style="display:flex;gap:8px">
     <button id="cfgBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
     <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
@@ -807,7 +807,13 @@ function renderLocs(d, live){
   if(d.error){ box.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>'
-    + (d.strategy==='domain' ? '<p class="help" style="margin:2px 0 4px">Matched via the client website — the listing name differs from the client name.</p>' : '');
+    + (d.strategy==='domain' ? (function(){
+        const listName = ((scanLocations.slice().sort((a,b)=>(b.reviews||0)-(a.reviews||0))[0]||{}).title||'').trim();
+        const differs = listName && listName.toLowerCase() !== ($('brand').value.trim().toLowerCase());
+        return '<p class="help" style="margin:2px 0 4px">Matched via the client website — the listing name differs from the client name.'
+          + (differs ? ' Google lists them as <b>'+listName+'</b> — <a href="#" onclick="$(\'brand\').value='+JSON.stringify(listName)+';this.parentElement.innerHTML=\'\u2713 Client name updated — re-run Scan brand so terms &amp; SERP use it.\';return false">use as Client Name</a>.' : '')
+          + '</p>';
+      })() : '');
   if(!scanLocations.length){
     box.innerHTML = h
       + '<p class="help">'+(d.error_detail||'None found in the listings database (searched by name and by the client website).')+' Try the exact Google Business listing name:</p>'

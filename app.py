@@ -23,6 +23,13 @@ from flask import Flask, render_template, request, jsonify
 import storage
 
 app = Flask(__name__)
+
+# Build stamp shown in the header — derives from the deploy commit so it
+# updates automatically with every GitHub upload (falls back to boot date).
+import datetime as _dt
+BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
+            or _dt.datetime.utcnow().strftime("dev-%m%d"))
+BUILD_STR = f"build {_dt.datetime.utcnow().strftime('%Y-%m-%d')} \u00b7 {BUILD_ID}"
 BASE = "https://api.dataforseo.com/v3"
 
 # ---------------------------------------------------------------------------
@@ -1686,7 +1693,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 # ---------------------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", build=BUILD_STR)
 
 DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
 
@@ -3050,7 +3057,7 @@ def review_page(token):
         q = storage.load_by_token(token)
         if q:
             tool = q.get("tool") or "seo"
-    return render_template("reputation.html" if tool == "rep" else "index.html")
+    return render_template("reputation.html" if tool == "rep" else "index.html", build=BUILD_STR)
 
 @app.route("/favicon.svg")
 def favicon():
@@ -3075,7 +3082,7 @@ def edit_link_page(qid):
         q = storage.load_quote(qid)
         if q:
             tool = (q.get("tool") if isinstance(q, dict) else None) or "seo"
-    return render_template("reputation.html" if tool == "rep" else "index.html")
+    return render_template("reputation.html" if tool == "rep" else "index.html", build=BUILD_STR)
 
 @app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
 def api_quotes_version_delete(vid):
@@ -3191,7 +3198,7 @@ def api_rep_reviews_collect():
 
 @app.route("/reputation")
 def reputation():
-    return render_template("reputation.html")
+    return render_template("reputation.html", build=BUILD_STR)
 
 @app.route("/api/rep_config", methods=["GET"])
 def api_rep_config_get():
