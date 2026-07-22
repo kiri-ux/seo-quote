@@ -441,11 +441,11 @@ function updateShieldFormula(){
   const hardTotal = baseHard + (n-1) * locHard;
   const money = x => '$' + Math.round(x).toLocaleString();
   box.innerHTML = '<b>Current calculation:</b> '
-    + money(baseHard) + ' partner hard cost base'
-    + (n > 1 ? ' + ' + money(locHard) + ' \u00d7 ' + (n-1) + ' extra location' + (n>2?'s':'') + ' = ' + money(hardTotal) + ' partner hard' : '')
+    + money(baseHard) + ' partner hard cost base + ' + money(locHard) + ' per extra location'
+    + (n > 1 ? ' (\u00d7 ' + (n-1) + ') = ' + money(hardTotal) + ' partner hard' : '')
     + '. Client adds ' + Math.round(m*100) + '% on top of each component, rounded up to the nearest $50 \u2192 '
-    + money(baseClient) + ' base' + (n > 1 ? ' + ' + money(locClient) + '/extra location' : '')
-    + ' = <b>' + money(client) + '/mo</b>. '
+    + money(baseClient) + ' base + ' + money(locClient) + '/extra location'
+    + ' = <b>' + money(client) + '/mo</b>' + (n === 1 ? ' at 1 location' : ' at ' + n + ' locations') + '. '
     + 'Internal hard cost is 20% of partner \u2192 <b>' + money(hardTotal*0.20) + '/mo</b>.'
     + '<div style="color:var(--muted);margin-top:3px">Hard base, per-location, and % values are editable in Pricing config.</div>';
 }
