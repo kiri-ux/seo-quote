@@ -242,7 +242,7 @@
           <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — confirm bundle discount).</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">pricing structure — unconfirmed</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">estimated $ — pending review</span></div>
         <div id="geoFields" class="hidden">
           <label>Phase</label>
           <select id="geoPhase">
@@ -258,6 +258,12 @@
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO brand shield &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
+        <p class="help" style="background:#f5f7fa;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-family:ui-monospace,monospace;font-size:11.5px">
+          client/mo = r50( <b>reference</b> × 0.65 ÷ (1 − retail margin) )<br>
+          &nbsp;&nbsp;where <b>reference</b> = $3,450 base + $525 × (locations − 1)<br>
+          partner hard = reference × 0.65 &nbsp;·&nbsp; internal hard = partner × 20% <span style="color:#b3261e;font-weight:600">(TBD)</span><br>
+          <span style="font-family:inherit;color:var(--muted)">r50 = round up to the nearest $50 · base, per-location, and % values are editable in Pricing config · at 35% retail margin the client price equals the reference exactly</span>
+        </p>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
@@ -384,7 +390,7 @@ function render(d, payload){
     if(l.internal && l.internal.rows){
       const rows = l.internal.rows.map(r => typeof r === 'string'
         ? '<div class="intlrow"><span>'+r+'</span></div>'
-        : '<div class="intlrow"><span>'+r.label+'</span><span>'+r.value+'</span></div>').join('');
+        : '<div class="intlrow"'+(r.tbd?' style="color:#b3261e;font-weight:600"':'')+'><span>'+r.label+(r.tbd?' · TBD — confirm':'')+'</span><span>'+r.value+'</span></div>').join('');
       internal = '<div class="intl"><div class="intlhdr">Internal</div>'+rows+'</div>';
     } else if(l.internal && l.internal.text){
       internal = '<div class="intl">Internal · '+l.internal.text+'</div>';

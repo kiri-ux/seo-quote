@@ -226,7 +226,8 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
                  "value": f"${hard_total:,.0f} (${hard_per:,.2f}/rev)"},
                 {"label": f"Internal hard cost ({INTERNAL_COST_PCT['pct']:.0%})",
                  "value": f"${hard_total*INTERNAL_COST_PCT['pct']:,.0f} "
-                          f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev)"}],
+                          f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev)",
+                 "tbd": True}],
         },
     }
     if scan_meta:
@@ -273,7 +274,8 @@ def _mrows(hard, unit_suffix="", total=None):
         return f"${x:,.0f}{unit_suffix}" + (f" \u00b7 ${x/hard*total:,.0f} total"
                                             if total is not None else "")
     return [{"label": "Partner hard cost", "value": v(hard)},
-            {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip)}]
+            {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip),
+             "tbd": True}]
 
 def _art_hard(client_at_35):
     return client_at_35 * (1 - ART_CAL_MARGIN)
