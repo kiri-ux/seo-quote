@@ -96,8 +96,8 @@
   .totals{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 6px}
   @media(max-width:700px){.totals{grid-template-columns:1fr}}
   .tot{border:1px solid var(--line);border-radius:11px;padding:16px;text-align:center;background:#fff}
-  .tot .name{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  .tot .price{font-size:24px;font-weight:700;color:var(--atlas);margin:5px 0 0}
+  .tot .name{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);min-height:15px}
+  .tot .price{font-size:24px;font-weight:700;color:var(--atlas);margin:5px 0 0;height:34px;display:flex;align-items:flex-end;justify-content:center;line-height:1}
   .warn{background:#fde8c8;border:1px solid #e8c98e;color:#7a5410;padding:10px 13px;border-radius:9px;
     font-size:12.5px;margin:10px 0}
   .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
@@ -281,7 +281,7 @@
         <h2>Quote</h2>
                 <details id="ovPanel" style="margin:0 0 14px;border:1px solid #e0c98a;border-radius:9px;background:#fdfaf2;padding:10px 13px">
         <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙ Manual hard-cost overrides</summary>
-        <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote — client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote; rebuild the quote after editing.</p>
+        <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote — client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote and re-price it automatically as you type (once a quote has been built).</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
           <div><label style="font-size:12px">Review removal — hard $/review</label><input type="number" id="ovReview" placeholder="formula" min="0"></div>
           <div><label style="font-size:12px">Standard site removal — hard $/page</label><input type="number" id="ovArtStd" placeholder="formula" min="0"></div>
@@ -350,7 +350,7 @@ $('pullVol').onclick = async ()=>{
   $('pullVol').disabled = false;
 };
 
-$('go').onclick = async ()=>{
+async function buildQuote(){
   $('go').disabled = true;
   const payload = {
     campaign,
@@ -374,9 +374,25 @@ $('go').onclick = async ()=>{
     else{ lastQuote = d; lastPayload = payload; render(d, payload); autoSave(); }
   }catch(e){ $('out').innerHTML = '<div class="err">Request failed: '+e+'</div>'; }
   $('go').disabled = false;
-};
+}
+$('go').onclick = buildQuote;
 
-$('ovClear').onclick = ()=>{ ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>$(id).value=''); };
+// Manual hard-cost overrides re-price the quote live (debounced) once a
+// quote has been built — no separate save/apply step needed.
+let ovDebounce = null;
+['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>{
+  const el = $(id); if(!el) return;
+  el.addEventListener('input', ()=>{
+    if(!lastQuote) return;
+    clearTimeout(ovDebounce);
+    ovDebounce = setTimeout(buildQuote, 600);
+  });
+});
+
+$('ovClear').onclick = ()=>{
+  ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>$(id).value='');
+  if(lastQuote){ clearTimeout(ovDebounce); buildQuote(); }
+};
 
 function money(x){ return '$'+x.toLocaleString(); }
 
@@ -403,7 +419,7 @@ function render(d, payload){
     const stdPg = artLines.filter(l=>l.service.indexOf('Premium')===-1).reduce((a,l)=>a+(l.qty||0),0);
     const premPg = artPages - stdPg;
     const mix = (stdPg && premPg) ? stdPg+' standard + '+premPg+' premium' : artPages+' page'+(artPages!==1?'s':'');
-    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price"><span style="font-size:12px;color:var(--muted);font-weight:400">starting at </span>'+money(minUnit)+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' flagged · up to '+money(artTotal)+'</div></div>';
+    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+money(minUnit)+'<span style="display:inline-block;text-align:left;vertical-align:baseline;line-height:1.15;margin-left:2px"><span style="display:block;font-size:9px;color:var(--muted);font-weight:400;letter-spacing:.4px;text-transform:uppercase">starting at</span><span style="display:block;font-size:13px;color:var(--muted)">/removed page</span></span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' flagged · up to '+money(artTotal)+'</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';
@@ -505,8 +521,13 @@ function updateSearchFormula(){
   const fc = (hard === floor) ? ' (floor '+money(floor)+' applied)'
            : (hard === cap)   ? ' (cap '+money(cap)+' applied)' : '';
   box.innerHTML =
-      fmRow('Hard base', money(sb)+' supp + '+money(ab)+' auto-suggest', 'partner hard cost')
-    + fmRow('Volume add', '+'+moneyc(ps)+' &amp; +'+moneyc(pa)+' per 1,000 \u00d7 '+v.toLocaleString()+'/mo = +'+moneyc(ps*v/1000)+' / +'+moneyc(pa*v/1000),
+      fmRow('Hard base',
+            '<div>'+money(sb)+' <span style="color:var(--muted)">suppression</span></div>'
+          + '<div>'+money(ab)+' <span style="color:var(--muted)">auto-suggest</span></div>',
+            'partner hard cost')
+    + fmRow('Volume add',
+            '<div>+'+moneyc(ps)+' per 1,000 \u00d7 '+v.toLocaleString()+'/mo = +'+moneyc(ps*v/1000)+' <span style="color:var(--muted)">suppression</span></div>'
+          + '<div>+'+moneyc(pa)+' per 1,000 \u00d7 '+v.toLocaleString()+'/mo = +'+moneyc(pa*v/1000)+' <span style="color:var(--muted)">auto-suggest</span></div>',
             'scales with measured brand searches')
     + fmRow('Round up', money(suppH)+' + '+money(asH)+' = <b>'+money(hard)+'/mo partner hard</b>'+fc,
             'each component rounds up to the nearest $50')
@@ -1293,7 +1314,7 @@ function restoreScan(sc){
     renderNegCounts(sc.negDone);
   }
   window._scanProv = sc.prov || window._scanProv;
-  $('scanProg').textContent = 'Restored from saved quote — no API calls made. Re-run Scan brand for fresh data.';
+  $('scanProg').textContent = 'Restored from saved quote. Re-run Scan brand for fresh data.';
 }
 async function loadSavedQuote(id){
   const q = await (await fetch('/api/quotes/'+id)).json();
