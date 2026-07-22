@@ -261,8 +261,7 @@ def _art_client(hard, margin_pct):
     return r50(hard / (1 - m))
 
 def _art_internal(hard_per, cnt, unit, m):
-    return (f"hard ${hard_per:,.0f}/pg \u00b7 margin ${unit - hard_per:,.0f}/pg "
-            f"({int(round(m*100))}%)")
+    return f"partner hard cost ${hard_per:,.0f}/pg \u00b7 ${hard_per*cnt:,.0f} total"
 
 
 def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
@@ -371,8 +370,7 @@ def price_search_bundle(volume):
                   "Search Manipulation, and Branded Search Append.",
                   "Auto-suggest succeeds only while contracted search volume "
                   "exceeds the negative-modifier volume."],
-        "internal": {"text": f"hard ${round(m*0.65):,}/mo \u00b7 "
-                     f"margin ${m - round(m*0.65):,}/mo (35%)"},
+        "internal": {"text": f"partner hard cost ${round(m*0.65):,}/mo"},
     }
 
 
@@ -536,8 +534,7 @@ def price_geo(phase="setup"):
                       "Priced off the standard GEO card ($4,950 setup / $9,950 "
                       "scale) \u2014 reputational application unconfirmed.",
                       "Recommend setup phase 1\u20132 quarters, then scale."],
-            "internal": {"text": f"hard ${round(p['monthly']*0.65):,}/mo \u00b7 "
-                         f"margin ${p['monthly'] - round(p['monthly']*0.65):,}/mo (35%)"}}
+            "internal": {"text": f"partner hard cost ${round(p['monthly']*0.65):,}/mo"}}
 
 
 # Hobart Wealth actuals (2021): PR pay-per-placement.
@@ -614,8 +611,7 @@ def price_shield(locations=1):
             "\u26a0 ESTIMATED pricing \u2014 pending review. Basis: SEO moat "
             "anchored to the $2,900 suppression base + $525/mo Google "
             "review-gen batch per location (Goldstone 2021 actuals)."],
-        "internal": {"text": f"hard ${round(total*0.65):,}/mo \u00b7 "
-                     f"margin ${total - round(total*0.65):,}/mo (35%)"},
+        "internal": {"text": f"partner hard cost ${round(total*0.65):,}/mo"},
     }
 
 

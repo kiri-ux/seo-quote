@@ -120,14 +120,14 @@
 <body>
 <header>
   <div class="hrow">
-    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— Rep Mgmt · pay-on-success removals · volume-formula search protection</span></h1>
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— build 2026-07-22.1</span></h1>
     <div style="display:flex;gap:8px">
     <button id="cfgBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
     <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
     </div>
   </div>
   <nav class="tabs">
-    <a href="/">SEO Quote</a>
+    <a href="/">SEO</a>
     <a href="/reputation" class="on">Reputation Mgmt</a>
   </nav>
 </header>
@@ -379,9 +379,8 @@ function render(d, payload){
     if(l.internal && l.internal.text){
       internal = '<div class="intl">Internal · '+l.internal.text+'</div>';
     } else if(l.internal){
-      internal = '<div class="intl">Internal · hard '+money(Math.round(l.internal.hard_total))
-               + ' ($'+l.internal.hard_per.toLocaleString()+'/rev) · margin '
-               + money(Math.round(l.internal.profit_total))+' ('+Math.round(l.internal.margin_pct*100)+'%)</div>';
+      internal = '<div class="intl">Internal · partner hard cost '+money(Math.round(l.internal.hard_total))
+               + ' ($'+l.internal.hard_per.toLocaleString()+'/rev)</div>';
     }
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
