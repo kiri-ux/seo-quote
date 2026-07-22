@@ -41,12 +41,23 @@ REP_CFG = {
     # Partner A/B remain internal fulfillment routing, not client pricing.
     "review_removal": {
         "default_margin_pct": 0.35,
-        # Hard cost CONFIRMED (Kiri, July 2026): $400/review up to 100
-        # reviews, $300/review over 100. Whole-order: rate applies to all.
-        # At the 35% default margin: $615/rev and $460/rev client.
+        # FIXED rate card per the Vici chart (July 2026) — gross $900/$850/
+        # $800/$750/$700/$650, Vici hard (net) below. Do NOT recalibrate;
+        # the chart is the product. Whole-order: rate applies to all.
         "brackets": [                       # whole-order: rate applies to all
-            {"min": 1,   "max": 100,  "hard": 400.00},
-            {"min": 101, "max": None, "hard": 300.00},
+            {"min": 1,   "max": 25,   "hard": 585.00},
+            {"min": 26,  "max": 50,   "hard": 552.50},
+            {"min": 51,  "max": 100,  "hard": 520.00},
+            {"min": 101, "max": 250,  "hard": 487.50},
+            {"min": 251, "max": 350,  "hard": 455.00},
+            {"min": 351, "max": 500,  "hard": 422.50},
+        ],
+        # True fulfillment cost beneath the rate card — CONFIRMED (Kiri,
+        # July 2026): $400/review up to 100, $300/review over 100. Shown in
+        # the internal box in place of the generic 20% estimate.
+        "internal_cost": [
+            {"min": 1,   "max": 100,  "cost": 400.00},
+            {"min": 101, "max": None, "cost": 300.00},
         ],
         "timeline": "\u224848 hours\u201360 days depending on fulfillment routing",
         "pay_on_success": True,
@@ -85,16 +96,22 @@ REP_CFG = {
         # = premium_per ($12,500 \u2014 same domain can be either tier
         # depending on the piece).
         "classes": {
+            # low/high/est are BACK-COMPAT/display keys only (config endpoint
+            # reads them) — set to the Brendan channel band; actual pricing
+            # comes off the whole-order brackets above.
             "review_platform": {
                 "label": "Review platform page (Trustpilot-class)",
+                "low": 4500, "high": 10000, "est": 7500,
                 "route": "platform policy flag \u2192 Content Integrity review",
                 "timeline": "2\u201310 weeks"},
             "forum": {
                 "label": "Forum thread (Reddit / Quora)",
+                "low": 4500, "high": 10000, "est": 7500,
                 "route": "sitewide-policy removal or Google de-index",
                 "timeline": "1\u20138 weeks"},
             "gripe": {
                 "label": "Complaint board (RipoffReport-class)",
+                "low": 4500, "high": 10000, "est": 7500,
                 "route": "de-index / negotiated removal (no source removal on RoR)",
                 "timeline": "2\u20133 months average, up to 6"},
         },
@@ -213,6 +230,9 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
     gross_per = round(hard_per / (1.0 - m) / 5.0) * 5
     total = int(round(gross_per * n))
     hard_total = round(hard_per * n, 2)
+    int_per = next((c["cost"] for c in cfg.get("internal_cost", [])
+                    if n >= c["min"] and (c["max"] is None or n <= c["max"])),
+                   hard_per * INTERNAL_COST_PCT["pct"])
     line = {
         "service": "Negative Review Removals",
         "detail": f"${gross_per:,.0f} per removed review \u00b7 "
@@ -231,9 +251,8 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
             "rows": [
                 {"label": "Partner hard cost",
                  "value": f"${hard_total:,.0f} (${hard_per:,.2f}/rev)"},
-                {"label": f"Internal hard cost ({INTERNAL_COST_PCT['pct']:.0%})",
-                 "value": f"${hard_total*INTERNAL_COST_PCT['pct']:,.0f} "
-                          f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev)"}],
+                {"label": "Internal hard cost (confirmed)",
+                 "value": f"${int_per*n:,.0f} (${int_per:,.2f}/rev)"}],
         },
     }
     if scan_meta:
@@ -324,11 +343,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
             c = cfg["classes"][key]
             lines.append({
                 "service": "Negative Website/Article Removals",
-                "detail": f"{cnt} \u00d7 {c['label']} @ ${unit:,}/page "
-                          f"(whole-order bracket \u00b7 {n} standard "
-                          f"page{'s' if n != 1 else ''} \u00b7 bulk slides to "
-                          f"${cfg['brackets'][-1]['per']:,} at "
-                          f"{cfg['brackets'][-1]['min']}+)",
+                "detail": f"{cnt} \u00d7 {c['label']} @ ${unit:,}/page",
                 "qty": cnt, "unit": unit, "kind": "per_asset",
                 "total": unit * cnt, "timeline": c["timeline"],
                 "estimated": True,
@@ -347,8 +362,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
         per = _art_client(hard, m)
         lines.append({
             "service": "Negative Website/Article Removals",
-            "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed "
-                      "(whole-order bracket)",
+            "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed",
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
             "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_std_override else [])
@@ -401,6 +415,10 @@ SEARCH_BUNDLE = {
     # standard actual exactly (2,650 + 15×51.33 = 3,420 → CEIL50 $3,450).
     "supp_base": 2650, "as_base": 3400,
     "supp_per_1k": 15, "as_per_1k": 10,
+    # comp_per_1k is a LEGACY ALIAS kept so the /api/rep_config endpoint
+    # and older saved configs don't break — the split supp/as keys above
+    # take precedence everywhere in pricing.
+    "comp_per_1k": 10,
     "floor": 6050, "cap": 15450,
     # 3 negative suggest/related phrases baked into the base price.
     # ⚠ UNCONFIRMED — Sage actual covered 2 phrases at this rate; 3 is an
@@ -412,7 +430,8 @@ SEARCH_BUNDLE = {
     # auto-suggest side. (Suppression-side maintenance is INFERRED — no
     # SSG actual exists for it.)
     "maintenance_pct": 0.544,
-    "maintenance_timeline": "3\u20136 months post-result hold",
+    "maintenance_timeline": "3\u20136 months, as results are achieved "
+                            "(auto-suggest typically clears in 2\u20133 months)",
     "timeline": "4-12 months",
 }
 
@@ -440,19 +459,21 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
     inc = SEARCH_BUNDLE.get("included_negatives", 3)
     return {
         "service": "Search Protection Bundle",
-        "detail": f"${SEARCH_BUNDLE['supp_base'] + SEARCH_BUNDLE['as_base']:,} base "
-                  f"+ ${p_s}/${p_a} per 1K (suppression / auto-suggest) on "
-                  f"{volume:,}/mo brand volume",
+        "detail": f"Scales with brand search volume \u00b7 "
+                  f"{volume:,}/mo measured",
         "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
         "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
                + ["Includes Organic Search Suppression, Auto-Suggest & Related "
                   "Search Manipulation, and Branded Search Append.",
-                  f"Covers up to {inc} negative suggest/related phrases at the "
-                  "base price.",
-                  f"\u26a0 {inc}-phrase inclusion is an internal assumption "
-                  "(Sage actual covered 2 at this rate) \u2014 confirm pricing "
-                  "with Brendan before sending."],
-        "internal": {"rows": _mrows(hard, "/mo")},
+                  f"Includes up to {inc} negative phrase removals across "
+                  "auto-suggest and related searches."],
+        "internal": {"rows": _mrows(hard, "/mo") + [
+            {"label": "Formula",
+             "value": f"${SEARCH_BUNDLE['supp_base']:,}+${SEARCH_BUNDLE['as_base']:,} "
+                      f"base + ${p_s}/${p_a} per 1K (supp/AS) on {volume:,}/mo"},
+            {"label": f"\u26a0 {inc}-phrase inclusion",
+             "value": "internal assumption \u2014 Sage actual covered 2; "
+                      "confirm with Brendan", "tbd": True}]},
     }
 
 
@@ -474,21 +495,26 @@ def price_search_bundle_maintenance(volume, margin_pct=None, hard_override=None)
     m = r50(hard / (1 - mg))
     return {
         "service": "Search Protection \u2014 Maintenance Phase",
-        "detail": f"{int(pct*1000)/10}% of the active rate once negatives "
-                  "are cleared \u00b7 holds the result",
+        "detail": "Reduced monthly rate once your results are achieved \u2014 "
+                  "protects the cleaned-up search presence",
         "kind": "monthly_maint", "total": m,
         "timeline": SEARCH_BUNDLE.get("maintenance_timeline",
-                                      "3\u20136 months post-result hold"),
+                                      "3\u20136 months, as results are "
+                                      "achieved (auto-suggest typically "
+                                      "clears in 2\u20133 months)"),
         "notes": (["\u2699 Manual hard-cost override active \u2014 maintenance "
                    "keeps its % ratio off the overridden active rate."]
                   if hard_override else [])
-               + ["Sequential \u2014 replaces the active line after results; "
-                  "never billed concurrently (excluded from the monthly total).",
-                  "Auto-suggest side replays the Visions 2024 actual "
-                  "($3,950 \u2192 $2,150); the suppression-side drop is "
-                  "INFERRED \u2014 no SSG actual exists.",
-                  ],
-        "internal": {"rows": _mrows(hard, "/mo")},
+               + ["Begins only after the active campaign reaches its goals, "
+                  "and replaces the active monthly rate \u2014 the two are "
+                  "never billed together.",
+                  "Recommended to lock in results and keep negative content "
+                  "from returning."],
+        "internal": {"rows": _mrows(hard, "/mo") + [
+            {"label": "Basis",
+             "value": f"{int(pct*1000)/10}% of active \u00b7 Visions 2024 "
+                      "actual $3,950\u2192$2,150 (AS side exact; "
+                      "suppression-side drop inferred, no SSG actual)"}]},
     }
 
 
@@ -787,10 +813,23 @@ def build_rep_quote(payload):
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
-            phase1.append(price_search_bundle(vol, payload.get("margin_pct"),
-                                              hard_override=ov.get("search_hard")))
-            phase1.append(price_search_bundle_maintenance(vol, payload.get("margin_pct"),
-                                                          hard_override=ov.get("search_hard")))
+            sp_line = price_search_bundle(vol, payload.get("margin_pct"),
+                                          hard_override=ov.get("search_hard"))
+            if campaign == "bundle":
+                # Reactive + Proactive: the Brand Shield (phase 2) IS the
+                # post-result hold — quoting a separate maintenance phase
+                # would double-bill the same protective work. SSG actuals
+                # never stacked them: every maintenance quote (Visions,
+                # Sage, Goldstone) was a standalone reactive engagement.
+                sp_line["notes"].append(
+                    "Once results are achieved, the Brand Shield (Phase 2) "
+                    "takes over protecting them \u2014 no separate "
+                    "maintenance phase is needed.")
+                phase1.append(sp_line)
+            else:
+                phase1.append(sp_line)
+                phase1.append(price_search_bundle_maintenance(vol, payload.get("margin_pct"),
+                                                              hard_override=ov.get("search_hard")))
             sp = REP_CFG["search_protection"]
             if vol > sp["review_above_volume"]:
                 warnings.append(

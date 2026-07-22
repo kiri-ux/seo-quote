@@ -21,7 +21,7 @@
   .tabs a{display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;
     font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)}
   .tabs a.on{background:var(--parchment);color:var(--atlas)}
-  .wrap{max-width:1200px;margin:0 auto;padding:24px 20px 60px}
+  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
   .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:20px}
@@ -240,7 +240,7 @@
             <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
-          <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,050 base + $15/$10 per 1K suppression/auto-suggest — includes up to 3 negative phrases, count unconfirmed — confirm bundle discount). Post-result maintenance quotes automatically at 54.4% of the active rate (Visions actual).</p>
+          <p class="help" id="negPhraseNote"><b>How volume sets the price:</b> $6,050/mo base + $15 per 1,000 monthly brand searches (suppression side) + $10 per 1,000 (auto-suggest side), each rounded up to the nearest $50. More searches on the brand = more volume to out-search = higher monthly. Examples: 10K/mo → $6,300 · 50K/mo → $7,300. Includes up to 3 negative phrase removals (count unconfirmed). A reduced maintenance phase (54.4% of active) quotes automatically for after results.</p>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">estimated $ — pending review</span></div>
@@ -750,7 +750,7 @@ function renderFacsimiles(ac){
 function bumpNegPhrases(){
   if(window._negPhrases.size){
     $('negPhraseNote').innerHTML = '<b>'+window._negPhrases.size+' negative phrases auto-counted from scan:</b> '
-      + [...window._negPhrases].join(' · ')+'. Bundle: $6,050 base + $15/$10 per 1K brand volume (incl. up to 3 phrases — unconfirmed) — confirm bundle discount.';
+      + [...window._negPhrases].join(' · ')+' — first 3 included in the base price.';
   }
 }
 function renderAutocomplete(ac){
