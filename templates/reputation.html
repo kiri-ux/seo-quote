@@ -280,7 +280,7 @@
       <div class="card" id="outCard">
         <h2>Quote</h2>
                 <details id="ovPanel" style="margin:0 0 14px;border:1px solid #e0c98a;border-radius:9px;background:#fdfaf2;padding:10px 13px">
-        <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙ Manual hard-cost overrides <span style="font-weight:400;color:var(--muted)">(Brendan — per-quote, for clients the formula doesn’t fit)</span></summary>
+        <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙ Manual hard-cost overrides</summary>
         <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote — client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote; rebuild the quote after editing.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
           <div><label style="font-size:12px">Review removal — hard $/review</label><input type="number" id="ovReview" placeholder="formula" min="0"></div>
@@ -390,9 +390,9 @@ function render(d, payload){
   const nCards = (rl?1:0) + (artLines.length?1:0) + 1 + (!rl && !artLines.length && perAsset.length ? 1 : 0);
   h += '<div class="totals" style="grid-template-columns:repeat('+nCards+',1fr)">';
   if(rl){
-    h += '<div class="tot"><div class="name">Pay-on-success</div><div class="price">'+rl.unit_label.replace('/removed review','')+'<span style="font-size:13px;color:var(--muted)">/removed review</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+rl.qty.toLocaleString()+' flagged reviews</div></div>';
+    h += '<div class="tot"><div class="name">Review removals</div><div class="price">'+rl.unit_label.replace('/removed review','')+'<span style="font-size:13px;color:var(--muted)">/removed review</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+rl.qty.toLocaleString()+' flagged reviews</div></div>';
   }else if(!artLines.length && perAsset.length){
-    h += '<div class="tot"><div class="name">Pay-on-success items</div><div class="price">'+perAsset.length+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">billed per completed removal</div></div>';
+    h += '<div class="tot"><div class="name">Removals</div><div class="price">'+perAsset.length+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">billed per completed removal</div></div>';
   }
   if(artLines.length){
     const artTotal = artLines.reduce((a,l)=>a+l.total,0);
@@ -445,6 +445,7 @@ function render(d, payload){
     if(internal) h += '<tr class="intltr"><td colspan="3" style="border-top:none;padding-top:0">'+internal+'</td></tr>';
   });
   h += '</table>';
+  h += '<p class="help" style="margin:8px 0 2px">Timelines are good-faith estimates from comparable campaigns \u2014 actual pace depends on the volume and strength of the negative content and on search engine response times, and is confirmed at campaign kickoff.</p>';
 
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
@@ -462,6 +463,15 @@ let nLocDirty = false;
 document.addEventListener('DOMContentLoaded', ()=>{
   const nl = $('nLocations'); if(nl) nl.addEventListener('input', ()=>{ nLocDirty = true; });
 });
+let REP_CFG_LIVE = null;
+async function loadRepCfg(){
+  try{
+    const c = await (await fetch('/api/rep_config')).json();
+    if(c && !c.error) REP_CFG_LIVE = c;
+  }catch(e){ /* config endpoint unavailable — formulas fall back to shipped defaults */ }
+  updateSearchFormula(); updateShieldFormula();
+}
+
 function updateSearchFormula(){
   const box = document.getElementById('spFormula');
   if(!box) return;
@@ -469,24 +479,30 @@ function updateSearchFormula(){
   const mg = Math.min(90, Math.max(0, +($('clientMargin')||{}).value || 35)) / 100;
   const r50 = x => Math.ceil(Math.round(x*1e6)/1e6/50)*50;
   const money = x => '$' + Math.round(x).toLocaleString();
-  const supp = r50(2650 + 15*v/1000), as_ = r50(3400 + 10*v/1000);
-  const sum = Math.min(15450, Math.max(6050, supp + as_));
+  const B = (REP_CFG_LIVE && REP_CFG_LIVE.bundle) || {};
+  const sb = +B.supp_base || 2650, ab = +B.as_base || 3400;
+  const ps = +B.supp_per_1k || +B.comp_per_1k || 15, pa = +B.as_per_1k || +B.comp_per_1k || 10;
+  const floor = +B.floor || 6050, cap = +B.cap || 15450;
+  const mp = +B.maintenance_pct || 0.544;
+  const supp = r50(sb + ps*v/1000), as_ = r50(ab + pa*v/1000);
+  const sum = Math.min(cap, Math.max(floor, supp + as_));
   const hard = sum * 0.65;
   const client = r50(hard / (1 - mg));
-  const maintSum = r50(supp*0.544) + r50(as_*0.544);
+  const maintSum = r50(supp*mp) + r50(as_*mp);
   const maintClient = r50((maintSum*0.65) / (1 - mg));
   box.innerHTML = '<b>Current calculation:</b> base '
-    + money(2650) + ' (suppression) + ' + money(3400) + ' (auto-suggest) = ' + money(6050) + '/mo.'
-    + ' Volume: ' + v.toLocaleString() + '/mo brand searches \u2192 +$15 per 1,000 = +' + money(15*v/1000)
-    + ' (suppression) and +$10 per 1,000 = +' + money(10*v/1000) + ' (auto-suggest), each rounded up to the nearest $50'
+    + money(sb) + ' (suppression) + ' + money(ab) + ' (auto-suggest) = ' + money(sb+ab) + '/mo.'
+    + ' Volume: ' + v.toLocaleString() + '/mo brand searches \u2192 +$' + ps + ' per 1,000 = +' + money(ps*v/1000)
+    + ' (suppression) and +$' + pa + ' per 1,000 = +' + money(pa*v/1000) + ' (auto-suggest), each rounded up to the nearest $50'
     + ' \u2192 ' + money(supp) + ' + ' + money(as_) + ' = <b>' + money(client) + '/mo</b> active (months 4\u20136).'
-    + ' Maintenance at 54.4% \u2192 <b>' + money(maintClient) + '/mo</b> (months 7\u201312, reactive-only \u2014 the Brand Shield covers this on bundles).'
+    + ' Maintenance at ' + (Math.round(mp*1000)/10) + '% \u2192 <b>' + money(maintClient) + '/mo</b> (months 7\u201312, reactive-only \u2014 the Brand Shield covers this on bundles).'
     + (mg !== 0.35 ? ' Rebuilt at ' + Math.round(mg*100) + '% margin from ' + money(hard) + '/mo hard cost.' : '')
     + '<div style="color:var(--muted);margin-top:3px">Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.</div>';
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   ['volume','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateSearchFormula); });
-  updateSearchFormula();
+  ['nLocations','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateShieldFormula); });
+  loadRepCfg();
 });
 
 function updateShieldFormula(){
@@ -494,7 +510,9 @@ function updateShieldFormula(){
   if(!box) return;
   const n = Math.max(1, +($('nLocations')||{}).value || 1);
   const m = Math.min(90, Math.max(0, +($('clientMargin')||{}).value || 35)) / 100;
-  const baseHard = 2250, locHard = 450;
+  const baseHard = (REP_CFG_LIVE && +REP_CFG_LIVE.shield_monthly) || 2250;
+  const locHard = (REP_CFG_LIVE && +REP_CFG_LIVE.shield_per_extra_location) || 450;
+  const ipct = (REP_CFG_LIVE && +REP_CFG_LIVE.internal_cost_pct) || 0.20;
   const r50 = x => Math.ceil(x/50)*50;
   const baseClient = r50(baseHard * (1 + m));
   const locClient = r50(locHard * (1 + m));
@@ -507,7 +525,7 @@ function updateShieldFormula(){
     + '. Client adds ' + Math.round(m*100) + '% on top of each component, rounded up to the nearest $50 \u2192 '
     + money(baseClient) + ' base + ' + money(locClient) + '/extra location'
     + ' = <b>' + money(client) + '/mo</b>' + (n === 1 ? ' at 1 location' : ' at ' + n + ' locations') + '. '
-    + 'Internal hard cost is 20% of partner \u2192 <b>' + money(hardTotal*0.20) + '/mo</b>.'
+    + 'Internal hard cost is ' + Math.round(ipct*100) + '% of partner \u2192 <b>' + money(hardTotal*ipct) + '/mo</b>.'
     + '<div style="color:var(--muted);margin-top:3px">Hard base, per-location, and % values are editable in Pricing config.</div>';
 }
 document.addEventListener('DOMContentLoaded', ()=>{
@@ -1377,6 +1395,7 @@ $('cfgApply').onclick = async ()=>{
     const r = await (await fetch('/api/rep_config', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(payload)})).json();
     $('cfgStatus').textContent = r.error ? ('Failed: '+r.error) : '✓ Applied to the running session — rebuild the quote to see new pricing. Also update the margin field in the form if you changed the default.';
+    if(!r.error) loadRepCfg();
   }catch(e){ $('cfgStatus').textContent = 'Failed: '+e; }
 };
 

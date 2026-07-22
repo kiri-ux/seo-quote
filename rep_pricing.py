@@ -272,7 +272,7 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         line["notes"].append(f"{n:,} reviews exceeds the 500-review rate card \u2014 "
                              "top-tier rate extended; confirm with fulfillment partner.")
     if overridden:
-        line["notes"].insert(0, "\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan).")
+        line["notes"].insert(0, "\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote.")
     return line
 
 
@@ -351,7 +351,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
                 "qty": cnt, "unit": unit, "kind": "per_asset",
                 "total": unit * cnt, "timeline": c["timeline"],
                 "estimated": True,
-                "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_std_override else [])
+                "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
                          + [f"Route: {c['route']}.",
                             "Pay on success \u2014 billed only for pages removed."],
                 "internal": _art_internal(hard, cnt, unit, m),
@@ -369,7 +369,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
             "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed",
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
-            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_std_override else [])
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
                      + ["Pay on success \u2014 billed only for sites removed.",
                         "Always custom-quoted after human review."],
             "internal": _art_internal(hard, n, per, m),
@@ -386,7 +386,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
             "qty": p, "unit": punit, "kind": "per_asset",
             "total": punit * p,
             "timeline": "10\u201314 weeks typical (12-month contract window)",
-            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_prem_override else [])
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_prem_override else [])
                      + ["Pay on success \u2014 ~50% success on premium hosts.",
                         "Always custom-quoted after human review."],
             "internal": _art_internal(phard, p, punit, m),
@@ -465,7 +465,7 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
         "detail": f"Scales with brand search volume \u00b7 "
                   f"{volume:,}/mo measured",
         "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
-        "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
+        "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_override else [])
                + ["Includes Organic Search Suppression, Auto-Suggest & Related "
                   "Search Manipulation, and Branded Search Append.",
                   f"Includes up to {inc} negative phrase removals across "
@@ -476,7 +476,7 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
                       f"base + ${p_s}/${p_a} per 1K (supp/AS) on {volume:,}/mo"},
             {"label": f"\u26a0 {inc}-phrase inclusion",
              "value": "internal assumption \u2014 Sage actual covered 2; "
-                      "confirm with Brendan", "tbd": True}]},
+                      "pending pricing review", "tbd": True}]},
     }
 
 
@@ -602,7 +602,7 @@ def price_search_protection(volume, use_suppression, use_autosuggest,
                           "the negative-modifier volume.",
                           f"\u26a0 {c['included_negatives']}-phrase inclusion is an "
                           "internal assumption (Sage actual covered 2) \u2014 "
-                          "confirm with Brendan."],
+                          "pending pricing review."],
             })
             lines.append({
                 "service": "Search Protection \u2014 Auto-Suggest Maintenance",
@@ -670,7 +670,7 @@ def price_bbb(n):
                   "(whole-order bracket)",
         "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
         "timeline": "Via BBB dispute process \u2014 timeline varies",
-        "notes": ["GUESS pricing \u2014 no Brendan datapoint yet; confirm brackets.",
+        "notes": ["GUESS pricing \u2014 no calibration datapoint yet; confirm brackets.",
                   "BBB complaints cannot be bought off the platform \u2014 "
                   "remediation works the BBB's own dispute/response process."],
     }
@@ -693,7 +693,7 @@ def price_geo(phase="setup", margin_pct=None, hard_override=None):
             "detail": f"{phase.capitalize()} phase \u2014 shapes AI Overview / LLM "
                       "answers about the brand",
             "kind": "monthly", "total": client, "timeline": p["timeline"],
-            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_override else [])
                    + ["Targets the negative AI-generated result the scan detects.",
                       "Priced off the standard GEO card ($4,950 setup / $9,950 "
                       "scale) \u2014 reputational application unconfirmed.",
@@ -756,7 +756,7 @@ def price_video(count=0, per_video=5600):
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": "Guaranteed \u2014 pay on success",
             "notes": ["Removes from YouTube AND Google for the listed search terms.",
-                      "Always custom-quoted by complexity (Brendan)."]}
+                      "Always custom-quoted by complexity."]}
 
 
 def price_shield(locations=1, margin_pct=None, hard_override=None):
@@ -777,7 +777,7 @@ def price_shield(locations=1, margin_pct=None, hard_override=None):
         "service": "Proactive Brand Shield",
         "detail": det, "kind": "monthly", "total": total,
         "timeline": "Ongoing",
-        "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
+        "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_override else [])
                + list(cfg["included"]),
         "internal": {"rows": _mrows(hard_total, "/mo")},
     }
