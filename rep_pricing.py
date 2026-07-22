@@ -14,11 +14,10 @@ Pricing sources (Rep Mgmt Proposal Template doc + Sage Dental sample, June 2026)
     DA <= 35 standard, DA > 35 premium (CNN-class). Dollar figures below are
     PLACEHOLDERS — doc says "$[Custom Price]"; calibrate with Brendan.
   * Search Protection — monthly, "formula based on search volume (base +
-    multiplier)". Calibrated so a Sage-Dental-scale brand (~20K searches/mo)
-    lands on the sample actuals: suppression $3,450/mo, auto-suggest/related
-    $3,950/mo  ->  base $2,950 / $3,450 + $25 per 1K monthly searches.
-    The 20K assumption is a guess — re-solve the bases once Brendan confirms
-    Sage's real volume.
+    multiplier)". HARD-COST CANONICAL as of July 2026: bases/per-1K/floor/cap
+    in SEARCH_BUNDLE are partner hard cost (see block comment there);
+    client = hard \u00f7 (1 \u2212 margin). Sage replay is now approximate
+    ($7,550 vs $7,400 actual at 35%).
   * Proactive Brand Shield — single monthly bundle. "$[Monthly Price]" in doc;
     placeholder below.
 """
@@ -178,7 +177,9 @@ REP_CFG = {
     # ------------------------------------------------- proactive brand shield
     # Partner-hard-cost canonical (Kiri, July 2026): $2,250/mo hard base +
     # $450/mo hard per extra location. Client price = each component
-    # \u00d7 (1 + retail margin), rounded UP to the nearest $50 separately.
+    # \u00f7 (1 \u2212 margin) (margin is % OF GROSS \u2014 same mechanics as every
+    # other tactic; retail carries the 35% built in), rounded UP to the
+    # nearest $50 separately. At 35%: $3,500 base + $700/extra location.
     "shield": {
         "monthly_hard": 2250,             # partner hard cost, base (1 location)
         "included": ["SEO Brand Shield & Asset Building",
@@ -415,55 +416,53 @@ def _vol_monthly(component, volume):
 # no longer wired into build_rep_quote.
 # =====================================================================
 SEARCH_BUNDLE = {
-    # Sum of the former components: suppression + auto-suggest/related, each
-    # CEIL50'd before summing. Sage replay: $3,450 + $3,950 = $7,400/mo —
-    # identical to Brendan quoting the two lines separately. All keys below
-    # are editable live via /api/rep_config.
-    # Suppression recalibrated July 2026 to the LOWER Tru North tier:
-    # $2,650 floor (his base campaign) + $15/1K still lands the Sage
-    # standard actual exactly (2,650 + 15×51.33 = 3,420 → CEIL50 $3,450).
-    "supp_base": 2650, "as_base": 3400,
-    "supp_per_1k": 15, "as_per_1k": 10,
+    # HARD-COST CANONICAL (Kiri, July 2026): every dollar value below is
+    # PARTNER HARD COST — treat these as the starting numbers. Bases were
+    # set from the retail-calibrated actuals stripped of their built-in
+    # 35% margin, then rounded UP to the nearest $50; per-1K rates carry
+    # the exact conversion. Client price = hard \u00f7 (1 \u2212 margin), r50'd.
+    # All keys editable live via /api/rep_config.
+    # \u26a0 REPLAY DRIFT: the Sage actual (51,330/mo) now quotes $7,550
+    # client at 35% vs Brendan's $7,400 \u2014 +$150 (~2%) from the hard-side
+    # base rounding. Prior retail-canonical version replayed it exactly.
+    "supp_base": 1750,   "as_base": 2250,      # hard $/mo
+    "supp_per_1k": 9.75, "as_per_1k": 6.50,    # hard $ per 1K searches
     # comp_per_1k is a LEGACY ALIAS kept so the /api/rep_config endpoint
     # and older saved configs don't break — the split supp/as keys above
     # take precedence everywhere in pricing.
-    "comp_per_1k": 10,
-    "floor": 6050, "cap": 15450,
+    "comp_per_1k": 6.50,
+    "floor": 3950, "cap": 10050,               # hard $/mo
     # 3 negative suggest/related phrases baked into the base price.
     # ⚠ UNCONFIRMED — Sage actual covered 2 phrases at this rate; 3 is an
     # internal assumption pending Brendan's confirmation.
     "included_negatives": 3,
     # Maintenance phase per the actuals: full rate until results, then a
     # drop. Visions 2024: $3,950 active → $2,150 maintenance = 0.544; the
-    # same ratio applied per component replays the $2,150 exactly on the
-    # auto-suggest side. (Suppression-side maintenance is INFERRED — no
-    # SSG actual exists for it.)
+    # ratio is applied per component on the hard side. (Suppression-side
+    # maintenance is INFERRED — no SSG actual exists for it.)
     "maintenance_pct": 0.544,
     "maintenance_timeline": "Months 7\u201312",
     "timeline": "4\u20136 months",
 }
 
 def _bundle_components(volume):
-    """Per-component monthlies, each CEIL50'd (replays Brendan's separate
-    lines). Falls back to legacy shared comp_per_1k if present in a saved
-    config."""
+    """Per-component HARD monthlies, each CEIL50'd (mirrors Brendan quoting
+    the two lines separately). Falls back to legacy shared comp_per_1k if
+    present in a saved config."""
     v = max(0, volume) / 1000.0
-    p_s = SEARCH_BUNDLE.get("supp_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 15))
-    p_a = SEARCH_BUNDLE.get("as_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 10))
+    p_s = SEARCH_BUNDLE.get("supp_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 9.75))
+    p_a = SEARCH_BUNDLE.get("as_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 6.50))
     return (r50(SEARCH_BUNDLE["supp_base"] + p_s * v),
             r50(SEARCH_BUNDLE["as_base"] + p_a * v))
 
 def price_search_bundle(volume, margin_pct=None, hard_override=None):
-    # Each former component keeps its own CEIL50 rounding before summing —
-    # this replays Brendan's Sage quote exactly ($3,450 + $3,950 = $7,400);
-    # rounding the summed formula instead lands $50 low.
-    supp_m, as_m = _bundle_components(volume)
-    m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], supp_m + as_m))
-    hard = float(hard_override) if hard_override else m * (1 - ART_CAL_MARGIN)
+    # Hard-native: components, floor, and cap are all partner hard cost.
+    # Each component keeps its own CEIL50 rounding before summing.
+    supp_h, as_h = _bundle_components(volume)
+    hard = (float(hard_override) if hard_override
+            else min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], supp_h + as_h)))
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     m = r50(hard / (1 - mg))
-    p_s = SEARCH_BUNDLE.get("supp_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 15))
-    p_a = SEARCH_BUNDLE.get("as_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 10))
     inc = SEARCH_BUNDLE.get("included_negatives", 3)
     return {
         "service": "Search Protection Bundle",
@@ -476,9 +475,6 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
                   f"Includes up to {inc} negative phrase removals across "
                   "auto-suggest and related searches."],
         "internal": {"rows": _mrows(hard, "/mo") + [
-            {"label": "Formula",
-             "value": f"${SEARCH_BUNDLE['supp_base']:,}+${SEARCH_BUNDLE['as_base']:,} "
-                      f"base + ${p_s}/${p_a} per 1K (supp/AS) on {volume:,}/mo"},
             {"label": f"\u26a0 {inc}-phrase inclusion",
              "value": "internal assumption \u2014 Sage actual covered 2; "
                       "pending pricing review", "tbd": True}]},
@@ -496,9 +492,8 @@ def price_search_bundle_maintenance(volume, margin_pct=None, hard_override=None)
         # override is the ACTIVE-phase hard/mo; maintenance keeps the ratio
         hard = float(hard_override) * pct
     else:
-        supp_m, as_m = _bundle_components(volume)
-        m = r50(supp_m * pct) + r50(as_m * pct)
-        hard = m * (1 - ART_CAL_MARGIN)
+        supp_h, as_h = _bundle_components(volume)
+        hard = r50(supp_h * pct) + r50(as_h * pct)
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     m = r50(hard / (1 - mg))
     return {
@@ -771,8 +766,8 @@ def price_shield(locations=1, margin_pct=None, hard_override=None):
     m = 0.35 if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     base_hard = float(hard_override) if hard_override else cfg["monthly_hard"]
     loc_hard = cfg["per_extra_location_hard"]
-    base_client = r50(base_hard * (1 + m))
-    loc_client = r50(loc_hard * (1 + m))
+    base_client = r50(base_hard / (1 - m))
+    loc_client = r50(loc_hard / (1 - m))
     total = base_client + extra * loc_client
     hard_total = base_hard + extra * loc_hard
     det = "Proactive Brand Shield Bundle"
@@ -830,10 +825,8 @@ def build_rep_quote(payload):
                 # would double-bill the same protective work. SSG actuals
                 # never stacked them: every maintenance quote (Visions,
                 # Sage, Goldstone) was a standalone reactive engagement.
-                sp_line["notes"].append(
-                    "Once results are achieved, the Brand Shield (Phase 2) "
-                    "takes over protecting them \u2014 no separate "
-                    "maintenance phase is needed.")
+                # (Client-facing note about this removed July 2026 — the
+                # absence of a maintenance line speaks for itself.)
                 phase1.append(sp_line)
             else:
                 phase1.append(sp_line)

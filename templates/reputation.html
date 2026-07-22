@@ -448,7 +448,7 @@ function render(d, payload){
     if(internal) h += '<tr class="intltr"><td colspan="3" style="border-top:none;padding-top:0">'+internal+'</td></tr>';
   });
   h += '</table>';
-  h += '<p class="help" style="margin:8px 0 2px">Timelines are good-faith estimates from comparable campaigns \u2014 actual pace depends on the volume and strength of the negative content and on search engine response times, and is confirmed at campaign kickoff.</p>';
+  h += '<p style="margin:10px 0 2px;padding:7px 11px;border:1px solid #e0b64f;background:#fdf6e4;color:#7a5c14;border-radius:8px;font-size:12px;line-height:1.45">Timelines are estimates from similar campaigns \u2014 actual pace depends on the volume and strength of the negative content as well as search engine response times.</p>';
 
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
@@ -475,6 +475,14 @@ async function loadRepCfg(){
   updateSearchFormula(); updateShieldFormula();
 }
 
+// Shared row renderer for the demo formula boxes: label | calculation — brief why
+function fmRow(label, calc, why){
+  return '<div style="display:grid;grid-template-columns:118px 1fr;gap:8px;padding:3px 0;border-bottom:1px dotted #e4d5ee;align-items:baseline">'
+    + '<b style="font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#7a3f92">'+label+'</b>'
+    + '<span>'+calc+(why ? ' <span style="color:var(--muted)">\u2014 '+why+'</span>' : '')+'</span></div>';
+}
+function fmFoot(txt){ return '<div style="color:var(--muted);margin-top:4px">'+txt+'</div>'; }
+
 function updateSearchFormula(){
   const box = document.getElementById('spFormula');
   if(!box) return;
@@ -482,33 +490,35 @@ function updateSearchFormula(){
   const mg = Math.min(90, Math.max(0, +($('clientMargin')||{}).value || 35)) / 100;
   const r50 = x => Math.ceil(Math.round(x*1e6)/1e6/50)*50;
   const money = x => '$' + Math.round(x).toLocaleString();
-  const B = (REP_CFG_LIVE && REP_CFG_LIVE.bundle) || {};
-  const sb = +B.supp_base || 2650, ab = +B.as_base || 3400;
-  const ps = +B.supp_per_1k || +B.comp_per_1k || 15, pa = +B.as_per_1k || +B.comp_per_1k || 10;
-  const floor = +B.floor || 6050, cap = +B.cap || 15450;
-  const mp = +B.maintenance_pct || 0.544;
-  const H = 0.65;  // hard = retail-calibrated \u00d7 (1 \u2212 35% calibration margin), mirrors price_search_bundle
   const moneyc = x => { const r = Math.round(x*100)/100;
     return '$' + (Number.isInteger(r) ? r.toLocaleString()
       : r.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})); };
-  const supp = r50(sb + ps*v/1000), as_ = r50(ab + pa*v/1000);
-  const sum = Math.min(cap, Math.max(floor, supp + as_));
-  const hard = sum * H;
+  const B = (REP_CFG_LIVE && REP_CFG_LIVE.bundle) || {};
+  const ipct = (REP_CFG_LIVE && +REP_CFG_LIVE.internal_cost_pct) || 0.20;
+  const sb = +B.supp_base || 1750, ab = +B.as_base || 2250;
+  const ps = +B.supp_per_1k || +B.comp_per_1k || 9.75, pa = +B.as_per_1k || +B.comp_per_1k || 6.50;
+  const floor = +B.floor || 3950, cap = +B.cap || 10050;
+  const mp = +B.maintenance_pct || 0.544;
+  const suppH = r50(sb + ps*v/1000), asH = r50(ab + pa*v/1000);
+  const hard = Math.min(cap, Math.max(floor, suppH + asH));
   const client = r50(hard / (1 - mg));
-  const maintSum = r50(supp*mp) + r50(as_*mp);
-  const maintHard = maintSum * H;
+  const maintHard = r50(suppH*mp) + r50(asH*mp);
   const maintClient = r50(maintHard / (1 - mg));
-  box.innerHTML = '<b>Current calculation:</b> partner hard cost base '
-    + moneyc(sb*H) + ' (suppression) + ' + moneyc(ab*H) + ' (auto-suggest) = ' + moneyc((sb+ab)*H) + '/mo hard.'
-    + ' Volume: ' + v.toLocaleString() + '/mo brand searches \u2192 +' + moneyc(ps*H) + ' per 1,000 = +' + moneyc(ps*H*v/1000)
-    + ' (suppression) and +' + moneyc(pa*H) + ' per 1,000 = +' + moneyc(pa*H*v/1000) + ' (auto-suggest)'
-    + ' \u2192 ' + moneyc(supp*H) + ' + ' + moneyc(as_*H) + ' = <b>' + moneyc(hard) + '/mo partner hard</b>'
-    + (sum === floor ? ' (floor applied)' : (sum === cap ? ' (cap applied)' : '')) + '.'
-    + ' Client = hard \u00f7 (1 \u2212 ' + Math.round(mg*100) + '% margin), rounded up to the nearest $50 \u2192 <b>'
-    + money(client) + '/mo</b> active (months 4\u20136).'
-    + ' Maintenance at ' + (Math.round(mp*1000)/10) + '% \u2192 ' + moneyc(maintHard) + '/mo hard \u2192 <b>' + money(maintClient)
-    + '/mo</b> client (months 7\u201312, reactive-only \u2014 the Brand Shield covers this on bundles).'
-    + '<div style="color:var(--muted);margin-top:3px">Hard costs derive from the retail-calibrated actuals (Sage / Tru North) at the 35% calibration margin \u2014 hard = retail \u00d7 0.65. Base, per-1K, floor/cap, and maintenance % are editable in Pricing config (entered as retail).</div>';
+  const fc = (hard === floor) ? ' (floor '+money(floor)+' applied)'
+           : (hard === cap)   ? ' (cap '+money(cap)+' applied)' : '';
+  box.innerHTML =
+      fmRow('Hard base', money(sb)+' supp + '+money(ab)+' auto-suggest', 'partner hard cost')
+    + fmRow('Volume add', '+'+moneyc(ps)+' &amp; +'+moneyc(pa)+' per 1,000 \u00d7 '+v.toLocaleString()+'/mo = +'+moneyc(ps*v/1000)+' / +'+moneyc(pa*v/1000),
+            'scales with measured brand searches')
+    + fmRow('Round up', money(suppH)+' + '+money(asH)+' = <b>'+money(hard)+'/mo partner hard</b>'+fc,
+            'each component rounds up to the nearest $50')
+    + fmRow('Internal ('+Math.round(ipct*100)+'%)', money(hard*ipct)+'/mo',
+            'Vici delivery cost, % of partner hard')
+    + fmRow('Client @ '+Math.round(mg*100)+'%', 'hard \u00f7 '+(1-mg).toFixed(2)+' \u2192 <b>'+money(client)+'/mo</b> active (months 4\u20136)',
+            'margin is % of gross, rounded up to the nearest $50')
+    + fmRow('Maintenance', (Math.round(mp*1000)/10)+'% \u2192 '+money(maintHard)+' hard \u2192 <b>'+money(maintClient)+'/mo</b> client (months 7\u201312)',
+            'Visions active\u2192maintenance ratio; reactive-only \u2014 Brand Shield covers this on bundles')
+    + fmFoot('All dollar values are partner hard cost. Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.');
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   ['volume','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateSearchFormula); });
@@ -525,19 +535,20 @@ function updateShieldFormula(){
   const locHard = (REP_CFG_LIVE && +REP_CFG_LIVE.shield_per_extra_location) || 450;
   const ipct = (REP_CFG_LIVE && +REP_CFG_LIVE.internal_cost_pct) || 0.20;
   const r50 = x => Math.ceil(x/50)*50;
-  const baseClient = r50(baseHard * (1 + m));
-  const locClient = r50(locHard * (1 + m));
+  const baseClient = r50(baseHard / (1 - m));
+  const locClient = r50(locHard / (1 - m));
   const client = baseClient + (n-1) * locClient;
   const hardTotal = baseHard + (n-1) * locHard;
   const money = x => '$' + Math.round(x).toLocaleString();
-  box.innerHTML = '<b>Current calculation:</b> '
-    + money(baseHard) + ' partner hard cost base + ' + money(locHard) + ' per extra location'
-    + (n > 1 ? ' (\u00d7 ' + (n-1) + ') = ' + money(hardTotal) + ' partner hard' : '')
-    + '. Client adds ' + Math.round(m*100) + '% on top of each component, rounded up to the nearest $50 \u2192 '
-    + money(baseClient) + ' base + ' + money(locClient) + '/extra location'
-    + ' = <b>' + money(client) + '/mo</b>' + (n === 1 ? ' at 1 location' : ' at ' + n + ' locations') + '. '
-    + 'Internal hard cost is ' + Math.round(ipct*100) + '% of partner \u2192 <b>' + money(hardTotal*ipct) + '/mo</b>.'
-    + '<div style="color:var(--muted);margin-top:3px">Hard base, per-location, and % values are editable in Pricing config.</div>';
+  box.innerHTML =
+      fmRow('Hard base', money(baseHard)+'/mo', 'confirmed partner cost, 1 location')
+    + fmRow('Locations', '+'+money(locHard)+'/mo hard \u00d7 '+(n-1)+' extra = <b>'+money(hardTotal)+'/mo partner hard</b>',
+            'review generation per location')
+    + fmRow('Internal ('+Math.round(ipct*100)+'%)', money(hardTotal*ipct)+'/mo',
+            'Vici delivery cost, % of partner hard')
+    + fmRow('Client @ '+Math.round(m*100)+'%', 'each component \u00f7 '+(1-m).toFixed(2)+' \u2192 '+money(baseClient)+' base + '+money(locClient)+'/extra = <b>'+money(client)+'/mo</b> at '+n+' location'+(n===1?'':'s'),
+            'margin is % of gross \u2014 same math as all tactics; rounded up to $50 per component')
+    + fmFoot('Hard base, per-location, and % values are editable in Pricing config (entered as hard cost).');
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   updateShieldFormula();
@@ -1363,14 +1374,14 @@ function renderCfg(c){
   h += cfgHdr('Website Removals ($ / site)', 'pricing from one example quote — need confirmation', 'warn');
   c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
   h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
-  h += cfgHdr('Search Protection Bundle', 'Sage replay exact · lower Tru North tier · 3-phrase inclusion + maintenance % unconfirmed', 'warn');
-  h += cfgRow('Suppression component base', cfgIn('c_supp', c.bundle.supp_base));
-  h += cfgRow('Auto-suggest/related component base', cfgIn('c_as', c.bundle.as_base));
-  h += cfgRow('$ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
-  h += cfgRow('$ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
+  h += cfgHdr('Search Protection Bundle', 'hard-cost canonical · Sage replay approximate ($7,550 vs $7,400 actual) · 3-phrase inclusion + maintenance % unconfirmed', 'warn');
+  h += cfgRow('Suppression component base — hard $/mo', cfgIn('c_supp', c.bundle.supp_base));
+  h += cfgRow('Auto-suggest/related component base — hard $/mo', cfgIn('c_as', c.bundle.as_base));
+  h += cfgRow('Hard $ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
+  h += cfgRow('Hard $ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Included negative phrases <span style="font-weight:400;color:#9a6700">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
   h += cfgRow('Maintenance % of active rate', cfgIn('c_maintpct', Math.round((c.bundle.maintenance_pct ?? 0.544)*1000)/10, 1));
-  h += cfgRow('Floor / Cap', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
+  h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
   h += cfgRow('Partner hard cost base /mo', cfgIn('c_shield', c.shield_monthly));
   h += cfgRow('Partner hard cost per extra location /mo', cfgIn('c_shloc', c.shield_per_extra_location));
