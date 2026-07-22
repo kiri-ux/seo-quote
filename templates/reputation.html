@@ -985,6 +985,12 @@ function applyThreshold(done, th){
   const tot = done.reduce((s,d)=>s + (th==='1' ? (d.neg_1||0) : d.neg_1_2), 0);
   $('nReviews').value = tot;
   if(tot > 0){ $('useReviews').checked = true; syncVisibility(); }
+  // The counted locations are the ones being quoted — the shield location
+  // count follows them (authoritative: overrides prior manual edits).
+  if(done.length){
+    const nl = $('nLocations');
+    if(nl){ nl.value = done.length; nLocDirty = false; updateShieldFormula(); }
+  }
   autoSave();
   window._scanProv = {
     locations: done.map(d=>d.title||d.place_id),
@@ -1189,8 +1195,8 @@ async function loadSavedQuote(id){
   const q = await (await fetch('/api/quotes/'+id)).json();
   if(q.error){ alert(q.error); return; }
   CURRENT_QUOTE_ID = q.id; CURRENT_QUOTE_NAME = q.name;
-  restoreScan((q.payload||{}).scan);
   restoreForm((q.payload||{}).form);
+  restoreScan((q.payload||{}).scan);
   lastQuote = (q.payload||{}).quote || null;
   if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
   $('savedPanel').style.display='none';
@@ -1221,8 +1227,8 @@ async function loadVersion(vid){
   const v = await (await fetch('/api/quotes/version/'+vid)).json();
   if(v.error){ alert(v.error); return; }
   CURRENT_QUOTE_ID = v.quote_id;
-  restoreScan((v.payload||{}).scan);
   restoreForm((v.payload||{}).form);
+  restoreScan((v.payload||{}).scan);
   lastQuote = (v.payload||{}).quote || null;
   if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
   const st = $('saveStatus'); if(st) st.textContent = 'Viewing a historical version — Update will save it forward as the current version.';
@@ -1336,8 +1342,8 @@ if(REVIEW_TOKEN){
       const q = await (await fetch('/api/review/'+REVIEW_TOKEN)).json();
       if(q.error){ $('out').innerHTML = '<div class="err">'+q.error+'</div>'; return; }
       CURRENT_QUOTE_ID = null; CURRENT_QUOTE_NAME = q.name || '';
-      restoreScan((q.payload||{}).scan);
       restoreForm((q.payload||{}).form);
+      restoreScan((q.payload||{}).scan);
       lastQuote = (q.payload||{}).quote || null;
       if(lastQuote) render(lastQuote, {brand: $('brand').value.trim()});
       const bar = document.createElement('div');
