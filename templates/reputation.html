@@ -276,8 +276,6 @@
       </div>
     </div>
   </div>
-
-  <p class="note">Pricing engine: <code>rep_pricing.py</code>. Calibration anchors — review removals from the Vici rate card (hard-cost canonical, chart-exact at 35% margin); Search Protection formula calibrated to Brendan\u2019s Sage actuals at the MEASURED 51,330/mo volume \u2014 $2,900/$3,400 base + $10/1K lands $3,450/$3,950 exactly. Simplified menu (July 2026): Reactive = Review Removals · Website/Article Removals · Search Protection Bundle; Proactive = Brand Shield Bundle. Bundle formula $6,300 + $20/1K = sum of Brendan's Sage components ($7,400/mo replay — confirm bundle discount). Reputational AI Search priced off the Sage GEO card ($4,950/$9,950 — reputational structure unconfirmed, ask Brendan). Retired tactic pricing (tiers, guaranteed phrases, engines, BBB, PR, review gen, video) is preserved in rep_pricing.py for custom blends. Open Brendan questions: bundle discount, Brand Shield $, Visions $500→$250 direct vs Vici hard $585+ rate-card reconciliation.</p>
 </div>
 
 <script>
@@ -524,13 +522,13 @@ function renderSerp(d){
        + '<div class="help" style="margin:0">'+(f.title||'')+'</div></td><td class="n">—</td></tr>';
   });
   h += '</table>';
+  // Negative related/PASF phrases still feed the bundle counter + reco —
+  // the visual exhibit on the right is where they're shown.
   if(d.negative_related && d.negative_related.length){
-    h += '<div class="warn" style="margin-top:8px">Negative related searches: <b>'+d.negative_related.join('</b> · <b>')+'</b></div>';
     d.negative_related.forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
   if(d.negative_pasf && d.negative_pasf.length){
-    h += '<div class="warn" style="margin-top:8px">Negative "People also search for" tiles: <b>'+d.negative_pasf.join('</b> · <b>')+'</b></div>';
     d.negative_pasf.forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
