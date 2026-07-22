@@ -113,6 +113,14 @@ def get_or_create_share_token(quote_id):
         return token
 
 
+def get_tool_by_token(token):
+    """Tiny routing lookup — just the owning tool, no payload."""
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT tool FROM quotes WHERE share_token=%s", (token,))
+        row = cur.fetchone()
+        return (row[0] if row and row[0] else "seo") if row else None
+
+
 def load_by_token(token):
     """Read-only fetch of a quote by its share token."""
     with _conn() as conn, conn.cursor() as cur:

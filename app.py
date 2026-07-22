@@ -3054,9 +3054,7 @@ def review_page(token):
     path and switches to read-only review mode."""
     tool = "seo"
     if storage.enabled():
-        q = storage.load_by_token(token)
-        if q:
-            tool = q.get("tool") or "seo"
+        tool = storage.get_tool_by_token(token) or "seo"
     return render_template("reputation.html" if tool == "rep" else "index.html", build=BUILD_STR)
 
 @app.route("/favicon.svg")

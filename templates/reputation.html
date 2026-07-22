@@ -452,7 +452,7 @@ function syncShieldLocs(){
 }
 
 $('scanBtn').onclick = async ()=>{
-  const brand = $('brand').value.trim();
+  let brand = $('brand').value.trim();
   if(!brand){ alert('Enter the client / brand name first.'); return; }
   const domain = $('domain').value.trim();
   $('scanBtn').disabled = true;
@@ -482,10 +482,26 @@ $('scanBtn').onclick = async ()=>{
     try{ await fn(); }
     catch(e){ $('scanOut').innerHTML += '<div class="err">'+label+' failed: '+e+'</div>'; }
   };
-  await step('1/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
-  await step('2/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
-  await step('3/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
-  await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand, domain: $('domain').value.trim()}); if(!r.error) window._scanData.locations = r; renderLocs(r, true); });
+  // Locations run FIRST (instant database call) so a listing-name mismatch
+  // can be caught and adopted BEFORE the SERP/term/suggest steps spend calls
+  // on the wrong name — no rescan needed.
+  await step('1/4 — discovering Google locations…', async ()=>{
+    const r = await fetchJSON('/api/rep_scan_locations', {brand, domain});
+    if(!r.error) window._scanData.locations = r;
+    renderLocs(r, true);
+    if(r && r.strategy === 'domain' && (r.locations||[]).length){
+      const listName = ((r.locations.slice().sort((a,b)=>(b.reviews||0)-(a.reviews||0))[0]||{}).title||'').trim();
+      if(listName && listName.toLowerCase() !== brand.toLowerCase()){
+        if(confirm('Google lists this client as \u201c'+listName+'\u201d (found via their website).\n\nScan using that name instead of \u201c'+brand+'\u201d? The term universe, SERP, and auto-suggest results will be much more accurate under the name people actually search.')){
+          brand = listName;
+          $('brand').value = listName;
+        }
+      }
+    }
+  });
+  await step('2/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
+  await step('3/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
+  await step('4/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
   renderReco();
   renderBrandReco();
   $('scanProg').textContent = 'Scan complete.';
@@ -810,8 +826,9 @@ function renderLocs(d, live){
     + (d.strategy==='domain' ? (function(){
         const listName = ((scanLocations.slice().sort((a,b)=>(b.reviews||0)-(a.reviews||0))[0]||{}).title||'').trim();
         const differs = listName && listName.toLowerCase() !== ($('brand').value.trim().toLowerCase());
-        return '<p class="help" style="margin:2px 0 4px">Matched via the client website — the listing name differs from the client name.'
-          + (differs ? ' Google lists them as <b>'+listName+'</b> — <a href="#" onclick="$(\'brand\').value='+JSON.stringify(listName)+';this.parentElement.innerHTML=\'\u2713 Client name updated — re-run Scan brand so terms &amp; SERP use it.\';return false">use as Client Name</a>.' : '')
+        window._listName = listName;
+        return '<p class="help" style="margin:2px 0 4px" id="listNameNote">Matched via the client website — the listing name differs from the client name.'
+          + (differs ? ' Google lists them as <b>'+listName+'</b> — <a href="#" id="useListName">use as Client Name</a>.' : '')
           + '</p>';
       })() : '');
   if(!scanLocations.length){
@@ -851,6 +868,13 @@ function renderLocs(d, live){
      + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location · results in ~1 min. Pull depth is set in Pricing config.</div></div>'
      + '<div id="negOut"></div>';
   box.innerHTML = h;
+  const uln = document.getElementById('useListName');
+  if(uln) uln.onclick = (e)=>{
+    e.preventDefault();
+    $('brand').value = window._listName || $('brand').value;
+    const note = document.getElementById('listNameNote');
+    if(note) note.innerHTML = '\u2713 Client name updated to \u201c'+(window._listName||'')+'\u201d — future scans use it (already-scanned terms/SERP used the old name).';
+  };
   $('countNegBtn').onclick = ()=>submitNegCount();
   $('lockAll').onchange = e => { document.querySelectorAll('.locck').forEach(c=>{ c.checked = e.target.checked; }); syncShieldLocs(); };
   document.querySelectorAll('.locck').forEach(c=>{ c.addEventListener('change', syncShieldLocs); });
@@ -1238,6 +1262,7 @@ const REVIEW_TOKEN = location.pathname.startsWith('/review/')
   ? location.pathname.split('/review/')[1] : null;
 if(REVIEW_TOKEN){
   (async ()=>{
+    $('out').innerHTML = '<p class="help">Loading the shared quote\u2026 large quotes (with scan data and screenshots) can take a few seconds on the first view while the service wakes up.</p>';
     try{
       const q = await (await fetch('/api/review/'+REVIEW_TOKEN)).json();
       if(q.error){ $('out').innerHTML = '<div class="err">'+q.error+'</div>'; return; }
