@@ -116,13 +116,14 @@ def get_or_create_share_token(quote_id):
 def load_by_token(token):
     """Read-only fetch of a quote by its share token."""
     with _conn() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, name, client, payload, updated_at FROM quotes "
+        cur.execute("SELECT id, name, client, payload, updated_at, tool FROM quotes "
                     "WHERE share_token=%s", (token,))
         row = cur.fetchone()
         if not row:
             return None
         return {"id": row[0], "name": row[1], "client": row[2],
-                "payload": row[3], "updated_at": row[4].isoformat()}
+                "payload": row[3], "updated_at": row[4].isoformat(),
+                "tool": row[5] or "seo"}
 
 
 def _tiers(payload):
@@ -256,7 +257,7 @@ def list_quotes(search="", tool="seo"):
 def load_quote(quote_id):
     """Load one quote's full payload + how many versions it has."""
     with _conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("SELECT id, name, client, payload, created_at, updated_at "
+        cur.execute("SELECT id, name, client, payload, created_at, updated_at, tool "
                     "FROM quotes WHERE id=%s", (quote_id,))
         r = cur.fetchone()
         if not r:

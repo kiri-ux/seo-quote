@@ -3027,9 +3027,14 @@ def api_review(token):
 
 @app.route("/review/<token>")
 def review_page(token):
-    """Same template as the tool; the frontend sees /review/ in the path and
-    switches to read-only review mode."""
-    return render_template("index.html")
+    """Same template as the owning tool; the frontend sees /review/ in the
+    path and switches to read-only review mode."""
+    tool = "seo"
+    if storage.enabled():
+        q = storage.load_by_token(token)
+        if q:
+            tool = q.get("tool") or "seo"
+    return render_template("reputation.html" if tool == "rep" else "index.html")
 
 @app.route("/favicon.svg")
 def favicon():
@@ -3046,10 +3051,15 @@ def favicon():
 
 @app.route("/q/<int:qid>")
 def edit_link_page(qid):
-    """Edit deep-link: opens the tool with this saved quote loaded, ready to
-    revise. Version history makes collaborative edits safe — every save
-    snapshots the prior state."""
-    return render_template("index.html")
+    """Edit deep-link: opens the owning tool with this saved quote loaded,
+    ready to revise. Version history makes collaborative edits safe — every
+    save snapshots the prior state."""
+    tool = "seo"
+    if storage.enabled():
+        q = storage.load_quote(qid)
+        if q:
+            tool = (q.get("tool") if isinstance(q, dict) else None) or "seo"
+    return render_template("reputation.html" if tool == "rep" else "index.html")
 
 @app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
 def api_quotes_version_delete(vid):

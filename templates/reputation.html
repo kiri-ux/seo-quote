@@ -189,7 +189,7 @@
       <div class="card" id="secReactive">
         <h2>3 · Reactive Cleanup</h2>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews" checked><span class="slider"></span></label><span class="lbl">Negative Review Removals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews" checked><span class="slider"></span></label><span class="lbl" title="Flagged 1–2★ Google Business reviews are submitted for removal — billed only per review successfully removed.">Negative Review Removals</span></div>
         <div id="reviewFields">
           <div class="row">
             <div>
@@ -215,7 +215,7 @@
           </details>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl">Negative Website/Article Removals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useArticles"><span class="slider"></span></label><span class="lbl" title="Whole negative pages (complaint boards, forum threads, articles) are removed from the source site or de-indexed from Google — pay on success.">Negative Website/Article Removals</span></div>
         <div id="articleFields" class="hidden">
           <div class="row">
             <div><label>Standard sites</label><input type="number" id="nArtStd" min="0" value="0"></div>
@@ -224,7 +224,7 @@
           <p class="help">Standard: Visions actuals, whole-order — 1–3 $5,950 · 4–6 $5,750 · 7–10 $5,350 · 11–15 $5,150 · 16+ $4,950 per removed site. Premium: $7,500 flat (Tru North actual). Pay on success. Always custom-quoted after human review.</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl">Search Protection Bundle</span><span class="help" style="margin:0">included in all proposals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl" title="Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.">Search Protection Bundle</span><span class="help" style="margin:0">included in all proposals</span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
           <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
@@ -239,7 +239,7 @@
           <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — the sum of Brendan's Sage components; confirm bundle discount).</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search</span><span class="pillnote">pricing structure — confirm w/ Brendan</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl" title="Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.">Reputational AI Search</span><span class="pillnote">pricing structure — confirm w/ Brendan</span></div>
         <div id="geoFields" class="hidden">
           <label>Phase</label>
           <select id="geoPhase">
@@ -468,7 +468,7 @@ function renderTerms(d){
     $('volNote').innerHTML = 'Auto-filled from scan: <b>'+d.total_volume.toLocaleString()+'/mo</b> total brand volume.';
   }
   let h = '<div class="scanhdr">Brand Term Universe · '+d.total_volume.toLocaleString()+'/mo total</div>';
-  h += '<div class="warn">Negative-modifier volume: <b>'+d.negative_volume.toLocaleString()+'/mo</b> — the auto-suggest campaign succeeds only while contracted positive searches exceed this. Watch-term volume ("reviews", "legit"…): '+d.watch_volume.toLocaleString()+'/mo.</div>';
+  h += '<div class="warn"><b>'+d.negative_volume.toLocaleString()+' searches/mo</b> use clearly negative terms (lawsuit, complaints…). The auto-suggest tactic works by outweighing these with positive searches — so the campaign needs to drive more than '+d.negative_volume.toLocaleString()+' positive searches/mo to hold. Another <b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way.</div>';
   const flagged = d.terms.filter(t=>t.class!=='neutral').slice(0,15);
   if(flagged.length){
     h += '<table class="stbl"><tr><th>Term</th><th>Class</th><th style="text-align:right">Vol/mo</th></tr>';
@@ -480,13 +480,13 @@ function renderTerms(d){
 
 function renderSerp(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
-  let h = '<div class="scanhdr">SERP Results · "'+d.query+'"</div>';
-  h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled — each result below routes to the tactic shown.</p>';
+  let h = '<div class="scanhdr">Top Google Results · "'+d.query+'"</div>';
+  h += '<p class="help" style="margin:2px 0 6px">The top 10 results (plus discussion threads ranking with them) when someone searches "'+d.query+'" — <b>'+d.owned_in_top10+' of 10</b> are client-controlled, and each gets the action shown.</p>';
   h += '<details style="margin:0 0 8px"><summary class="help" style="display:inline;cursor:pointer;margin:0">How results are classified ▸</summary>'
      + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 2px">'
      + '<tr style="text-align:left;color:var(--muted)"><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Result type</th><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Tag</th><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Tactic &amp; why</th></tr>'
      + '<tr><td style="padding:3px 6px">Client\u2019s own domain</td><td style="padding:3px 6px">owned</td><td style="padding:3px 6px"><b>Boost</b> — strengthen &amp; protect the asset</td></tr>'
-     + '<tr><td style="padding:3px 6px">Trustpilot · complaint boards (RipoffReport, ComplaintsBoard, PissedConsumer, Gripeo…) · Reddit · Quora</td><td style="padding:3px 6px">3rd party / forum</td><td style="padding:3px 6px"><b>Site removal</b> — page-level removal or de-index is possible on these hosts</td></tr>'
+     + '<tr><td style="padding:3px 6px">Trustpilot · complaint boards (RipoffReport, ComplaintsBoard, PissedConsumer, Gripeo…) · Reddit · Quora</td><td style="padding:3px 6px">3rd party / forum</td><td style="padding:3px 6px"><b>Site removal</b> — page-level removal or de-index may be possible on these hosts</td></tr>'
      + '<tr><td style="padding:3px 6px">Yelp · Glassdoor · Indeed · BBB · social profiles</td><td style="padding:3px 6px">3rd party</td><td style="padding:3px 6px"><b>Suppression</b> — these platforms don\u2019t allow paid removal; outrank instead</td></tr>'
      + '<tr><td style="padding:3px 6px">Forum results not matched above</td><td style="padding:3px 6px">forum</td><td style="padding:3px 6px"><b>Site removal</b> — thread-level routes usually exist</td></tr>'
      + '<tr><td style="padding:3px 6px">Any other third-party page</td><td style="padding:3px 6px">3rd party</td><td style="padding:3px 6px"><b>Suppression</b> — default when no removal route applies</td></tr>'
@@ -701,7 +701,13 @@ function renderReco(){
       const note = document.createElement('p');
       note.className = 'help reco-note';
       note.style.cssText = 'margin:2px 0 6px;color:#137333';
-      note.innerHTML = '✓ Applied from scan — '+r.reason+'. <span style="color:var(--muted)">Toggle off above to remove.</span>';
+      let mism = '';
+      Object.entries(r.sets||{}).forEach(([id,v])=>{
+        const f=$(id);
+        if(f && +f.value && +f.value !== +v)
+          mism += ' <span style="color:#9a6700">Field shows '+f.value+' — <a href="#" onclick="document.getElementById(\''+id+'\').value='+v+';this.parentElement.remove();return false">set to '+v+'</a> to match the scan.</span>';
+      });
+      note.innerHTML = '✓ Applied from scan — '+r.reason+'. <span style="color:var(--muted)">Toggle off above to remove.</span>'+mism;
       row.insertAdjacentElement('afterend', note);
     }
   });
@@ -723,7 +729,7 @@ function renderLocs(d){
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
   h += '</table></details>';
-  h += '<div class="row" style="margin-top:10px"><div style="flex:0 0 130px"><label style="margin-top:0">Pull depth</label><input type="number" id="pullDepth" min="10" max="4490" value="200"></div>'
+  h += '<div class="row" style="margin-top:10px"><div style="flex:0 0 130px"><label style="margin-top:0" title="How many Google reviews to pull per location (worst-first) when counting 1–2★. Deeper = more complete count on high-review locations, slightly higher DFS cost.">Pull depth ⓘ</label><input type="number" id="pullDepth" min="10" max="4490" value="200"></div>'
      + '<div><button class="btn2" id="countNegBtn" type="button">Count negatives for checked locations</button>'
      + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location at depth 200 · results in ~1 min.</div></div></div>'
      + '<div id="negOut"></div>';
@@ -859,6 +865,7 @@ function renderSaveBox(){
     + '<div style="flex:0 0 auto;display:flex;gap:8px;align-items:flex-end">'
     + '<button class="btn2" id="saveBtn" type="button">'+(CURRENT_QUOTE_ID?'Update':'Save')+'</button>'
     + (CURRENT_QUOTE_ID?'<button class="btn2" id="saveNewBtn" type="button">Save as new</button>':'')
+    + (CURRENT_QUOTE_ID?'<button class="btn2" id="shareRepBtn" type="button">🔗 Share for review</button>':'')
     + '</div></div><div class="help" id="saveStatus" style="margin-top:6px"></div></div>';
 }
 function wireSaveBox(){
@@ -872,6 +879,18 @@ function wireSaveBox(){
     CURRENT_QUOTE_ID = null;
     CURRENT_QUOTE_NAME = $('qname').value.trim() || '';
     await autoSave();
+  };
+  const sb = $('shareRepBtn');
+  if(sb) sb.onclick = async ()=>{
+    const st = $('saveStatus');
+    try{
+      const r = await (await fetch('/api/quotes/'+CURRENT_QUOTE_ID+'/share', {method:'POST'})).json();
+      if(r.error){ if(st) st.textContent = 'Share failed: '+r.error; return; }
+      let copied = false;
+      try{ await navigator.clipboard.writeText(r.url); copied = true; }catch(e){}
+      if(st) st.innerHTML = (copied?'✓ Review link copied: ':'Review link (copy manually): ')
+        + '<a href="'+r.url+'" target="_blank">'+r.url+'</a> — read-only; anyone with the link can view.';
+    }catch(e){ if(st) st.textContent = 'Share failed: '+e; }
   };
 }
 
@@ -1032,6 +1051,30 @@ $('cfgApply').onclick = async ()=>{
     $('cfgStatus').textContent = r.error ? ('Failed: '+r.error) : '✓ Applied to the running session — rebuild the quote to see new pricing. Also update the margin field in the form if you changed the default.';
   }catch(e){ $('cfgStatus').textContent = 'Failed: '+e; }
 };
+
+// ---- Read-only review mode: /review/<token> renders this template with the
+// shared quote loaded and every control disabled.
+const REVIEW_TOKEN = location.pathname.startsWith('/review/')
+  ? location.pathname.split('/review/')[1] : null;
+if(REVIEW_TOKEN){
+  (async ()=>{
+    try{
+      const q = await (await fetch('/api/review/'+REVIEW_TOKEN)).json();
+      if(q.error){ $('out').innerHTML = '<div class="err">'+q.error+'</div>'; return; }
+      CURRENT_QUOTE_ID = null; CURRENT_QUOTE_NAME = q.name || '';
+      restoreScan((q.payload||{}).scan);
+      restoreForm((q.payload||{}).form);
+      lastQuote = (q.payload||{}).quote || null;
+      if(lastQuote) render(lastQuote, {brand: $('brand').value.trim()});
+      const bar = document.createElement('div');
+      bar.style.cssText = 'background:#F1B434;color:#002D58;font-weight:600;font-size:13px;padding:8px 16px;text-align:center';
+      bar.textContent = 'Read-only review: “'+(q.name||'quote')+'” — viewing a shared snapshot; edits are disabled.';
+      document.body.prepend(bar);
+      ['savedBtn','cfgBtn','go'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; });
+      setTimeout(()=>{ document.querySelectorAll('input,textarea,select,button').forEach(el=>{ el.disabled = true; }); }, 400);
+    }catch(e){ $('out').innerHTML = '<div class="err">Failed to load review: '+e+'</div>'; }
+  })();
+}
 </script>
 </body>
 </html>
