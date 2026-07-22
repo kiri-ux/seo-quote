@@ -487,20 +487,28 @@ function updateSearchFormula(){
   const ps = +B.supp_per_1k || +B.comp_per_1k || 15, pa = +B.as_per_1k || +B.comp_per_1k || 10;
   const floor = +B.floor || 6050, cap = +B.cap || 15450;
   const mp = +B.maintenance_pct || 0.544;
+  const H = 0.65;  // hard = retail-calibrated \u00d7 (1 \u2212 35% calibration margin), mirrors price_search_bundle
+  const moneyc = x => { const r = Math.round(x*100)/100;
+    return '$' + (Number.isInteger(r) ? r.toLocaleString()
+      : r.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})); };
   const supp = r50(sb + ps*v/1000), as_ = r50(ab + pa*v/1000);
   const sum = Math.min(cap, Math.max(floor, supp + as_));
-  const hard = sum * 0.65;
+  const hard = sum * H;
   const client = r50(hard / (1 - mg));
   const maintSum = r50(supp*mp) + r50(as_*mp);
-  const maintClient = r50((maintSum*0.65) / (1 - mg));
-  box.innerHTML = '<b>Current calculation:</b> base '
-    + money(sb) + ' (suppression) + ' + money(ab) + ' (auto-suggest) = ' + money(sb+ab) + '/mo.'
-    + ' Volume: ' + v.toLocaleString() + '/mo brand searches \u2192 +$' + ps + ' per 1,000 = +' + money(ps*v/1000)
-    + ' (suppression) and +$' + pa + ' per 1,000 = +' + money(pa*v/1000) + ' (auto-suggest), each rounded up to the nearest $50'
-    + ' \u2192 ' + money(supp) + ' + ' + money(as_) + ' = <b>' + money(client) + '/mo</b> active (months 4\u20136).'
-    + ' Maintenance at ' + (Math.round(mp*1000)/10) + '% \u2192 <b>' + money(maintClient) + '/mo</b> (months 7\u201312, reactive-only \u2014 the Brand Shield covers this on bundles).'
-    + (mg !== 0.35 ? ' Rebuilt at ' + Math.round(mg*100) + '% margin from ' + money(hard) + '/mo hard cost.' : '')
-    + '<div style="color:var(--muted);margin-top:3px">Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.</div>';
+  const maintHard = maintSum * H;
+  const maintClient = r50(maintHard / (1 - mg));
+  box.innerHTML = '<b>Current calculation:</b> partner hard cost base '
+    + moneyc(sb*H) + ' (suppression) + ' + moneyc(ab*H) + ' (auto-suggest) = ' + moneyc((sb+ab)*H) + '/mo hard.'
+    + ' Volume: ' + v.toLocaleString() + '/mo brand searches \u2192 +' + moneyc(ps*H) + ' per 1,000 = +' + moneyc(ps*H*v/1000)
+    + ' (suppression) and +' + moneyc(pa*H) + ' per 1,000 = +' + moneyc(pa*H*v/1000) + ' (auto-suggest)'
+    + ' \u2192 ' + moneyc(supp*H) + ' + ' + moneyc(as_*H) + ' = <b>' + moneyc(hard) + '/mo partner hard</b>'
+    + (sum === floor ? ' (floor applied)' : (sum === cap ? ' (cap applied)' : '')) + '.'
+    + ' Client = hard \u00f7 (1 \u2212 ' + Math.round(mg*100) + '% margin), rounded up to the nearest $50 \u2192 <b>'
+    + money(client) + '/mo</b> active (months 4\u20136).'
+    + ' Maintenance at ' + (Math.round(mp*1000)/10) + '% \u2192 ' + moneyc(maintHard) + '/mo hard \u2192 <b>' + money(maintClient)
+    + '/mo</b> client (months 7\u201312, reactive-only \u2014 the Brand Shield covers this on bundles).'
+    + '<div style="color:var(--muted);margin-top:3px">Hard costs derive from the retail-calibrated actuals (Sage / Tru North) at the 35% calibration margin \u2014 hard = retail \u00d7 0.65. Base, per-1K, floor/cap, and maintenance % are editable in Pricing config (entered as retail).</div>';
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   ['volume','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateSearchFormula); });
