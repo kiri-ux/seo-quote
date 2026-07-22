@@ -414,7 +414,7 @@ function render(d, payload){
 }
 
 // ---------------- brand scan ----------------
-let scanLocations = [], reviewTasks = [], pollTimer = null;
+let scanLocations = [], reviewTasks = [], pollTimer = null, negGen = 0;
 // Shield location prefill: mirror the checked scan locations into nLocations
 // until the user types their own number (then leave it alone).
 let nLocDirty = false;
@@ -460,7 +460,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
   window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
-  window._scanData = {}; window._negDone = null; window._scanProv = null;
+  window._scanData = {}; window._negDone = null; window._scanProv = null; negGen++; reviewTasks = [];
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
   async function fetchJSON(url, o, _retried){
@@ -687,7 +687,10 @@ function renderFacsimiles(ac){
     if(a.error){
       h += '<p class="help">Auto-suggest · "'+k+'" — lookup failed: '+a.error+' <button class="btn2 acRetry" type="button">Retry</button></p>';
     }else if(!(a.suggestions||[]).length){
-      h += '<p class="help">Auto-suggest · "'+k+'" — no suggestions returned, even via fallbacks; Google may be suppressing suggest on this query. <button class="btn2 acRetry" type="button">Retry</button></p>';
+      const othersHave = Object.keys(ac||{}).some(k2=>k2!==k && ((ac[k2]||{}).suggestions||[]).length);
+      h += othersHave
+        ? '<p class="help">Auto-suggest · "'+k+'" — no suggestions: too little search volume on this phrase for Google to autocomplete it (common for smaller brands — not a negative signal). <button class="btn2 acRetry" type="button">Retry</button></p>'
+        : '<p class="help">Auto-suggest · "'+k+'" — no suggestions returned on any brand phrase; either very low brand search volume, or Google is suppressing suggest on this brand. <button class="btn2 acRetry" type="button">Retry</button></p>';
     }else if(!(a.negative||[]).length){
       h += '<p class="help">Auto-suggest · "'+k+'" — '+a.suggestions.length+' suggestions, none negative (clean).</p>';
     }else{
@@ -894,6 +897,7 @@ function renderLocs(d, live){
 }
 
 async function submitNegCount(autoPids){
+  const gen = ++negGen;             // invalidates any poller from a prior run
   const pids = (autoPids && autoPids.length) ? autoPids
     : [...document.querySelectorAll('.locck:checked')].map(c=>scanLocations[+c.dataset.i].place_id).filter(Boolean);
   if(!pids.length){ $('negProg').textContent = 'Check at least one location.'; return; }
@@ -905,26 +909,28 @@ async function submitNegCount(autoPids){
     if(r.error){ $('negProg').textContent = r.error; $('countNegBtn').disabled=false; return; }
     reviewTasks = r.tasks.filter(t=>t.ok).map(t=>t.id);
     $('negProg').textContent = 'Queued '+reviewTasks.length+' — polling…';
-    pollNegCount(0, {});
+    pollNegCount(0, {}, gen);
   }catch(e){ $('negProg').textContent = 'Submit failed: '+e; $('countNegBtn').disabled=false; }
 }
 
-async function pollNegCount(attempt, doneMap){
+async function pollNegCount(attempt, doneMap, gen){
+  if(gen !== negGen) return;        // a newer scan/count superseded this poller
   if(attempt > 40){ $('negProg').textContent = 'Timed out with '+reviewTasks.length+' pulls still pending — try again shortly.'; $('countNegBtn').disabled=false; return; }
   try{
     const r = await (await fetch('/api/rep_reviews_collect', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({task_ids: reviewTasks})})).json();
+    if(gen !== negGen) return;
     (r.done||[]).forEach(d=>{ doneMap[d.id]=d; });
     reviewTasks = r.pending || [];
     renderNegCounts(Object.values(doneMap));
     if(reviewTasks.length){
       $('negProg').textContent = Object.keys(doneMap).length+' done · '+reviewTasks.length+' pending…';
-      setTimeout(()=>pollNegCount(attempt+1, doneMap), 5000);
+      setTimeout(()=>pollNegCount(attempt+1, doneMap, gen), 5000);
     }else{
       $('negProg').textContent = 'Complete.';
       $('countNegBtn').disabled = false;
     }
-  }catch(e){ setTimeout(()=>pollNegCount(attempt+1, doneMap), 5000); }
+  }catch(e){ setTimeout(()=>pollNegCount(attempt+1, doneMap, gen), 5000); }
 }
 
 function applyThreshold(done, th){
