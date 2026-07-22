@@ -2399,6 +2399,12 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
         ch = list(hsv.split())
         ch[0] = ch[0].point(lambda x: (x + 128) % 256)
         im = Image.merge("HSV", ch).convert("RGB")
+        # White-point fix: the inverted background is light grey; scale so it
+        # reads as true white without blowing out text or brand colors.
+        bg = max(1, max(sum(im.getpixel(p)) // 3 for p in _pts))
+        if bg < 250:
+            scale = 255.0 / bg
+            im = im.point(lambda x: min(255, int(x * scale)))
     strip = im.resize((40, h))
     px = strip.load()
     blank = []

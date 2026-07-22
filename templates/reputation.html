@@ -161,6 +161,7 @@
 <div class="wrap">
 
   <!-- campaign type -->
+  <div id="saveStatusBar" style="display:none;border-radius:9px;padding:9px 14px;font-size:13px;margin:0 0 14px"></div>
   <div class="card">
     <h2>1 · Strategy Type</h2>
     <div class="ctypes" id="ctypes">
@@ -480,6 +481,7 @@ $('scanBtn').onclick = async ()=>{
   renderReco();
   renderBrandReco();
   $('scanProg').textContent = 'Scan complete.';
+  autoSave();
   $('scanBtn').disabled = false;
 };
 
@@ -890,6 +892,7 @@ function applyThreshold(done, th){
   const tot = done.reduce((s,d)=>s + (th==='1' ? (d.neg_1||0) : d.neg_1_2), 0);
   $('nReviews').value = tot;
   if(tot > 0){ $('useReviews').checked = true; syncVisibility(); }
+  autoSave();
   window._scanProv = {
     locations: done.map(d=>d.title||d.place_id),
     total_locations: scanLocations.length,
@@ -955,12 +958,14 @@ function restoreForm(f){
 }
 
 async function autoSave(){
-  if(!await savingStatus() || !lastQuote) return;
+  if(!await savingStatus()) return;
+  const hasScan = window._scanData && Object.keys(window._scanData).length;
+  if(!lastQuote && !hasScan) return;   // nothing worth persisting yet
   const stratName = {reactive:'reactive', proactive:'proactive', bundle:'reactive + proactive'}[campaign] || campaign;
   const name = CURRENT_QUOTE_NAME || (($('brand').value.trim()||'Rep quote')+' - '+new Date().toLocaleDateString()+' - '+stratName);
-  const payload = {form: collectForm(), quote: lastQuote, rep_totals: lastQuote.totals,
-                   scan: (window._scanData && Object.keys(window._scanData).length)
-                     ? {data: window._scanData, negDone: window._negDone, prov: window._scanProv} : null};
+  const payload = {form: collectForm(), quote: lastQuote || null,
+                   rep_totals: lastQuote ? lastQuote.totals : null,
+                   scan: hasScan ? {data: window._scanData, negDone: window._negDone, prov: window._scanProv} : null};
   try{
     let r;
     if(CURRENT_QUOTE_ID){
@@ -1186,6 +1191,26 @@ $('cfgApply').onclick = async ()=>{
     $('cfgStatus').textContent = r.error ? ('Failed: '+r.error) : '✓ Applied to the running session — rebuild the quote to see new pricing. Also update the margin field in the form if you changed the default.';
   }catch(e){ $('cfgStatus').textContent = 'Failed: '+e; }
 };
+
+// ---- Saving status banner + save-from-the-get-go (parity with the SEO tab)
+let SAVE_ENABLED = false;
+(async ()=>{
+  try{
+    const s = await (await fetch('/api/quotes/status')).json();
+    SAVE_ENABLED = !!s.enabled;
+    const bar = document.getElementById('saveStatusBar');
+    if(bar && !REVIEW_TOKEN){
+      bar.style.display = 'block';
+      if(SAVE_ENABLED){
+        bar.style.background='#e8f5ec'; bar.style.border='1px solid #b6e0c2'; bar.style.color='#2a7a4a';
+        bar.textContent = '\u2713 Saving is on \u2014 quotes auto-save from the first scan, and you can reload them anytime.';
+      }else{
+        bar.style.background='#fdf1d8'; bar.style.border='1px solid #e8c98a'; bar.style.color='#7a5410';
+        bar.textContent = '\u26a0 Saving is OFF \u2014 '+(s.detail||'attach a Postgres database in Render.')+' Quotes will NOT be saved until this is fixed.';
+      }
+    }
+  }catch(e){}
+})();
 
 // ---- Read-only review mode: /review/<token> renders this template with the
 // shared quote loaded and every control disabled.
