@@ -24,9 +24,11 @@ Pricing sources (Rep Mgmt Proposal Template doc + Sage Dental sample, June 2026)
 """
 
 def r50(x):
-    """Round up to the next $50 — same convention as the SEO tool."""
+    """Round up to the next $50 — same convention as the SEO tool. The
+    round() guard strips float noise (e.g. 3000×1.35 = 4050.0000000000005)
+    so exact multiples don't ceil a full $50 high."""
     import math
-    return int(math.ceil(x / 50.0) * 50)
+    return int(math.ceil(round(x, 6) / 50.0) * 50)
 
 
 REP_CFG = {
@@ -184,7 +186,7 @@ REP_CFG = {
 # mechanics
 # ---------------------------------------------------------------------------
 
-def price_reviews(n, margin_pct=None, scan_meta=None):
+def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
     """Review-removal line off the Vici rate card. Whole-order bracket on the
     HARD cost; client gross derived from the editable margin (% of gross).
     Presented per-removal-first: the total is a pay-on-success MAXIMUM, so the
@@ -197,14 +199,17 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
     cfg = REP_CFG["review_removal"]
     m = cfg["default_margin_pct"] if margin_pct is None else float(margin_pct)
     m = min(0.90, max(0.0, m))
-    hard_per, over_chart = None, False
-    for b in cfg["brackets"]:
-        if n >= b["min"] and (b["max"] is None or n <= b["max"]):
-            hard_per = b["hard"]
-            break
-    if hard_per is None:
-        hard_per = cfg["brackets"][-1]["hard"]
-        over_chart = True
+    hard_per, over_chart, overridden = None, False, False
+    if hard_override:
+        hard_per, overridden = float(hard_override), True
+    else:
+        for b in cfg["brackets"]:
+            if n >= b["min"] and (b["max"] is None or n <= b["max"]):
+                hard_per = b["hard"]
+                break
+        if hard_per is None:
+            hard_per = cfg["brackets"][-1]["hard"]
+            over_chart = True
     gross_per = round(hard_per / (1.0 - m) / 5.0) * 5
     total = int(round(gross_per * n))
     hard_total = round(hard_per * n, 2)
@@ -247,6 +252,8 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
     if over_chart:
         line["notes"].append(f"{n:,} reviews exceeds the 500-review rate card \u2014 "
                              "top-tier rate extended; confirm with fulfillment partner.")
+    if overridden:
+        line["notes"].insert(0, "\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan).")
     return line
 
 
@@ -288,7 +295,8 @@ def _art_internal(hard_per, cnt, unit, m):
     return {"rows": _mrows(hard_per, "/pg", hard_per*cnt, tbd=True)}
 
 
-def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
+def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
+                   hard_std_override=None, hard_prem_override=None):
     """Website/article removals. Config figures are client prices at the
     calibrated 35% markup; partner hard cost (\u00d70.65) is canonical and the
     quoted client price rebuilds from it at margin_pct (default 35% replays
@@ -305,9 +313,12 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
         # Whole-order bracket rate by TOTAL standard count — Brendan's July
         # 2026 list prices every standard page in one channel regardless of
         # site type; the class only determines route/label/timeline.
-        per35 = next(b["per"] for b in cfg["brackets"]
-                     if n >= b["min"] and (b["max"] is None or n <= b["max"]))
-        hard = _art_hard(per35)
+        if hard_std_override:
+            hard = float(hard_std_override)
+        else:
+            per35 = next(b["per"] for b in cfg["brackets"]
+                         if n >= b["min"] and (b["max"] is None or n <= b["max"]))
+            hard = _art_hard(per35)
         unit = _art_client(hard, m)
         for key, cnt in cls_counts.items():
             c = cfg["classes"][key]
@@ -321,14 +332,18 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
                 "qty": cnt, "unit": unit, "kind": "per_asset",
                 "total": unit * cnt, "timeline": c["timeline"],
                 "estimated": True,
-                "notes": [f"Route: {c['route']}.",
-                          "Pay on success \u2014 billed only for pages removed."],
+                "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_std_override else [])
+                         + [f"Route: {c['route']}.",
+                            "Pay on success \u2014 billed only for pages removed."],
                 "internal": _art_internal(hard, cnt, unit, m),
             })
     elif n:
-        per35 = next(b["per"] for b in cfg["brackets"]
-                     if n >= b["min"] and (b["max"] is None or n <= b["max"]))
-        hard = _art_hard(per35)
+        if hard_std_override:
+            hard = float(hard_std_override)
+        else:
+            per35 = next(b["per"] for b in cfg["brackets"]
+                         if n >= b["min"] and (b["max"] is None or n <= b["max"]))
+            hard = _art_hard(per35)
         per = _art_client(hard, m)
         lines.append({
             "service": "Negative Website/Article Removals",
@@ -336,13 +351,15 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
                       "(whole-order bracket)",
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
-            "notes": ["Pay on success \u2014 billed only for sites removed.",
-                      "Always custom-quoted after human review."],
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_std_override else [])
+                     + ["Pay on success \u2014 billed only for sites removed.",
+                        "Always custom-quoted after human review."],
             "internal": _art_internal(hard, n, per, m),
         })
     p = max(0, int(n_premium or 0))
     if p:
-        phard = _art_hard(cfg["premium_per"])
+        phard = (float(hard_prem_override) if hard_prem_override
+                 else _art_hard(cfg["premium_per"]))
         punit = _art_client(phard, m)
         lines.append({
             "service": "Negative Website/Article Removals",
@@ -351,8 +368,9 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
             "qty": p, "unit": punit, "kind": "per_asset",
             "total": punit * p,
             "timeline": "10\u201314 weeks typical (12-month contract window)",
-            "notes": ["Pay on success \u2014 ~50% success on premium hosts.",
-                      "Always custom-quoted after human review."],
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_prem_override else [])
+                     + ["Pay on success \u2014 ~50% success on premium hosts.",
+                        "Always custom-quoted after human review."],
             "internal": _art_internal(phard, p, punit, m),
         })
     return lines
@@ -408,13 +426,13 @@ def _bundle_components(volume):
     return (r50(SEARCH_BUNDLE["supp_base"] + p_s * v),
             r50(SEARCH_BUNDLE["as_base"] + p_a * v))
 
-def price_search_bundle(volume, margin_pct=None):
+def price_search_bundle(volume, margin_pct=None, hard_override=None):
     # Each former component keeps its own CEIL50 rounding before summing —
     # this replays Brendan's Sage quote exactly ($3,450 + $3,950 = $7,400);
     # rounding the summed formula instead lands $50 low.
     supp_m, as_m = _bundle_components(volume)
     m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], supp_m + as_m))
-    hard = m * (1 - ART_CAL_MARGIN)
+    hard = float(hard_override) if hard_override else m * (1 - ART_CAL_MARGIN)
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     m = r50(hard / (1 - mg))
     p_s = SEARCH_BUNDLE.get("supp_per_1k", SEARCH_BUNDLE.get("comp_per_1k", 15))
@@ -426,7 +444,8 @@ def price_search_bundle(volume, margin_pct=None):
                   f"+ ${p_s}/${p_a} per 1K (suppression / auto-suggest) on "
                   f"{volume:,}/mo brand volume",
         "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
-        "notes": ["Includes Organic Search Suppression, Auto-Suggest & Related "
+        "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
+               + ["Includes Organic Search Suppression, Auto-Suggest & Related "
                   "Search Manipulation, and Branded Search Append.",
                   f"Covers up to {inc} negative suggest/related phrases at the "
                   "base price.",
@@ -437,16 +456,20 @@ def price_search_bundle(volume, margin_pct=None):
     }
 
 
-def price_search_bundle_maintenance(volume, margin_pct=None):
+def price_search_bundle_maintenance(volume, margin_pct=None, hard_override=None):
     """Post-result maintenance phase, per the actuals: full rate while
     active, then a drop once negatives are cleared. Ratio 0.544 is derived
     from the Visions 2024 actual ($3,950 active → $2,150 maintenance) and,
     applied per component, replays the $2,150 exactly on the auto-suggest
     side. Sequential — never billed alongside the active line."""
     pct = SEARCH_BUNDLE.get("maintenance_pct", 0.544)
-    supp_m, as_m = _bundle_components(volume)
-    m = r50(supp_m * pct) + r50(as_m * pct)
-    hard = m * (1 - ART_CAL_MARGIN)
+    if hard_override:
+        # override is the ACTIVE-phase hard/mo; maintenance keeps the ratio
+        hard = float(hard_override) * pct
+    else:
+        supp_m, as_m = _bundle_components(volume)
+        m = r50(supp_m * pct) + r50(as_m * pct)
+        hard = m * (1 - ART_CAL_MARGIN)
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     m = r50(hard / (1 - mg))
     return {
@@ -456,7 +479,10 @@ def price_search_bundle_maintenance(volume, margin_pct=None):
         "kind": "monthly_maint", "total": m,
         "timeline": SEARCH_BUNDLE.get("maintenance_timeline",
                                       "3\u20136 months post-result hold"),
-        "notes": ["Sequential \u2014 replaces the active line after results; "
+        "notes": (["\u2699 Manual hard-cost override active \u2014 maintenance "
+                   "keeps its % ratio off the overridden active rate."]
+                  if hard_override else [])
+               + ["Sequential \u2014 replaces the active line after results; "
                   "never billed concurrently (excluded from the monthly total).",
                   "Auto-suggest side replays the Visions 2024 actual "
                   "($3,950 \u2192 $2,150); the suppression-side drop is "
@@ -628,16 +654,17 @@ GEO = {"setup": {"monthly": 4950, "timeline": "First 1\u20132 quarters \u2014 LL
        "scale": {"monthly": 9950, "timeline": "Ongoing \u2014 scaled citation and "
                  "content program as AI search share grows"}}
 
-def price_geo(phase="setup", margin_pct=None):
+def price_geo(phase="setup", margin_pct=None, hard_override=None):
     p = GEO.get(phase) or GEO["setup"]
-    hard = p["monthly"] * (1 - ART_CAL_MARGIN)
+    hard = float(hard_override) if hard_override else p["monthly"] * (1 - ART_CAL_MARGIN)
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     client = r50(hard / (1 - mg))
     return {"service": "Reputational AI Search",
             "detail": f"{phase.capitalize()} phase \u2014 shapes AI Overview / LLM "
                       "answers about the brand",
             "kind": "monthly", "total": client, "timeline": p["timeline"],
-            "notes": ["Targets the negative AI-generated result the scan detects.",
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
+                   + ["Targets the negative AI-generated result the scan detects.",
                       "Priced off the standard GEO card ($4,950 setup / $9,950 "
                       "scale) \u2014 reputational application unconfirmed.",
                       "Recommend setup phase 1\u20132 quarters, then scale."],
@@ -702,12 +729,12 @@ def price_video(count=0, per_video=5600):
                       "Always custom-quoted by complexity (Brendan)."]}
 
 
-def price_shield(locations=1, margin_pct=None):
+def price_shield(locations=1, margin_pct=None, hard_override=None):
     cfg = REP_CFG["shield"]
     locations = max(1, int(locations or 1))
     extra = max(0, locations - cfg["included_locations"])
     m = 0.35 if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
-    base_hard = cfg["monthly_hard"]
+    base_hard = float(hard_override) if hard_override else cfg["monthly_hard"]
     loc_hard = cfg["per_extra_location_hard"]
     base_client = r50(base_hard * (1 + m))
     loc_client = r50(loc_hard * (1 + m))
@@ -720,7 +747,8 @@ def price_shield(locations=1, margin_pct=None):
         "service": "Proactive Brand Shield",
         "detail": det, "kind": "monthly", "total": total,
         "timeline": "Ongoing",
-        "notes": list(cfg["included"]),
+        "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed (per-quote, Brendan)."] if hard_override else [])
+               + list(cfg["included"]),
         "internal": {"rows": _mrows(hard_total, "/mo")},
     }
 
@@ -737,6 +765,7 @@ def build_rep_quote(payload):
     Returns {lines, phases, totals, warnings}.
     """
     campaign = payload.get("campaign", "reactive")
+    ov = payload.get("overrides") or {}
     lines, warnings = [], []
     phase1, phase2 = [], []
 
@@ -744,24 +773,24 @@ def build_rep_quote(payload):
         rv = payload.get("reviews") or {}
         ln = price_reviews(rv.get("count", 0),
                            rv.get("margin_pct", payload.get("margin_pct")),
-                           rv.get("scan_meta"))
+                           rv.get("scan_meta"),
+                           hard_override=ov.get("review_hard"))
         if ln:
             phase1.append(ln)
         ar = payload.get("articles") or {}
         art_lines = price_articles(ar.get("standard", 0), ar.get("premium", 0),
                                    ar.get("classes"),
-                                   ar.get("margin_pct", payload.get("margin_pct")))
+                                   ar.get("margin_pct", payload.get("margin_pct")),
+                                   hard_std_override=ov.get("art_std_hard"),
+                                   hard_prem_override=ov.get("art_prem_hard"))
         phase1 += art_lines
-        if any(ln.get("estimated") for ln in art_lines):
-            warnings.append(
-                "Website/Article Removal lines are ESTIMATED by site class "
-                "(market bands + calibrated actuals) \u2014 every page "
-                "pending content review before quoting.")
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
-            phase1.append(price_search_bundle(vol, payload.get("margin_pct")))
-            phase1.append(price_search_bundle_maintenance(vol, payload.get("margin_pct")))
+            phase1.append(price_search_bundle(vol, payload.get("margin_pct"),
+                                              hard_override=ov.get("search_hard")))
+            phase1.append(price_search_bundle_maintenance(vol, payload.get("margin_pct"),
+                                                          hard_override=ov.get("search_hard")))
             sp = REP_CFG["search_protection"]
             if vol > sp["review_above_volume"]:
                 warnings.append(
@@ -770,12 +799,14 @@ def build_rep_quote(payload):
                     "confirm out-search capacity before quoting.")
         ge = payload.get("geo") or {}
         if ge.get("enabled"):
-            phase1.append(price_geo(ge.get("phase") or "setup", payload.get("margin_pct")))
+            phase1.append(price_geo(ge.get("phase") or "setup", payload.get("margin_pct"),
+                                    hard_override=ov.get("geo_hard")))
 
 
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}
-        phase2.append(price_shield(sh.get("locations", 1), payload.get("margin_pct")))
+        phase2.append(price_shield(sh.get("locations", 1), payload.get("margin_pct"),
+                                   hard_override=ov.get("shield_hard")))
 
     # bundle discount on recurring lines when both phases present
     if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:

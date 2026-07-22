@@ -265,6 +265,20 @@
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
       </div>
 
+      <details id="ovPanel" style="margin:14px 0;border:1px solid #e0c98a;border-radius:9px;background:#fdfaf2;padding:10px 13px">
+        <summary style="cursor:pointer;font-weight:600;font-size:13px">\u2699 Manual hard-cost overrides <span style="font-weight:400;color:var(--muted)">(Brendan \u2014 per-quote, for clients the formula doesn\u2019t fit)</span></summary>
+        <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote \u2014 client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
+          <div><label style="font-size:12px">Review removal \u2014 hard $/review</label><input type="number" id="ovReview" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Standard site removal \u2014 hard $/page</label><input type="number" id="ovArtStd" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Premium site removal \u2014 hard $/page</label><input type="number" id="ovArtPrem" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Search Protection \u2014 hard $/mo (active)</label><input type="number" id="ovSearch" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Reputational AI Search \u2014 hard $/mo</label><input type="number" id="ovGeo" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Brand Shield \u2014 hard $/mo base</label><input type="number" id="ovShield" placeholder="formula" min="0"></div>
+        </div>
+        <p class="help" style="margin:8px 0 0">Search Protection maintenance keeps its % ratio off the overridden active rate. Shield per-extra-location stays on the config value. <button type="button" id="ovClear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
+      </details>
+
       <button class="btn" id="go">Build quote</button>
     </div>
 
@@ -342,6 +356,9 @@ $('go').onclick = async ()=>{
     search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked},
     geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
     shield: {locations:+$('nLocations').value||1},
+    overrides: {review_hard:+$('ovReview').value||0, art_std_hard:+$('ovArtStd').value||0,
+                art_prem_hard:+$('ovArtPrem').value||0, search_hard:+$('ovSearch').value||0,
+                geo_hard:+$('ovGeo').value||0, shield_hard:+$('ovShield').value||0},
   };
   try{
     const r = await fetch('/api/rep_quote', {method:'POST',
@@ -352,6 +369,8 @@ $('go').onclick = async ()=>{
   }catch(e){ $('out').innerHTML = '<div class="err">Request failed: '+e+'</div>'; }
   $('go').disabled = false;
 };
+
+$('ovClear').onclick = ()=>{ ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>$(id).value=''); };
 
 function money(x){ return '$'+x.toLocaleString(); }
 
@@ -833,6 +852,8 @@ function renderReco(){
     }
   });
   syncVisibility();
+  const ovIds = ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'];
+  if(ovIds.some(id=>+($(id)&&$(id).value||0))) $('ovPanel').open = true;
 }
 function renderLocs(d, live){
   let box = document.getElementById('locsBlock');
@@ -1034,7 +1055,7 @@ async function savingStatus(){
 
 function collectForm(){
   const f = {};
-  ['brand','domain','terms','nReviews','clientMargin','nArtStd','nArtPrem','volume','nLocations','geoPhase'].forEach(id=>{
+  ['brand','domain','terms','nReviews','clientMargin','nArtStd','nArtPrem','volume','nLocations','geoPhase','ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>{
     const el = $(id); if(el) f[id] = el.value;
   });
   ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{ f[id] = $(id).checked; });
