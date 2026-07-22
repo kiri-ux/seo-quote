@@ -212,8 +212,7 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
         "timeline": cfg["timeline"],
         "notes": ["Pay on success \u2014 billed per removed review; the total is "
                   "a maximum, not a committed spend.",
-                  "Some sensitive content cannot be removed. Every order needs "
-                  "a human review first."],
+                  "Some sensitive content cannot be removed."],
         "internal": {
             "hard_per": hard_per, "hard_total": hard_total,
             "profit_total": round(total - hard_total, 2),
@@ -231,10 +230,6 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
         locs = [l for l in (scan_meta.get("locations") or []) if l]
         total_locs = int(scan_meta.get("total_locations") or 0)
         if locs:
-            shown = ", ".join(locs[:6]) + ("\u2026" if len(locs) > 6 else "")
-            line["notes"].append(
-                f"Flag source: 1\u20132\u2605 count from Google review scan of "
-                f"{len(locs)} of {total_locs} location{'s' if total_locs != 1 else ''}: {shown}")
             if total_locs > len(locs):
                 line["notes"].append(
                     f"\u26a0 {total_locs - len(locs)} location"
@@ -374,7 +369,7 @@ SEARCH_BUNDLE = {
     # are editable live via /api/rep_config.
     "supp_base": 2900, "as_base": 3400, "comp_per_1k": 10,
     "floor": 6300, "cap": 15450,
-    "timeline": "4\u20136 months, then evaluate (may extend to 12)",
+    "timeline": "4-12 months",
 }
 
 def price_search_bundle(volume, margin_pct=None):
@@ -394,9 +389,7 @@ def price_search_bundle(volume, margin_pct=None):
                   f"+ ${SEARCH_BUNDLE['comp_per_1k'] * 2}/1K on {volume:,}/mo brand volume",
         "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
         "notes": ["Includes Organic Search Suppression, Auto-Suggest & Related "
-                  "Search Manipulation, and Branded Search Append.",
-                  "Auto-suggest succeeds only while contracted search volume "
-                  "exceeds the negative-modifier volume."],
+                  "Search Manipulation, and Branded Search Append."],
         "internal": {"rows": _mrows(hard, "/mo")},
     }
 
