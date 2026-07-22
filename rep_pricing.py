@@ -298,9 +298,13 @@ def _mrows(hard, unit_suffix="", total=None, tbd=False):
     def v(x):
         return f"${x:,.0f}{unit_suffix}" + (f" \u00b7 ${x/hard*total:,.0f} total"
                                             if total is not None else "")
-    row2 = {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip)}
-    if tbd:
-        row2["tbd"] = tbd
+    if isinstance(tbd, str):
+        # manually quoted — no % basis and no computed figure to imply one
+        row2 = {"label": "Internal hard cost", "value": "\u2014", "tbd": tbd}
+    else:
+        row2 = {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip)}
+        if tbd:
+            row2["tbd"] = tbd
     return [{"label": "Partner hard cost", "value": v(hard)}, row2]
 
 def _art_hard(client_at_35):
@@ -430,8 +434,8 @@ SEARCH_BUNDLE = {
     # auto-suggest side. (Suppression-side maintenance is INFERRED — no
     # SSG actual exists for it.)
     "maintenance_pct": 0.544,
-    "maintenance_timeline": "3\u20136 months following results",
-    "timeline": "Until results (typically 4\u201312 months)",
+    "maintenance_timeline": "Months 7\u201312",
+    "timeline": "4\u20136 months",
 }
 
 def _bundle_components(volume):

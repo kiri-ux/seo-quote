@@ -240,7 +240,11 @@
             <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
-          <p class="help" id="negPhraseNote"><b>How volume sets the price:</b> $6,050/mo base + $15 per 1,000 monthly brand searches (suppression side) + $10 per 1,000 (auto-suggest side), each rounded up to the nearest $50. More searches on the brand = more volume to out-search = higher monthly. Examples: 10K/mo → $6,300 · 50K/mo → $7,300. Includes up to 3 negative phrase removals (count unconfirmed). A reduced maintenance phase (54.4% of active) quotes automatically for after results.</p>
+          <p class="help" id="negPhraseNote">Includes up to 3 negative phrase removals (count unconfirmed).</p>
+          <details style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:8px 0 2px;background:#faf6fc" open>
+            <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — search protection price formula ▸ click to expand</summary>
+            <div class="help" id="spFormula" style="margin:8px 0 4px"></div>
+          </details>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">estimated $ — pending review</span></div>
@@ -259,7 +263,10 @@
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO brand shield &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
-        <div class="help" id="shieldFormula" style="background:#f5f7fa;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px"></div>
+        <details style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:2px 0;background:#faf6fc" open>
+          <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — brand shield price formula ▸ click to expand</summary>
+          <div class="help" id="shieldFormula" style="margin:8px 0 4px"></div>
+        </details>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
@@ -390,7 +397,9 @@ function render(d, payload){
   if(artLines.length){
     const artTotal = artLines.reduce((a,l)=>a+l.total,0);
     const artPages = artLines.reduce((a,l)=>a+(l.qty||0),0);
-    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">up to '+money(artTotal)+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+artPages+' page'+(artPages!==1?'s':'')+' · pay on success</div></div>';
+    const units = [...new Set(artLines.map(l=>l.unit))];
+    const rate = (units.length===1? money(units[0]) : 'from '+money(Math.min.apply(null,units)));
+    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+artPages+' page'+(artPages!==1?'s':'')+' flagged · up to '+money(artTotal)+'</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';
@@ -453,6 +462,33 @@ let nLocDirty = false;
 document.addEventListener('DOMContentLoaded', ()=>{
   const nl = $('nLocations'); if(nl) nl.addEventListener('input', ()=>{ nLocDirty = true; });
 });
+function updateSearchFormula(){
+  const box = document.getElementById('spFormula');
+  if(!box) return;
+  const v = Math.max(0, +($('volume')||{}).value || 0);
+  const mg = Math.min(90, Math.max(0, +($('clientMargin')||{}).value || 35)) / 100;
+  const r50 = x => Math.ceil(Math.round(x*1e6)/1e6/50)*50;
+  const money = x => '$' + Math.round(x).toLocaleString();
+  const supp = r50(2650 + 15*v/1000), as_ = r50(3400 + 10*v/1000);
+  const sum = Math.min(15450, Math.max(6050, supp + as_));
+  const hard = sum * 0.65;
+  const client = r50(hard / (1 - mg));
+  const maintSum = r50(supp*0.544) + r50(as_*0.544);
+  const maintClient = r50((maintSum*0.65) / (1 - mg));
+  box.innerHTML = '<b>Current calculation:</b> base '
+    + money(2650) + ' (suppression) + ' + money(3400) + ' (auto-suggest) = ' + money(6050) + '/mo.'
+    + ' Volume: ' + v.toLocaleString() + '/mo brand searches \u2192 +$15 per 1,000 = +' + money(15*v/1000)
+    + ' (suppression) and +$10 per 1,000 = +' + money(10*v/1000) + ' (auto-suggest), each rounded up to the nearest $50'
+    + ' \u2192 ' + money(supp) + ' + ' + money(as_) + ' = <b>' + money(client) + '/mo</b> active (months 4\u20136).'
+    + ' Maintenance at 54.4% \u2192 <b>' + money(maintClient) + '/mo</b> (months 7\u201312, reactive-only \u2014 the Brand Shield covers this on bundles).'
+    + (mg !== 0.35 ? ' Rebuilt at ' + Math.round(mg*100) + '% margin from ' + money(hard) + '/mo hard cost.' : '')
+    + '<div style="color:var(--muted);margin-top:3px">Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.</div>';
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  ['volume','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateSearchFormula); });
+  updateSearchFormula();
+});
+
 function updateShieldFormula(){
   const box = document.getElementById('shieldFormula');
   if(!box) return;
@@ -754,6 +790,7 @@ function renderFacsimiles(ac){
 }
 
 function bumpNegPhrases(){
+  updateSearchFormula();
   if(window._negPhrases.size){
     $('negPhraseNote').innerHTML = '<b>'+window._negPhrases.size+' negative phrases auto-counted from scan:</b> '
       + [...window._negPhrases].join(' · ')+' — first 3 included in the base price.';
