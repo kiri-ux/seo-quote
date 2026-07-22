@@ -2379,7 +2379,7 @@ def api_serp_queue():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
 
-def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110, keep=36):
+def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110, keep=36, aspect=None):
     """Collapse tall near-blank horizontal bands in a SERP screenshot (the AI
     Mode 'Thinking' placeholder leaves hundreds of empty pixels), optionally
     cap the final height, and re-encode as JPEG. Blank detection samples a
@@ -2444,8 +2444,24 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
         band = im.crop((0, a2, w, b))
         out.paste(band, (0, cy))
         cy += b - a2
+    if aspect:
+        # Enforce a fixed aspect ratio (e.g. "3:2" landscape) for consistent
+        # proposal layout: crop the bottom if too tall, pad white if too short.
+        try:
+            aw, ah = (float(x) for x in str(aspect).split(":"))
+        except (ValueError, TypeError):
+            aw = ah = 0
+        if aw > 0 and ah > 0:
+            w2, h2 = out.size
+            target = int(round(w2 * ah / aw))
+            if h2 > target:
+                out = out.crop((0, 0, w2, target))
+            elif h2 < target:
+                canvas = Image.new("RGB", (w2, target), (255, 255, 255))
+                canvas.paste(out, (0, 0))
+                out = canvas
     if max_h and out.size[1] > max_h:
-        out = out.crop((0, 0, w, max_h))
+        out = out.crop((0, 0, out.size[0], max_h))
     buf = io.BytesIO()
     out.save(buf, "JPEG", quality=85)
     return buf.getvalue()
@@ -2486,7 +2502,8 @@ def api_serp_fetch():
             # placeholder renders as a huge white gap), cap height for a
             # landscape-ish exhibit, JPEG to keep saved-quote payloads sane.
             try:
-                content = _trim_serp_image(content, max_h=int(d.get("max_h") or 0) or None)
+                content = _trim_serp_image(content, max_h=int(d.get("max_h") or 0) or None,
+                                           aspect=d.get("aspect"))
                 mime = "image/jpeg"
             except Exception as _te:
                 print(f"[serp trim] skipped: {_te}")

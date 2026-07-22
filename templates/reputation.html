@@ -231,6 +231,7 @@
           <div class="volnote" id="volNote">Auto-filled by <b>Scan brand</b>.</div>
           <details style="margin-top:8px">
             <summary style="font-size:12.5px;color:var(--muted);cursor:pointer">Manual volume pull (no scan)</summary>
+            <p class="help" style="margin:6px 0 0">Use for a quick quote without running the full brand scan, or to override the scan's term set with your own.</p>
             <label style="margin-top:8px">Brand search terms <span class="help" style="display:inline;margin:0">(one per line)</span></label>
             <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
@@ -480,6 +481,15 @@ function renderSerp(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
   let h = '<div class="scanhdr">SERP Results · "'+d.query+'"</div>';
   h += '<p class="help" style="margin:2px 0 6px"><b>'+d.owned_in_top10+' of top 10</b> results are client-controlled — each result below routes to the tactic shown.</p>';
+  h += '<details style="margin:0 0 8px"><summary class="help" style="display:inline;cursor:pointer;margin:0">How results are classified ▸</summary>'
+     + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 2px">'
+     + '<tr style="text-align:left;color:var(--muted)"><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Result type</th><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Tag</th><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Tactic &amp; why</th></tr>'
+     + '<tr><td style="padding:3px 6px">Client\u2019s own domain</td><td style="padding:3px 6px">owned</td><td style="padding:3px 6px"><b>Boost</b> — strengthen &amp; protect the asset</td></tr>'
+     + '<tr><td style="padding:3px 6px">Trustpilot · complaint boards (RipoffReport, ComplaintsBoard, PissedConsumer, Gripeo…) · Reddit · Quora</td><td style="padding:3px 6px">3rd party / forum</td><td style="padding:3px 6px"><b>Site removal</b> — page-level removal or de-index is possible on these hosts</td></tr>'
+     + '<tr><td style="padding:3px 6px">Yelp · Glassdoor · Indeed · BBB · social profiles</td><td style="padding:3px 6px">3rd party</td><td style="padding:3px 6px"><b>Suppression</b> — these platforms don\u2019t allow paid removal; outrank instead</td></tr>'
+     + '<tr><td style="padding:3px 6px">Forum results not matched above</td><td style="padding:3px 6px">forum</td><td style="padding:3px 6px"><b>Site removal</b> — thread-level routes usually exist</td></tr>'
+     + '<tr><td style="padding:3px 6px">Any other third-party page</td><td style="padding:3px 6px">3rd party</td><td style="padding:3px 6px"><b>Suppression</b> — default when no removal route applies</td></tr>'
+     + '</table><p class="help" style="margin:2px 0 6px">Routing is by domain — final feasibility per page is confirmed at human review.</p></details>';
   const siteRemovals = (d.organic||[]).filter(o=>o.tactic==='site removal').length + (d.forums||[]).filter(f=>f.tactic==='site removal').length;
   if(siteRemovals){
     const remPages = [...(d.organic||[]).filter(o=>o.tactic==='site removal'),
@@ -505,7 +515,8 @@ function renderSerp(d){
   d.organic.forEach(o=>{
     h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')+(o.tactic?'<span class="tac">→ '+o.tactic+'</span>':'')
        + '<div class="help" style="margin:0">'+ (o.title||'') +'</div></td>'
-       + '<td class="n">'+(o.rating? o.rating+'★'+(o.votes?' ('+o.votes.toLocaleString()+')':''):'—')+'</td></tr>';
+       + '<td class="n">'+(o.rating? o.rating+'★'+(o.votes?' ('+o.votes.toLocaleString()+')':'')
+           : (/(yelp\.|trustpilot\.|bbb\.|glassdoor\.|indeed\.|healthgrades\.|facebook\.)/.test(o.domain||'') ? '—' : ''))+'</td></tr>';
   });
   (d.forums||[]).forEach(f=>{
     h += '<tr><td>'+(f.pos||'—')+'</td><td>'+f.domain+'<span class="third">forum</span>'+(f.tactic?'<span class="tac">→ '+f.tactic+'</span>':'')
@@ -570,7 +581,7 @@ async function captureShot(keyword){
   const poll = async ()=>{
     if(++tries > 24){ done('Timed out after '+tries+' polls — try again shortly.'); return; }
     const r = await timedFetch('/api/serp_fetch',
-      {task_id: q.task_id, keyword, device:'desktop', width: 1200, scale: 2, trim: true, max_h: 1600}, 25000);
+      {task_id: q.task_id, keyword, device:'desktop', width: 1200, scale: 2, trim: true, aspect: '3:2', max_h: 2400}, 25000);
     if(r.error){ done('Fetch failed: '+r.error); return; }
     if(!r.ready){ status('Rendering… (poll '+tries+'/24'+(r.status?' · '+r.status:'')+')'); setTimeout(poll, 5000); return; }
     window._scanData = window._scanData || {};
