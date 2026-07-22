@@ -66,7 +66,7 @@
     background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
     padding:9px 12px;font-size:12px;font-weight:400;color:var(--muted);line-height:1.55}
   .tipwrap:hover .tip{display:block}
-  .gmock{background:#fff;border:1px solid #dfe1e5;border-radius:12px;padding:14px;margin:8px 0;max-width:520px;
+  .gmock{background:#fff;border:1px solid #dfe1e5;border-radius:12px;padding:14px;margin:8px 0;max-width:100%;
     box-shadow:0 1px 6px rgba(32,33,36,.08)}
   .gmock .gtitle{color:#70757a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
   .acrow{display:flex;align-items:center;gap:10px;color:#202124;font-size:14px;padding:6px 10px;border-radius:6px}
@@ -77,7 +77,8 @@
   .pasftile{display:flex;align-items:center;justify-content:space-between;background:#f1f3f4;color:#202124;
     font-size:13px;padding:10px 12px;border-radius:8px}
   .pasftile.negx{background:#fce8e6;color:#c5221f}
-  .shotimg{max-width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px}
+  .tacpos{background:#e6f4ea!important;color:#137333!important}
+  .shotimg{width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px}
   .tac{display:inline-block;background:#eef4fb;color:var(--atlas);padding:1px 8px;border-radius:20px;
     font-size:11px;font-weight:700;margin-left:6px}
   .pillnote{display:inline-block;background:#fde8c8;color:#7a5410;padding:3px 10px;border-radius:20px;
@@ -175,6 +176,8 @@
         <input type="text" id="brand" placeholder="e.g. Sage Dental">
         <label title="Used to tag the client’s own pages as owned assets in the scan results.">Website</label>
         <input type="text" id="domain" placeholder="e.g. mysagedental.com">
+        <label title="Applied across all tactics: client price = partner hard cost ÷ (1 − margin).">Retail margin % <span class="help" style="display:inline;margin:0">(of gross)</span></label>
+        <input type="number" id="clientMargin" min="0" max="90" step="1" value="35" style="max-width:120px">
         <button class="btn" id="scanBtn" type="button" style="margin-top:14px;background:var(--velocity);color:#fff" title="Runs the full diagnostic: brand-term universe with negative-modifier volumes, ‘{brand} reviews’ results table, related-search &amp; auto-suggest flags, and Google location discovery. ~3 DFS calls, a few cents.">🔍 Scan brand</button>
         <div id="scanProg" class="help hidden"></div>
       </div>
@@ -195,10 +198,7 @@
               <label># of reviews<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Reviews need a manual review to ensure they are removable.</span></span></label>
               <input type="number" id="nReviews" min="0" value="" placeholder="run the review count above">
             </div>
-            <div>
-              <label>Margin % <span class="help" style="display:inline;margin:0">(of gross)</span></label>
-              <input type="number" id="marginPct" min="0" max="90" step="1" value="35">
-            </div>
+
           </div>
           <details style="margin:4px 0 10px">
             <summary style="font-size:12.5px;color:var(--atlas);cursor:pointer;font-weight:600">What can and can't be removed</summary>
@@ -219,7 +219,7 @@
           <div class="row">
             <div><label>Standard sites</label><input type="number" id="nArtStd" min="0" value="0"></div>
             <div><label>Premium sites (DA > 35 / news-legal)</label><input type="number" id="nArtPrem" min="0" value="0"></div>
-            <div><label>Margin % <span class="help" style="display:inline;margin:0">(of gross)</span></label><input type="number" id="artMargin" min="0" max="95" value="35"></div>
+            
           </div>
           <p class="help">Partner hard costs are canonical; client price = hard ÷ (1 − margin). At 35% this replays partner rates — rack $7,500 sliding to $4,950 bulk (16+), premium $12,500. Pay on success. Always custom-quoted after human review.</p>
         </div>
@@ -328,9 +328,10 @@ $('go').onclick = async ()=>{
   const payload = {
     campaign,
     brand: $('brand').value.trim(),
-    reviews: $('useReviews').checked ? {count: +$('nReviews').value||0, margin_pct: (+$('marginPct').value||35)/100,
+    margin_pct: (+$('clientMargin').value||35)/100,
+    reviews: $('useReviews').checked ? {count: +$('nReviews').value||0,
       scan_meta: (window._scanProv && window._scanProv.flagged === (+$('nReviews').value||0)) ? window._scanProv : null} : {count:0},
-    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0, margin_pct:(+$('artMargin').value||35)/100, classes: window._artClasses||null} : {},
+    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0, classes: window._artClasses||null} : {},
     search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked},
     geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
     shield: {locations:+$('nLocations').value||1},
@@ -376,7 +377,9 @@ function render(d, payload){
     }
     const per = l.kind==='monthly' ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
     let internal = '';
-    if(l.internal && l.internal.text){
+    if(l.internal && l.internal.rows){
+      internal = '<div class="intl">Internal · '+l.internal.rows.join('<br>')+'</div>';
+    } else if(l.internal && l.internal.text){
       internal = '<div class="intl">Internal · '+l.internal.text+'</div>';
     } else if(l.internal){
       internal = '<div class="intl">Internal · partner hard cost '+money(Math.round(l.internal.hard_total))
@@ -483,6 +486,7 @@ function renderSerp(d){
      + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 2px">'
      + '<tr style="text-align:left;color:var(--muted)"><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Result type</th><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Tag</th><th style="padding:3px 6px;border-bottom:1px solid var(--line)">Tactic &amp; why</th></tr>'
      + '<tr><td style="padding:3px 6px">Client\u2019s own domain</td><td style="padding:3px 6px">owned</td><td style="padding:3px 6px"><b>Boost</b> — strengthen &amp; protect the asset</td></tr>'
+     + '<tr><td style="padding:3px 6px">Any third-party result rated 4.0★ or higher</td><td style="padding:3px 6px">3rd party</td><td style="padding:3px 6px"><b>Positive — leave</b> — a strong review page works in the client\u2019s favor and helps push negatives down</td></tr>'
      + '<tr><td style="padding:3px 6px">Trustpilot · complaint boards (RipoffReport, ComplaintsBoard, PissedConsumer, Gripeo…) · Reddit · Quora</td><td style="padding:3px 6px">3rd party / forum</td><td style="padding:3px 6px"><b>Site removal</b> — page-level removal or de-index may be possible on these hosts</td></tr>'
      + '<tr><td style="padding:3px 6px">Yelp · Glassdoor · Indeed · BBB · social profiles</td><td style="padding:3px 6px">3rd party</td><td style="padding:3px 6px"><b>Suppression</b> — these platforms don\u2019t allow paid removal; outrank instead</td></tr>'
      + '<tr><td style="padding:3px 6px">Forum results not matched above</td><td style="padding:3px 6px">forum</td><td style="padding:3px 6px"><b>Site removal</b> — thread-level routes usually exist</td></tr>'
@@ -511,7 +515,8 @@ function renderSerp(d){
   }
   h += '<table class="stbl"><tr><th>#</th><th>Result</th><th style="text-align:right">Rating</th></tr>';
   d.organic.forEach(o=>{
-    h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')+(o.tactic?'<span class="tac">→ '+o.tactic+'</span>':'')
+    const tacCls = o.tactic==='positive — leave' ? 'tac tacpos' : 'tac';
+    h += '<tr><td>'+o.pos+'</td><td>'+o.domain+(o.owned?'<span class="own">owned</span>':'<span class="third">3rd party</span>')+(o.tactic?'<span class="'+tacCls+'">→ '+o.tactic+'</span>':'')
        + '<div class="help" style="margin:0">'+ (o.title||'') +'</div></td>'
        + '<td class="n">'+(o.rating? o.rating+'★'+(o.votes?' ('+o.votes.toLocaleString()+')':'')
            : (/(yelp\.|trustpilot\.|bbb\.|glassdoor\.|indeed\.|healthgrades\.|facebook\.)/.test(o.domain||'') ? '—' : ''))+'</td></tr>';
@@ -582,7 +587,9 @@ async function captureShot(keyword){
     const r = await timedFetch('/api/serp_fetch',
       {task_id: q.task_id, keyword, device:'desktop', width: 1200, scale: 2, trim: true, aspect: '3:2', max_h: 2400}, 25000);
     if(r.error){ done('Fetch failed: '+r.error); return; }
-    if(!r.ready){ status('Rendering… (poll '+tries+'/24'+(r.status?' · '+r.status:'')+')'); setTimeout(poll, 5000); return; }
+    if(!r.ready){
+      const st = (r.status && !/not yet completed/i.test(r.status)) ? ' · '+r.status : '';
+      status('Rendering… (poll '+tries+'/24'+st+')'); setTimeout(poll, 5000); return; }
     window._scanData = window._scanData || {};
     window._scanData.shots = window._scanData.shots || {};
     window._scanData.shots[keyword] = r.data_url;
@@ -715,13 +722,15 @@ function renderLocs(d){
   scanLocations = d.locations || [];
   let h = '<div class="scanhdr">Google Locations · '+scanLocations.length+' found · '+d.total_reviews.toLocaleString()+' total reviews</div>';
   if(!scanLocations.length){ $('scanOut').innerHTML += h + '<p class="help">'+(d.error_detail||'None found in the listings database.')+'</p>'; return; }
-  const prechecked = scanLocations.slice(0,60).filter(l=>(l.rating||5)<4).length;
-  h += '<details class="locwrap"><summary style="cursor:pointer;font-size:13px;color:var(--atlas);font-weight:600;padding:6px 0">'
-     + prechecked+' location'+(prechecked!==1?'s':'')+' pre-checked (under 4.0★ — the likely removal targets) · expand to review all '+Math.min(scanLocations.length,60)+'</summary>';
+  const single = scanLocations.length === 1;
+  const prechecked = single ? 1 : scanLocations.slice(0,60).filter(l=>(l.rating||5)<4).length;
+  h += '<details class="locwrap"'+(single?' open':'')+'><summary style="cursor:pointer;font-size:13px;color:var(--atlas);font-weight:600;padding:6px 0">'
+     + (single ? 'Single location — auto-selected for the count'
+               : prechecked+' location'+(prechecked!==1?'s':'')+' pre-checked (under 4.0★ — the likely removal targets) · expand to review all '+Math.min(scanLocations.length,60))+'</summary>';
   h += '<p class="help" style="margin:2px 0 6px">Check others to include them in the count.</p>';
   h += '<table class="stbl"><tr><th><input type="checkbox" id="lockAll" title="Select all"></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
   scanLocations.slice(0,60).forEach((l,i)=>{
-    h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+((l.rating||5)<4?'checked':'')+'></td>'
+    h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+((single || (l.rating||5)<4)?'checked':'')+'></td>'
        + '<td>'+l.title+'<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
@@ -814,7 +823,7 @@ async function savingStatus(){
 
 function collectForm(){
   const f = {};
-  ['brand','domain','terms','nReviews','marginPct','nArtStd','nArtPrem','artMargin','volume','nLocations','geoPhase'].forEach(id=>{
+  ['brand','domain','terms','nReviews','clientMargin','nArtStd','nArtPrem','volume','nLocations','geoPhase'].forEach(id=>{
     const el = $(id); if(el) f[id] = el.value;
   });
   ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{ f[id] = $(id).checked; });
@@ -1026,6 +1035,8 @@ function renderCfg(c){
   h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));
   h += cfgHdr('Reactive + Proactive bundle', 'discount unconfirmed', 'warn');
   h += cfgRow('Recurring-line discount %', cfgIn('c_bdisc', Math.round(c.bundle_discount_pct*100), 1));
+  h += cfgHdr('Internal delivery cost');
+  h += cfgRow('% of partner hard cost', cfgIn('c_intpct', Math.round((c.internal_cost_pct||0.2)*100), 1));
   $('cfgBody').innerHTML = h;
 }
 $('cfgApply').onclick = async ()=>{
@@ -1041,6 +1052,7 @@ $('cfgApply').onclick = async ()=>{
     shield_monthly: v('c_shield'), shield_per_extra_location: v('c_shloc'),
     geo: {setup: v('c_geos'), scale: v('c_geoc')},
     bundle_discount_pct: v('c_bdisc')/100,
+    internal_cost_pct: v('c_intpct')/100,
   };
   $('cfgStatus').textContent = 'Applying…';
   try{

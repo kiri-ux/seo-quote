@@ -221,6 +221,10 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
             "hard_per": hard_per, "hard_total": hard_total,
             "profit_total": round(total - hard_total, 2),
             "margin_pct": m,
+            "rows": [f"partner hard cost ${hard_total:,.0f} (${hard_per:,.2f}/rev)",
+                     f"internal hard cost ${hard_total*INTERNAL_COST_PCT['pct']:,.0f} "
+                     f"(${hard_per*INTERNAL_COST_PCT['pct']:,.2f}/rev \u00b7 "
+                     f"{INTERNAL_COST_PCT['pct']:.0%} of partner)"],
         },
     }
     if scan_meta:
@@ -253,6 +257,20 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
 # Brendan's numbers exactly).
 ART_CAL_MARGIN = 0.35
 
+# Vici internal delivery cost, modeled as a % of partner hard cost.
+# Editable live via the pricing config panel.
+INTERNAL_COST_PCT = {"pct": 0.20}
+
+def _mrows(hard, unit_suffix="", total=None):
+    """Two-row internal grid: partner hard cost + internal hard cost."""
+    ip = INTERNAL_COST_PCT["pct"]
+    rows = [f"partner hard cost ${hard:,.0f}{unit_suffix}"
+            + (f" \u00b7 ${total:,.0f} total" if total is not None else ""),
+            f"internal hard cost ${hard*ip:,.0f}{unit_suffix}"
+            + (f" \u00b7 ${total*ip:,.0f} total" if total is not None else "")
+            + f" ({ip:.0%} of partner)"]
+    return rows
+
 def _art_hard(client_at_35):
     return client_at_35 * (1 - ART_CAL_MARGIN)
 
@@ -261,7 +279,7 @@ def _art_client(hard, margin_pct):
     return r50(hard / (1 - m))
 
 def _art_internal(hard_per, cnt, unit, m):
-    return f"partner hard cost ${hard_per:,.0f}/pg \u00b7 ${hard_per*cnt:,.0f} total"
+    return {"rows": _mrows(hard_per, "/pg", hard_per*cnt)}
 
 
 def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
@@ -293,7 +311,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
                           "\u26a0 ESTIMATE by site class \u2014 pending "
                           "content review (the removal basis can change "
                           "the price or zero out feasibility)."],
-                "internal": {"text": _art_internal(hard, cnt, unit, m)},
+                "internal": _art_internal(hard, cnt, unit, m),
             })
     elif n:
         per35 = next(b["per"] for b in cfg["brackets"]
@@ -308,7 +326,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
             "timeline": cfg["timeline"],
             "notes": ["Pay on success \u2014 billed only for sites removed.",
                       "Always custom-quoted after human review."],
-            "internal": {"text": _art_internal(hard, n, per, m)},
+            "internal": _art_internal(hard, n, per, m),
         })
     p = max(0, int(n_premium or 0))
     if p:
@@ -323,7 +341,7 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
             "timeline": "10\u201314 weeks typical (12-month contract window)",
             "notes": ["Pay on success \u2014 ~50% success on premium hosts.",
                       "Always custom-quoted after human review."],
-            "internal": {"text": _art_internal(phard, p, punit, m)},
+            "internal": _art_internal(phard, p, punit, m),
         })
     return lines
 
@@ -353,7 +371,7 @@ SEARCH_BUNDLE = {
     "timeline": "4\u20136 months, then evaluate (may extend to 12)",
 }
 
-def price_search_bundle(volume):
+def price_search_bundle(volume, margin_pct=None):
     # Each former component keeps its own CEIL50 rounding before summing —
     # this replays Brendan's Sage quote exactly ($3,450 + $3,950 = $7,400);
     # rounding the summed formula instead lands $50 low.
@@ -361,6 +379,9 @@ def price_search_bundle(volume):
     m = (r50(SEARCH_BUNDLE["supp_base"] + SEARCH_BUNDLE["comp_per_1k"] * v)
          + r50(SEARCH_BUNDLE["as_base"] + SEARCH_BUNDLE["comp_per_1k"] * v))
     m = min(SEARCH_BUNDLE["cap"], max(SEARCH_BUNDLE["floor"], m))
+    hard = m * (1 - ART_CAL_MARGIN)
+    mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
+    m = r50(hard / (1 - mg))
     return {
         "service": "Search Protection Bundle",
         "detail": f"${SEARCH_BUNDLE['supp_base'] + SEARCH_BUNDLE['as_base']:,} base "
@@ -370,7 +391,7 @@ def price_search_bundle(volume):
                   "Search Manipulation, and Branded Search Append.",
                   "Auto-suggest succeeds only while contracted search volume "
                   "exceeds the negative-modifier volume."],
-        "internal": {"text": f"partner hard cost ${round(m*0.65):,}/mo"},
+        "internal": {"rows": _mrows(hard, "/mo")},
     }
 
 
@@ -524,17 +545,20 @@ GEO = {"setup": {"monthly": 4950, "timeline": "First 1\u20132 quarters \u2014 LL
        "scale": {"monthly": 9950, "timeline": "Ongoing \u2014 scaled citation and "
                  "content program as AI search share grows"}}
 
-def price_geo(phase="setup"):
+def price_geo(phase="setup", margin_pct=None):
     p = GEO.get(phase) or GEO["setup"]
+    hard = p["monthly"] * (1 - ART_CAL_MARGIN)
+    mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
+    client = r50(hard / (1 - mg))
     return {"service": "Reputational AI Search",
             "detail": f"{phase.capitalize()} phase \u2014 shapes AI Overview / LLM "
                       "answers about the brand",
-            "kind": "monthly", "total": p["monthly"], "timeline": p["timeline"],
+            "kind": "monthly", "total": client, "timeline": p["timeline"],
             "notes": ["Targets the negative AI-generated result the scan detects.",
                       "Priced off the standard GEO card ($4,950 setup / $9,950 "
                       "scale) \u2014 reputational application unconfirmed.",
                       "Recommend setup phase 1\u20132 quarters, then scale."],
-            "internal": {"text": f"partner hard cost ${round(p['monthly']*0.65):,}/mo"}}
+            "internal": {"rows": _mrows(hard, "/mo")}}
 
 
 # Hobart Wealth actuals (2021): PR pay-per-placement.
@@ -595,10 +619,13 @@ def price_video(count=0, per_video=5600):
                       "Always custom-quoted by complexity (Brendan)."]}
 
 
-def price_shield(locations=1):
+def price_shield(locations=1, margin_pct=None):
     cfg = REP_CFG["shield"]
     extra = max(0, int(locations or 1) - cfg["included_locations"])
-    total = r50(cfg["monthly"] + extra * cfg["per_extra_location"])
+    t35 = r50(cfg["monthly"] + extra * cfg["per_extra_location"])
+    hard = t35 * (1 - ART_CAL_MARGIN)
+    mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
+    total = r50(hard / (1 - mg))
     det = "Proactive Brand Shield Bundle"
     if extra and cfg["per_extra_location"]:
         det += (f" \u00b7 {locations} locations "
@@ -611,7 +638,7 @@ def price_shield(locations=1):
             "\u26a0 ESTIMATED pricing \u2014 pending review. Basis: SEO moat "
             "anchored to the $2,900 suppression base + $525/mo Google "
             "review-gen batch per location (Goldstone 2021 actuals)."],
-        "internal": {"text": f"partner hard cost ${round(total*0.65):,}/mo"},
+        "internal": {"rows": _mrows(hard, "/mo")},
     }
 
 
@@ -632,12 +659,15 @@ def build_rep_quote(payload):
 
     if campaign in ("reactive", "bundle"):
         rv = payload.get("reviews") or {}
-        ln = price_reviews(rv.get("count", 0), rv.get("margin_pct"), rv.get("scan_meta"))
+        ln = price_reviews(rv.get("count", 0),
+                           rv.get("margin_pct", payload.get("margin_pct")),
+                           rv.get("scan_meta"))
         if ln:
             phase1.append(ln)
         ar = payload.get("articles") or {}
         art_lines = price_articles(ar.get("standard", 0), ar.get("premium", 0),
-                                   ar.get("classes"), ar.get("margin_pct"))
+                                   ar.get("classes"),
+                                   ar.get("margin_pct", payload.get("margin_pct")))
         phase1 += art_lines
         if any("\u26a0 ESTIMATE by site class" in nt
                for ln in art_lines for nt in ln.get("notes", [])):
@@ -648,7 +678,7 @@ def build_rep_quote(payload):
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
-            phase1.append(price_search_bundle(vol))
+            phase1.append(price_search_bundle(vol, payload.get("margin_pct")))
             sp = REP_CFG["search_protection"]
             if vol > sp["review_above_volume"]:
                 warnings.append(
@@ -657,12 +687,12 @@ def build_rep_quote(payload):
                     "confirm out-search capacity before quoting.")
         ge = payload.get("geo") or {}
         if ge.get("enabled"):
-            phase1.append(price_geo(ge.get("phase") or "setup"))
+            phase1.append(price_geo(ge.get("phase") or "setup", payload.get("margin_pct")))
 
 
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}
-        phase2.append(price_shield(sh.get("locations", 1)))
+        phase2.append(price_shield(sh.get("locations", 1), payload.get("margin_pct")))
         warnings.append(
             "Brand Shield pricing is an internal ESTIMATE (moat @ $2,900 "
             "suppression base + $525/location review-gen batch) \u2014 "

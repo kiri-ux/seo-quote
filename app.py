@@ -2385,9 +2385,20 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
     cap the final height, and re-encode as JPEG. Blank detection samples a
     40px-wide downscale per row, so it's fast even on 8000px pages."""
     import io
-    from PIL import Image
+    from PIL import Image, ImageOps
     im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     w, h = im.size
+    # Dark-mode guard: DFS occasionally renders Google in dark theme. Detect a
+    # dark page background (sample corners + center-top) and convert to a
+    # light-mode look: invert luminance, then rotate hue 180\u00b0 so brand
+    # colors (blue links, logo) come back approximately correct.
+    _pts = [(4, 4), (w - 5, 4), (w // 2, 4), (4, min(h - 5, 200))]
+    if sum(sum(im.getpixel(p)) for p in _pts) / (len(_pts) * 3) < 100:
+        inv = ImageOps.invert(im)
+        hsv = inv.convert("HSV")
+        ch = list(hsv.split())
+        ch[0] = ch[0].point(lambda x: (x + 128) % 256)
+        im = Image.merge("HSV", ch).convert("RGB")
     strip = im.resize((40, h))
     px = strip.load()
     blank = []
@@ -3191,6 +3202,7 @@ def api_rep_config_get():
         "shield_per_extra_location": rc["shield"]["per_extra_location"],
         "geo": {p: rep_pricing.GEO[p]["monthly"] for p in ("setup", "scale")},
         "bundle_discount_pct": rc["bundle"]["recurring_discount_pct"],
+        "internal_cost_pct": rep_pricing.INTERNAL_COST_PCT["pct"],
     })
 
 @app.route("/api/rep_config", methods=["POST"])
@@ -3226,6 +3238,8 @@ def api_rep_config_set():
                     rep_pricing.GEO[p]["monthly"] = int(float(d["geo"][p]))
         if "bundle_discount_pct" in d:
             rc["bundle"]["recurring_discount_pct"] = min(0.9, max(0.0, float(d["bundle_discount_pct"])))
+        if "internal_cost_pct" in d:
+            rep_pricing.INTERNAL_COST_PCT["pct"] = min(1.0, max(0.0, float(d["internal_cost_pct"])))
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": f"Config apply failed: {e}"}), 400

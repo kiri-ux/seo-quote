@@ -128,9 +128,15 @@ ROUTES = [
       "ripoffreport.", "gripeo.", "reddit.", "quora."), "site removal"),
 ]
 
-def route_tactic(domain, owned=False, forum=False):
+def route_tactic(domain, owned=False, forum=False, rating=None):
     if owned:
         return "owned \u2014 boost"
+    # Sentiment gate: a third-party result showing a strong rating is an
+    # asset working in the client's favor \u2014 suppressing it would bury
+    # the brand's own good reviews. Leave it (and let it help push down
+    # the actual negatives).
+    if rating is not None and rating >= 4.0:
+        return "positive \u2014 leave"
     d = (domain or "").lower()
     for prefixes, tactic in ROUTES:
         if any(p in d for p in prefixes):
@@ -185,7 +191,9 @@ def scan_serp(brand, domain=""):
                 "votes": rat.get("votes_count"),
                 "owned": bool(own) and own == _domain(it.get("domain")),
                 "tactic": route_tactic(_domain(it.get("domain")),
-                                       bool(own) and own == _domain(it.get("domain"))),
+                                       bool(own) and own == _domain(it.get("domain")),
+                                       rating=rat.get("value") or _rating_from_text(
+                                           it.get("description"), it.get("title"))),
             })
         elif t in ("discussions_and_forums", "found_on_web"):
             for el in (it.get("items") or [])[:6]:
