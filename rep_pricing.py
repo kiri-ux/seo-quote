@@ -267,15 +267,18 @@ INTERNAL_COST_PCT = {"pct": 0.20}
 # Scan tunables surfaced in the pricing-config panel (rarely edited).
 SCAN_SETTINGS = {"review_pull_depth": 200}
 
-def _mrows(hard, unit_suffix="", total=None):
-    """Two-row internal grid: partner hard cost + internal hard cost."""
+def _mrows(hard, unit_suffix="", total=None, tbd=False):
+    """Two-row internal grid: partner hard cost + internal hard cost. The TBD
+    flag (red, confirm-needed) applies only where Kiri wants sign-off — the
+    review/article removal tactics; everything else defaults to the 20%."""
     ip = INTERNAL_COST_PCT["pct"]
     def v(x):
         return f"${x:,.0f}{unit_suffix}" + (f" \u00b7 ${x/hard*total:,.0f} total"
                                             if total is not None else "")
-    return [{"label": "Partner hard cost", "value": v(hard)},
-            {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip),
-             "tbd": True}]
+    row2 = {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip)}
+    if tbd:
+        row2["tbd"] = True
+    return [{"label": "Partner hard cost", "value": v(hard)}, row2]
 
 def _art_hard(client_at_35):
     return client_at_35 * (1 - ART_CAL_MARGIN)
@@ -285,7 +288,7 @@ def _art_client(hard, margin_pct):
     return r50(hard / (1 - m))
 
 def _art_internal(hard_per, cnt, unit, m):
-    return {"rows": _mrows(hard_per, "/pg", hard_per*cnt)}
+    return {"rows": _mrows(hard_per, "/pg", hard_per*cnt, tbd=True)}
 
 
 def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
@@ -627,7 +630,8 @@ def price_video(count=0, per_video=5600):
 
 def price_shield(locations=1, margin_pct=None):
     cfg = REP_CFG["shield"]
-    extra = max(0, int(locations or 1) - cfg["included_locations"])
+    locations = max(1, int(locations or 1))
+    extra = max(0, locations - cfg["included_locations"])
     t35 = r50(cfg["monthly"] + extra * cfg["per_extra_location"])
     hard = t35 * (1 - ART_CAL_MARGIN)
     mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))

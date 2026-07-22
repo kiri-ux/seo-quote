@@ -435,7 +435,7 @@ function updateShieldFormula(){
     + money(3450) + ' base' + (n > 1 ? ' + $525 × ' + (n-1) + ' extra location' + (n>2?'s':'') : '')
     + ' = <b>' + money(ref) + ' reference</b>. '
     + 'Partner hard cost is 65% of that → <b>' + money(partner) + '/mo</b>. '
-    + 'Internal hard cost is 20% of partner → <b style="color:#b3261e">' + money(internalC) + '/mo (TBD)</b>. '
+    + 'Internal hard cost is 20% of partner → <b>' + money(internalC) + '/mo</b>. '
     + 'Client price = partner cost ÷ (1 − ' + Math.round(m*100) + '% retail margin), rounded up to the nearest $50 → <b>' + money(client) + '/mo</b>.'
     + '<div style="color:var(--muted);margin-top:3px">Base, per-location, and % values are editable in Pricing config.</div>';
 }
@@ -463,11 +463,19 @@ $('scanBtn').onclick = async ()=>{
   window._scanData = {}; window._negDone = null; window._scanProv = null;
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
-  async function fetchJSON(url, o){
+  async function fetchJSON(url, o, _retried){
     const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(o)});
     const txt = await r.text();
     try{ return JSON.parse(txt); }
-    catch(e){ return {error: 'HTTP '+r.status+' — server returned non-JSON (likely a timeout page): '+txt.slice(0,120)}; }
+    catch(e){
+      // 5xx with an HTML body is usually a deploy/worker-restart blip on
+      // Render — wait a beat and retry once before surfacing the error.
+      if(!_retried && r.status >= 500){
+        await new Promise(res=>setTimeout(res, 4000));
+        return fetchJSON(url, o, true);
+      }
+      return {error: 'HTTP '+r.status+' — server returned non-JSON (likely a timeout page): '+txt.slice(0,120)};
+    }
   }
   const step = async (label, fn) => {
     $('scanProg').textContent = label;
@@ -1094,9 +1102,13 @@ async function showVersions(id, btn){
   const r = await (await fetch('/api/quotes/'+id+'/versions')).json();
   const vs = r.versions || [];
   if(!vs.length){ box.innerHTML = '<div class="help" style="margin-top:6px">No prior versions.</div>'; return; }
-  box.innerHTML = vs.map(v=>'<div class="help" style="margin-top:6px" id="vrow'+v.id+'">'+new Date(v.snapshot_at).toLocaleString()
-    + ' — <a href="#" onclick="loadVersion('+v.id+');return false">restore</a>'
-    + ' · <a href="#" style="color:#b3261e" onclick="deleteVersion('+v.id+');return false">delete</a></div>').join('');
+  const m0 = x => x==null ? '—' : '$'+Math.round(+x).toLocaleString();
+  box.innerHTML = vs.map((v,i)=>'<div class="help" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px" id="vrow'+v.id+'">'
+    + '<span>'+(i===0?'<b>Original</b>':'Edit '+i)+' · one-time '+m0(v.base)+' · '+m0(v.intermediate)+'/mo <span style="color:var(--muted)">'+new Date(v.snapshot_at).toLocaleString()+'</span></span>'
+    + '<span style="display:flex;gap:6px;flex:0 0 auto">'
+    + '<button class="btn2" style="padding:3px 9px;font-size:11px" onclick="loadVersion('+v.id+');return false">View</button>'
+    + '<button class="btn2" style="padding:3px 8px;font-size:11px;color:#b3261e;border-color:#e0c0c0" onclick="deleteVersion('+v.id+');return false">×</button>'
+    + '</span></div>').join('');
 }
 async function deleteVersion(vid){
   if(!confirm('Delete this history version? This cannot be undone.')) return;
@@ -1114,6 +1126,7 @@ async function loadVersion(vid){
   restoreForm((v.payload||{}).form);
   lastQuote = (v.payload||{}).quote || null;
   if(lastQuote){ render(lastQuote, {brand: $('brand').value.trim()}); }
+  const st = $('saveStatus'); if(st) st.textContent = 'Viewing a historical version — Update will save it forward as the current version.';
   $('savedPanel').style.display='none';
 }
 async function deleteSavedQuote(id){
