@@ -171,12 +171,11 @@
       <!-- client -->
       <div class="card">
         <h2>2 · Client</h2>
-        <label>Client / brand name</label>
+        <label>Client Name</label>
         <input type="text" id="brand" placeholder="e.g. Sage Dental">
-        <label>Website <span class="help" style="display:inline;margin:0">(for owned-asset tagging in the SERP scan)</span></label>
+        <label title="Used to tag the client’s own pages as owned assets in the scan results.">Website</label>
         <input type="text" id="domain" placeholder="e.g. mysagedental.com">
-        <button class="btn" id="scanBtn" type="button" style="margin-top:14px;background:var(--velocity);color:#fff">🔍 Scan brand</button>
-        <p class="help" style="margin-top:8px">Runs the full diagnostic: brand-term universe with negative-modifier volumes, "{brand} reviews" SERP threat table, related-search &amp; auto-suggest flags, and Google location discovery. ~3 DFS calls, a few cents.</p>
+        <button class="btn" id="scanBtn" type="button" style="margin-top:14px;background:var(--velocity);color:#fff" title="Runs the full diagnostic: brand-term universe with negative-modifier volumes, ‘{brand} reviews’ results table, related-search &amp; auto-suggest flags, and Google location discovery. ~3 DFS calls, a few cents.">🔍 Scan brand</button>
         <div id="scanProg" class="help hidden"></div>
       </div>
 
@@ -189,12 +188,12 @@
       <div class="card" id="secReactive">
         <h2>3 · Reactive Cleanup</h2>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews" checked><span class="slider"></span></label><span class="lbl" title="Flagged 1–2★ Google Business reviews are submitted for removal — billed only per review successfully removed.">Negative Review Removals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useReviews"><span class="slider"></span></label><span class="lbl" title="Flagged 1–2★ Google Business reviews are submitted for removal — billed only per review successfully removed.">Negative Review Removals</span></div>
         <div id="reviewFields">
           <div class="row">
             <div>
               <label># of reviews<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Reviews need a manual review to ensure they are removable.</span></span></label>
-              <input type="number" id="nReviews" min="0" value="10">
+              <input type="number" id="nReviews" min="0" value="" placeholder="run the review count above">
             </div>
             <div>
               <label>Margin % <span class="help" style="display:inline;margin:0">(of gross)</span></label>
@@ -225,7 +224,7 @@
           <p class="help">Partner hard costs are canonical; client price = hard ÷ (1 − margin). At 35% this replays partner rates — rack $7,500 sliding to $4,950 bulk (16+), premium $12,500. Pay on success. Always custom-quoted after human review.</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl" title="Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.">Search Protection Bundle</span><span class="help" style="margin:0">included in all proposals</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl" title="Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.">Search Protection Bundle</span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
           <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
@@ -775,6 +774,7 @@ async function pollNegCount(attempt, doneMap){
 function applyThreshold(done, th){
   const tot = done.reduce((s,d)=>s + (th==='1' ? (d.neg_1||0) : d.neg_1_2), 0);
   $('nReviews').value = tot;
+  if(tot > 0){ $('useReviews').checked = true; syncVisibility(); }
   window._scanProv = {
     locations: done.map(d=>d.title||d.place_id),
     total_locations: scanLocations.length,
