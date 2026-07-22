@@ -265,20 +265,6 @@
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
       </div>
 
-      <details id="ovPanel" style="margin:14px 0;border:1px solid #e0c98a;border-radius:9px;background:#fdfaf2;padding:10px 13px">
-        <summary style="cursor:pointer;font-weight:600;font-size:13px">\u2699 Manual hard-cost overrides <span style="font-weight:400;color:var(--muted)">(Brendan \u2014 per-quote, for clients the formula doesn\u2019t fit)</span></summary>
-        <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote \u2014 client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
-          <div><label style="font-size:12px">Review removal \u2014 hard $/review</label><input type="number" id="ovReview" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Standard site removal \u2014 hard $/page</label><input type="number" id="ovArtStd" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Premium site removal \u2014 hard $/page</label><input type="number" id="ovArtPrem" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Search Protection \u2014 hard $/mo (active)</label><input type="number" id="ovSearch" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Reputational AI Search \u2014 hard $/mo</label><input type="number" id="ovGeo" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Brand Shield \u2014 hard $/mo base</label><input type="number" id="ovShield" placeholder="formula" min="0"></div>
-        </div>
-        <p class="help" style="margin:8px 0 0">Search Protection maintenance keeps its % ratio off the overridden active rate. Shield per-extra-location stays on the config value. <button type="button" id="ovClear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
-      </details>
-
       <button class="btn" id="go">Build quote</button>
     </div>
 
@@ -286,6 +272,19 @@
     <div>
       <div class="card" id="outCard">
         <h2>Quote</h2>
+                <details id="ovPanel" style="margin:0 0 14px;border:1px solid #e0c98a;border-radius:9px;background:#fdfaf2;padding:10px 13px">
+        <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙ Manual hard-cost overrides <span style="font-weight:400;color:var(--muted)">(Brendan — per-quote, for clients the formula doesn’t fit)</span></summary>
+        <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote — client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote; rebuild the quote after editing.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
+          <div><label style="font-size:12px">Review removal — hard $/review</label><input type="number" id="ovReview" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Standard site removal — hard $/page</label><input type="number" id="ovArtStd" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Premium site removal — hard $/page</label><input type="number" id="ovArtPrem" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Search Protection — hard $/mo (active)</label><input type="number" id="ovSearch" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Reputational AI Search — hard $/mo</label><input type="number" id="ovGeo" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Brand Shield — hard $/mo base</label><input type="number" id="ovShield" placeholder="formula" min="0"></div>
+        </div>
+        <p class="help" style="margin:8px 0 0">Search Protection maintenance keeps its % ratio off the overridden active rate. Shield per-extra-location stays on the config value. <button type="button" id="ovClear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
+        </details>
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
       <div class="card hidden" id="shotCard">
@@ -378,13 +377,20 @@ function render(d, payload){
   let h = '';
   (d.warnings||[]).forEach(w=> h += '<div class="warn">'+w+'</div>');
 
-  h += '<div class="totals" style="grid-template-columns:repeat(2,1fr)">';
   const rl = d.lines.find(l=>l.unit_label);
+  const artLines = d.lines.filter(l=>l.service.indexOf('Negative Website/Article')===0);
   const perAsset = d.lines.filter(l=>l.kind==='per_asset');
+  const nCards = (rl?1:0) + (artLines.length?1:0) + 1 + (!rl && !artLines.length && perAsset.length ? 1 : 0);
+  h += '<div class="totals" style="grid-template-columns:repeat('+nCards+',1fr)">';
   if(rl){
     h += '<div class="tot"><div class="name">Pay-on-success</div><div class="price">'+rl.unit_label.replace('/removed review','')+'<span style="font-size:13px;color:var(--muted)">/removed review</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+rl.qty.toLocaleString()+' flagged reviews</div></div>';
-  }else if(perAsset.length){
+  }else if(!artLines.length && perAsset.length){
     h += '<div class="tot"><div class="name">Pay-on-success items</div><div class="price">'+perAsset.length+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">billed per completed removal</div></div>';
+  }
+  if(artLines.length){
+    const artTotal = artLines.reduce((a,l)=>a+l.total,0);
+    const artPages = artLines.reduce((a,l)=>a+(l.qty||0),0);
+    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">up to '+money(artTotal)+'</div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+artPages+' page'+(artPages!==1?'s':'')+' · pay on success</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';
@@ -412,7 +418,7 @@ function render(d, payload){
     if(l.internal && l.internal.rows){
       const rows = l.internal.rows.map(r => typeof r === 'string'
         ? '<div class="intlrow"><span>'+r+'</span></div>'
-        : '<div class="intlrow"'+(r.tbd?' style="color:#b3261e;font-weight:600"':'')+'><span>'+r.label+(r.tbd?' · TBD — confirm':'')+'</span><span>'+r.value+'</span></div>').join('');
+        : '<div class="intlrow"'+(r.tbd?' style="color:#b3261e;font-weight:600"':'')+'><span>'+r.label+(r.tbd?' · '+(typeof r.tbd==='string'?r.tbd:'TBD — confirm'):'')+'</span><span>'+r.value+'</span></div>').join('');
       internal = '<div class="intl"><div class="intlhdr">Internal</div>'+rows+'</div>';
     } else if(l.internal && l.internal.text){
       internal = '<div class="intl">Internal · '+l.internal.text+'</div>';

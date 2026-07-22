@@ -291,16 +291,16 @@ INTERNAL_COST_PCT = {"pct": 0.20}
 SCAN_SETTINGS = {"review_pull_depth": 200}
 
 def _mrows(hard, unit_suffix="", total=None, tbd=False):
-    """Two-row internal grid: partner hard cost + internal hard cost. The TBD
-    flag (red, confirm-needed) applies only where Kiri wants sign-off — the
-    review/article removal tactics; everything else defaults to the 20%."""
+    """Two-row internal grid: partner hard cost + internal hard cost. tbd
+    may be True (renders the red 'TBD \u2014 confirm' flag) or a string
+    (renders that flag text instead, e.g. 'quoted manually')."""
     ip = INTERNAL_COST_PCT["pct"]
     def v(x):
         return f"${x:,.0f}{unit_suffix}" + (f" \u00b7 ${x/hard*total:,.0f} total"
                                             if total is not None else "")
     row2 = {"label": f"Internal hard cost ({ip:.0%})", "value": v(hard*ip)}
     if tbd:
-        row2["tbd"] = True
+        row2["tbd"] = tbd
     return [{"label": "Partner hard cost", "value": v(hard)}, row2]
 
 def _art_hard(client_at_35):
@@ -311,7 +311,7 @@ def _art_client(hard, margin_pct):
     return r50(hard / (1 - m))
 
 def _art_internal(hard_per, cnt, unit, m):
-    return {"rows": _mrows(hard_per, "/pg", hard_per*cnt, tbd=True)}
+    return {"rows": _mrows(hard_per, "/pg", hard_per*cnt, tbd="quoted manually")}
 
 
 def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
@@ -430,9 +430,8 @@ SEARCH_BUNDLE = {
     # auto-suggest side. (Suppression-side maintenance is INFERRED — no
     # SSG actual exists for it.)
     "maintenance_pct": 0.544,
-    "maintenance_timeline": "3\u20136 months, as results are achieved "
-                            "(auto-suggest typically clears in 2\u20133 months)",
-    "timeline": "4-12 months",
+    "maintenance_timeline": "3\u20136 months following results",
+    "timeline": "Until results (typically 4\u201312 months)",
 }
 
 def _bundle_components(volume):
@@ -511,10 +510,11 @@ def price_search_bundle_maintenance(volume, margin_pct=None, hard_override=None)
                   "Recommended to lock in results and keep negative content "
                   "from returning."],
         "internal": {"rows": _mrows(hard, "/mo") + [
-            {"label": "Basis",
-             "value": f"{int(pct*1000)/10}% of active \u00b7 Visions 2024 "
-                      "actual $3,950\u2192$2,150 (AS side exact; "
-                      "suppression-side drop inferred, no SSG actual)"}]},
+            {"label": "\u26a0 Maintenance reduction",
+             "value": f"currently {int(pct*1000)/10}% of active (Visions "
+                      "2024: $3,950\u2192$2,150) \u2014 how deep should "
+                      "the reduction be?",
+             "tbd": "pricing review"}]},
     }
 
 
