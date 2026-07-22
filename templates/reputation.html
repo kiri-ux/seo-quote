@@ -399,7 +399,10 @@ function render(d, payload){
     const artPages = artLines.reduce((a,l)=>a+(l.qty||0),0);
     const units = [...new Set(artLines.map(l=>l.unit))];
     const rate = (units.length===1? money(units[0]) : 'from '+money(Math.min.apply(null,units)));
-    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+artPages+' page'+(artPages!==1?'s':'')+' flagged · up to '+money(artTotal)+'</div></div>';
+    const stdPg = artLines.filter(l=>l.service.indexOf('Premium')===-1).reduce((a,l)=>a+(l.qty||0),0);
+    const premPg = artPages - stdPg;
+    const mix = (stdPg && premPg) ? stdPg+' standard + '+premPg+' premium' : artPages+' page'+(artPages!==1?'s':'');
+    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' flagged · up to '+money(artTotal)+'</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';
@@ -971,7 +974,7 @@ function renderLocs(d, live){
   h += '</table></details>';
   const counted = !!(window._negDone && window._negDone.length);
   h += '<div style="margin-top:10px"><button class="btn2" id="countNegBtn" type="button">'+(counted?'Re-run count for checked locations':'Count negatives for checked locations')+'</button>'
-     + '<div class="help" id="negProg" style="margin-top:6px">Worst-first pull · ~$0.03/location · results in ~1 min. Pull depth is set in Pricing config.</div></div>'
+     + '<div class="help" id="negProg" style="margin-top:6px"></div></div>'
      + '<div id="negOut"></div>';
   box.innerHTML = h;
   if(!window._cntDelegated){
@@ -1091,7 +1094,9 @@ function renderNegCounts(done){
   const tot12 = applyThreshold(done, th), tot3 = done.reduce((s,d)=>s+d.weak_3,0);
   let h = '<div class="scanhdr" style="margin-top:12px">Negative Review Counts</div>';
   h += '<div class="row" style="margin:4px 0 6px"><div style="flex:0 0 240px"><label style="margin-top:0">Flag threshold</label><select id="negTh"><option value="12"'+(th==='12'?' selected':'')+'>1–2★ reviews</option><option value="1"'+(th==='1'?' selected':'')+'>1★ only</option></select></div></div>';
-  h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>'+tot12.toLocaleString()+'</b> reviews flagged at the selected threshold (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>';
+  h += (tot12 > 0
+    ? '<div class="warn"><b>'+tot12.toLocaleString()+'</b> reviews flagged at the selected threshold (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>'
+    : '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34">No reviews flagged at the selected threshold · '+tot3.toLocaleString()+' at 3★.</div>');
   h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1★</th><th style="text-align:right">2★</th><th style="text-align:right">3★</th></tr>';
   done.forEach(d=>{
     h += '<tr><td>'+(d.title||d.place_id)+(d.truncated?' <span class="third">more beyond depth</span>':'')+'</td>'

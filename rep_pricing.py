@@ -243,6 +243,8 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         "timeline": cfg["timeline"],
         "notes": ["Pay on success \u2014 billed per removed review; the total is "
                   "a maximum, not a committed spend.",
+                  "Success rate: ~100% via 48-hour priority routing; 40\u201350% "
+                  "via bulk routing (30\u201360 days).",
                   "Some sensitive content cannot be removed."],
         "internal": {
             "hard_per": hard_per, "hard_total": hard_total,
@@ -346,14 +348,15 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
         for key, cnt in cls_counts.items():
             c = cfg["classes"][key]
             lines.append({
-                "service": "Negative Website/Article Removals",
+                "service": "Negative Website/Article Removals \u2014 Standard",
                 "detail": f"{cnt} \u00d7 {c['label']} @ ${unit:,}/page",
                 "qty": cnt, "unit": unit, "kind": "per_asset",
                 "total": unit * cnt, "timeline": c["timeline"],
                 "estimated": True,
                 "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
                          + [f"Route: {c['route']}.",
-                            "Pay on success \u2014 billed only for pages removed."],
+                            "Pay on success \u2014 billed only for pages removed.",
+                            "Success rate: ~100% to date on standard hosts (complaint boards, forums, blogs); court and legal-database pages run closer to 50%.",],
                 "internal": _art_internal(hard, cnt, unit, m),
             })
     elif n:
@@ -365,12 +368,13 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
             hard = _art_hard(per35)
         per = _art_client(hard, m)
         lines.append({
-            "service": "Negative Website/Article Removals",
+            "service": "Negative Website/Article Removals \u2014 Standard",
             "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed",
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
             "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
                      + ["Pay on success \u2014 billed only for sites removed.",
+                        "Success rate: ~100% to date on standard hosts (complaint boards, forums, blogs); court and legal-database pages run closer to 50%.",
                         "Always custom-quoted after human review."],
             "internal": _art_internal(hard, n, per, m),
         })
@@ -380,14 +384,15 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
                  else _art_hard(cfg["premium_per"]))
         punit = _art_client(phard, m)
         lines.append({
-            "service": "Negative Website/Article Removals",
+            "service": "Negative Website/Article Removals \u2014 Premium (news / high-authority)",
             "detail": f"{p} premium site{'s' if p != 1 else ''} (DA > 35 / news-legal) "
                       f"@ ${punit:,}/removed",
             "qty": p, "unit": punit, "kind": "per_asset",
             "total": punit * p,
             "timeline": "10\u201314 weeks typical (12-month contract window)",
             "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_prem_override else [])
-                     + ["Pay on success \u2014 ~50% success on premium hosts.",
+                     + ["Pay on success \u2014 billed only for pages removed.",
+                        "Success rate: ~50% on premium news / high-authority hosts.",
                         "Always custom-quoted after human review."],
             "internal": _art_internal(phard, p, punit, m),
         })
