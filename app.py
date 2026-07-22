@@ -2388,28 +2388,6 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
     from PIL import Image
     im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     w, h = im.size
-    # Right-edge crop: Google's results column is left-aligned, so wide
-    # captures carry a large blank margin on the right. Scan a row-averaged
-    # 1px-tall strip right-to-left for the last non-blank column and crop
-    # there (+ padding), mirroring the left margin so it looks intentional.
-    col = im.resize((w, 1))
-    cpx = col.load()
-    right = w
-    for x in range(w - 1, -1, -1):
-        r, g, b = cpx[x, 0]
-        if r < blank_thresh or g < blank_thresh or b < blank_thresh:
-            right = x
-            break
-    left_margin = 0
-    for x in range(w):
-        r, g, b = cpx[x, 0]
-        if r < blank_thresh or g < blank_thresh or b < blank_thresh:
-            left_margin = x
-            break
-    new_w = min(w, right + 1 + max(24, left_margin))
-    if new_w < w * 0.95:                       # only crop when it's worth it
-        im = im.crop((0, 0, new_w, h))
-        w = new_w
     strip = im.resize((40, h))
     px = strip.load()
     blank = []
@@ -2444,6 +2422,27 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
         band = im.crop((0, a2, w, b))
         out.paste(band, (0, cy))
         cy += b - a2
+    # Right-edge crop (post-collapse, so blank rows can't dilute the sample):
+    # sample 128 row-bands per column; a column counts as content if ANY band
+    # is non-blank. Mirror the left margin so the crop looks intentional.
+    w, h2 = out.size
+    strip2 = out.resize((w, 128))
+    spx = strip2.load()
+    def _col_has_content(x):
+        for yy in range(128):
+            r, g, b = spx[x, yy]
+            if r < blank_thresh or g < blank_thresh or b < blank_thresh:
+                return True
+        return False
+    right = w - 1
+    while right > 0 and not _col_has_content(right):
+        right -= 1
+    left_margin = 0
+    while left_margin < w - 1 and not _col_has_content(left_margin):
+        left_margin += 1
+    new_w = min(w, right + 1 + max(24, left_margin))
+    if 0 < new_w < w * 0.97:
+        out = out.crop((0, 0, new_w, h2))
     if aspect:
         # Enforce a fixed aspect ratio (e.g. "3:2" landscape) for consistent
         # proposal layout: crop the bottom if too tall, pad white if too short.

@@ -260,9 +260,9 @@ def _art_client(hard, margin_pct):
     m = min(0.95, max(0.0, float(margin_pct)))
     return r50(hard / (1 - m))
 
-def _art_internal(hard_per, cnt):
-    return (f"hard cost ${hard_per:,.0f}/page \u00b7 "
-            f"${hard_per*cnt:,.0f} total (partner cost, pre-markup)")
+def _art_internal(hard_per, cnt, unit, m):
+    return (f"hard ${hard_per:,.0f}/pg \u00b7 margin ${unit - hard_per:,.0f}/pg "
+            f"({int(round(m*100))}%)")
 
 
 def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
@@ -292,9 +292,9 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
                 "notes": [f"Route: {c['route']}.",
                           "Pay on success \u2014 billed only for pages removed.",
                           "\u26a0 ESTIMATE by site class \u2014 pending "
-                          "Brendan/contractor content review (the removal "
-                          "basis can change the price or zero out feasibility)."],
-                "internal": {"text": _art_internal(hard, cnt)},
+                          "content review (the removal basis can change "
+                          "the price or zero out feasibility)."],
+                "internal": {"text": _art_internal(hard, cnt, unit, m)},
             })
     elif n:
         per35 = next(b["per"] for b in cfg["brackets"]
@@ -308,8 +308,8 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
             "notes": ["Pay on success \u2014 billed only for sites removed.",
-                      "Always custom-quoted after human review (Brendan)."],
-            "internal": {"text": _art_internal(hard, n)},
+                      "Always custom-quoted after human review."],
+            "internal": {"text": _art_internal(hard, n, per, m)},
         })
     p = max(0, int(n_premium or 0))
     if p:
@@ -323,8 +323,8 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
             "total": punit * p,
             "timeline": "10\u201314 weeks typical (12-month contract window)",
             "notes": ["Pay on success \u2014 ~50% success on premium hosts.",
-                      "Always custom-quoted after human review (Brendan)."],
-            "internal": {"text": _art_internal(phard, p)},
+                      "Always custom-quoted after human review."],
+            "internal": {"text": _art_internal(phard, p, punit, m)},
         })
     return lines
 
@@ -371,8 +371,8 @@ def price_search_bundle(volume):
                   "Search Manipulation, and Branded Search Append.",
                   "Auto-suggest succeeds only while contracted search volume "
                   "exceeds the negative-modifier volume."],
-        "internal": {"text": f"est. hard cost ${round(m * 0.65):,}/mo "
-                     "(assumes 35% markup on the client price)"},
+        "internal": {"text": f"hard ${round(m*0.65):,}/mo \u00b7 "
+                     f"margin ${m - round(m*0.65):,}/mo (35%)"},
     }
 
 
@@ -533,12 +533,11 @@ def price_geo(phase="setup"):
                       "answers about the brand",
             "kind": "monthly", "total": p["monthly"], "timeline": p["timeline"],
             "notes": ["Targets the negative AI-generated result the scan detects.",
-                      "Pricing is the Sage Digital Partner GEO card ($4,950 setup / "
-                      "$9,950 scale) \u2014 the reputational application was never "
-                      "separately priced; CONFIRM structure with Brendan.",
+                      "Priced off the standard GEO card ($4,950 setup / $9,950 "
+                      "scale) \u2014 reputational application unconfirmed.",
                       "Recommend setup phase 1\u20132 quarters, then scale."],
-            "internal": {"text": f"est. hard cost ${round(p['monthly'] * 0.65):,}/mo "
-                         "(assumes 35% markup on the client price)"}}
+            "internal": {"text": f"hard ${round(p['monthly']*0.65):,}/mo \u00b7 "
+                         f"margin ${p['monthly'] - round(p['monthly']*0.65):,}/mo (35%)"}}
 
 
 # Hobart Wealth actuals (2021): PR pay-per-placement.
@@ -612,11 +611,11 @@ def price_shield(locations=1):
         "detail": det, "kind": "monthly", "total": total,
         "timeline": "Ongoing",
         "notes": cfg["included"] + [
-            "\u26a0 ESTIMATED pricing \u2014 Brendan to review. Basis: SEO moat "
+            "\u26a0 ESTIMATED pricing \u2014 pending review. Basis: SEO moat "
             "anchored to the $2,900 suppression base + $525/mo Google "
             "review-gen batch per location (Goldstone 2021 actuals)."],
-        "internal": {"text": f"est. hard cost ${round(total * 0.65):,}/mo "
-                     "(assumes 35% markup on the client price)"},
+        "internal": {"text": f"hard ${round(total*0.65):,}/mo \u00b7 "
+                     f"margin ${total - round(total*0.65):,}/mo (35%)"},
     }
 
 
@@ -648,8 +647,8 @@ def build_rep_quote(payload):
                for ln in art_lines for nt in ln.get("notes", [])):
             warnings.append(
                 "Website/Article Removal lines are ESTIMATED by site class "
-                "(market bands + Visions/Tru North anchors) \u2014 every page "
-                "pending Brendan/contractor content review before quoting.")
+                "(market bands + calibrated actuals) \u2014 every page "
+                "pending content review before quoting.")
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
@@ -670,8 +669,8 @@ def build_rep_quote(payload):
         phase2.append(price_shield(sh.get("locations", 1)))
         warnings.append(
             "Brand Shield pricing is an internal ESTIMATE (moat @ $2,900 "
-            "suppression base + $525/location review-gen batch) \u2014 flag "
-            "to Brendan for review before sending.")
+            "suppression base + $525/location review-gen batch) \u2014 "
+            "pending fulfillment review before sending.")
 
     # bundle discount on recurring lines when both phases present
     if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:
@@ -683,7 +682,7 @@ def build_rep_quote(payload):
     elif campaign == "bundle":
         warnings.append(
             "No bundle discount applied \u2014 whether Reactive + Proactive "
-            "earns a recurring-line discount is unconfirmed; flag to Brendan.")
+            "earns a recurring-line discount is unconfirmed.")
 
     for ln in phase1:
         ln["phase"] = 1

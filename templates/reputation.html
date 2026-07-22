@@ -222,7 +222,7 @@
             <div><label>Premium sites (DA > 35 / news-legal)</label><input type="number" id="nArtPrem" min="0" value="0"></div>
             <div><label>Margin % <span class="help" style="display:inline;margin:0">(of gross)</span></label><input type="number" id="artMargin" min="0" max="95" value="35"></div>
           </div>
-          <p class="help">Partner hard costs are canonical; client price = hard ÷ (1 − margin). At 35% this replays Brendan's rates — rack $7,500 sliding to $4,950 bulk (16+), premium $12,500. Pay on success. Always custom-quoted after human review.</p>
+          <p class="help">Partner hard costs are canonical; client price = hard ÷ (1 − margin). At 35% this replays partner rates — rack $7,500 sliding to $4,950 bulk (16+), premium $12,500. Pay on success. Always custom-quoted after human review.</p>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl" title="Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.">Search Protection Bundle</span><span class="help" style="margin:0">included in all proposals</span></div>
@@ -237,24 +237,24 @@
             <textarea id="terms" rows="3" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit" placeholder="sage dental&#10;sage dental reviews"></textarea>
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
-          <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — the sum of Brendan's Sage components; confirm bundle discount).</p>
+          <p class="help" id="negPhraseNote">Includes Organic Search Suppression + Auto-Suggest &amp; Related Search Manipulation + Branded Search Append at one monthly formula price ($6,300 base + $20/1K — confirm bundle discount).</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl" title="Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.">Reputational AI Search</span><span class="pillnote">pricing structure — confirm w/ Brendan</span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl" title="Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.">Reputational AI Search</span><span class="pillnote">pricing structure — unconfirmed</span></div>
         <div id="geoFields" class="hidden">
           <label>Phase</label>
           <select id="geoPhase">
             <option value="setup" selected>Setup — $4,950/mo (1–2 quarters)</option>
             <option value="scale">Scale — $9,950/mo (ongoing)</option>
           </select>
-          <p class="help">Shapes AI Overview / LLM answers about the brand — targets the negative AI result the scan detects. Matches the "AI Search" naming from the SEO product line. Dollar figures are the Sage Digital Partner <i>GEO</i> card; the reputational application was never separately priced — confirm with Brendan.</p>
+          <p class="help">Shapes AI Overview / LLM answers about the brand — targets the negative AI result the scan detects. Matches the "AI Search" naming from the SEO product line. Dollar figures are the standard <i>GEO</i> card; the reputational application was never separately priced.</p>
         </div>
 
       </div>
 
       <div class="card hidden" id="secProactive">
         <h2><span id="proNum">3</span> · Proactive</h2>
-        <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — Brendan to review</span></p>
+        <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO "Moat" &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
         <label># of locations (review generation)</label>
         <input type="number" id="nLocations" min="1" value="1">
@@ -380,9 +380,9 @@ function render(d, payload){
     if(l.internal && l.internal.text){
       internal = '<div class="intl">Internal · '+l.internal.text+'</div>';
     } else if(l.internal){
-      internal = '<div class="intl">Internal · hard cost '+money(Math.round(l.internal.hard_total))
-               + ' ($'+l.internal.hard_per.toLocaleString()+'/review) · margin '
-               + money(Math.round(l.internal.profit_total))+' ('+Math.round(l.internal.margin_pct*100)+'% of gross)</div>';
+      internal = '<div class="intl">Internal · hard '+money(Math.round(l.internal.hard_total))
+               + ' ($'+l.internal.hard_per.toLocaleString()+'/rev) · margin '
+               + money(Math.round(l.internal.profit_total))+' ('+Math.round(l.internal.margin_pct*100)+'%)</div>';
     }
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
@@ -607,7 +607,7 @@ function renderFacsimiles(ac){
   const serp = (window._scanData||{}).serp || {};
   const brand = $('brand').value.trim();
   let h = '';
-  // "{brand} reviews" is the money query (Brendan's exhibit) — render it first,
+  // "{brand} reviews" is the money query — render it first,
   // and show empty/errored terms explicitly instead of silently skipping them.
   const revKey = (brand+' reviews').toLowerCase();
   const acKeys = Object.keys(ac||{}).sort((a,b)=> (a===revKey?-1:0) - (b===revKey?-1:0));
@@ -647,7 +647,7 @@ function renderFacsimiles(ac){
 function bumpNegPhrases(){
   if(window._negPhrases.size){
     $('negPhraseNote').innerHTML = '<b>'+window._negPhrases.size+' negative phrases auto-counted from scan:</b> '
-      + [...window._negPhrases].join(' · ')+'. Bundle: $6,300 base + $20/1K brand volume (sum of Brendan\'s Sage components — confirm bundle discount).';
+      + [...window._negPhrases].join(' · ')+'. Bundle: $6,300 base + $20/1K brand volume — confirm bundle discount.';
   }
 }
 function renderAutocomplete(ac){
@@ -1019,7 +1019,7 @@ function renderCfg(c){
   h += cfgRow('Auto-suggest/related component base', cfgIn('c_as', c.bundle.as_base));
   h += cfgRow('$ per 1K volume (each component)', cfgIn('c_p1k', c.bundle.comp_per_1k, 1));
   h += cfgRow('Floor / Cap', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
-  h += cfgHdr('Proactive Brand Shield', 'internal estimate — Brendan to review', 'warn');
+  h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
   h += cfgRow('Monthly', cfgIn('c_shield', c.shield_monthly));
   h += cfgRow('Per extra location', cfgIn('c_shloc', c.shield_per_extra_location));
   h += cfgHdr('Reputational AI Search', 'Sage GEO card actuals — reputational use unconfirmed', 'warn');
