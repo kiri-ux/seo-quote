@@ -2388,6 +2388,28 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
     from PIL import Image
     im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     w, h = im.size
+    # Right-edge crop: Google's results column is left-aligned, so wide
+    # captures carry a large blank margin on the right. Scan a row-averaged
+    # 1px-tall strip right-to-left for the last non-blank column and crop
+    # there (+ padding), mirroring the left margin so it looks intentional.
+    col = im.resize((w, 1))
+    cpx = col.load()
+    right = w
+    for x in range(w - 1, -1, -1):
+        r, g, b = cpx[x, 0]
+        if r < blank_thresh or g < blank_thresh or b < blank_thresh:
+            right = x
+            break
+    left_margin = 0
+    for x in range(w):
+        r, g, b = cpx[x, 0]
+        if r < blank_thresh or g < blank_thresh or b < blank_thresh:
+            left_margin = x
+            break
+    new_w = min(w, right + 1 + max(24, left_margin))
+    if new_w < w * 0.95:                       # only crop when it's worth it
+        im = im.crop((0, 0, new_w, h))
+        w = new_w
     strip = im.resize((40, h))
     px = strip.load()
     blank = []
