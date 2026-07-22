@@ -159,7 +159,7 @@
 
   <!-- campaign type -->
   <div class="card">
-    <h2>1 · Campaign Type</h2>
+    <h2>1 · Strategy Type</h2>
     <div class="ctypes" id="ctypes">
       <div class="ctype on" data-c="reactive"><b>Reactive</b><small>Removals + suppression cleanup</small></div>
       <div class="ctype" data-c="proactive"><b>Proactive</b><small>Brand Shield monthly bundle</small></div>
@@ -447,6 +447,7 @@ $('scanBtn').onclick = async ()=>{
   await step('3/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
   await step('4/4 — discovering Google locations…', async ()=>{ const r = await fetchJSON('/api/rep_scan_locations', {brand}); if(!r.error) window._scanData.locations = r; renderLocs(r); });
   renderReco();
+  renderBrandReco();
   $('scanProg').textContent = 'Scan complete.';
   $('scanBtn').disabled = false;
 };
@@ -674,6 +675,7 @@ function renderAutocomplete(ac){
   });
   if(h) h = '<div class="scanhdr">Auto-Suggest</div>' + h;
   box.innerHTML = h + renderFacsimiles(ac);
+  renderBrandReco();
 }
 
 async function retryAutocomplete(){
@@ -692,6 +694,44 @@ async function retryAutocomplete(){
   }catch(e){ if(box) box.innerHTML = '<div class="err">Retry failed: '+e+'</div>'; }
 }
 
+function renderBrandReco(){
+  const sd = window._scanData || {};
+  const serp = sd.serp || {};
+  const negVol = ((sd.terms||{}).negative_volume) || 0;
+  const negPhr = (window._negPhrases||new Set()).size;
+  const lowRated = (serp.organic||[]).filter(o=>!o.owned && o.rating && o.rating < 4).length;
+  const removable = (serp.organic||[]).filter(o=>o.tactic==='site removal').length
+                  + ((serp.forums||[]).filter(f=>f.tactic==='site removal').length);
+  const aiNeg = (serp.ai_negative||[]).length;
+  const reasons = [];
+  if(negVol) reasons.push(negVol.toLocaleString()+'/mo negative-term searches');
+  if(negPhr) reasons.push(negPhr+' negative suggest/related phrase'+(negPhr!==1?'s':''));
+  if(lowRated) reasons.push(lowRated+' low-rated result'+(lowRated!==1?'s':'')+' in the top 10');
+  if(removable) reasons.push(removable+' removable page'+(removable!==1?'s':''));
+  if(aiNeg) reasons.push('negative AI Overview');
+  const rec = reasons.length ? 'bundle' : 'proactive';
+  const recLabel = rec==='bundle' ? 'Reactive + Proactive' : 'Proactive';
+  const why = reasons.length
+    ? 'Negatives found \u2014 clean up first, then protect: ' + reasons.join(' \u00b7 ') + '.'
+    : 'No negative signals found \u2014 the position is healthy; protect it before something ranks.';
+  let box = document.getElementById('brandReco');
+  if(!box){
+    box = document.createElement('div'); box.id = 'brandReco';
+    $('scanOut').prepend(box);
+  }
+  const matches = campaign === rec;
+  box.innerHTML = '<div style="border:1px solid var(--velocity);background:#eef5fb;border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
+    + '<b style="color:var(--atlas)">Recommended strategy: '+recLabel+'</b> \u2014 '+why+' '
+    + (matches ? '<span style="color:#137333;font-weight:600">\u2713 matches the selected strategy.</span>'
+               : '<button class="btn2" type="button" id="brandRecoBtn" data-rec="'+rec+'">Switch to '+recLabel+'</button>')
+    + '</div>';
+  const bb = document.getElementById('brandRecoBtn');
+  if(bb) bb.onclick = ()=>{
+    const el = document.querySelector('.ctype[data-c="'+bb.dataset.rec+'"]');
+    if(el) el.click();
+    renderBrandReco();
+  };
+}
 function renderReco(){
   const rs = window._reco||[];
   if(!rs.length) return;
@@ -944,6 +984,7 @@ function restoreScan(sc){
   if(sc.data.autocomplete) renderAutocomplete(sc.data.autocomplete);
   if(sc.data.locations) renderLocs(sc.data.locations);
   renderReco();
+  renderBrandReco();
   if(sc.negDone && sc.negDone.length && document.getElementById('negOut')){
     window._negDone = sc.negDone;
     renderNegCounts(sc.negDone);
