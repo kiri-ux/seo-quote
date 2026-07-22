@@ -270,8 +270,9 @@
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
       <div class="card hidden" id="shotCard">
-        <h2>SERP Screenshot</h2>
+        <h2>Proposal Visuals</h2>
         <div id="shotDock"></div>
+        <div id="visDock"></div>
       </div>
     </div>
   </div>
@@ -426,7 +427,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanCard').classList.remove('hidden');
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
-  window._reco = []; window._negPhrases = new Set(); window._artClasses = null;
+  window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
   window._scanData = {}; window._negDone = null; window._scanProv = null;
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
@@ -549,7 +550,8 @@ $('scanOut').addEventListener('click', e => {
   if (e.target && e.target.id === 'shotBtn')
     captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
 });
-$('shotDock').addEventListener('click', e => {
+$('shotCard').addEventListener('click', e => {
+  if (e.target && e.target.classList && e.target.classList.contains('acRetry')){ retryAutocomplete(); return; }
   if (e.target && e.target.id === 'shotBtn')
     captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
 });
@@ -640,8 +642,7 @@ function renderFacsimiles(ac){
     });
     h += '</div></div>';
   }
-  return h ? '<div class="scanhdr">Proposal Visuals</div>'
-    + '<div class="help" style="margin:2px 0 4px">Facsimiles rendered from live DFS data — negatives highlighted. The 📸 button above captures the real SERP as an image.</div>' + h : '';
+  return h ? '<div class="help" style="margin:8px 0 4px">Facsimiles rendered from live DFS data — negatives highlighted. The 📸 button above captures the real SERP as an image.</div>' + h : '';
 }
 
 function bumpNegPhrases(){
@@ -652,7 +653,8 @@ function bumpNegPhrases(){
 }
 function renderAutocomplete(ac){
   let box = document.getElementById('acOut');
-  if(!box){ box = document.createElement('div'); box.id = 'acOut'; $('scanOut').appendChild(box); }
+  if(!box){ box = document.createElement('div'); box.id = 'acOut'; $('visDock').appendChild(box); }
+  $('shotCard').classList.remove('hidden');
   if(ac.error){
     box.innerHTML = '<div class="err">'+ac.error+' <button class="btn2 acRetry" type="button">Retry auto-suggest only</button></div>';
     return;
@@ -689,29 +691,21 @@ async function retryAutocomplete(){
 function renderReco(){
   const rs = window._reco||[];
   if(!rs.length) return;
-  let h = '<div class="scanhdr">Scan Recommendations</div><div class="help" style="margin:2px 0 8px">Applied automatically — uncheck any to remove:</div>';
-  rs.forEach((r,i)=>{
-    h += '<div style="font-size:12.5px;margin:3px 0"><label style="display:inline;font-weight:400;font-size:12.5px;cursor:pointer">'
-       + '<input type="checkbox" class="recock" data-i="'+i+'" checked style="vertical-align:-2px;margin-right:6px">'
-       + '<b style="color:var(--atlas)">'+r.label+'</b></label> <span class="help" style="display:inline;margin:0">— '+r.reason+'</span></div>';
-  });
-  const box = document.createElement('div');
-  box.innerHTML = h;
-  $('scanOut').prepend(box);
-  const applyOne = r=>{
-    const el = $(r.toggle); if(el) el.checked = true;
+  document.querySelectorAll('.reco-note').forEach(e=>e.remove());
+  rs.forEach(r=>{
+    const el = $(r.toggle); if(!el) return;
+    el.checked = true;
     Object.entries(r.sets||{}).forEach(([id,v])=>{ const f=$(id); if(f && !(+f.value)) f.value = v; });
-  };
-  rs.forEach(applyOne);            // on by default
-  syncVisibility();
-  box.querySelectorAll('.recock').forEach(c=>{
-    c.addEventListener('change', e=>{
-      const r = rs[+e.target.dataset.i];
-      if(e.target.checked){ applyOne(r); }
-      else { const el = $(r.toggle); if(el) el.checked = false; }
-      syncVisibility();
-    });
+    const row = el.closest('.toggle-row');
+    if(row){
+      const note = document.createElement('p');
+      note.className = 'help reco-note';
+      note.style.cssText = 'margin:2px 0 6px;color:#137333';
+      note.innerHTML = '✓ Applied from scan — '+r.reason+'. <span style="color:var(--muted)">Toggle off above to remove.</span>';
+      row.insertAdjacentElement('afterend', note);
+    }
   });
+  syncVisibility();
 }
 function renderLocs(d){
   if(d.error){ $('scanOut').innerHTML += '<div class="err">'+d.error+'</div>'; return; }
@@ -915,7 +909,7 @@ async function loadSavedList(){
 function restoreScan(sc){
   if(!sc || !sc.data) return;
   window._scanData = sc.data;
-  window._reco = []; window._negPhrases = new Set(); window._artClasses = null;
+  window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
   $('scanCard').classList.remove('hidden');
   $('scanOut').innerHTML = '';
   $('scanProg').classList.remove('hidden');
