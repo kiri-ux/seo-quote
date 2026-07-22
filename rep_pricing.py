@@ -246,25 +246,33 @@ def price_reviews(n, margin_pct=None, scan_meta=None):
     return line
 
 
-def _art_internal(per, cnt):
-    """Internal basis line for removal pricing. Brendan's July 2026 invoice
-    list is the anchor, but whether those figures are contractor hard cost or
-    client billing is UNCONFIRMED \u2014 show both readings until he clarifies."""
-    m = REP_CFG["review_removal"]["default_margin_pct"]
-    gross = r50(per / (1 - m))
-    return (f"basis: Brendan invoice list (Jul 2026) \u2014 unconfirmed whether "
-            f"contractor hard cost or client billing. If hard cost: client "
-            f"${gross:,}/page at {int(m*100)}% margin "
-            f"(${gross*cnt:,} total); if client billing: margin unknown \u2014 "
-            f"ask Brendan for contractor cost.")
+# Per Kiri (July 2026): Brendan's invoice figures are CLIENT prices that
+# already carry the standard 35% markup. Partner hard cost is therefore
+# client_at_35 \u00d7 0.65, held canonical; the quoted client price rebuilds
+# from hard cost at whatever margin the quote uses (35% default replays
+# Brendan's numbers exactly).
+ART_CAL_MARGIN = 0.35
+
+def _art_hard(client_at_35):
+    return client_at_35 * (1 - ART_CAL_MARGIN)
+
+def _art_client(hard, margin_pct):
+    m = min(0.95, max(0.0, float(margin_pct)))
+    return r50(hard / (1 - m))
+
+def _art_internal(hard_per, cnt):
+    return (f"hard cost ${hard_per:,.0f}/page \u00b7 "
+            f"${hard_per*cnt:,.0f} total (partner cost, pre-markup)")
 
 
-def price_articles(n_standard, n_premium, classes=None):
-    """Website/article removals. When the scan supplies per-site-class counts
-    (and the manual standard count wasn't overridden away from them), price
-    each class on its ESTIMATE band. Otherwise fall back to the legacy
-    Visions whole-order bracket. Premium (DA>35 / news-legal) unchanged."""
+def price_articles(n_standard, n_premium, classes=None, margin_pct=None):
+    """Website/article removals. Config figures are client prices at the
+    calibrated 35% markup; partner hard cost (\u00d70.65) is canonical and the
+    quoted client price rebuilds from it at margin_pct (default 35% replays
+    the config numbers exactly). Scan-supplied per-site-class counts price
+    on ESTIMATE bands; otherwise the whole-order bracket applies."""
     cfg = REP_CFG["article_removal"]
+    m = ART_CAL_MARGIN if margin_pct is None else float(margin_pct)
     lines = []
     n = max(0, int(n_standard or 0))
     cls_counts = {k: int(v) for k, v in (classes or {}).items()
@@ -273,44 +281,50 @@ def price_articles(n_standard, n_premium, classes=None):
     if use_classes:
         for key, cnt in cls_counts.items():
             c = cfg["classes"][key]
+            hard = _art_hard(c["est"])
+            unit = _art_client(hard, m)
             lines.append({
                 "service": "Negative Website/Article Removals",
-                "detail": f"{cnt} \u00d7 {c['label']} @ ~${c['est']:,}/page est. "
+                "detail": f"{cnt} \u00d7 {c['label']} @ ~${unit:,}/page est. "
                           f"(market band ${c['low']:,}\u2013${c['high']:,})",
-                "qty": cnt, "unit": c["est"], "kind": "per_asset",
-                "total": c["est"] * cnt, "timeline": c["timeline"],
+                "qty": cnt, "unit": unit, "kind": "per_asset",
+                "total": unit * cnt, "timeline": c["timeline"],
                 "notes": [f"Route: {c['route']}.",
                           "Pay on success \u2014 billed only for pages removed.",
                           "\u26a0 ESTIMATE by site class \u2014 pending "
                           "Brendan/contractor content review (the removal "
                           "basis can change the price or zero out feasibility)."],
-                "internal": {"text": _art_internal(c["est"], cnt)},
+                "internal": {"text": _art_internal(hard, cnt)},
             })
     elif n:
-        per = next(b["per"] for b in cfg["brackets"]
-                   if n >= b["min"] and (b["max"] is None or n <= b["max"]))
+        per35 = next(b["per"] for b in cfg["brackets"]
+                     if n >= b["min"] and (b["max"] is None or n <= b["max"]))
+        hard = _art_hard(per35)
+        per = _art_client(hard, m)
         lines.append({
             "service": "Negative Website/Article Removals",
             "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed "
-                      "(whole-order bracket, Visions actuals)",
+                      "(whole-order bracket)",
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
             "notes": ["Pay on success \u2014 billed only for sites removed.",
                       "Always custom-quoted after human review (Brendan)."],
-            "internal": {"text": _art_internal(per, n)},
+            "internal": {"text": _art_internal(hard, n)},
         })
     p = max(0, int(n_premium or 0))
     if p:
+        phard = _art_hard(cfg["premium_per"])
+        punit = _art_client(phard, m)
         lines.append({
             "service": "Negative Website/Article Removals",
             "detail": f"{p} premium site{'s' if p != 1 else ''} (DA > 35 / news-legal) "
-                      f"@ ${cfg['premium_per']:,}/removed (Tru North actual)",
-            "qty": p, "unit": cfg["premium_per"], "kind": "per_asset",
-            "total": cfg["premium_per"] * p,
+                      f"@ ${punit:,}/removed",
+            "qty": p, "unit": punit, "kind": "per_asset",
+            "total": punit * p,
             "timeline": "10\u201314 weeks typical (12-month contract window)",
             "notes": ["Pay on success \u2014 ~50% success on premium hosts.",
                       "Always custom-quoted after human review (Brendan)."],
-            "internal": {"text": _art_internal(cfg["premium_per"], p)},
+            "internal": {"text": _art_internal(phard, p)},
         })
     return lines
 
@@ -357,9 +371,8 @@ def price_search_bundle(volume):
                   "Search Manipulation, and Branded Search Append.",
                   "Auto-suggest succeeds only while contracted search volume "
                   "exceeds the negative-modifier volume."],
-        "internal": {"text": "hard cost not on file \u2014 formula replays "
-                     "Brendan's client-facing Sage components ($3,450 + $3,950); "
-                     "delivery/fulfillment cost unknown \u2014 ask Brendan."},
+        "internal": {"text": f"est. hard cost ${round(m * 0.65):,}/mo "
+                     "(assumes 35% markup on the client price)"},
     }
 
 
@@ -524,9 +537,8 @@ def price_geo(phase="setup"):
                       "$9,950 scale) \u2014 the reputational application was never "
                       "separately priced; CONFIRM structure with Brendan.",
                       "Recommend setup phase 1\u20132 quarters, then scale."],
-            "internal": {"text": "hard cost not on file \u2014 Sage GEO card is "
-                         "client-facing pricing; fulfillment cost unknown \u2014 "
-                         "ask Brendan."}}
+            "internal": {"text": f"est. hard cost ${round(p['monthly'] * 0.65):,}/mo "
+                         "(assumes 35% markup on the client price)"}}
 
 
 # Hobart Wealth actuals (2021): PR pay-per-placement.
@@ -603,9 +615,8 @@ def price_shield(locations=1):
             "\u26a0 ESTIMATED pricing \u2014 Brendan to review. Basis: SEO moat "
             "anchored to the $2,900 suppression base + $525/mo Google "
             "review-gen batch per location (Goldstone 2021 actuals)."],
-        "internal": {"text": "hard cost not on file \u2014 internal estimate "
-                     "built from client-facing anchors (suppression base + "
-                     "review-gen batch); delivery cost unknown \u2014 ask Brendan."},
+        "internal": {"text": f"est. hard cost ${round(total * 0.65):,}/mo "
+                     "(assumes 35% markup on the client price)"},
     }
 
 
@@ -631,7 +642,7 @@ def build_rep_quote(payload):
             phase1.append(ln)
         ar = payload.get("articles") or {}
         art_lines = price_articles(ar.get("standard", 0), ar.get("premium", 0),
-                                   ar.get("classes"))
+                                   ar.get("classes"), ar.get("margin_pct"))
         phase1 += art_lines
         if any("\u26a0 ESTIMATE by site class" in nt
                for ln in art_lines for nt in ln.get("notes", [])):
