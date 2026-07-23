@@ -416,10 +416,15 @@ function render(d, payload){
     const artPages = artLines.reduce((a,l)=>a+(l.qty||0),0);
     const units = [...new Set(artLines.map(l=>l.unit))];
     const minUnit = Math.min.apply(null, units);
+    const rate = (units.length===1 ? money(units[0]) : 'from '+money(minUnit));
     const stdPg = artLines.filter(l=>l.service.indexOf('Premium')===-1).reduce((a,l)=>a+(l.qty||0),0);
     const premPg = artPages - stdPg;
-    const mix = (stdPg && premPg) ? stdPg+' standard + '+premPg+' premium' : artPages+' page'+(artPages!==1?'s':'');
-    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+money(minUnit)+'<span style="display:inline-block;text-align:left;vertical-align:baseline;line-height:1.15;margin-left:2px"><span style="display:block;font-size:9px;color:var(--muted);font-weight:400;letter-spacing:.4px;text-transform:uppercase">starting at</span><span style="display:block;font-size:13px;color:var(--muted)">/removed page</span></span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' flagged · up to '+money(artTotal)+'</div></div>';
+    const cmix = [];
+    artLines.forEach(l=>(l.class_mix||[]).forEach(c=>cmix.push(c.count+'\u00d7 '+String(c.label).replace(/\s*\(.*?\)\s*/g,''))));
+    if(cmix.length && premPg) cmix.push(premPg+'\u00d7 premium news / high-authority');
+    const mix = cmix.length ? cmix.join(' · ')
+              : ((stdPg && premPg) ? stdPg+' standard + '+premPg+' premium' : artPages+' page'+(artPages!==1?'s':''));
+    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' · up to '+money(artTotal)+'</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';
@@ -521,23 +526,22 @@ function updateSearchFormula(){
   const fc = (hard === floor) ? ' (floor '+money(floor)+' applied)'
            : (hard === cap)   ? ' (cap '+money(cap)+' applied)' : '';
   box.innerHTML =
-      fmRow('Hard base',
+      fmRow('Base',
             '<div>'+money(sb)+' <span style="color:var(--muted)">suppression</span></div>'
-          + '<div>'+money(ab)+' <span style="color:var(--muted)">auto-suggest</span></div>',
-            'partner hard cost')
+          + '<div>'+money(ab)+' <span style="color:var(--muted)">auto-suggest</span></div>', '')
     + fmRow('Volume add',
             '<div>+'+moneyc(ps)+' per 1,000 \u00d7 '+v.toLocaleString()+'/mo = +'+moneyc(ps*v/1000)+' <span style="color:var(--muted)">suppression</span></div>'
           + '<div>+'+moneyc(pa)+' per 1,000 \u00d7 '+v.toLocaleString()+'/mo = +'+moneyc(pa*v/1000)+' <span style="color:var(--muted)">auto-suggest</span></div>',
             'scales with measured brand searches')
-    + fmRow('Round up', money(suppH)+' + '+money(asH)+' = <b>'+money(hard)+'/mo partner hard</b>'+fc,
+    + fmRow('Round up', money(suppH)+' + '+money(asH)+' = <b>'+money(hard)+'/mo</b>'+fc,
             'each component rounds up to the nearest $50')
     + fmRow('Internal ('+Math.round(ipct*100)+'%)', money(hard*ipct)+'/mo',
-            'Vici delivery cost, % of partner hard')
-    + fmRow('Client @ '+Math.round(mg*100)+'%', 'hard \u00f7 '+(1-mg).toFixed(2)+' \u2192 <b>'+money(client)+'/mo</b> active (months 4\u20136)',
+            'Vici delivery cost')
+    + fmRow('Client @ '+Math.round(mg*100)+'%', money(hard)+' \u00f7 '+(1-mg).toFixed(2)+' \u2192 <b>'+money(client)+'/mo</b> active (months 4\u20136)',
             'margin is % of gross, rounded up to the nearest $50')
-    + fmRow('Maintenance', (Math.round(mp*1000)/10)+'% \u2192 '+money(maintHard)+' hard \u2192 <b>'+money(maintClient)+'/mo</b> client (months 7\u201312)',
+    + fmRow('Maintenance', (Math.round(mp*1000)/10)+'% \u2192 '+money(maintHard)+' \u2192 <b>'+money(maintClient)+'/mo</b> client (months 7\u201312)',
             'Visions active\u2192maintenance ratio; reactive-only \u2014 Brand Shield covers this on bundles')
-    + fmFoot('All dollar values are partner hard cost. Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.');
+    + fmFoot('All dollar values are <b>partner hard cost</b> except the client lines. Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.');
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   ['volume','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateSearchFormula); });
@@ -560,14 +564,14 @@ function updateShieldFormula(){
   const hardTotal = baseHard + (n-1) * locHard;
   const money = x => '$' + Math.round(x).toLocaleString();
   box.innerHTML =
-      fmRow('Hard base', money(baseHard)+'/mo', 'confirmed partner cost, 1 location')
-    + fmRow('Locations', '+'+money(locHard)+'/mo hard \u00d7 '+(n-1)+' extra = <b>'+money(hardTotal)+'/mo partner hard</b>',
+      fmRow('Base', money(baseHard)+'/mo', 'confirmed, 1 location')
+    + fmRow('Locations', '+'+money(locHard)+'/mo \u00d7 '+(n-1)+' extra = <b>'+money(hardTotal)+'/mo</b>',
             'review generation per location')
     + fmRow('Internal ('+Math.round(ipct*100)+'%)', money(hardTotal*ipct)+'/mo',
-            'Vici delivery cost, % of partner hard')
+            'Vici delivery cost')
     + fmRow('Client @ '+Math.round(m*100)+'%', 'each component \u00f7 '+(1-m).toFixed(2)+' \u2192 '+money(baseClient)+' base + '+money(locClient)+'/extra = <b>'+money(client)+'/mo</b> at '+n+' location'+(n===1?'':'s'),
             'margin is % of gross \u2014 same math as all tactics; rounded up to $50 per component')
-    + fmFoot('Hard base, per-location, and % values are editable in Pricing config (entered as hard cost).');
+    + fmFoot('All dollar values are <b>partner hard cost</b> except the client line. Base, per-location, and % values are editable in Pricing config.');
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   updateShieldFormula();

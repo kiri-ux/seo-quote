@@ -345,20 +345,37 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
                          if n >= b["min"] and (b["max"] is None or n <= b["max"]))
             hard = _art_hard(per35)
         unit = _art_client(hard, m)
-        for key, cnt in cls_counts.items():
-            c = cfg["classes"][key]
-            lines.append({
-                "service": "Negative Website/Article Removals \u2014 Standard",
-                "detail": f"{cnt} \u00d7 {c['label']} @ ${unit:,}/page",
-                "qty": cnt, "unit": unit, "kind": "per_asset",
-                "total": unit * cnt, "timeline": c["timeline"],
-                "estimated": True,
-                "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
-                         + [f"Route: {c['route']}.",
-                            "Pay on success \u2014 billed only for pages removed.",
-                            "Success rate: ~100% to date on standard hosts (complaint boards, forums, blogs); court and legal-database pages run closer to 50%.",],
-                "internal": _art_internal(hard, cnt, unit, m),
-            })
+        # ONE merged line for all standard classes (July 2026): a single
+        # price channel means class splits were price-identical rows that
+        # cluttered the quote. Timeline spans the widest class range; the
+        # class mix is surfaced in the summary card via class_mix and the
+        # per-class routing lands in the notes.
+        import re as _re
+        week_nums, all_weeks = [], True
+        for key in cls_counts:
+            t = cfg["classes"][key]["timeline"]
+            nums = [int(x) for x in _re.findall(r"\d+", t)]
+            if "week" in t and nums:
+                week_nums += nums
+            else:
+                all_weeks = False
+        merged_tl = (f"{min(week_nums)}\u2013{max(week_nums)} weeks"
+                     if all_weeks and week_nums else cfg["timeline"])
+        lines.append({
+            "service": "Negative Website/Article Removals \u2014 Standard",
+            "detail": f"{n} standard page{'s' if n != 1 else ''} @ ${unit:,}/page",
+            "qty": n, "unit": unit, "kind": "per_asset",
+            "total": unit * n, "timeline": merged_tl,
+            "estimated": True,
+            "class_mix": [{"label": cfg["classes"][k]["label"], "count": cnt}
+                          for k, cnt in cls_counts.items()],
+            "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
+                     + [f"Route \u2014 {cfg['classes'][k]['label']}: "
+                        f"{cfg['classes'][k]['route']}." for k in cls_counts]
+                     + ["Pay on success \u2014 billed only for pages removed.",
+                        "Success rate: ~100% to date on standard hosts (complaint boards, forums, blogs); court and legal-database pages run closer to 50%.",],
+            "internal": _art_internal(hard, n, unit, m),
+        })
     elif n:
         if hard_std_override:
             hard = float(hard_std_override)
