@@ -128,34 +128,50 @@ CFG = {
     ],
     # NATIONWIDE service clients (Skidmore Studio datapoint, 2026-07-20):
     # Brendan's national ladder $3,950/$5,450/$6,950 backs out to hard
-    # $2,926/$4,037/$5,148 — base = the bare nationwide anchor (which was
-    # DERIVED from his national pricing, so it already prices the scope), and
-    # steps of 38% of base (the same ratio as his ecom quote). At national
-    # scope the volume add and zero-ranking uplift are tautological — every
-    # nationwide client has >10k volume and ranks for almost nothing on
-    # national SERPs — so stacking them double-counts the scope (+$1,327
-    # client on Skidmore). Multiplier below zeroes both extras for nationwide
-    # NON-industry-rule clients; ecommerce keeps its own calibrated path.
-    "nationwide_service_extras": 0.0,
+    # $2,926/$4,037/$5,148 — base = the bare nationwide anchor, steps of 38%.
+    #
+    # (2026-07-25 REVISION — Brendan meeting) This multiplier was 0.0 on the
+    # theory that at national scope the volume add and zero-ranking uplift are
+    # tautological ("every nationwide client has >10k volume and ranks for
+    # almost nothing"). Brendan says the opposite: volume, competition and
+    # CURRENT VISIBILITY are precisely what separate one national client from
+    # another — a brand with nothing ranking pays more, an established one
+    # pays less. At 0.0 those signals were multiplied out and every national
+    # client priced identically. Set to 1.0 (extras live). The Skidmore fit
+    # must be re-validated at 1.0 — the original +$1,327 finding was measured
+    # against the old inflated-volume lookup and the flat-adder era.
+    # If Skidmore comes back high, prefer lowering volume_add_cap over
+    # re-zeroing this — the cap is the honest lever, the multiplier is a mute.
+    "nationwide_service_extras": 1.0,
     # Brendan steps his ladder in FLAT dollars (~$900-1,000 client per tier),
     # not proportionally — the old 38% ratio made the gap widen with every tier
     # (+15/18/20% on Keller, +13/24/34% on Waytek). Flat $700 hard = ~$950
     # client at 35% markup. step_ratio remains as fallback if flat is nulled.
     # Industry pricing: industries known to carry additional tiered pricing.
     # Matched by substring against the RZ-fed industry text ("DTC ecommerce
-    # supplements" matches "ecommerce"). Each rule: anchor_add (hard $) and
-    # step_mode "ratio" (proportional 38% steps) or "flat" (default ladder).
-    # ecommerce calibrated on MPG Gummies (2026-07-20) — one datapoint,
-    # provisional. Add industries here as Brendan prices them.
+    # supplements" matches "ecommerce"). Rule keys:
+    #   anchor_add      hard $ added to the base
+    #   step_mode       "ratio" (proportional 38% steps) or "flat" (default)
+    #   extras_off      skip volume + zero-ranking (org size, not SERPs, prices)
+    #   national_demand price on GEO-LESS volume — sets no price of its own
+    #
+    # (2026-07-25 REVISION — Brendan meeting) The ecommerce family previously
+    # carried anchor_add 250 + ratio steps, fit to MPG Gummies. Brendan:
+    # ecommerce is "not auto more expensive, but normally in more competitive
+    # industries — look at the volumes w/o the geo." So industry no longer
+    # moves the price for these; it flips the volume lookup to national and
+    # lets volume + CPC adder + zero-ranking do the pricing themselves.
+    # NOTE the nationwide anchor ($2,900 hard = $3,915 client) already
+    # reproduces Brendan's $3,950 card base on its own — the +$250 was very
+    # likely fitting a number the band was going to hit anyway.
     "industry_pricing": {
-        "ecommerce":  {"anchor_add": 250, "step_mode": "ratio", "note": "Product-SEO ladder — MPG Gummies calibration. Legacy toggle key."},
-        "e-commerce": {"anchor_add": 250, "step_mode": "ratio", "note": "Matches RZ “Retail - General / E-commerce”. Product-SEO ladder — MPG Gummies calibration."},
+        "ecommerce":  {"national_demand": True, "note": "Product brand — price on national demand, not a geo-qualified pull. Carries NO price of its own (Brendan, 2026-07-25). Legacy toggle key."},
+        "e-commerce": {"national_demand": True, "note": "Matches RZ “Retail - General / E-commerce”. Price on national demand; no anchor add."},
         # Sibling RZ values an operator would reasonably pick for a product
-        # brand (MPG is literally a supplements company) — same product-SEO
-        # ladder, so the pricing can't silently vanish on an equally-valid tag.
-        # Extensions of the MPG calibration; Brendan to confirm.
-        "supplements":             {"anchor_add": 250, "step_mode": "ratio", "note": "Sibling of e-commerce (MPG is a supplements brand). Brendan to confirm."},
-        "consumer packaged goods": {"anchor_add": 250, "step_mode": "ratio", "note": "Sibling of e-commerce — product brand tag. Brendan to confirm."},
+        # brand (MPG is literally a supplements company) — same volume mode,
+        # so the behaviour can't silently vanish on an equally-valid tag.
+        "supplements":             {"national_demand": True, "note": "Sibling of e-commerce (MPG is a supplements brand)."},
+        "consumer packaged goods": {"national_demand": True, "note": "Sibling of e-commerce — product brand tag."},
         # Brendan's premium/big-org card (Serene Health, 2026-07-20 — one
         # datapoint, provisional): large multi-site / telehealth healthcare
         # orgs price on ORGANIZATION size, not keyword signals — his
@@ -180,17 +196,49 @@ CFG = {
         "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
         "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
     },
-    # Core SEO + AI Search: GEO is its OWN rate card, not a % of the SEO quote
-    # (Brendan GEO proposal, 2026-07-20): $2,950 / $4,050 / $5,250 bundled with
-    # SEO — intermediate is "discounted from $4,250 in conjunction with the SEO
-    # campaign" — and carries a 12-MONTH minimum term (SEO is 6). One datapoint;
-    # unknown whether the card flexes for premium clients the way SEO does.
-    "geo_pricing_mode": "card",               # "card" (Brendan) or "pct" (legacy)
+    # Core SEO + AI Search — GEO PRICING.
+    # (2026-07-25 REVISION — Brendan meeting) The $2,950/$4,050/$5,250 card was
+    # read off the MPG proposal and hard-coded as universal. It is NOT: MPG had
+    # near-zero visibility (little traditional-search presence, almost no AI
+    # presence, very few backlinks) which is why its GEO landed ~95% of SEO.
+    # Brendan's actual rule: GEO runs 30-50% LESS than SEO on average — i.e.
+    # 50-70% of the SEO price — and rises toward parity when nothing ranks.
+    # So GEO is a PERCENTAGE of the client's own Core SEO quote, and the
+    # percentage is driven by current visibility (the same pct_not_ranking
+    # signal the zero-ranking uplift already computes off the top-100 check).
+    # Tiers are [min_pct_not_ranking, geo_pct_of_seo], evaluated high-to-low.
+    "geo_pricing_mode": "pct",                # "pct" (Brendan rule) or "card" (legacy MPG)
+    # CALIBRATION NOTE: MPG's GEO list price is 78% of its SEO price, almost
+    # exactly. His intermediate GEO list of $4,250 / SEO intermediate $5,450 =
+    # 77.98%; base and advanced back-solve to 78.6% and 79.5% once the 5%
+    # bundle discount is removed. So the zero-visibility ceiling is ~78% of
+    # SEO -- slightly ABOVE Brendan's stated 50-75% normal band, which is
+    # precisely what he said should happen for a client with no visibility.
+    # (This assumes MPG's SEO ladder was 3,950/5,450/6,950 -- CONFIRM.)
+    "geo_pct_tiers": [
+        [90, 78],   # <10% of head terms rank  -> the MPG ceiling
+        [70, 70],   # 10-30% rank              -> top of the normal band
+        [40, 62],   # 30-60% rank              -> mid of the normal band
+        [0,  50],   # 60%+ rank (established)  -> the full 50% discount
+    ],
+    "geo_pct_default": 60,                    # used when no ranking data exists
+    # Bundle discount: MPG's intermediate was "discounted from $4,250 to
+    # $4,050 in conjunction with the SEO campaign" = 4.7%. Brendan confirmed
+    # (2026-07-25) the discount applies to ALL THREE tiers, not just the
+    # intermediate — the proposal only showed it on one.
+    "geo_bundle_discount_pct": 5,
+    # Minimum term. Brendan: "we usually do 6 months for both, however where
+    # someone has like ZERO visibility sometimes we do 12 because it takes
+    # that long to get results." Same trigger as the top geo_pct rung.
+    "min_term_months": 6,
+    "min_term_months_zero_visibility": 12,
+    "zero_visibility_pct_not_ranking": 90,    # >= this % not ranking = "nothing ranks"
+    # Legacy MPG card, kept for reference / geo_pricing_mode="card" only.
     "geo_card": {"base": 2950, "intermediate": 4050, "advanced": 5250},
     "geo_card_list": {"base": 2950, "intermediate": 4250, "advanced": 5250},
-    "geo_min_term_months": 12,
-    "ai_search_uplift_pct": 75,               # legacy pct mode only
-    "ecom_anchor_add": 250,                   # legacy alias; industry_pricing supersedes
+    "geo_min_term_months": 12,                # legacy card mode only
+    "ai_search_uplift_pct": 75,               # legacy flat-pct mode only
+    "ecom_anchor_add": 0,                     # RETIRED 2026-07-25 (Brendan): ecommerce carries no anchor add
     "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
@@ -533,7 +581,7 @@ def fetch_site_pages(domain, limit=30):
         return pages[:limit]
 
 
-def fetch_local_volume(terms, markets, state):
+def fetch_local_volume(terms, markets, state, national=False):
     """Search volume for bare service terms across THE CITIES BEING TARGETED.
 
     A single lookup only covers markets[0], which undercounts a multi-city grid
@@ -546,6 +594,12 @@ def fetch_local_volume(terms, markets, state):
     cities = [c for c in (markets or []) if c and c.strip()]
     if state:
         cities = [c for c in cities if c.strip().lower() != state.strip().lower()]
+    if national:
+        # Product brands / national scope: the client's cities still build the
+        # GRID (the proposal table stays per-city), but pricing demand is the
+        # national figure. A geo-qualified pull structurally undercounts a DTC
+        # brand — nobody searches "collagen gummies fairfax va".
+        cities = [""]
     if not cities:
         cities = [""]                      # nationwide / no city: single lookup
     cities = cities[:CFG.get("grid_max_cities", 10)]
@@ -1164,7 +1218,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     }
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
-                   ultra, competitive, long_tail, site_terms_kw, phrase_geos=None):
+                   ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
+                   national_demand=False):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -1200,7 +1255,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # row for that service, so pricing must count it ONCE PER SERVICE — not
         # once per row — or a 10-city grid would inflate volume 10x.
         svc_names = list(dict.fromkeys([s["service"] for s in services]))
-        vols, per_city, vol_err = fetch_local_volume(svc_names, cities, state)
+        vols, per_city, vol_err = fetch_local_volume(svc_names, cities, state,
+                                                     national=national_demand)
         for r in full:
             svc_l = (r.get("service") or "").lower()
             city_l = (r.get("city") or "").lower()
@@ -1537,6 +1593,30 @@ def _tier_uplift(value, tiers):
             return uplift
     return 0
 
+def resolve_national_demand(industry="", band="", manual=False):
+    """Should this client be priced on GEO-LESS (national) search volume?
+
+    Three sources, any of which is sufficient:
+      1. RZ industry taxonomy — a rule carrying national_demand (ecommerce and
+         its product-brand siblings). Industry sets no price of its own; it
+         only says "measure demand nationally," and the volume/competition/
+         visibility signals then price the client on their own merits.
+      2. Geo scope of nationwide — no cities, so the pull is already geo-less.
+      3. Manual operator checkbox, for the cases RZ mistags.
+
+    Returns (bool, reason_string) so the UI can show WHY it flipped.
+    """
+    if manual:
+        return True, "manual override"
+    if band == "nationwide":
+        return True, "nationwide geo scope"
+    ind = (industry or "").strip().lower()
+    for k, r in (CFG.get("industry_pricing") or {}).items():
+        if k in ind and r.get("national_demand"):
+            return True, f"industry: {k}"
+    return False, ""
+
+
 def _volume_dollar_add(total_volume, free_below, brackets):
     """Fixed $ added for search volume above a normalized baseline, using a
     declining marginal rate (tax-bracket style). Each bracket [lo, hi, rate]
@@ -1555,7 +1635,8 @@ def _volume_dollar_add(total_volume, free_below, brackets):
 
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
-                 ecommerce=False, industry="", ai_search=False):
+                 ecommerce=False, industry="", ai_search=False,
+                 national_demand=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
@@ -1583,17 +1664,26 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     _matches = [(k, r) for k, r in CFG.get("industry_pricing", {}).items() if k in ind]
     if _matches:
         rule_key, rule = max(_matches, key=lambda kr: int(kr[1].get("anchor_add", 0)))
-    if rule is None and ecommerce:
-        rule_key, rule = "ecommerce", CFG.get("industry_pricing", {}).get("ecommerce")
+    # The legacy ecommerce checkbox no longer maps to a pricing rule (it has
+    # no anchor_add as of 2026-07-25) — it is a national-demand signal only.
+    nat_demand, nat_reason = resolve_national_demand(industry, band, bool(ecommerce)
+                                                     or bool(national_demand))
     if rule:
         base_pre += int(rule.get("anchor_add", 0))
 
-    # Extras suppression: nationwide service clients (the anchor already
-    # prices national scope — see CFG note) and industry rules that price on
-    # organization size rather than SERP signals (extras_off).
+    # Extras suppression.
+    #  - Industry rules that price on ORGANISATION size rather than SERP
+    #    signals (hospital / telehealth / behavioral health) still zero both.
+    #  - Nationwide scope is now governed by nationwide_service_extras, which
+    #    is 1.0 as of 2026-07-25 (Brendan): volume, competition and current
+    #    visibility are what separate national clients, so muting them made
+    #    every national client price identically. Left as a live multiplier
+    #    rather than deleted so Skidmore can be re-fit without a code change.
     nw_service = (band == "nationwide" and rule is None)
-    extras_off = nw_service or bool(rule and rule.get("extras_off"))
-    _mult = float(CFG.get("nationwide_service_extras", 0.0)) if nw_service else 0.0
+    rule_extras_off = bool(rule and rule.get("extras_off"))
+    _mult = (float(CFG.get("nationwide_service_extras", 1.0)) if nw_service
+             else (0.0 if rule_extras_off else 1.0))
+    extras_off = _mult != 1.0
     if extras_off and vol_add:
         base_pre -= vol_add
         vol_add = int(round(vol_add * _mult))
@@ -1653,11 +1743,19 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     else:
         client = {k: r50(v * m) for k, v in hard.items()}
 
-    # Core SEO + AI Search: GEO quoted at ai_search_uplift_pct of the Core SEO
-    # price, added on top — reported per tier so the quote shows the breakdown.
+    # ---- minimum term (applies to the whole quote, not just GEO) ----
+    zv_thresh = CFG.get("zero_visibility_pct_not_ranking", 90)
+    zero_visibility = (pct_not_ranking is not None and pct_not_ranking >= zv_thresh)
+    min_term = (CFG.get("min_term_months_zero_visibility", 12) if zero_visibility
+                else CFG.get("min_term_months", 6))
+
+    # ---- Core SEO + AI Search: GEO as a % of the client's own Core SEO ----
+    # Brendan: GEO averages 30-50% below SEO, rising toward parity when the
+    # client has no visibility. The list price is that %; the quoted price is
+    # the list less the bundle discount, applied to ALL THREE tiers.
     ai = None
     if ai_search:
-        if CFG.get("geo_pricing_mode", "card") == "card":
+        if CFG.get("geo_pricing_mode", "pct") == "card":
             card = CFG.get("geo_card", {})
             card_list = CFG.get("geo_card_list", card)
             ai = {"mode": "card",
@@ -1666,17 +1764,41 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                   "client_list": {k: int(card_list.get(k, 0)) for k in client},
                   "hard_add":    {k: r50(int(card.get(k, 0)) / m) for k in client}}
         else:
-            pct = CFG.get("ai_search_uplift_pct", 75) / 100.0
+            if pct_not_ranking is None:
+                geo_pct = float(CFG.get("geo_pct_default", 60))
+                geo_basis = "default (no ranking data)"
+            else:
+                geo_pct = float(CFG.get("geo_pct_default", 60))
+                geo_basis = "default"
+                for thresh, val in CFG.get("geo_pct_tiers", []):
+                    if pct_not_ranking >= thresh:
+                        geo_pct = float(val)
+                        geo_basis = f"{pct_not_ranking:.0f}% of head terms not ranking"
+                        break
+            disc = float(CFG.get("geo_bundle_discount_pct", 5)) / 100.0
+            p_list = geo_pct / 100.0
+            p_net  = p_list * (1.0 - disc)
             ai = {"mode": "pct",
-                  "uplift_pct": CFG.get("ai_search_uplift_pct", 75),
-                  "hard_add":   {k: r50(v * pct) for k, v in hard.items()},
-                  "client_add": {k: r50(v * pct) for k, v in client.items()}}
+                  "uplift_pct": geo_pct,
+                  "geo_pct": geo_pct,
+                  "geo_pct_basis": geo_basis,
+                  "bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
+                  "min_term_months": min_term,
+                  "zero_visibility": zero_visibility,
+                  "client_list": {k: r50(v * p_list) for k, v in client.items()},
+                  "hard_add":    {k: r50(v * p_net)  for k, v in hard.items()},
+                  "client_add":  {k: r50(v * p_net)  for k, v in client.items()}}
         ai["hard_total"]   = {k: hard[k] + ai["hard_add"][k] for k in hard}
         ai["client_total"] = {k: client[k] + ai["client_add"][k] for k in client}
+        ai["bundle_savings"] = {k: ai["client_list"][k] - ai["client_add"][k]
+                                for k in client} if "client_list" in ai else {}
 
     hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
     client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "national_demand": nat_demand, "national_demand_reason": nat_reason,
+            "min_term_months": min_term, "zero_visibility": zero_visibility,
+            "extras_multiplier": _mult,
             "industry_rule": rule_key,
             "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
             "ai_search": ai,
@@ -1810,7 +1932,8 @@ def quote():
         p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon,
                           ecommerce=bool(d.get("ecommerce")),
                           industry=(d.get("industry") or ""),
-                          ai_search=bool(d.get("ai_search")))
+                          ai_search=bool(d.get("ai_search")),
+                          national_demand=bool(d.get("national_demand")))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -1949,6 +2072,13 @@ def api_refine():
     business_desc = (d.get("business_desc") or "").strip()
     site_terms_kw = d.get("site_terms", [])
     phrase_geos = [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
+    # National demand: RZ industry (ecommerce family) OR nationwide scope OR
+    # the operator's manual checkbox. Flips the volume pull to geo-less; the
+    # grid itself still uses the client's cities.
+    nat_demand, nat_reason = resolve_national_demand(
+        industry=(d.get("industry") or ""),
+        band=d.get("geo_scope", d.get("band", "")),
+        manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")))
     # rebuild bucket rows from what the frontend sends back (kw + vol)
     def rows(key):
         return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
@@ -1956,7 +2086,8 @@ def api_refine():
     ultra, competitive, long_tail = rows("ultra"), rows("competitive"), rows("long_tail")
     try:
         s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
-                            ultra, competitive, long_tail, site_terms_kw, phrase_geos)
+                            ultra, competitive, long_tail, site_terms_kw, phrase_geos,
+                            national_demand=nat_demand)
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
         conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
@@ -1982,6 +2113,8 @@ def api_refine():
         "volume_location": s1.get("volume_location"),
         "state_missing": s1.get("state_missing", False),
         "grid_cities": s1.get("grid_cities", []),
+        "national_demand": nat_demand,
+        "national_demand_reason": nat_reason,
     })
 
 @app.route("/api/metrics", methods=["POST"])
@@ -2209,8 +2342,14 @@ def api_price():
                      pct_not_ranking=pct_not_ranking, total_volume=total_volume,
                      base_override=base_override, ecommerce=bool(d.get("ecommerce")),
                      industry=(d.get("industry") or ""),
-                     ai_search=bool(d.get("ai_search")))
+                     ai_search=bool(d.get("ai_search")),
+                     national_demand=bool(d.get("national_demand")))
     return jsonify({"anchor": p["anchor"], "adder": adder,
+                    "national_demand": p.get("national_demand", False),
+                    "national_demand_reason": p.get("national_demand_reason", ""),
+                    "min_term_months": p.get("min_term_months"),
+                    "zero_visibility": p.get("zero_visibility", False),
+                    "extras_multiplier": p.get("extras_multiplier", 1.0),
                     "industry_rule": p.get("industry_rule"),
                     "industry_anchor_add": p.get("industry_anchor_add", 0),
                     "ai_search": p.get("ai_search"),
@@ -2238,8 +2377,15 @@ def api_config_get():
         "cpc_adder_knee": CFG.get("cpc_adder_knee", 62.0),
         "cpc_adder_mult_high": CFG.get("cpc_adder_mult_high", 14.0),
         "tier_step_pct_of_base": CFG.get("tier_step_pct_of_base", 0.24),
-        "ecom_anchor_add": CFG.get("ecom_anchor_add", 250),
-        "geo_pricing_mode": CFG.get("geo_pricing_mode", "card"),
+        "ecom_anchor_add": CFG.get("ecom_anchor_add", 0),
+        "geo_pricing_mode": CFG.get("geo_pricing_mode", "pct"),
+        "geo_pct_tiers": CFG.get("geo_pct_tiers", []),
+        "geo_pct_default": CFG.get("geo_pct_default", 60),
+        "geo_bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
+        "min_term_months": CFG.get("min_term_months", 6),
+        "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
+        "zero_visibility_pct_not_ranking": CFG.get("zero_visibility_pct_not_ranking", 90),
+        "nationwide_service_extras": CFG.get("nationwide_service_extras", 1.0),
         "geo_card": CFG.get("geo_card", {}),
         "geo_min_term_months": CFG.get("geo_min_term_months", 12),
         "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
@@ -2289,6 +2435,16 @@ def api_config_set():
                     tiers.append([float(pair[0]), float(pair[1])])
             tiers.sort(key=lambda t: t[0], reverse=True)
             CFG["zero_ranking_tiers"] = tiers
+        # geo_pct_tiers: [[min_pct_not_ranking, geo_pct_of_seo], ...] high-to-low
+        if "geo_pct_tiers" in d and isinstance(d["geo_pct_tiers"], list):
+            gt = []
+            for pair in d["geo_pct_tiers"]:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    gt.append([float(pair[0]), float(pair[1])])
+            gt.sort(key=lambda t: t[0], reverse=True)
+            CFG["geo_pct_tiers"] = gt
+        if "geo_pricing_mode" in d and d["geo_pricing_mode"] in ("pct", "card"):
+            CFG["geo_pricing_mode"] = d["geo_pricing_mode"]
         # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
         if "volume_brackets" in d and isinstance(d["volume_brackets"], list):
             brs = []
@@ -2320,7 +2476,13 @@ def api_config_set():
                             ("cpc_adder_mult", float), ("cpc_adder_cap", int),
                             ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
                             ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float),
-                            ("ecom_anchor_add", int)]:
+                            ("ecom_anchor_add", int),
+                            ("geo_pct_default", float),
+                            ("geo_bundle_discount_pct", float),
+                            ("min_term_months", int),
+                            ("min_term_months_zero_visibility", int),
+                            ("zero_visibility_pct_not_ranking", float),
+                            ("nationwide_service_extras", float)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
         # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;
