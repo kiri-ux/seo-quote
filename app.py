@@ -648,7 +648,7 @@ def fetch_local_volume(terms, markets, state, national=False):
         # loc_string parses "City, ST" itself; each city localizes to its own state
         loc = loc_string([city], state) if city else loc_string([], state)
         def call(location):
-            payload = [{"keywords": kws, "location_name": location,
+            payload = [{"keywords": dfs_kw_list(kws), "location_name": location,
                         "language_code": "en"}]
             data = dfs_post("/keywords_data/google_ads/search_volume/live", payload,
                             timeout=25)
@@ -985,7 +985,7 @@ def pick_grid_cities(markets, state, limit):
         abbr = STATE_ABBREV.get((state or "").strip().lower(), "")
         sfx = f" {abbr}" if abbr else ""
         probe = [f"insurance {c.lower()}{sfx}" for c in cities][:700]
-        payload = [{"keywords": probe,
+        payload = [{"keywords": dfs_kw_list(probe),
                     "location_name": loc_string(cities, state),
                     "language_code": "en"}]
         data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
@@ -998,6 +998,38 @@ def pick_grid_cities(markets, state, limit):
         return ranked[:limit]
     except Exception:
         return cities[:limit]
+
+
+# DataForSEO's Google Ads keyword endpoints reject a specific punctuation set
+# outright: the whole BATCH 40501s, so one dirty term zeroes every volume in
+# the run and the volume component of price silently becomes $0. Seen
+# 2026-07-25 on a partner seed that carried the client's own city with a comma
+# ("corner dental salem,"), which also defeated the grid's "service already
+# contains this market" check and produced "corner dental salem, salem or".
+# Apostrophes and hyphens are legal and meaningful ("kid's dentist",
+# "same-day crowns"), so they are deliberately NOT in this set.
+DFS_BAD_CHARS = re.compile(r"[,!@%^()={};~`<>?\\|]")
+
+def clean_kw(text):
+    """Strip characters DataForSEO rejects and normalise whitespace."""
+    t = DFS_BAD_CHARS.sub(" ", (text or ""))
+    return re.sub(r"\s+", " ", t).strip()
+
+def dfs_kw_ok(text):
+    """DFS also caps keywords at 80 chars and 10 words. Terms past either
+    limit are dropped from LOOKUPS only — they stay in the proposal list."""
+    t = (text or "").strip()
+    return bool(t) and len(t) <= 80 and len(t.split()) <= 10
+
+def dfs_kw_list(terms):
+    """Sanitised, de-duplicated, API-safe keyword list."""
+    out, seen = [], set()
+    for t in terms or []:
+        c = clean_kw(t).lower()
+        if c and c not in seen and dfs_kw_ok(c):
+            seen.add(c)
+            out.append(c)
+    return out
 
 
 def build_grid(services, markets, state, prepicked=False):
@@ -1024,7 +1056,9 @@ def build_grid(services, markets, state, prepicked=False):
             return f" {ab}"
         return "" if city_lower in CITY_STATE else f" {ab}"   # auto
     for s in services:
-        svc, tier = s["service"], s["tier"]
+        svc, tier = clean_kw(s["service"]).lower(), s["tier"]
+        if not svc:
+            continue
         if not cities:                     # nationwide: no crossing
             buckets[tier].append({"keyword": svc, "volume": 0,
                                   "src": "grid", "origin": "added", "service": svc})
@@ -1048,7 +1082,7 @@ def build_grid(services, markets, state, prepicked=False):
             else:
                 # don't append the state if the "city" IS the state
                 sfx = "" if (c_state and c == c_state.strip().lower()) else city_suffix(c, c_state)
-                kw = f"{svc} {c}{sfx}".strip()
+                kw = clean_kw(f"{svc} {c}{sfx}")
             if any(r["keyword"] == kw for r in buckets[tier]):
                 continue                      # same term from two crossings
             buckets[tier].append({"keyword": kw,
@@ -1532,7 +1566,7 @@ def stage3_metrics(head, markets, state):
     items = []
     bid_loc_used = primary_loc
     for _loc in loc_chain:
-        payload = [{"keywords": bare_unique,
+        payload = [{"keywords": dfs_kw_list(bare_unique),
                     "location_name": _loc,
                     "language_code": "en"}]
         try:
