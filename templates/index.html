@@ -2086,6 +2086,23 @@ $('savedSearch').addEventListener('input', ()=>loadSavedList($('savedSearch').va
 function openSaved(){ $('savedPanel').style.display='block'; $('savedBackdrop').style.display='block'; loadSavedList(''); }
 function closeSaved(){ $('savedPanel').style.display='none'; $('savedBackdrop').style.display='none'; }
 
+// Two quotes can carry the same number and mean different deals — the tag
+// says which product the ladder is for. Prices shown are what the client sees:
+// on a Core SEO + AI Search quote that's the combined total, not the SEO leg.
+const STRAT_TAG = {
+  'Core SEO + AI Search': ['+ AI SEARCH', 'var(--warn-bg)', 'var(--warn)'],
+  'Core SEO':             ['CORE SEO',    'var(--info-bg)', 'var(--velocity)'],
+  'Website Audit':        ['AUDIT',       '#EDEFF2',        'var(--muted)'],
+};
+function strategyTag(strategy){
+  const s=(strategy||'').trim();
+  if(!s) return '';
+  const [label,bg,fg] = STRAT_TAG[s] || [s.toUpperCase(), '#EDEFF2', 'var(--muted)'];
+  return `<span style="background:${bg};color:${fg};font-family:'Barlow Condensed',sans-serif;`
+       + `font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;`
+       + `border-radius:5px;padding:2px 8px;white-space:nowrap">${escapeHtml(label)}</span>`;
+}
+
 async function loadSavedList(q){
   const list=$('savedList');
   if(!SAVE_ENABLED){ list.innerHTML='<div class="nf" style="font-size:12.5px">Saving is off. Attach a Postgres database in Render to enable saving and reloading quotes.</div>'; return; }
@@ -2101,7 +2118,10 @@ async function loadSavedList(q){
           <div class="nf" style="font-size:11px">${(x.updated_at||'').slice(0,10)}</div>
         </div>
         ${x.client?`<div class="nf" style="font-size:12px">${escapeHtml(x.client)}</div>`:''}
-        <div style="font-size:12.5px;margin:5px 0;color:var(--atlas)">${money0(x.base)} / ${money0(x.intermediate)} / ${money0(x.advanced)}</div>
+        <div style="font-size:12.5px;margin:5px 0;color:var(--atlas);display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <span>${money0(x.base)} / ${money0(x.intermediate)} / ${money0(x.advanced)}</span>
+          ${strategyTag(x.strategy)}
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="q-load" data-id="${x.id}" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Open</button>
           <button class="q-hist" data-id="${x.id}" style="background:#fff;color:var(--atlas);border:1px solid var(--line);padding:5px 11px;border-radius:6px;font-size:12px;cursor:pointer">History</button>

@@ -92,6 +92,18 @@ def init_db():
         cur.execute("ALTER TABLE quotes ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;")
         # Which tab owns the quote: 'seo' (default keeps legacy rows) or 'rep'.
         cur.execute("ALTER TABLE quotes ADD COLUMN IF NOT EXISTS tool TEXT NOT NULL DEFAULT 'seo';")
+        # Strategy tag for the saved-quotes list (Core SEO vs Core SEO + AI
+        # Search vs Website Audit) — two quotes can carry the same number and
+        # mean very different deals.
+        cur.execute("ALTER TABLE quotes ADD COLUMN IF NOT EXISTS strategy TEXT DEFAULT '';")
+        # Backfill from the stored payload so existing rows tag correctly
+        # without needing to be re-saved.
+        cur.execute("""
+            UPDATE quotes
+               SET strategy = COALESCE(payload->'inputs'->>'strategy', '')
+             WHERE (strategy IS NULL OR strategy = '')
+               AND payload->'inputs'->>'strategy' IS NOT NULL;
+        """)
         conn.commit()
 
 
@@ -136,16 +148,32 @@ def load_by_token(token):
 
 def _tiers(payload):
     """Pull display prices for the saved-quotes list. SEO quotes: the three
-    client tiers. Rep quotes: one-time -> base, monthly -> intermediate (the
-    columns are reused rather than widening the schema)."""
+    client tiers — but on a Core SEO + AI Search quote the price the client is
+    actually shown is the COMBINED total, so the drawer has to use that or it
+    contradicts the cards on the page (2026-07-25). Rep quotes: one-time ->
+    base, monthly -> intermediate (the columns are reused rather than widening
+    the schema)."""
     try:
         rt = payload.get("rep_totals")
         if rt:
             return rt.get("one_time"), rt.get("monthly"), None
-        ct = payload.get("pricing", {}).get("client_tiers", {})
+        pr = payload.get("pricing", {}) or {}
+        ai = pr.get("ai_search") or {}
+        ct = ai.get("client_total") or pr.get("client_tiers", {}) or {}
         return ct.get("base"), ct.get("intermediate"), ct.get("advanced")
     except Exception:
         return None, None, None
+
+
+def _strategy(payload):
+    """Which strategy the quote was priced under, for the list tag."""
+    try:
+        if payload.get("rep_totals"):
+            return ((payload.get("inputs") or {}).get("campaign_type")
+                    or (payload.get("inputs") or {}).get("strategy") or "")
+        return ((payload.get("inputs") or {}).get("strategy") or "")
+    except Exception:
+        return ""
 
 
 def save_quote(name, client, payload, tool="seo"):
@@ -153,9 +181,10 @@ def save_quote(name, client, payload, tool="seo"):
     b, i, a = _tiers(payload)
     with _conn() as conn, conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO quotes (name, client, payload, base, intermediate, advanced, tool) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-            (name, client or "", json.dumps(payload), b, i, a, tool or "seo"))
+            "INSERT INTO quotes (name, client, payload, base, intermediate, advanced, tool, strategy) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+            (name, client or "", json.dumps(payload), b, i, a, tool or "seo",
+             _strategy(payload)))
         qid = cur.fetchone()[0]
         conn.commit()
         return qid
@@ -219,8 +248,9 @@ def update_quote(quote_id, payload, name=None, client=None):
                 (quote_id, json.dumps(old_payload), row[1], row[2], row[3]))
             version_saved = True
         b, i, a = _tiers(payload)
-        sets = ["payload=%s", "base=%s", "intermediate=%s", "advanced=%s", "updated_at=now()"]
-        vals = [json.dumps(payload), b, i, a]
+        sets = ["payload=%s", "base=%s", "intermediate=%s", "advanced=%s",
+                "strategy=%s", "updated_at=now()"]
+        vals = [json.dumps(payload), b, i, a, _strategy(payload)]
         if name is not None:
             sets.append("name=%s"); vals.append(name)
         if client is not None:
@@ -246,12 +276,12 @@ def list_quotes(search="", tool="seo"):
         if search:
             like = f"%{search}%"
             cur.execute(
-                "SELECT id, name, client, base, intermediate, advanced, created_at, updated_at "
+                "SELECT id, name, client, base, intermediate, advanced, strategy, created_at, updated_at "
                 "FROM quotes WHERE tool=%s AND (name ILIKE %s OR client ILIKE %s) "
                 "ORDER BY updated_at DESC", (tool or "seo", like, like))
         else:
             cur.execute(
-                "SELECT id, name, client, base, intermediate, advanced, created_at, updated_at "
+                "SELECT id, name, client, base, intermediate, advanced, strategy, created_at, updated_at "
                 "FROM quotes WHERE tool=%s ORDER BY updated_at DESC", (tool or "seo",))
         out = []
         for r in cur.fetchall():
