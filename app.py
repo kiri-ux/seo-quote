@@ -29,7 +29,8 @@ app = Flask(__name__)
 import datetime as _dt
 BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
             or _dt.datetime.utcnow().strftime("dev-%m%d"))
-BUILD_STR = f"build {_dt.datetime.utcnow().strftime('%Y-%m-%d')} \u00b7 {BUILD_ID}"
+BUILD_STR = (f"build {_dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC "
+             f"\u00b7 {BUILD_ID}")
 BASE = "https://api.dataforseo.com/v3"
 
 # ---------------------------------------------------------------------------
@@ -64,7 +65,22 @@ CFG = {
         "contiguous_region":    2100,
         "non_contiguous_region":2350,
         "statewide":            2350,
-        "nationwide":           2900,
+        # RECALIBRATED 2026-07-25 (2,900 -> 2,050). The 2,900 figure was
+        # back-solved from Brendan's national card WITH the extras muted, so
+        # it silently contained the volume add and the zero-ranking uplift —
+        # it WAS the "national client with nothing ranking" price, not the
+        # starting point. Now that extras are live (Brendan: volume,
+        # competition and visibility are what separate national clients), the
+        # anchor has to be the bare floor those signals build up FROM, or the
+        # scope is charged twice. Validated on both national actuals:
+        #   Skidmore (adder 50, vol 24k, 90% not ranking)
+        #     -> 4,000 / 5,450 / 6,950 vs actual 3,950 / 5,450 / 6,950
+        #   MPG      (adder  0, vol 25k+, 100% not ranking)
+        #     -> 3,900 / 5,400 / 6,900 vs actual 3,950 / 5,450 / 6,950
+        # An established national brand that already ranks now prices BELOW
+        # the card, which is the behaviour Brendan described and the old
+        # constant made impossible.
+        "nationwide":           2050,
     },
     "competitive_adder": {0: 0, 1: 150, 2: 300},   # FLAT fallback (used when no bid data)
     "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2 (for the fallback)
@@ -1640,7 +1656,28 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
-    anchor = CFG["geo_anchor"][band]                       # hard cost
+
+    # Resolve the industry rule FIRST — national demand has to be known before
+    # the anchor is picked, because it routes to the national anchor.
+    rule_key, rule = None, None
+    ind = (industry or "").strip().lower()
+    # The industry field is multi-select (values joined with " | "), so
+    # several rules can match at once. Precedence: the STRONGEST card wins
+    # (largest anchor_add) — a hospital that also sells products online is
+    # priced as a hospital, not as a shop.
+    _matches = [(k, r) for k, r in CFG.get("industry_pricing", {}).items() if k in ind]
+    if _matches:
+        rule_key, rule = max(_matches, key=lambda kr: int(kr[1].get("anchor_add", 0)))
+    # The legacy ecommerce checkbox no longer maps to a pricing rule (it has
+    # no anchor_add as of 2026-07-25) — it is a national-demand signal only.
+    nat_demand, nat_reason = resolve_national_demand(
+        industry, band, bool(ecommerce) or bool(national_demand))
+
+    # A product brand priced on national demand sits on the NATIONAL anchor
+    # even when the operator picked a local/statewide scope — the client's
+    # cities describe where they ship, not where the demand is measured.
+    anchor_band = "nationwide" if nat_demand else band
+    anchor = CFG["geo_anchor"][anchor_band]                # hard cost
 
     # --- volume-based add: fixed $ for volume above the normalized baseline ---
     vol_add = 0
@@ -1653,21 +1690,6 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 
     # Base before % uplift = anchor + competitive adder + volume $ add.
     base_pre = anchor + adder + vol_add
-    # Resolve industry rule (substring match against RZ-fed industry text);
-    # the legacy ecommerce flag maps to the ecommerce rule.
-    rule_key, rule = None, None
-    ind = (industry or "").strip().lower()
-    # The industry field is multi-select (values joined with " | "), so
-    # several rules can match at once. Precedence: the STRONGEST card wins
-    # (largest anchor_add) — a hospital that also sells products online is
-    # priced as a hospital, not as a shop.
-    _matches = [(k, r) for k, r in CFG.get("industry_pricing", {}).items() if k in ind]
-    if _matches:
-        rule_key, rule = max(_matches, key=lambda kr: int(kr[1].get("anchor_add", 0)))
-    # The legacy ecommerce checkbox no longer maps to a pricing rule (it has
-    # no anchor_add as of 2026-07-25) — it is a national-demand signal only.
-    nat_demand, nat_reason = resolve_national_demand(industry, band, bool(ecommerce)
-                                                     or bool(national_demand))
     if rule:
         base_pre += int(rule.get("anchor_add", 0))
 
@@ -1679,7 +1701,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     #    visibility are what separate national clients, so muting them made
     #    every national client price identically. Left as a live multiplier
     #    rather than deleted so Skidmore can be re-fit without a code change.
-    nw_service = (band == "nationwide" and rule is None)
+    nw_service = (anchor_band == "nationwide" and not (rule and rule.get("anchor_add")))
     rule_extras_off = bool(rule and rule.get("extras_off"))
     _mult = (float(CFG.get("nationwide_service_extras", 1.0)) if nw_service
              else (0.0 if rule_extras_off else 1.0))
@@ -1716,9 +1738,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     elif rule and rule.get("step_mode") == "ratio":
         # these ladders step proportionally (Brendan's ecom quote: 38% steps)
         step = r50(base * CFG["step_ratio"])
-    elif band == "nationwide":
-        # Brendan's national ladder also steps proportionally — $1,500 client
-        # on a $3,950 base = the same 38% ratio (Skidmore, 2026-07-20)
+    elif anchor_band == "nationwide":
+        # Brendan's national ladder steps PROPORTIONALLY — $1,500 client rungs
+        # on a $3,950 base = 38% (Skidmore and MPG both). Keyed to anchor_band
+        # so a product brand on national demand gets the card's shape too:
+        # keeping flat $700 steps there was most of MPG's 15% shortfall (his
+        # rungs are $1,500 client, the flat ladder gave $950).
         step = r50(base * CFG["step_ratio"])
     elif flat:
         # flat floor, scaling with base for premium clients: Brendan steps
