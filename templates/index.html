@@ -912,7 +912,7 @@ function devPipelineNote(){
   if(document.getElementById('pdev')) return;
   panel('pdev', `<div style="border:2px dashed #b06fc9;border-radius:9px;padding:8px 12px;background:#faf6fc;font-size:12px">
     <span style="font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Dev note — demo only</span><br>
-    Steps 2–4 below (competition → rankings → price) run as <b>one pipeline call</b> in adtini, triggered at line-item submission and returning the full quote object. They're broken out here so each stage's output is reviewable and no single request outlives the platform timeout. The dashed rail marks the pipeline's scope.</div>`);
+    Steps 2–4 below (competition → rankings → price) run as <b>one pipeline call</b> in adtini, triggered after the keyword list build and returning the full quote object. They're broken out here so each stage's output is reviewable and no single request outlives the platform timeout. The dashed rail marks the pipeline's scope.</div>`);
 }
 
 async function runStep2(){
