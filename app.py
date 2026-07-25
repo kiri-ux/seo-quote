@@ -29,8 +29,19 @@ app = Flask(__name__)
 import datetime as _dt
 BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
             or _dt.datetime.utcnow().strftime("dev-%m%d"))
-BUILD_STR = (f"build {_dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC "
-             f"\u00b7 {BUILD_ID}")
+def _build_stamp():
+    """Build time in US Eastern (EST/EDT handled by the tzdb). Falls back to a
+    fixed -05:00 if the container image ships without tzdata."""
+    try:
+        from zoneinfo import ZoneInfo
+        now = _dt.datetime.now(ZoneInfo("America/New_York"))
+        label = now.strftime("%Z") or "ET"
+    except Exception:
+        now = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-5)))
+        label = "ET"
+    return f"build {now.strftime('%Y-%m-%d %I:%M %p').lstrip('0')} {label} \u00b7 {BUILD_ID}"
+
+BUILD_STR = _build_stamp()
 BASE = "https://api.dataforseo.com/v3"
 
 # ---------------------------------------------------------------------------
