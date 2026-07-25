@@ -6,108 +6,183 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <title>adtini · SEO Quote Tool</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* ============================================================
+     adtini · Quote Builder — design system matched to Consent Scanner
+     Vici brand: Atlas Blue / Velocity Blue / Vici Gold / Parchment
+     Type: Barlow (body) + Barlow Condensed (labels, headings, data)
+     ============================================================ */
   :root{
-    --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
-    --parchment:#F6F1E7; --ink:#1a2231; --muted:#6b7686; --line:#dfe4ec;
+    --atlas:#002D58; --velocity:#0066B3; --gold:#F1B434; --parchment:#FDFBF7;
+    --ink:#16283B; --muted:#5B6B7C; --line:#D9DFE6; --card:#FFFFFF;
+    --ok:#1F7A4D; --ok-bg:#E7F4ED; --warn:#9A6A00; --warn-bg:#FBF1D9;
+    --bad:#B3261E; --bad-bg:#F9E7E5; --info-bg:#E8F1F8;
+    --demo:#7A3F92; --demo-line:#B06FC9; --demo-bg:#FAF6FC;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:var(--parchment);color:var(--ink);line-height:1.5}
-  header{background:var(--atlas);color:#fff;padding:14px 28px 0;position:sticky;top:0;z-index:95}
-  .hrow{display:flex;align-items:center;justify-content:space-between;gap:16px}
-  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
-  header h1 span{opacity:.7;font-size:13px;font-weight:400}
-  .tabs{display:flex;gap:4px;margin-top:12px}
-  .tabs a{display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;
-    font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)}
-  .tabs a.on{background:var(--parchment);color:var(--atlas)}
-  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
+  body{margin:0;font-family:'Barlow',sans-serif;background:var(--parchment);
+    color:var(--ink);line-height:1.55}
+  a{color:var(--velocity)}
+
+  /* ---- header + tabs ---------------------------------------- */
+  header{background:var(--atlas);color:#fff;padding:18px 28px 0;position:sticky;top:0;z-index:95;
+    border-bottom:4px solid var(--gold)}
+  .hrow{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+  header h1{margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.04em;text-transform:uppercase}
+  header h1 span{font-family:'Barlow',sans-serif;text-transform:none;letter-spacing:0;
+    color:#7E93A8;font-size:11px;font-weight:400}
+  .tabs{display:flex;gap:6px;margin-top:14px}
+  .tabs a{display:inline-block;padding:8px 14px;font-family:'Barlow Condensed',sans-serif;
+    font-size:15px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+    text-decoration:none;color:#8FA4B8;background:none;
+    border-bottom:3px solid transparent;border-radius:0}
+  .tabs a:hover{color:#C6D4E1}
+  .tabs a.on{color:#fff;border-bottom-color:var(--gold)}
+
+  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 80px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
-  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px}
-  .card h2{margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
-  label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
-  .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px}
-  .strat{display:inline-flex;align-items:center;gap:6px;margin:0 8px 6px 0;padding:6px 13px;border:1.5px solid var(--atlas);border-radius:16px;font-size:12.5px;font-weight:600;color:var(--atlas);cursor:pointer;background:#fff;user-select:none}
-  .strat input{accent-color:var(--atlas);margin:0}
-  .strat:has(input:checked){background:var(--atlas);color:#fff}
-  /* dev note rail: steps 2-4 are one pipeline call in adtini */
-  #p2,#p3,#p3b,#p4{border-left:3px dashed #cf9fe0;padding-left:12px}
-  #pdev{margin-top:6px}
-  /* helper text collapsed behind an i-icon: hover (or tap) to reveal */
-  .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
-  .tipicon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
-    border-radius:50%;border:1px solid var(--atlas);color:var(--atlas);font-size:10.5px;font-weight:700;
-    font-style:normal;cursor:help;user-select:none;background:#fff;line-height:1;
-    text-transform:lowercase;letter-spacing:0;vertical-align:1px}
-  .tipwrap .help{display:none;position:absolute;left:-10px;top:20px;z-index:60;width:330px;max-width:72vw;
-    background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
-    padding:9px 12px;margin:0;font-size:12px;font-weight:400;font-style:normal;color:var(--muted);
-    white-space:normal;text-transform:none;letter-spacing:0;text-align:left;line-height:1.55}
-  .tipwrap:hover .help,.tipwrap.open .help{display:block}
-  .req{color:#b3261e;font-weight:700;margin-left:3px}
-  .tierhelp{font-size:12px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
-  .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
-  .tiertext{font-size:13px;color:#333}
-  .tierin{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;
-    font-size:13px;font-family:inherit;text-align:right}
-  .tierin-sm{width:60px}
-  input[type=text],textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);
-    border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
-  textarea{min-height:58px;resize:vertical}
-  .pillbox{display:flex;flex-wrap:wrap;gap:6px;padding:7px;border:1px solid var(--line);
-    border-radius:8px;background:#fff;min-height:42px;align-items:center;cursor:text}
-  .pillbox input{border:none;outline:none;flex:1;min-width:120px;padding:4px;font-size:14px}
+
+  /* ---- panels ------------------------------------------------ */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px 24px}
+  .card h2{margin:0 0 14px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--atlas)}
+  .sec{margin:20px 0 8px;font-family:'Barlow Condensed',sans-serif;color:var(--atlas);
+    font-size:13.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+
+  /* ---- form fields ------------------------------------------- */
+  label{display:block;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--atlas);margin:16px 0 6px}
+  label span{font-family:'Barlow',sans-serif;text-transform:none;letter-spacing:0}
+  .help{font-family:'Barlow',sans-serif;font-weight:400;color:var(--muted);font-size:12.5px;
+    margin:2px 0 8px;text-transform:none;letter-spacing:0}
+  input[type=text],textarea,select{width:100%;padding:11px 14px;border:1px solid var(--line);
+    border-radius:8px;font:14px 'Barlow',sans-serif;background:#FCFCFB;color:var(--ink)}
+  input[type=text]:focus,textarea:focus,select:focus{outline:2px solid var(--velocity);outline-offset:1px}
+  textarea{min-height:58px;resize:vertical;line-height:1.6}
+  .req{color:var(--bad);font-weight:700;margin-left:3px}
+
+  /* strategy / choice chips */
+  .strat{display:inline-flex;align-items:center;gap:7px;margin:0 8px 7px 0;padding:7px 15px;
+    border:1px solid var(--line);border-radius:20px;font-family:'Barlow',sans-serif;font-size:13.5px;
+    font-weight:600;color:var(--muted);cursor:pointer;background:#fff;user-select:none;
+    text-transform:none;letter-spacing:0}
+  .strat input{accent-color:var(--gold);margin:0}
+  .strat:has(input:checked){background:var(--atlas);border-color:var(--atlas);color:#fff}
+  .strat:focus-within{outline:2px solid var(--velocity);outline-offset:2px}
+
+  /* pills + autocomplete */
+  .pillbox{display:flex;flex-wrap:wrap;gap:7px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:8px;background:#FCFCFB;min-height:44px;align-items:center;cursor:text}
+  .pillbox:focus-within{outline:2px solid var(--velocity);outline-offset:1px}
+  .pillbox input{border:none;outline:none;flex:1;min-width:140px;padding:4px 2px;
+    font:14px 'Barlow',sans-serif;background:transparent}
+  .pill{background:var(--info-bg);color:var(--atlas);padding:4px 6px 4px 12px;border-radius:14px;
+    font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:7px;max-width:100%}
+  .pill b{cursor:pointer;color:var(--velocity);font-weight:700;padding:0 4px;line-height:1}
+  .pill b:hover{color:var(--bad)}
+  .geo-pill{background:#E4EAF0;color:var(--atlas)}
   .acwrap{position:relative}
-  .acdrop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#fff;border:1px solid var(--line);
-    border-radius:9px;box-shadow:0 8px 22px rgba(0,45,88,.16);max-height:264px;overflow-y:auto;z-index:80;display:none}
+  .acdrop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#fff;
+    border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 22px rgba(0,45,88,.16);
+    max-height:264px;overflow-y:auto;z-index:80;display:none}
   .acdrop.open{display:block}
-  .acdrop div{padding:7px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f4f1ec}
+  .acdrop div{padding:8px 12px;font-size:13.5px;cursor:pointer;border-bottom:1px solid #F1F3F6}
   .acdrop div:last-child{border-bottom:none}
-  .acdrop div.on,.acdrop div:hover{background:#eef4fb}
+  .acdrop div.on,.acdrop div:hover{background:var(--info-bg)}
   .acdrop b{color:var(--velocity);font-weight:700}
-  .pill{background:var(--velocity);color:#fff;padding:3px 9px;border-radius:20px;font-size:12.5px;
-    display:inline-flex;align-items:center;gap:6px}
-  .pill b{cursor:pointer;opacity:.8;font-weight:700}
-  .geo-pill{background:var(--atlas)}
+
+  /* toggle switch */
   .toggle-row{display:flex;align-items:center;gap:10px;margin-top:8px}
   .switch{position:relative;width:44px;height:24px;flex:none}
   .switch input{opacity:0;width:0;height:0}
-  .slider{position:absolute;inset:0;background:#c7cedb;border-radius:24px;transition:.2s;cursor:pointer}
-  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .slider{position:absolute;inset:0;background:#C3CDD7;border-radius:24px;transition:.2s;cursor:pointer}
+  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;
+    border-radius:50%;transition:.2s}
   .switch input:checked + .slider{background:var(--velocity)}
   .switch input:checked + .slider:before{transform:translateX(20px)}
-  .btn{margin-top:22px;width:100%;background:var(--gold);color:#3a2c08;border:none;padding:13px;
-    border-radius:9px;font-size:15px;font-weight:700;cursor:pointer}
-  .btn:disabled{opacity:.55;cursor:wait}
+
+  /* ---- buttons ------------------------------------------------ */
+  button{font-family:'Barlow',sans-serif}
+  button:focus-visible{outline:2px solid var(--velocity);outline-offset:2px}
+  .btn{margin-top:22px;width:100%;background:var(--velocity);color:#fff;border:none;padding:13px;
+    border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Barlow',sans-serif}
+  .btn:hover:not(:disabled){background:#005696}
+  .btn:disabled{background:#9DB6CB;cursor:wait}
   .hidden{display:none}
-  /* results */
+
+  /* ---- info tooltip (scanner tipbox treatment) ---------------- */
+  .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
+  .tipicon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+    border-radius:50%;border:1.5px solid var(--velocity);color:var(--velocity);
+    font:600 9.5px/1 'Barlow',sans-serif;font-style:normal;cursor:help;user-select:none;
+    background:#fff;text-transform:lowercase;letter-spacing:0;vertical-align:1px}
+  .tipwrap .help{display:none;position:absolute;left:-10px;top:22px;z-index:60;width:340px;max-width:72vw;
+    background:var(--atlas);color:#F4F8FB;border:none;border-top:3px solid var(--gold);border-radius:8px;
+    box-shadow:0 6px 24px rgba(0,45,88,.35);padding:10px 13px;margin:0;
+    font:13px/1.5 'Barlow',sans-serif;font-weight:400;font-style:normal;
+    white-space:normal;text-transform:none;letter-spacing:0;text-align:left}
+  .tipwrap .help b{color:var(--gold)}
+  .tipwrap:hover .help,.tipwrap.open .help{display:block}
+
+  /* ---- demo rail (steps 2-4 are one pipeline call in adtini) --- */
+  #p2,#p3,#p3b,#p4{border-left:3px dashed var(--demo-line);padding-left:12px}
+  #pdev{margin-top:6px}
+
+  /* ---- config tier rows --------------------------------------- */
+  .tierhelp{font-size:12.5px;color:var(--muted);margin:2px 0 10px;line-height:1.5}
+  .tierrow{display:flex;align-items:center;gap:7px;margin:6px 0;flex-wrap:wrap}
+  .tiertext{font-size:13.5px;color:var(--ink)}
+  .tierin{width:90px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;
+    font:13px 'Barlow',sans-serif;text-align:right;background:#FCFCFB}
+  .tierin-sm{width:60px}
+
+  /* ---- results: tier cards ------------------------------------ */
   #out{margin-top:24px}
   .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:6px 0 20px}
-  .tier{border:1px solid var(--line);border-radius:11px;padding:18px;text-align:center;background:#fff}
-  .tier.mid{border-color:var(--velocity);box-shadow:0 0 0 2px rgba(55,138,221,.15)}
-  .tier .name{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  .tier .price{font-size:26px;font-weight:700;color:var(--atlas);margin:6px 0 2px}
+  .tier{border:1px solid var(--line);border-radius:10px;padding:18px;text-align:center;background:var(--card)}
+  .tier.mid{border:2px solid var(--velocity)}
+  .tier .name{font-family:'Barlow Condensed',sans-serif;font-size:12.5px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .tier .price{font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;
+    color:var(--atlas);margin:4px 0 0;line-height:1.1}
   .tier .mo{font-size:12px;color:var(--muted)}
-  .calc{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13.5px;margin-bottom:16px}
-  .calc code{background:var(--parchment);padding:1px 6px;border-radius:5px}
+
+  /* ---- calc / note / flags ------------------------------------ */
+  .calc{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    font-size:13.5px;margin-bottom:16px}
+  .calc code{background:var(--info-bg);color:var(--atlas);font-weight:600;padding:1px 7px;
+    border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-size:14px;letter-spacing:.02em}
+  .flag{display:inline-block;padding:3px 9px;border-radius:5px;
+    font-family:'Barlow Condensed',sans-serif;font-size:12.5px;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase}
+  .flag.on{background:var(--warn-bg);color:var(--warn)}
+  .flag.off{background:var(--ok-bg);color:var(--ok)}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px solid var(--line);
+    padding-top:12px;line-height:1.6}
+  .nf{color:var(--muted)}
+  .err{background:var(--bad-bg);border:1px solid #E7B5B1;color:var(--bad);padding:12px 14px;
+    border-radius:8px;font-size:13.5px}
+  .why{font-size:12.5px;color:var(--muted);margin:-2px 0 10px;line-height:1.5;
+    border-left:3px solid var(--gold);padding-left:11px}
+
+  /* ---- keyword columns + tables ------------------------------- */
   .kwcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:13px}
   @media(max-width:700px){.kwcols{grid-template-columns:1fr}}
-  .kwcols h4{margin:0 0 6px;font-size:12px;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px}
+  .kwcols h4{margin:0 0 6px;font-family:'Barlow Condensed',sans-serif;font-size:13px;
+    font-weight:600;color:var(--atlas);text-transform:uppercase;letter-spacing:.06em}
   .kwcols ul{margin:0;padding-left:16px} .kwcols li{margin:2px 0}
   table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
-  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase}
-  .nf{color:var(--muted)}
-  .flag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:600}
-  .flag.on{background:#fde8c8;color:#7a5410} .flag.off{background:#e3eee3;color:#2f6b34}
-  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
-  .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{font-family:'Barlow Condensed',sans-serif;color:var(--atlas);font-weight:600;font-size:12.5px;
+    text-transform:uppercase;letter-spacing:.05em;background:#F2F4F1}
   .paa{font-size:12.5px;color:var(--ink)} .paa li{margin:2px 0}
-  .sec{margin:18px 0 8px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+
   @keyframes spin{to{transform:rotate(360deg)}}
-  .why{font-size:12.5px;color:var(--muted);margin:-2px 0 10px;line-height:1.45;border-left:2px solid var(--line);padding-left:10px}
 </style>
 </head>
 <body>
@@ -179,8 +254,17 @@
     </div>
 
     <label>Industry <span style="font-weight:400;color:var(--muted)">(RZ line item — demo stand-in, optional)</span></label>
-    <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries Brendan's big-org card ($3,950/$5,450/$6,950 shape); "Retail - General / E-commerce" carries the product-SEO ladder (replaces the old ecommerce toggle); "Insurance - *" carries the carrier premium (+$800). Blank = standard formula.</div>
+    <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries Brendan's big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
     <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
+    <div class="toggle-row" style="margin-top:10px">
+      <label class="switch"><input type="checkbox" id="natdemand"><span class="slider"></span></label>
+      <div>
+        <div style="font-size:13.5px;font-weight:600">Price on national demand
+          <span class="tipwrap"><i class="tipicon">i</i><div class="help">Looks up search volume nationally instead of per city, and prices off the national anchor with proportional tier steps. Product brands sell everywhere even when they list a home city — nobody searches "collagen gummies fairfax va". Turns on automatically for e-commerce / product-brand industries and for Nationwide scope; use this switch when the industry tag doesn't catch it. The city grid in the proposal is unchanged either way.</div></span>
+        </div>
+        <div class="help" id="natdemand_auto" style="margin:1px 0 0"></div>
+      </div>
+    </div>
     <details id="indrules" style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:8px 0 2px;background:#faf6fc">
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — current industry pricing rules ▸ click to expand</summary>
       <div id="indrules_body" class="help" style="margin:8px 0 4px">Loading…</div>
@@ -576,6 +660,7 @@ function collectInputs(){
     phrase_geos: stores.spgeo.slice(),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
     ecommerce: false,   // legacy flag — superseded by the "Retail - General / E-commerce" RZ industry
+    national_demand: !!($('natdemand')&&$('natdemand').checked),
     industry: stores.industry.join(' | '),
     industries: stores.industry.slice(),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
@@ -696,9 +781,22 @@ $('step1').addEventListener('click', async()=>{
         const ref=await postJSON('/api/refine',{phrase_geos:ST.inputs.phrase_geos||[],
           keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
           domain:inp.domain, business_desc:inp.business_desc,
+          industry:inp.industry||'', geo_scope:inp.geo_scope,
+          national_demand:!!inp.national_demand,
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
           site_terms:kw.site_terms||[]});
-        if(ref && ref.all){ ST.kw=ref; renderStep1(); }
+        if(ref && ref.all){
+          ST.kw=ref;
+          if(ref.national_demand){
+            ST.inputs.national_demand = true;
+            const box=$('natdemand'); if(box) box.checked = true;
+            const n=$('natdemand_auto');
+            if(n) n.textContent = 'On — ' + (ref.national_demand_reason||'auto') + '. Volume pulled nationally.';
+          } else {
+            const n=$('natdemand_auto'); if(n) n.textContent='';
+          }
+          renderStep1();
+        }
       }catch(e){ const n=$('refiningNote'); if(n) n.remove(); /* keep unrefined list */ }
     }
   }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
@@ -1196,7 +1294,7 @@ function renderStep4(p){
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
-    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?' <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. 12-month minimum term)</span>':ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending)</span>':''}</div>`:''}
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?` <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. ${(ai&&ai.min_term_months)||6}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending)</span>':''}</div>`:''}
     <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
     <details style="margin:4px 0">
@@ -1210,7 +1308,8 @@ function renderStep4(p){
       + competitive adder <code>+${money(p.adder)}</code>${p.industry_rule?` + industry (${p.industry_rule}) <code>+${money(p.industry_anchor_add)}</code>`:''} = <code>${money(p.base_pre_uplift)}</code>
       ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not in the top 100)</span>`:''}
-      ${p.band==='nationwide'&&!p.industry_rule?`<br><span class="nf">nationwide: the anchor already prices national scope — the volume and zero-ranking extras don't stack (they'd double-count it), and the ladder steps proportionally (38%) like Brendan's national quotes</span>`:''}
+      ${p.national_demand?`<br><span class="nf"><b>National demand</b> (${p.national_demand_reason||'auto'}) — volume is looked up without the geo qualifier, the base sits on the national anchor, and the ladder steps proportionally (38%) like the national quotes. Volume, competition and current visibility are what set the price from there.</span>`:''}
+      ${p.extras_multiplier===0?`<br><span class="nf">This industry prices on organisation size rather than SERP signals, so the volume add and zero-ranking uplift don't apply.</span>`:''}
       <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (${p.base?Math.round(p.step/p.base*100):0}% of base)</div></div>
     </details>
 
@@ -1237,7 +1336,7 @@ function renderStep4(p){
     <div style="margin-top:14px;background:#f7f7f9;border:1px solid var(--line);border-radius:9px;padding:12px 14px">
     ${p.ai_search?`<div style="background:#eef4fb;border:1px solid var(--atlas);border-radius:9px;padding:10px 12px;margin:10px 0">
       <b style="color:var(--atlas)">Internal breakdown — SEO vs GEO</b>
-      <span class="nf">${p.ai_search.mode==='card'?'(GEO at the bundled rate card; the client sees one product price — the cards above)':`(GEO = ${p.ai_search.uplift_pct}% of Core SEO)`}</span><br>
+      <span class="nf">${p.ai_search.mode==='card'?'(GEO at the bundled rate card; the client sees one product price — the cards above)':`(GEO listed at <b>${p.ai_search.geo_pct}% of Core SEO</b>${p.ai_search.geo_pct_basis?` — ${p.ai_search.geo_pct_basis}`:''}, less a ${p.ai_search.bundle_discount_pct}% bundle discount)`}</span><br>
       <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
         <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
         <tr><td style="padding:2px 12px 2px 0">Core SEO component</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
@@ -1249,6 +1348,7 @@ function renderStep4(p){
         <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 12px 2px 0;border-top:1px solid var(--line)">Product price (client)</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.base)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.intermediate)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.advanced)}</td></tr>
       </table>
       <div class="nf" style="font-size:11.5px;margin-top:4px">Hard-cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}.${p.ai_search.min_term_months?` GEO carries a <b>${p.ai_search.min_term_months}-month minimum term</b> (SEO is 6).`:''} Compare panel below still tracks the Core SEO ladder.</div>
+      ${p.ai_search.mode==='pct'?`<div class="nf" style="font-size:11.5px;margin-top:3px">GEO normally runs 30–50% below Core SEO; it climbs toward parity when the client has little existing visibility.</div>`:''}
     </div>`:''}
       <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to actual quote</div>
       <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.${ai?' <b>Tracks the Core SEO component</b> — the calibration actuals are Core SEO quotes; enter the actual SEO ladder here, not a combined price.':''}</div>
@@ -1302,7 +1402,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -1314,7 +1414,7 @@ function renderStep4(p){
     ST.baseOverride = val;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -1413,7 +1513,7 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
@@ -1728,6 +1828,8 @@ function reflectInputs(inp){
   }
   // legacy: quotes saved with the old ecommerce toggle map onto the RZ value,
   // so their pricing path is unchanged and visible as an Industry pill
+  if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
+  if($('natdemand_auto')) $('natdemand_auto').textContent = '';
   if(inp.ecommerce && !stores.industry.length){
     stores.industry.push('Retail - General / E-commerce');
     inp.industry = stores.industry.join(' | ');
