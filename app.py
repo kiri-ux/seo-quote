@@ -142,6 +142,18 @@ CFG = {
     # base, roughly doubling the quote). These starting rates (~$0.05-0.08) keep a
     # normal-volume client near its real proposal while still escalating hard for
     # 100k+ clients. Tune live; no high-volume proposals exist to fit against.
+    # HEAD-TERM PINNING (2026-07-25). The service list comes from a Claude
+    # call, so the same client can produce a different list run to run. That is
+    # fine for long-tail colour and NOT fine for pricing: Skidmore's first run
+    # carried "brand identity design" (18,100/mo = 76% of its total volume),
+    # the second dropped it for "brand identity agency" (320), and the quote
+    # fell $700/tier on nothing the client did. Volume is a pricing input, so
+    # the highest-demand terms the search API actually returned are FORCED into
+    # the list regardless of what the model picks. Set pin_head_terms to 0 to
+    # go back to a purely model-chosen list.
+    "pin_head_terms": 3,                # how many top-volume candidates to force
+    "pin_min_volume": 300,              # ignore anything thinner than this
+    "pin_as_ultra": 2,                  # the top N pins are the ultra-competitive tier
     "vol_free_below": 10000,            # normalized: base already covers this
     "volume_add_cap": 500,              # max hard-$ from volume: Brendan's quotes
                                         # flex a few hundred for market size, never
@@ -791,6 +803,65 @@ STATE_ABBREV = {
     "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
 }
 
+def pin_head_services(services, cands, markets, state, brand, max_services):
+    """Force the highest-volume candidate terms into the service list.
+
+    `services` is the model's pick; `cands` are the keyword rows the search API
+    returned, each with a real volume. Any top-volume term the model dropped is
+    inserted, displacing the lowest-priority model picks so the list length is
+    unchanged. Returns (services, pinned_terms).
+
+    Matching is containment-based in both directions so we don't double up:
+    if the model already chose "energy gummies", the candidate "energy gummies"
+    (or "best energy gummies") is considered covered by it.
+    """
+    n_pin = int(CFG.get("pin_head_terms", 0) or 0)
+    if n_pin <= 0 or not cands:
+        return services, []
+    min_vol = int(CFG.get("pin_min_volume", 0) or 0)
+    b = (brand or "").strip().lower()
+
+    # Bare, brand-free candidate terms ranked by real search volume.
+    ranked, seen = [], set()
+    for c in sorted(cands, key=lambda r: -(r.get("volume") or 0)):
+        if (c.get("volume") or 0) < min_vol:
+            break
+        term = _strip_markets((c.get("keyword") or "").lower(), markets, state).strip()
+        if not term or (b and b in term) or term in seen:
+            continue
+        seen.add(term)
+        ranked.append((term, c.get("volume") or 0))
+        if len(ranked) >= n_pin:
+            break
+    if not ranked:
+        return services, []
+
+    have = [(x.get("service") or "").lower() for x in services]
+    def covered(term):
+        return any(term == h or term in h or h in term for h in have if h)
+
+    missing = [(t, v) for t, v in ranked if not covered(t)]
+    if not missing:
+        return services, []
+
+    # Displace from the tail (the model returns its strongest picks first) but
+    # never drop a service that is itself one of the ranked head terms.
+    keep_l = {t for t, _ in ranked}
+    out = list(services)
+    for term, vol in missing:
+        if len(out) >= max_services:
+            for i in range(len(out) - 1, -1, -1):
+                if (out[i].get("service") or "").lower() not in keep_l:
+                    out.pop(i)
+                    break
+            else:
+                break                      # everything is pinned; nothing to give
+        rank = [t for t, _ in ranked].index(term)
+        tier = "ultra" if rank < int(CFG.get("pin_as_ultra", 2)) else "competitive"
+        out.insert(min(rank, len(out)), {"service": term, "tier": tier, "pinned": True})
+    return out, [t for t, _ in missing]
+
+
 def claude_expand_services(seeds, business_desc, site_pages, brand, domain,
                            candidates, max_services, n_cities=1, national=False):
     """Expand the partner's seed terms into the SERVICE list a proposal would
@@ -1287,6 +1358,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             tiers = ["ultra", "ultra", "competitive", "long_tail"]
             services = [{"service": s.strip().lower(), "tier": tiers[min(i, 3)]}
                         for i, s in enumerate(seeds[:n_services])]
+        # Pricing must not swing on a non-deterministic model call: force the
+        # highest-volume terms the search API returned into the list.
+        services, pinned = pin_head_services(services, cands, markets, state,
+                                             brand, n_services)
         g = build_grid(services, grid_cities, state, prepicked=True)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
@@ -1317,6 +1392,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "site_pages_found": len(site_pages),
             "grid": True,
             "services": services,
+            "pinned_head_terms": pinned,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "volume_location": "United States" if national_demand else loc_string(markets, state),
