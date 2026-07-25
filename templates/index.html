@@ -785,6 +785,14 @@ $('step1').addEventListener('click', async()=>{
           national_demand:!!inp.national_demand,
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
           site_terms:kw.site_terms||[]});
+        if(ref && ref.refine_error){
+          const w=document.createElement('div');
+          w.className='err'; w.style.margin='8px 0';
+          w.innerHTML='<b>Keyword refinement fell back to the raw list.</b><br>'
+            + escapeHtml(String(ref.refine_error)).slice(0,400)
+            + '<br><span class="nf">The list below is the unrefined API output — rebuild after fixing, or edit the terms by hand.</span>';
+          const p1b=$('p1'); if(p1b) p1b.appendChild(w);
+        }
         if(ref && ref.all){
           ST.kw=ref;
           if(ref.national_demand){

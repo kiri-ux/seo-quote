@@ -792,7 +792,7 @@ STATE_ABBREV = {
 }
 
 def claude_expand_services(seeds, business_desc, site_pages, brand, domain,
-                           candidates, max_services, n_cities=1):
+                           candidates, max_services, n_cities=1, national=False):
     """Expand the partner's seed terms into the SERVICE list a proposal would
     target, assigning a competitiveness TIER to each service (not to each
     keyword). This mirrors how the real proposals are built: 'auto insurance' is
@@ -820,7 +820,7 @@ KEYWORDS THE SEARCH API RETURNED FOR THIS BUSINESS (evidence of real demand):
 TASK: choose exactly {max_services} SERVICES this business should target, and assign each a competitiveness tier.
 
 RULES:
-1. A SERVICE is a short, generic service phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". It will be crossed with city names later, so do NOT include any location.
+1. A SERVICE is a short, generic phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". {"This is a NATIONAL product brand: these terms are the final keyword list and will NOT be crossed with cities. Qualify the long-tail entries by AUDIENCE or USE CASE instead of location (e.g. \'electrolyte gummies for athletes\', \'energy gummies for teen athletes\'), never by place." if national else "It will be crossed with city names later, so do NOT include any location."}
 2. Only services this business actually offers. Exclude anything they don't do.
 2b. BALANCE ACROSS SERVICE LINES — this is the rule that most often gets missed.
    Cover the business's WHOLE service range the way their own website menu does:
@@ -1279,7 +1279,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             grid_cities = []
         n_services = services_needed(len(grid_cities))
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
-                                          cands, n_services, len(cities))
+                                          cands, n_services,
+                                          0 if national_demand else len(cities),
+                                          national=national_demand)
         if not services:
             # fall back to the partner's seeds, spread across tiers
             tiers = ["ultra", "ultra", "competitive", "long_tail"]
@@ -2149,7 +2151,10 @@ def api_refine():
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
         conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
-        return jsonify({"ultra": conv0(ultra), "competitive": conv0(competitive),
+        app.logger.exception("stage1b_refine failed")
+        return jsonify({"national_demand": nat_demand,
+                        "national_demand_reason": nat_reason,
+                        "ultra": conv0(ultra), "competitive": conv0(competitive),
                         "long_tail": conv0(long_tail),
                         "head": conv0(ultra + competitive),
                         "all": conv0(ultra + competitive + long_tail),
