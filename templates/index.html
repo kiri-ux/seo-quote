@@ -835,7 +835,7 @@ function renderStep1(){
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
     ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
-      <summary style="cursor:pointer;user-select:none"><b>Grid:</b> ${kw.services.length} services × cities${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}`:''} <span class="nf">— click for the service list</span>${kw.total_volume?'':`<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data${kw.volume_error?` — ${escapeHtml(kw.volume_error)}`:''}. The volume part of pricing will be $0.</span></div>`}</summary>
+      <summary style="cursor:pointer;user-select:none"><b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.services.length} services${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}`:''} <span class="nf">— click for the service list</span>${kw.total_volume?'':`<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data${kw.volume_error?` — ${escapeHtml(kw.volume_error)}`:''}. The volume part of pricing will be $0.</span></div>`}</summary>
       <div style="margin-top:6px">${kw.services.map(s=>`${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}</div>
       ${kw.total_volume?`<div style="margin-top:4px" class="nf">Volume is summed across all targeted cities — it drives the volume component of price; the number beside each keyword is that city's own volume.</div>`:''}</details>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
@@ -1029,7 +1029,7 @@ async function _runStep3(retryOnlyFailed){
     ST.table = ST.table.filter(r=>!r.error);
     ST.errored = 0;
     try{
-      const sub=await postJSON('/api/rankings_submit',{keywords:failedKws,
+      const sub=await postJSON('/api/rankings_submit',{industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), keywords:failedKws,
         geo_values:ST.inputs.geo_values, state:ST.inputs.state});
       const pending=(sub.tasks||[]).filter(t=>t.task_id);
       (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
@@ -1090,7 +1090,7 @@ async function _runStep3Live(todo, all, BATCH){
     let got=null;
     for(let attempt=0; attempt<2 && !got; attempt++){
       try{
-        got=await postJSON('/api/rankings',{
+        got=await postJSON('/api/rankings',{industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), 
           batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
           state:ST.inputs.state, brand:ST.inputs.brand});
       }catch(e){

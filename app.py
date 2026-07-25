@@ -1267,6 +1267,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         phrases = [p.strip() for p in (phrase_geos or []) if p and p.strip()]
         seen_c = {c.strip().lower() for c in cities}
         grid_cities = cities + [p for p in phrases if p.lower() not in seen_c]
+        # NATIONAL DEMAND (2026-07-25): a product brand's keywords carry no
+        # city. "energy gummies texas" is not a search anyone runs for a DTC
+        # supplement, and pairing a national volume figure with a geo-suffixed
+        # term misrepresents what the number counts. So the grid stops crossing
+        # and becomes a flat national service list — build_grid already has
+        # that path (it emits the bare service when cities is empty). The
+        # client's geos stay on the order as their targeting area; they just
+        # don't enter the keyword text or the volume lookup.
+        if national_demand:
+            grid_cities = []
         n_services = services_needed(len(grid_cities))
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
                                           cands, n_services, len(cities))
@@ -1282,8 +1292,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # row for that service, so pricing must count it ONCE PER SERVICE — not
         # once per row — or a 10-city grid would inflate volume 10x.
         svc_names = list(dict.fromkeys([s["service"] for s in services]))
-        vols, per_city, vol_err = fetch_local_volume(svc_names, cities, state,
-                                                     national=national_demand)
+        vols, per_city, vol_err = fetch_local_volume(
+            svc_names, [] if national_demand else cities, state,
+            national=national_demand)
         for r in full:
             svc_l = (r.get("service") or "").lower()
             city_l = (r.get("city") or "").lower()
@@ -1306,12 +1317,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "services": services,
             "service_volume": service_volume,
             "volume_error": vol_err,
-            "volume_location": loc_string(markets, state),
+            "volume_location": "United States" if national_demand else loc_string(markets, state),
+            "national_demand": bool(national_demand),
             "state_missing": bool(cities) and not state
                              and not any(market_state(c)
                                          or c.strip().lower() in STATE_ABBREV
                                          for c in cities),
-            "grid_cities": cities,
+            "grid_cities": [] if national_demand else cities,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
         }
 
@@ -1619,6 +1631,16 @@ def _tier_uplift(value, tiers):
         if value >= thresh:
             return uplift
     return 0
+
+def rank_location(markets, state, national=False):
+    """Where to measure rankings. Under national demand the keywords carry no
+    city ("energy gummies", not "energy gummies texas"), so a Texas-localised
+    SERP would be reporting a local result for a national term. Brendan's own
+    MPG table (2026-06-10) lists one national rank per bare keyword, which is
+    the format this matches. The zero-ranking uplift keys off these positions,
+    so the location has to describe the same market the keywords do."""
+    return "United States" if national else loc_string(markets, state)
+
 
 def resolve_national_demand(industry="", band="", manual=False):
     """Should this client be priced on GEO-LESS (national) search volume?
@@ -2208,7 +2230,10 @@ def api_rankings_submit():
     state   = derive_state(markets, (d.get("state") or "").strip())
     top_n   = CFG["zero_ranking_top_n"]
     depth   = max(top_n, 10)
-    loc     = loc_string(markets, state)
+    nat, _r = resolve_national_demand(d.get("industry") or "",
+                                      d.get("geo_scope") or d.get("band") or "",
+                                      bool(d.get("national_demand")))
+    loc     = rank_location(markets, state, nat)
     payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
                 "depth": depth, "priority": 2, "tag": kw[:255]} for kw in kws]
     try:
@@ -2311,7 +2336,10 @@ def api_rankings():
     brand   = (d.get("brand") or "").strip()
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
     top_n = CFG["zero_ranking_top_n"]
-    loc = loc_string(markets, state)
+    nat, _r = resolve_national_demand(d.get("industry") or "",
+                                      d.get("geo_scope") or d.get("band") or "",
+                                      bool(d.get("national_demand")))
+    loc = rank_location(markets, state, nat)
     results, paa = [], []
     hits = {}
     to_fetch = []
