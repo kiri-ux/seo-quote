@@ -127,10 +127,19 @@ CFG = {
     # "fit" dated from the inflated-volume lookup bug). Handle via the manual
     # hard-base override (~$2,930 -> his card, ratio steps apply). The tiers
     # below remain calibrated on the zero-ranking signal itself.
+    # Visibility moves the price BOTH ways. Brendan: "it's more about their
+    # current visibility + search volume + competition." Until now visibility
+    # could only add — a client with established rankings paid the same as an
+    # average one. The negative bottom tier is the discount for a client that
+    # already ranks; fit on Susquehanna (60% of head terms ranking, quoted
+    # ~7% under the statewide anchor). ONE datapoint — confirm with Brendan
+    # before trusting it on a second well-ranked client.
     "zero_ranking_tiers": [
         [80, 14],   # 80%+ not ranking -> +14%
         [65, 9],    # 65-80% -> +9%
         [50, 5],    # 50-65% -> +5%
+        [45, 0],    # 45-50% -> par (buffer so the sign doesn't flip on a hair)
+        [0, -7],    # under 45% not ranking = well-ranked -> DISCOUNT
     ],
     # --- VOLUME-based pricing (fixed $ per additional search, declining marginal
     # rate, like tax brackets). Base price assumes a "normalized" volume up to
@@ -154,6 +163,29 @@ CFG = {
     "pin_head_terms": 3,                # how many top-volume candidates to force
     "pin_min_volume": 300,              # ignore anything thinner than this
     "pin_as_ultra": 2,                  # the top N pins are the ultra-competitive tier
+    # VOLUME IS OPPORTUNITY, NOT DEMAND (2026-07-25).
+    # Susquehanna River Valley VB has the largest raw volume of any calibration
+    # client (135k/mo) and the largest value-weighted demand after Skidmore,
+    # and Brendan priced it BELOW the statewide anchor. It also already ranks
+    # for 60% of its head terms. The reconciliation: a client that already
+    # ranks for its demand has nothing to buy — you are not selling them that
+    # volume, you are maintaining it. The volume add prices the OPPORTUNITY,
+    # so it only applies where the demand is still uncaptured.
+    #
+    # Checked against every signal available on three clients with published
+    # actuals; only this one splits them:
+    #   raw volume    135k -> $0,  25k -> $500,  24k -> $500   non-monotonic
+    #   volume x CPC  100k -> $0,  24k -> $500, 471k -> $500   non-monotonic
+    #   % not ranking  40% -> $0, 100% -> $500,  88% -> $500   clean at 50%
+    # (This is why the value-weighted model was NOT adopted: it fails on MPG,
+    # which has the lowest click value of the three and needs the full add.)
+    # The 50 pivot is the one zero_ranking_tiers already turns on.
+    # A hard gate at 50% put a $900/tier cliff between a client at 49% and one
+    # at 51%, which no operator could defend in a room. Ramped instead: the
+    # volume add scales linearly from 0% of itself at the bottom of this range
+    # to 100% at the top. Fits the same three actuals (Susquehanna 40 -> none,
+    # Skidmore 88 and MPG 100 -> full) with no discontinuity in between.
+    "vol_add_ramp": [40, 60],           # [no opportunity, full opportunity] % not ranking
     "vol_free_below": 10000,            # normalized: base already covers this
     "volume_add_cap": 500,              # max hard-$ from volume: Brendan's quotes
                                         # flex a few hundred for market size, never
@@ -1838,6 +1870,22 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if rule:
         base_pre += int(rule.get("anchor_add", 0))
 
+    # The volume add prices UNCAPTURED demand. A client already ranking for
+    # most of its terms owns that traffic; charging for it double-counts.
+    ramp = CFG.get("vol_add_ramp") or None
+    vol_opportunity = 1.0
+    if ramp and pct_not_ranking is not None and vol_add:
+        lo, hi = float(ramp[0]), float(ramp[1])
+        vol_opportunity = 0.0 if hi <= lo else (float(pct_not_ranking) - lo) / (hi - lo)
+        vol_opportunity = max(0.0, min(1.0, vol_opportunity))
+        _prev = vol_add
+        vol_add = int(round(vol_add * vol_opportunity))
+        # Adjust by the DELTA — base_pre already carries the industry rule's
+        # anchor_add at this point, so reassigning it from scratch silently
+        # dropped the hospital/insurance premium (caught in regression).
+        base_pre += (vol_add - _prev)
+    vol_captured = vol_opportunity < 1.0
+
     # Extras suppression.
     #  - Industry rules that price on ORGANISATION size rather than SERP
     #    signals (hospital / telehealth / behavioral health) still zero both.
@@ -1967,6 +2015,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
+            "volume_captured": vol_captured,
+            "volume_opportunity": round(vol_opportunity, 3),
             "min_term_months": min_term, "zero_visibility": zero_visibility,
             "extras_multiplier": _mult,
             "industry_rule": rule_key,
@@ -2565,6 +2615,9 @@ def api_config_get():
         "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
         "zero_visibility_pct_not_ranking": CFG.get("zero_visibility_pct_not_ranking", 90),
         "nationwide_service_extras": CFG.get("nationwide_service_extras", 1.0),
+        "vol_add_ramp": CFG.get("vol_add_ramp", [40, 60]),
+        "pin_head_terms": CFG.get("pin_head_terms", 3),
+        "pin_min_volume": CFG.get("pin_min_volume", 300),
         "geo_card": CFG.get("geo_card", {}),
         "geo_min_term_months": CFG.get("geo_min_term_months", 12),
         "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
@@ -2622,6 +2675,8 @@ def api_config_set():
                     gt.append([float(pair[0]), float(pair[1])])
             gt.sort(key=lambda t: t[0], reverse=True)
             CFG["geo_pct_tiers"] = gt
+        if "vol_add_ramp" in d and isinstance(d["vol_add_ramp"], list) and len(d["vol_add_ramp"]) == 2:
+            CFG["vol_add_ramp"] = [float(d["vol_add_ramp"][0]), float(d["vol_add_ramp"][1])]
         if "geo_pricing_mode" in d and d["geo_pricing_mode"] in ("pct", "card"):
             CFG["geo_pricing_mode"] = d["geo_pricing_mode"]
         # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
@@ -2656,6 +2711,8 @@ def api_config_set():
                             ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
                             ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float),
                             ("ecom_anchor_add", int),
+                            ("pin_head_terms", int),
+                            ("pin_min_volume", int),
                             ("geo_pct_default", float),
                             ("geo_bundle_discount_pct", float),
                             ("min_term_months", int),
