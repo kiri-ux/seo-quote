@@ -209,6 +209,8 @@
     font-size:12px;color:var(--ink);background:var(--info-bg);display:block;width:100%;box-sizing:border-box}
   .intlhdr{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:11px;letter-spacing:.06em;
     text-transform:uppercase;color:var(--atlas);margin-bottom:4px}
+  .intlrail{margin:6px 0 2px}
+  .intlbody{margin:7px 0 2px;font-size:12px;color:var(--ink)}
   .intlrow{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
   .intlrow span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
 
@@ -546,18 +548,22 @@ function render(d, payload){
       h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
     }
     const per = (l.kind==='monthly'||l.kind==='monthly_maint') ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
-    let internal = '';
+    let intlBody = '';
     if(l.internal && l.internal.rows){
-      const rows = l.internal.rows.map(r => typeof r === 'string'
+      intlBody = l.internal.rows.map(r => typeof r === 'string'
         ? '<div class="intlrow"><span>'+r+'</span></div>'
         : '<div class="intlrow"'+(r.tbd?' style="color:#b3261e;font-weight:600"':'')+'><span>'+r.label+(r.tbd?' · '+(typeof r.tbd==='string'?r.tbd:'TBD — confirm'):'')+'</span><span>'+r.value+'</span></div>').join('');
-      internal = '<div class="intl"><div class="intlhdr">Internal</div>'+rows+'</div>';
     } else if(l.internal && l.internal.text){
-      internal = '<div class="intl">Internal · '+l.internal.text+'</div>';
+      intlBody = '<div class="intlrow"><span>'+l.internal.text+'</span></div>';
     } else if(l.internal){
-      internal = '<div class="intl">Internal · partner hard cost '+money(Math.round(l.internal.hard_total))
-               + ' ($'+l.internal.hard_per.toLocaleString()+'/rev)</div>';
+      intlBody = '<div class="intlrow"><span>Partner hard cost</span><span>'
+               + money(Math.round(l.internal.hard_total))
+               + ' ($'+l.internal.hard_per.toLocaleString()+'/rev)</span></div>';
     }
+    const internal = intlBody
+      ? '<details class="demorail intlrail"><summary>Demo only — internal cost ▸ click to expand</summary>'
+        + '<div class="intlbody">'+intlBody+'</div></details>'
+      : '';
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
        + '</td><td>'+l.timeline+'</td><td class="amt">'
