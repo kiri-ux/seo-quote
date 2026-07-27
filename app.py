@@ -184,6 +184,16 @@ CFG = {
     # When there's NO bid data, fall back to the flat score buckets above.
     "cpc_adder_enabled": True,
     "cpc_adder_mult": 3.0,                     # $ of hard-cost adder per $1 of median CPC (up to the knee)
+    # CONFIDENCE FLOOR (2026-07-27). The adder scales off the MEDIAN
+    # top-of-page bid, and above the knee each extra dollar of CPC adds $14 —
+    # so an outlier is amplified enormously. That is fine on a real median and
+    # dangerous on a sample of one: Rockingham priced a +$1,000 adder off a
+    # single term's bid estimate (1 of 3 head terms returned data). Below this
+    # many samples the adder still applies but the quote is flagged, because
+    # the number is an extrapolation rather than a measurement. Raise this to
+    # make thin samples fall back to the flat score buckets instead.
+    "cpc_adder_min_samples": 1,          # apply the CPC adder at/above this n
+    "cpc_adder_low_confidence_n": 3,     # warn below this n
     "cpc_adder_knee": 62.0,                    # CPC above this earns the premium rate (just above Waytek's $60 — the highest "normal" client observed)
     "cpc_adder_mult_high": 14.0,               # $/CPC above the knee (insurance-carrier tier)
     "cpc_adder_cap": 1500,                     # max adder (hard cost) so a freak CPC can't explode price
@@ -2039,7 +2049,11 @@ def stage3_metrics(head, markets, state):
     adder = flat_adder
     adder_basis = "flat"
     cpc_used = None
-    if CFG.get("cpc_adder_enabled") and bid_stats and bid_stats["median"]:
+    n_bids = (bid_stats or {}).get("n", 0)
+    min_n = int(CFG.get("cpc_adder_min_samples", 1) or 1)
+    cpc_low_conf = bool(bid_stats) and n_bids < int(CFG.get("cpc_adder_low_confidence_n", 3))
+    if (CFG.get("cpc_adder_enabled") and bid_stats and bid_stats["median"]
+            and n_bids >= min_n):
         med_cpc = bid_stats["median"]
         cpc_used = med_cpc
         free = CFG.get("cpc_adder_free_below", 5.0)
@@ -2059,6 +2073,7 @@ def stage3_metrics(head, markets, state):
             adder = 0
             adder_basis = "cpc"
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
+            "cpc_low_confidence": cpc_low_conf, "cpc_n_bids": n_bids,
             "flat_adder": flat_adder,
             "bid_error": bid_err,
             "bid_location": bid_loc_used,
@@ -2744,6 +2759,8 @@ def api_metrics():
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     return jsonify({"adder": m3["adder"], "score": m3["median_score"],
                     "adder_basis": m3.get("adder_basis"), "cpc_used": m3.get("cpc_used"),
+                    "cpc_low_confidence": m3.get("cpc_low_confidence"),
+                    "cpc_n_bids": m3.get("cpc_n_bids"),
                     "flat_adder": m3.get("flat_adder"),
                     "bid_error": m3.get("bid_error"),
                     "bid_location": m3.get("bid_location"),

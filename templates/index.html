@@ -937,7 +937,7 @@ function step2Html(m){
       ${marketWarn}
       ${bidLine}
       <div class="calc">${m.adder_basis==='cpc'
-        ? `median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
+        ? `${m.cpc_low_confidence?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:7px;font-size:12.5px;margin-bottom:8px">⚠ <b>This adder rests on ${m.cpc_n_bids} bid${m.cpc_n_bids===1?'':'s'}.</b> The adder scales off the <i>median</i> top-of-page bid, and above $${(1*62).toFixed(0)} every extra dollar of CPC adds several hundred to the quote — reliable on a real median, an extrapolation on a sample this thin. Spot-check the bid in Google Ads Keyword Planner before quoting, or add head terms so the median has something to sit on.</div>`:''}median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
         : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
       ${kdLine}
       ${stepBtn('step3','3 · Check rankings')}`;
