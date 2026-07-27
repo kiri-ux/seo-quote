@@ -958,6 +958,98 @@ STATE_ABBREV = {
     "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
 }
 
+def enforce_seed_services(services, seeds, max_services, markets, state, phrase_geos=None):
+    """Make the partner's own seed terms the backbone of the service list.
+
+    The prompt asks for this and the model does not reliably comply: a
+    Northern Virginia insurance agency supplied eight clean seeds (auto, home,
+    renters, landlord, homeowners...) and got back "state farm homeowners
+    insurance quote" — a competitor — while its own seeds went unused
+    (Rockingham, 2026-07-27). No wording fixes this dependably, because the
+    keyword-idea pool is ranked by national volume and the largest competitor
+    in any trade sits at the top of it looking like a service.
+
+    So the seeds are enforced here. Someone who knows the account typed them;
+    they outrank anything the model invents. Model-chosen services only fill
+    the slots the seeds don't. Returns (services, used_seed_count).
+    """
+    clean = []
+    seen = set()
+    for sd in seeds or []:
+        name = clean_kw(_strip_markets((sd or "").lower(),
+                                       list(markets or []) + list(phrase_geos or []),
+                                       state)).strip()
+        if name and name not in seen and len(name.split()) <= 6:
+            seen.add(name)
+            clean.append(name)
+    if not clean:
+        return list(services or []), 0
+
+    # Seeds FIRST, then model picks fill what's left. The earlier version
+    # appended seeds to the model's list and displaced from the tail, which
+    # left the model's competitor pick in place whenever the seeds ran out —
+    # exactly the case this exists to prevent. Building seeds-first makes the
+    # partner's list the default and the model's contribution the remainder.
+    def norm(t):
+        return " ".join((t or "").lower().split())
+
+    tiers = ["ultra", "ultra", "competitive", "competitive", "competitive",
+             "long_tail", "long_tail"]
+    out, taken = [], set()
+    for i, term in enumerate(clean[:max_services]):
+        if norm(term) in taken:
+            continue
+        taken.add(norm(term))
+        out.append({"service": term, "tier": tiers[min(i, len(tiers) - 1)],
+                    "from_seed": True})
+    used = len(out)
+    # Model-chosen services fill any remaining slots, in the order it ranked
+    # them. Exact duplicates only — "auto insurance" and "bundle home and auto
+    # insurance" are different services and both belong.
+    for svc in services or []:
+        if len(out) >= max_services:
+            break
+        n = norm(svc.get("service"))
+        if not n or n in taken:
+            continue
+        taken.add(n)
+        out.append(dict(svc))
+    return out[:max_services], used
+
+
+def rebalance_tiers(services):
+    """Guarantee all three tiers are represented.
+
+    Anything that removes a service — the out-of-area filter, seed
+    enforcement, pinning — can empty a tier, and the proposal renders three
+    columns. An empty one reads as an incomplete strategy rather than a
+    deliberate choice. Move from the most-crowded tier into the empty one,
+    preferring the longest phrase for long_tail and the shortest for ultra,
+    which is how the tiers actually differ.
+    """
+    order = ["ultra", "competitive", "long_tail"]
+    out = [dict(x) for x in (services or [])]
+    if len(out) < 3:
+        return out                     # too few to fill three tiers honestly
+    for _ in range(len(order)):
+        counts = {t: [x for x in out if x.get("tier") == t] for t in order}
+        empty = [t for t in order if not counts[t]]
+        if not empty:
+            break
+        need = empty[0]
+        donor = max(order, key=lambda t: len(counts[t]))
+        if len(counts[donor]) < 2:
+            break
+        pool = counts[donor]
+        pick = (max(pool, key=lambda x: len(x["service"].split())) if need == "long_tail"
+                else min(pool, key=lambda x: len(x["service"].split())))
+        for x in out:
+            if x is pick:
+                x["tier"] = need
+                break
+    return out
+
+
 def drop_foreign_geo_services(services, markets, state):
     """Remove services naming a US state the client doesn't operate in.
 
@@ -1697,7 +1789,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # re-inserted below it. Filter again AFTER pinning and fold the two
         # result sets together; a pin is not a licence to sell in a state the
         # client doesn't operate in.
+        services, seed_used = (enforce_seed_services(services, seeds, n_services,
+                                                    markets, state, phrase_geos)
+                               if seeds else (services, 0))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
+        services = rebalance_tiers(services)
         if geo_dropped is None and geo_dropped2 is None:
             geo_dropped = None
         else:
@@ -1738,6 +1834,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "services": services,
             "pinned_head_terms": pinned,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
+            "seed_services_used": seed_used,
             "geo_filter_off": geo_dropped is None,
             "service_volume": service_volume,
             "volume_error": vol_err,
@@ -2549,6 +2646,7 @@ def api_keywords():
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
+        "refine_attempted": True,
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
         "site_terms": s1.get("site_terms", []),
@@ -2604,7 +2702,8 @@ def api_refine():
                         "long_tail": conv0(long_tail),
                         "head": conv0(ultra + competitive),
                         "all": conv0(ultra + competitive + long_tail),
-                        "refined_by_ai": False, "business_desc": "",
+                        "refined_by_ai": False, "refine_attempted": True,
+                        "business_desc": "",
                         "site_pages_found": 0, "refine_error": str(e)})
     conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
                        "origin": r.get("origin", "")} for r in L]
@@ -2612,6 +2711,7 @@ def api_refine():
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
+        "refine_attempted": True,
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
         "grid": s1.get("grid", False),
