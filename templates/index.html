@@ -327,6 +327,15 @@
     <input type="text" id="markup" placeholder="35" value="35">
 
     <button class="btn" id="step1">1 · Build keyword list</button>
+    <div class="toggle-row" id="lockrow" style="margin-top:10px">
+      <label class="switch"><input type="checkbox" id="kwlock"><span class="slider"></span></label>
+      <div>
+        <div style="font-size:13.5px;font-weight:600">Lock keyword list
+          <span class="tipwrap"><i class="tipicon">i</i><div class="help">Freezes the list you've reviewed so rebuilding can't quietly replace it. The search data behind a list shifts between runs — volumes refresh monthly and the keyword API returns a slightly different set each time — so two builds for the same client can differ enough to move the price. Locking keeps the reviewed list; steps 2–4 still re-run against it. Unlock to pull fresh data.</div></span>
+        </div>
+        <div class="help" id="kwlock_note" style="margin:1px 0 0"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ============ RESULTS ============ -->
@@ -661,6 +670,7 @@ function collectInputs(){
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
     ecommerce: false,   // legacy flag — superseded by the "Retail - General / E-commerce" RZ industry
     national_demand: !!($('natdemand')&&$('natdemand').checked),
+    kw_locked: !!($('kwlock')&&$('kwlock').checked),
     industry: stores.industry.join(' | '),
     industries: stores.industry.slice(),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
@@ -752,6 +762,10 @@ function preflightAdvice(inp){
 
 // ---------- STEP 1 ----------
 $('step1').addEventListener('click', async()=>{
+  if($('kwlock')&&$('kwlock').checked&&ST.kw&&ST.kw.all){
+    if(!confirm('The keyword list is locked.\n\nRebuilding pulls fresh search data and will likely produce a different list — which can move the quote. Replace the list you reviewed?')) return;
+    $('kwlock').checked=false;
+  }
   const inp=collectInputs(); if(!inp) return;
   ST.inputs=inp;
   $('out').innerHTML='';
@@ -794,6 +808,7 @@ $('step1').addEventListener('click', async()=>{
           const p1b=$('p1'); if(p1b) p1b.appendChild(w);
         }
         if(ref && ref.all){
+          ref.built_at = new Date().toISOString();
           ST.kw=ref;
           if(ref.national_demand){
             ST.inputs.national_demand = true;
@@ -803,7 +818,7 @@ $('step1').addEventListener('click', async()=>{
           } else {
             const n=$('natdemand_auto'); if(n) n.textContent='';
           }
-          renderStep1();
+          renderStep1(); kwBuiltNote();
         }
       }catch(e){ const n=$('refiningNote'); if(n) n.remove(); /* keep unrefined list */ }
     }
@@ -1837,6 +1852,8 @@ function reflectInputs(inp){
   }
   // legacy: quotes saved with the old ecommerce toggle map onto the RZ value,
   // so their pricing path is unchanged and visible as an Industry pill
+  if($('kwlock')) $('kwlock').checked = !!inp.kw_locked;
+  try{ kwBuiltNote(); }catch(e){}
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
   if($('natdemand_auto')) $('natdemand_auto').textContent = '';
   if(inp.ecommerce && !stores.industry.length){
@@ -2102,6 +2119,21 @@ function strategyTag(strategy){
        + `font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;`
        + `border-radius:5px;padding:2px 8px;white-space:nowrap">${escapeHtml(label)}</span>`;
 }
+
+function kwBuiltNote(){
+  const n=$('kwlock_note'); if(!n) return;
+  const built=ST.kw&&ST.kw.built_at?new Date(ST.kw.built_at):null;
+  const locked=$('kwlock')&&$('kwlock').checked;
+  if(!ST.kw||!ST.kw.all){ n.textContent = locked?'Nothing to lock yet — build a list first.':''; return; }
+  const age=built?Math.floor((Date.now()-built.getTime())/86400000):null;
+  const when=built?built.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'unknown date';
+  let t = (locked?'Locked. ':'') + 'List built '+when;
+  if(age!==null&&age>=1) t += ' ('+age+' day'+(age===1?'':'s')+' old)';
+  t += locked ? ' — rebuilding will ask first.' : '.';
+  if(age!==null&&age>=30) t += ' Search volumes have likely refreshed since.';
+  n.textContent=t;
+}
+$('kwlock').addEventListener('change',()=>{ if(ST.inputs) ST.inputs.kw_locked=$('kwlock').checked; kwBuiltNote(); });
 
 async function loadSavedList(q){
   const list=$('savedList');
