@@ -24,6 +24,39 @@ import storage
 
 app = Flask(__name__)
 
+def _json_error_guard(fn):
+    """Any unhandled exception in an API route produces Flask's HTML error page,
+    which the frontend can only report as the opaque 'Server 500 (timeout or
+    non-JSON)'. This wrapper returns the real cause as JSON instead, turning
+    "it broke" into a fixable report, and logs the traceback for Render.
+
+    Written for the save routes and originally applied only there — which meant
+    a failure anywhere in the quoting pipeline was still a black box
+    (2026-07-26). It is now applied to every /api/ route. abort()/HTTP errors
+    are re-raised untouched so 404s stay 404s.
+    """
+    from functools import wraps
+    from werkzeug.exceptions import HTTPException
+
+    @wraps(fn)
+    def inner(*a, **k):
+        try:
+            return fn(*a, **k)
+        except HTTPException:
+            raise
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                app.logger.exception("API route failed: %s", fn.__name__)
+            except Exception:
+                pass
+            return jsonify({"error": f"{type(e).__name__}: {e}",
+                            "route": fn.__name__}), 500
+    return inner
+
+
+
 # Build stamp shown in the header — derives from the deploy commit so it
 # updates automatically with every GitHub upload (falls back to boot date).
 import datetime as _dt
@@ -2239,6 +2272,7 @@ def export_csv():
 # ===========================================================================
 
 @app.route("/api/keywords", methods=["POST"])
+@_json_error_guard
 def api_keywords():
     """Step 1 — build + bucket the keyword list. One ideas call + parallel suggestions."""
     d = request.get_json(force=True)
@@ -2277,6 +2311,7 @@ def api_keywords():
     return jsonify(resp)
 
 @app.route("/api/refine", methods=["POST"])
+@_json_error_guard
 def api_refine():
     """Step 1b — AI refinement + exact-match volume, run as a SEPARATE request so
     a heavy Claude call can't time out the list build. Takes the buckets the build
@@ -2341,6 +2376,7 @@ def api_refine():
     })
 
 @app.route("/api/metrics", methods=["POST"])
+@_json_error_guard
 def api_metrics():
     """Step 2 — competitive adder from head-term bids. One search_volume call."""
     d = request.get_json(force=True)
@@ -2384,6 +2420,7 @@ def _serp_parse_items(items, domain_dom, brand):
 
 
 @app.route("/api/rankings_submit", methods=["POST"])
+@_json_error_guard
 def api_rankings_submit():
     """Step 3, async mode — submit ALL rank lookups as DataForSEO tasks in one
     call. Task mode has no 30s wall: the platform ceiling only ever killed us
@@ -2417,6 +2454,7 @@ def api_rankings_submit():
 
 
 @app.route("/api/rankings_collect", methods=["POST"])
+@_json_error_guard
 def api_rankings_collect():
     """Poll pending rank tasks. Returns done rows (same shape as /api/rankings)
     and the still-pending task list to poll again."""
@@ -2490,6 +2528,7 @@ def _rank_cache_put(kw, loc, dom, top_n, pos):
         RANK_CACHE[(kw, loc, dom, top_n)] = (pos, time.time())
 
 @app.route("/api/rankings", methods=["POST"])
+@_json_error_guard
 def api_rankings():
     """Step 3 — rank-check ONE small batch of keywords (frontend loops batches).
     Each call is short: a few parallel SERP lookups."""
@@ -2550,6 +2589,7 @@ def api_rankings():
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa))})
 
 @app.route("/api/price", methods=["POST"])
+@_json_error_guard
 def api_price():
     """Step 4 — pure pricing math, instant. Returns hard cost + client (marked-up)."""
     d = request.get_json(force=True)
@@ -2593,6 +2633,7 @@ def api_price():
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
 @app.route("/api/config", methods=["GET"])
+@_json_error_guard
 def api_config_get():
     """Expose the tunable pricing constants for the review panel."""
     return jsonify({
@@ -2645,6 +2686,7 @@ def api_config_get():
     })
 
 @app.route("/api/config", methods=["POST"])
+@_json_error_guard
 def api_config_set():
     """Apply edited constants to the running session (not persisted to disk —
     a restart reverts to the file defaults). Lets Brendan tune and re-quote live."""
@@ -2732,6 +2774,7 @@ def api_config_set():
     return jsonify({"ok": True})
 
 @app.route("/api/serp_recommend", methods=["POST"])
+@_json_error_guard
 def api_serp_recommend():
     """Pick the most persuasive head term to screenshot for a proposal:
     prefer a 'Not Found' term, then most competitive, then geo-modified."""
@@ -2757,6 +2800,7 @@ def api_serp_recommend():
                     "options": [h["kw"] for h in head]})
 
 @app.route("/api/serp_queue", methods=["POST"])
+@_json_error_guard
 def api_serp_queue():
     """Step A — queue the SERP task and return immediately with the task_id.
     Short request (no waiting). The frontend then polls /api/serp_fetch."""
@@ -2889,6 +2933,7 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
 
 
 @app.route("/api/serp_fetch", methods=["POST"])
+@_json_error_guard
 def api_serp_fetch():
     """Step B — try to fetch the screenshot for a queued task_id. Returns the
     image if ready, or {ready:false} if still processing. Frontend polls this.
@@ -3009,6 +3054,7 @@ def validate_cities(cities, state):
 
 
 @app.route("/api/validate_geo", methods=["POST"])
+@_json_error_guard
 def api_validate_geo():
     d = request.get_json(force=True)
     cities = [c.strip() for c in d.get("geo_values", []) if c.strip()]
@@ -3135,6 +3181,7 @@ _SERVICE_PATH_HINT = re.compile(
     r"[a-z0-9-]*(?:/|$)", re.I)
 
 @app.route("/api/site_services", methods=["POST"])
+@_json_error_guard
 def api_site_services():
     """Parse the client site's navigation into candidate service terms. Menu
     items are how the business describes what it sells — often a better seed
@@ -3349,6 +3396,7 @@ def api_site_services():
 
 
 @app.route("/api/quotes/status")
+@_json_error_guard
 def api_quotes_status():
     # Diagnostic detail so "saving is off" isn't a black box: report whether the
     # URL is present and whether the Postgres driver imported.
@@ -3360,27 +3408,13 @@ def api_quotes_status():
     })
 
 @app.route("/api/quotes", methods=["GET"])
+@_json_error_guard
 def api_quotes_list():
     if not storage.enabled():
         return jsonify({"enabled": False, "quotes": []})
     search = (request.args.get("q") or "").strip()
     tool = (request.args.get("tool") or "seo").strip()
     return jsonify({"enabled": True, "quotes": storage.list_quotes(search, tool)})
-
-def _json_error_guard(fn):
-    """Saves were failing as opaque 'Server 500 (timeout or non-JSON)' — a bare
-    exception produces an HTML error page the frontend can't read. Wrap the
-    persistence routes so any failure comes back as JSON with the actual cause,
-    which turns 'it broke' into a fixable report."""
-    from functools import wraps
-    @wraps(fn)
-    def inner(*a, **k):
-        try:
-            return fn(*a, **k)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
-    return inner
 
 @app.route("/api/quotes", methods=["POST"])
 @_json_error_guard
@@ -3398,6 +3432,7 @@ def api_quotes_save():
     return jsonify({"ok": True, "id": qid})
 
 @app.route("/api/quotes/<int:qid>", methods=["GET"])
+@_json_error_guard
 def api_quotes_load(qid):
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled."}), 400
@@ -3425,6 +3460,7 @@ def api_quotes_update(qid):
                     "unchanged": not version_saved})
 
 @app.route("/api/quotes/<int:qid>/share", methods=["POST"])
+@_json_error_guard
 def api_quotes_share(qid):
     """Mint (or return the existing) read-only review link for a saved quote."""
     if not storage.enabled():
@@ -3436,6 +3472,7 @@ def api_quotes_share(qid):
                     "url": request.host_url.rstrip("/") + "/review/" + token})
 
 @app.route("/api/review/<token>")
+@_json_error_guard
 def api_review(token):
     """Read-only quote fetch for the review page. Token is the credential;
     no edit endpoints accept it."""
@@ -3481,6 +3518,7 @@ def edit_link_page(qid):
     return render_template("reputation.html" if tool == "rep" else "index.html", build=BUILD_STR)
 
 @app.route("/api/quotes/version/<int:vid>", methods=["DELETE"])
+@_json_error_guard
 def api_quotes_version_delete(vid):
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled."}), 400
@@ -3488,6 +3526,7 @@ def api_quotes_version_delete(vid):
     return jsonify({"ok": True})
 
 @app.route("/api/quotes/<int:qid>", methods=["DELETE"])
+@_json_error_guard
 def api_quotes_delete(qid):
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled."}), 400
@@ -3495,12 +3534,14 @@ def api_quotes_delete(qid):
     return jsonify({"ok": True})
 
 @app.route("/api/quotes/<int:qid>/versions", methods=["GET"])
+@_json_error_guard
 def api_quotes_versions(qid):
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled."}), 400
     return jsonify({"versions": storage.list_versions(qid)})
 
 @app.route("/api/quotes/version/<int:vid>", methods=["GET"])
+@_json_error_guard
 def api_quotes_version_load(vid):
     if not storage.enabled():
         return jsonify({"error": "Saving isn't enabled."}), 400
@@ -3519,6 +3560,7 @@ import rep_scan
 rep_scan.init(dfs_post)
 
 @app.route("/api/rep_scan_terms", methods=["POST"])
+@_json_error_guard
 def api_rep_scan_terms():
     """Brand term universe + negative-modifier volumes (one KFK live call)."""
     d = request.get_json(force=True)
@@ -3531,6 +3573,7 @@ def api_rep_scan_terms():
         return jsonify({"error": f"Term scan failed: {e}"}), 502
 
 @app.route("/api/rep_scan_serp", methods=["POST"])
+@_json_error_guard
 def api_rep_scan_serp():
     """'{brand} reviews' top-10 threat table + related searches + autosuggest."""
     d = request.get_json(force=True)
@@ -3543,6 +3586,7 @@ def api_rep_scan_serp():
         return jsonify({"error": f"SERP scan failed: {e}"}), 502
 
 @app.route("/api/rep_scan_autocomplete", methods=["POST"])
+@_json_error_guard
 def api_rep_scan_autocomplete():
     """Auto-suggest flags — separate endpoint so its latency never stacks
     onto the SERP call (Render's proxy cuts requests around 100s)."""
@@ -3556,6 +3600,7 @@ def api_rep_scan_autocomplete():
         return jsonify({"error": f"Autocomplete scan failed: {e}"}), 502
 
 @app.route("/api/rep_scan_locations", methods=["POST"])
+@_json_error_guard
 def api_rep_scan_locations():
     """Google Business location discovery (instant, database-backed)."""
     d = request.get_json(force=True)
@@ -3568,6 +3613,7 @@ def api_rep_scan_locations():
         return jsonify({"error": f"Location scan failed: {e}"}), 502
 
 @app.route("/api/rep_reviews_submit", methods=["POST"])
+@_json_error_guard
 def api_rep_reviews_submit():
     """Queue worst-first review pulls for selected locations (priority ~1min)."""
     d = request.get_json(force=True)
@@ -3581,6 +3627,7 @@ def api_rep_reviews_submit():
         return jsonify({"error": f"Review submit failed: {e}"}), 502
 
 @app.route("/api/rep_reviews_collect", methods=["POST"])
+@_json_error_guard
 def api_rep_reviews_collect():
     d = request.get_json(force=True)
     tids = [t for t in (d.get("task_ids") or []) if t]
@@ -3597,6 +3644,7 @@ def reputation():
     return render_template("reputation.html", build=BUILD_STR)
 
 @app.route("/api/rep_config", methods=["GET"])
+@_json_error_guard
 def api_rep_config_get():
     """Expose the rep-tool tunables for the pricing panel — mirror of the
     SEO tool's /api/config."""
@@ -3617,6 +3665,7 @@ def api_rep_config_get():
     })
 
 @app.route("/api/rep_config", methods=["POST"])
+@_json_error_guard
 def api_rep_config_set():
     """Apply edited constants to the running session (not persisted — a
     restart reverts to file defaults). Same live-tuning model as the SEO tool."""
@@ -3658,6 +3707,7 @@ def api_rep_config_set():
         return jsonify({"error": f"Config apply failed: {e}"}), 400
 
 @app.route("/api/rep_quote", methods=["POST"])
+@_json_error_guard
 def api_rep_quote():
     d = request.get_json(force=True)
     try:
@@ -3666,6 +3716,7 @@ def api_rep_quote():
         return jsonify({"error": f"Quote build failed: {e}"}), 500
 
 @app.route("/api/rep_volume", methods=["POST"])
+@_json_error_guard
 def api_rep_volume():
     """US-national exact-match volume for the brand terms — drives the
     Search Protection base+multiplier formula. Reuses fetch_exact_volume
