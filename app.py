@@ -972,6 +972,17 @@ def drop_foreign_geo_services(services, markets, state):
     The client's own state and any state named in their markets are kept, so
     "virginia farm insurance" survives for a Virginia client.
     """
+    # If we cannot establish the client's own state, we cannot judge which
+    # states are foreign — and dropping on a guess would delete a legitimate
+    # home-state service ("virginia farm insurance" for a Virginia client whose
+    # market pills are bare city names). Say nothing rather than guess wrong.
+    known_state = bool((state or "").strip()) or any(
+        p in STATE_ABBREV or p in set(STATE_ABBREV.values())
+        for m in (markets or [])
+        for p in (m or "").lower().replace(",", " ").split())
+    if not known_state:
+        return list(services or []), None      # None = filter could not run
+
     ours = set()
     for m in list(markets or []) + [state or ""]:
         t = (m or "").strip().lower()
@@ -1681,6 +1692,20 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
         services = scrub_services(services, markets, state, phrase_geos)
+        # Pinning pulls straight from the keyword-idea pool, which is exactly
+        # where out-of-area terms live — so a term filtered out above can be
+        # re-inserted below it. Filter again AFTER pinning and fold the two
+        # result sets together; a pin is not a licence to sell in a state the
+        # client doesn't operate in.
+        services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
+        if geo_dropped is None and geo_dropped2 is None:
+            geo_dropped = None
+        else:
+            seen_d = set()
+            geo_dropped = [d for d in (list(geo_dropped or []) + list(geo_dropped2 or []))
+                           if not (d[0] in seen_d or seen_d.add(d[0]))]
+        pinned = [t for t in pinned
+                  if any((x.get("service") or "") == t for x in services)]
         g = build_grid(services, grid_cities, state, prepicked=True)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
@@ -1712,7 +1737,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "grid": True,
             "services": services,
             "pinned_head_terms": pinned,
-            "dropped_out_of_area": [d[0] for d in geo_dropped],
+            "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
+            "geo_filter_off": geo_dropped is None,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "volume_location": "United States" if national_demand else loc_string(markets, state),
