@@ -2646,7 +2646,6 @@ def api_keywords():
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
-        "refine_attempted": True,
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
         "site_terms": s1.get("site_terms", []),
