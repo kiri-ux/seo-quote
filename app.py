@@ -907,6 +907,32 @@ STATE_ABBREV = {
     "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
 }
 
+def scrub_services(services, markets, state, phrase_geos=None):
+    """Strip any market/state text out of the SERVICE names and de-duplicate.
+
+    A service is meant to be a bare offering ("business tech") that the grid
+    crosses with cities. When one arrives already carrying a geo — the model
+    echoes a candidate back verbatim, or a pinned candidate keeps a market the
+    strip list didn't cover — the grid appends a SECOND city on top, producing
+    "business tech cherry hill south jersey" (Waytek, 2026-07-27). It also
+    burns a slot on a near-duplicate of a service already in the list, which
+    on a 6-service grid is a sixth of the proposal.
+
+    Scrubbing here means the grid only ever sees bare services, so the
+    crossing is the only thing that adds geography.
+    """
+    strip_list = list(markets or []) + [g for g in (phrase_geos or []) if g]
+    out, seen = [], set()
+    for svc in services or []:
+        name = clean_kw(_strip_markets((svc.get("service") or "").lower(),
+                                       strip_list, state)).strip()
+        if not name or name in seen:
+            continue                      # empty after scrubbing, or a duplicate
+        seen.add(name)
+        out.append({**svc, "service": name})
+    return out
+
+
 def pin_head_services(services, cands, markets, state, brand, max_services):
     """Force the highest-volume candidate terms into the service list.
 
@@ -949,18 +975,39 @@ def pin_head_services(services, cands, markets, state, brand, max_services):
     if not missing:
         return services, []
 
-    # Displace from the tail (the model returns its strongest picks first) but
-    # never drop a service that is itself one of the ranked head terms.
     keep_l = {t for t, _ in ranked}
     out = list(services)
+
+    def _drop_one():
+        """Free a slot WITHOUT emptying a tier.
+
+        Displacing from the tail looked reasonable — the model returns its
+        strongest picks first — but the model also orders long_tail last, so
+        on a short list (6 services for a 6-city client) the pins ate every
+        long-tail service and the proposal came back with an empty Long Tail
+        column (Waytek, 2026-07-27). Take from the tier that can best afford
+        it instead: the most-represented one, from its own tail.
+        """
+        counts = {}
+        for x in out:
+            if (x.get("service") or "").lower() not in keep_l:
+                counts[x.get("tier")] = counts.get(x.get("tier"), 0) + 1
+        # Only tiers that would still have a member afterwards are eligible.
+        eligible = {t: n for t, n in counts.items() if n > 1}
+        pool = eligible or counts
+        if not pool:
+            return False
+        victim_tier = max(pool.items(), key=lambda kv: kv[1])[0]
+        for i in range(len(out) - 1, -1, -1):
+            x = out[i]
+            if x.get("tier") == victim_tier and (x.get("service") or "").lower() not in keep_l:
+                out.pop(i)
+                return True
+        return False
+
     for term, vol in missing:
-        if len(out) >= max_services:
-            for i in range(len(out) - 1, -1, -1):
-                if (out[i].get("service") or "").lower() not in keep_l:
-                    out.pop(i)
-                    break
-            else:
-                break                      # everything is pinned; nothing to give
+        if len(out) >= max_services and not _drop_one():
+            break                          # everything is pinned; nothing to give
         rank = [t for t, _ in ranked].index(term)
         tier = "ultra" if rank < int(CFG.get("pin_as_ultra", 2)) else "competitive"
         out.insert(min(rank, len(out)), {"service": term, "tier": tier, "pinned": True})
@@ -1010,7 +1057,9 @@ RULES:
    - 2 "ultra"        (the biggest, most competitive money terms)
    - 1 "competitive"  (solid mid-competition terms)
    - 1 "long_tail"    (a genuine but lower-competition service, e.g. a niche product line)
-   Adjust the mix if {max_services} differs, but always include at least one long_tail and at least one ultra.
+   Adjust the mix if {max_services} differs, but ALWAYS include at least one long_tail and at least one ultra —
+   even when {max_services} is small (a 6-service list still needs a long_tail; the proposal shows three columns
+   and an empty one reads as an incomplete strategy).
 4. long_tail means a LOWER-COMPETITION SERVICE — never a question. Do NOT produce phrases starting with how/what/why/when/where.
 5. Prefer the phrasing a customer would actually search.
 6. TIER GUIDANCE — how these tiers are actually assigned in practice (insurance example):
@@ -1504,8 +1553,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                         for i, s in enumerate(seeds[:n_services])]
         # Pricing must not swing on a non-deterministic model call: force the
         # highest-volume terms the search API returned into the list.
+        # Bare the services BEFORE pinning so the containment check compares
+        # like with like, and before the grid so nothing carries a geo into
+        # the crossing.
+        services = scrub_services(services, markets, state, phrase_geos)
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
+        services = scrub_services(services, markets, state, phrase_geos)
         g = build_grid(services, grid_cities, state, prepicked=True)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
