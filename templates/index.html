@@ -274,7 +274,7 @@
     </div>
 
     <label>Industry <span style="font-weight:400;color:var(--muted)">(RZ line item — demo stand-in, optional)</span></label>
-    <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries Brendan's big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
+    <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries the big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
     <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
     <div class="toggle-row" style="margin-top:10px">
       <label class="switch"><input type="checkbox" id="natdemand"><span class="slider"></span></label>
@@ -342,8 +342,8 @@
     </div>
 
 
-    <label>Client markup <span style="font-weight:400;color:var(--muted)">(% on top of hard cost)</span></label>
-    <div class="help">Internal pricing starts at hard cost; the client price is hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
+    <label>Client markup <span style="font-weight:400;color:var(--muted)">(% on top of partner hard cost)</span></label>
+    <div class="help">Internal pricing starts at partner hard cost; the client price is partner hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
     <input type="text" id="markup" placeholder="35" value="35">
 
     <button class="btn" id="step1">1 · Build keyword list</button>
@@ -1327,10 +1327,10 @@ function renderStep4(p){
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?` <span class="nf">(one product — the tiers below are the combined price; SEO vs GEO split shown internally beneath. ${(ai&&ai.min_term_months)||6}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending)</span>':''}</div>`:''}
-    <div class="why">Internal cost first: hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the hard base, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
+    <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
     <details style="margin:4px 0">
-    <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);cursor:pointer;user-select:none">Hard cost (internal)${ai?' — Core SEO + AI Search combined':''} — click to expand</summary>
+    <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);cursor:pointer;user-select:none">Partner hard cost (internal)${ai?' — Core SEO + AI Search combined':''} — click to expand</summary>
     <div class="tiers">
       <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${money(h.base)}</div><div class="mo">/month</div></div>
       <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div></div>
@@ -1342,16 +1342,34 @@ function renderStep4(p){
       ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not in the top 100)</span>`:''}
       ${p.national_demand?`<br><span class="nf"><b>National demand</b> (${p.national_demand_reason||'auto'}) — volume is looked up without the geo qualifier, the base sits on the national anchor, and the ladder steps proportionally (38%) like the national quotes. Volume, competition and current visibility are what set the price from there.</span>`:''}
       ${p.extras_multiplier===0?`<br><span class="nf">This industry prices on organisation size rather than SERP signals, so the volume add and zero-ranking uplift don't apply.</span>`:''}
-      <br>= hard base <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (${p.base?Math.round(p.step/p.base*100):0}% of base)</div></div>
+      <br>= partner hard cost <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (${p.base?Math.round(p.step/p.base*100):0}% of base)</div></div>
     </details>
 
-    <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:10px 0">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:12.5px;font-weight:600">Manual hard-base override</span>
-        <input type="text" id="base_override" value="${p.manual_base?p.base:''}" placeholder="e.g. 4000"
-          style="width:90px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-        <button id="base_apply" style="background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Apply</button>
-        ${p.manual_base?`<button id="base_clear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Clear</button> <span style="color:#1c5fa8;font-size:12px">✓ manual base active — tiers & markup recomputed from it</span>`:'<span class="nf" style="font-size:12px">for niche clients the formula doesn\u2019t fit — sets the hard base directly; everything else recomputes. Override ladders step at 38% (Brendan\u2019s premium-card shape): ~2930 reproduces his $3,950/$5,450/$6,950 card</span>'}
+    <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:10px 0">
+      <div class="toggle-row" style="margin:0">
+        <label class="switch"><input type="checkbox" id="base_ovr_on" ${p.manual_base?'checked':''}><span class="slider"></span></label>
+        <div>
+          <div style="font-size:13.5px;font-weight:600">Override partner hard cost
+            <span class="tipwrap"><i class="tipicon">i</i><div class="help">Sets the partner hard cost directly for clients the formula doesn't fit; tiers and client price recompute from it. Overrides are recorded with a reason so a pattern in them can be read as a pricing-model gap rather than disappearing into individual quotes — if the same reason keeps coming up, the formula should change instead.</div></span>
+          </div>
+          <div class="help" style="margin:1px 0 0">${p.manual_base?'Active — the formula is not setting this price.':'Off — price comes from the formula.'}</div>
+        </div>
+      </div>
+      <div id="base_ovr_fields" class="${p.manual_base?'':'hidden'}" style="margin-top:11px;border-top:1px solid var(--line);padding-top:11px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <label style="margin:0;font-size:12px">Partner hard cost <span class="req">*</span></label>
+          <input type="text" id="base_override" value="${p.manual_base?p.base:''}" placeholder="e.g. 4000"
+            style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
+          <span class="nf" style="font-size:12px">ladder steps at 38% — ~2,930 reproduces the $3,950 / $5,450 / $6,950 premium card</span>
+        </div>
+        <label style="margin:10px 0 4px;font-size:12px">Reason for the override <span class="req">*</span></label>
+        <textarea id="base_reason" placeholder="Why the formula doesn&#39;t fit this client — e.g. established brand already ranking, existing agency relationship, scope outside the standard ladder"
+          style="width:100%;min-height:52px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:'Barlow',sans-serif;resize:vertical">${(ST.baseReason||'').replace(/</g,'&lt;')}</textarea>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:9px;flex-wrap:wrap">
+          <button id="base_apply" style="background:var(--atlas);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Apply override</button>
+          ${p.manual_base?`<button id="base_clear" style="background:#fff;color:var(--bad);border:1px solid #e0c0c0;padding:6px 12px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Remove override</button>`:''}
+          <span id="base_ovr_msg" style="font-size:12px;color:var(--muted)">${p.manual_base?'\u2713 Override active — tiers and client price recomputed from it.':''}</span>
+        </div>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
@@ -1379,7 +1397,7 @@ function renderStep4(p){
         }).join('')}</tr>
         <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 12px 2px 0;border-top:1px solid var(--line)">Product price (client)</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.base)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.intermediate)}</td><td style="text-align:right;border-top:1px solid var(--line)">${money(p.ai_search.client_total.advanced)}</td></tr>
       </table>
-      <div class="nf" style="font-size:11.5px;margin-top:4px">Hard-cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}.${p.ai_search.min_term_months?` GEO carries a <b>${p.ai_search.min_term_months}-month minimum term</b> (SEO is 6).`:''} Compare panel below still tracks the Core SEO ladder.</div>
+      <div class="nf" style="font-size:11.5px;margin-top:4px">Partner hard cost combined: ${money(p.ai_search.hard_total.base)} / ${money(p.ai_search.hard_total.intermediate)} / ${money(p.ai_search.hard_total.advanced)}.${p.ai_search.min_term_months?` GEO carries a <b>${p.ai_search.min_term_months}-month minimum term</b> (SEO is 6).`:''} Compare panel below still tracks the Core SEO ladder.</div>
       ${p.ai_search.mode==='pct'?`<div class="nf" style="font-size:11.5px;margin-top:3px">GEO normally runs 30–50% below Core SEO; it climbs toward parity when the client has little existing visibility.</div>`:''}
     </div>`:''}
       <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px">Compare to actual quote</div>
@@ -1442,8 +1460,9 @@ function renderStep4(p){
     }catch(e){ /* keep current */ }
   });
   // manual hard-base override
-  const applyBase=async(val)=>{
+  const applyBase=async(val, why)=>{
     ST.baseOverride = val;
+    if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
       const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
@@ -1453,8 +1472,38 @@ function renderStep4(p){
       renderStep4(np);
     }catch(e){ /* keep current */ }
   };
-  $('base_apply').onclick=()=>applyBase($('base_override').value.trim());
-  if($('base_clear')) $('base_clear').onclick=()=>applyBase('');
+  // Both fields are required together: an override with no reason is a number
+  // nobody can audit later, and a reason with no number does nothing.
+  const ovrToggle=$('base_ovr_on');
+  if(ovrToggle){
+    ovrToggle.onchange=()=>{
+      $('base_ovr_fields').classList.toggle('hidden', !ovrToggle.checked);
+      if(!ovrToggle.checked && ST.baseOverride){ applyBase('',''); }
+      else if(ovrToggle.checked){ const f=$('base_override'); if(f) f.focus(); }
+    };
+  }
+  if($('base_reason')) $('base_reason').addEventListener('input', e=>{ ST.baseReason=e.target.value; });
+  $('base_apply').onclick=()=>{
+    const val=($('base_override').value||'').trim();
+    const why=($('base_reason').value||'').trim();
+    const msg=$('base_ovr_msg');
+    const bad=[];
+    if(!val || isNaN(parseFloat(val))) bad.push('a partner hard cost');
+    if(why.length<8) bad.push('a reason (a few words is fine)');
+    if(bad.length){
+      if(msg){ msg.style.color='var(--bad)'; msg.textContent='Enter '+bad.join(' and ')+' before applying.'; }
+      (!val||isNaN(parseFloat(val))?$('base_override'):$('base_reason')).focus();
+      return;
+    }
+    if(msg){ msg.style.color='var(--muted)'; msg.textContent=''; }
+    ST.baseReason=why;
+    applyBase(val, why);
+  };
+  if($('base_clear')) $('base_clear').onclick=()=>{
+    ST.baseReason='';
+    if(ovrToggle) ovrToggle.checked=false;
+    applyBase('','');
+  };
   $('csvbtn').onclick=async()=>{
     const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
@@ -1532,6 +1581,7 @@ async function runStep4(){
   const b4=$('step4');
   if(b4){ b4.disabled=true; b4.textContent='Pricing…'; }
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
+  ST.baseReason='';
   // Calibration inputs: total head-term volume, and % of terms NOT ranking.
   // In grid mode the same service volume appears on every city row, so summing
   // rows would multiply it by the city count. Use the deduplicated per-service
@@ -1671,13 +1721,13 @@ async function loadConfig(){
       cfgRow('Max cities','cf_gcity',c.grid_max_cities,'cities crossed against every service')+
       cfgRow('State suffix (1/0)','cf_gsfx',c.grid_state_suffix?1:0,'1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"'),
       'mechanical','LIST SHAPE — NOT A PRICING DECISION') +
-    cfgGroup('Step 2 · competition (hard cost)',
+    cfgGroup('Step 2 · competition (partner hard cost)',
       `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
       cfgRow('CPC multiplier','cf_cpcmult',c.cpc_adder_mult,'$ of adder per $1 of median CPC (e.g. 3 → a $150 CPC adds $450)')+
       cfgRow('CPC adder cap ($)','cf_cpccap',c.cpc_adder_cap,'max adder so a freak CPC can\u2019t explode the price')+
       cfgRow('CPC knee ($)','cf_cpcknee',c.cpc_adder_knee,'CPC above this earns the premium rate — carrier-tier clients')+
       cfgRow('CPC premium $/CPC','cf_cpchigh',c.cpc_adder_mult_high,'$/CPC above the knee (normal rate below)')+
-      cfgRow('Step % of base (floor)','cf_steppct',c.tier_step_pct_of_base,'step = max(flat $, this % of hard base) — big ladders step bigger')+
+      cfgRow('Step % of base (floor)','cf_steppct',c.tier_step_pct_of_base,'step = max(flat $, this % of partner hard cost) — big ladders step bigger')+
       cfgRow('CPC free-below ($)','cf_cpcfree',c.cpc_adder_free_below,'CPC at/below this adds nothing')+
       cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'flat fallback: under this → +$0')+
       cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'flat fallback: over this → top adder')+
@@ -1697,7 +1747,7 @@ async function loadConfig(){
       cfgRow('Ramp — no opportunity (% not ranking)','cf_ramp_lo',(c.vol_add_ramp||[40,60])[0],'at/below this the volume add is $0')+
       cfgRow('Ramp — full opportunity (%)','cf_ramp_hi',(c.vol_add_ramp||[40,60])[1],'at/above this the full volume add applies; between the two it scales'),
       'confirmed','FITS THREE ACTUALS WITHIN 2%') +
-    cfgGroup('Step 4 · pricing (hard-cost anchors)',
+    cfgGroup('Step 4 · pricing (partner hard-cost anchors)',
       cfgRow('Single City','cf_ga_single',ga.single_city)+
       cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
       cfgRow('Non-contiguous region','cf_ga_noncontig',ga.non_contiguous_region)+
@@ -1713,7 +1763,7 @@ async function loadConfig(){
       'confirmed') +
 
     cfgGroup('AI Search · GEO pricing',
-      `<div class="tierhelp">GEO is quoted as a <b>percentage of the client's own Core SEO price</b>, not a fixed rate card. Brendan: GEO runs 30–50% below SEO on average, climbing toward parity when the client has little existing visibility. The tiers below map visibility to that percentage — read high to low, first match wins.</div>`+
+      `<div class="tierhelp">GEO is quoted as a <b>percentage of the client's own Core SEO price</b>, not a fixed rate card. GEO runs 30–50% below SEO on average, climbing toward parity when the client has little existing visibility. The tiers below map visibility to that percentage — read high to low, first match wins.</div>`+
       tierRows(c.geo_pct_tiers,'cf_geot','If at least','% of terms aren\u2019t ranking → GEO is','% of Core SEO')+
       cfgRow('Default GEO %','cf_geodef',c.geo_pct_default,'used when there is no ranking data yet')+
       cfgRow('Bundle discount (%)','cf_geodisc',c.geo_bundle_discount_pct,'off the GEO line when sold with Core SEO — all three tiers')+
@@ -1874,6 +1924,7 @@ function snapshotQuote(){
     pricing: ST.pricing,
     totalVol: ST.totalVol, pctNotRanking: ST.pctNotRanking,
     baseOverride: ST.baseOverride||'',
+    baseReason: ST.baseReason||'',
     actual: ST.actual||null
   };
 }
@@ -1887,6 +1938,7 @@ function restoreQuote(p){
   ST.zero=p.zero; ST.longtail=p.longtail; ST.cpc=p.cpc||{}; ST.kd=p.kd||{};
   ST.pricing=p.pricing; ST.totalVol=p.totalVol; ST.pctNotRanking=p.pctNotRanking;
   ST.baseOverride=p.baseOverride||'';
+  ST.baseReason=p.baseReason||'';
   ST.actual=p.actual||{};
   if(p.inputs){ try{ reflectInputs(p.inputs); }catch(e){} }
   // Step 1 — keyword list

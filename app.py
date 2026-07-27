@@ -270,7 +270,7 @@ CFG = {
     # reproduces Brendan's $3,950 card base on its own — the +$250 was very
     # likely fitting a number the band was going to hit anyway.
     "industry_pricing": {
-        "ecommerce":  {"national_demand": True, "note": "Product brand — price on national demand, not a geo-qualified pull. Carries NO price of its own (Brendan, 2026-07-25). Legacy toggle key."},
+        "ecommerce":  {"national_demand": True, "note": "Product brand — price on national demand, not a geo-qualified pull. Carries NO price of its own (pricing authority, 2026-07-25). Legacy toggle key."},
         "e-commerce": {"national_demand": True, "note": "Matches RZ “Retail - General / E-commerce”. Price on national demand; no anchor add."},
         # Sibling RZ values an operator would reasonably pick for a product
         # brand (MPG is literally a supplements company) — same volume mode,
