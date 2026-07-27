@@ -1782,11 +1782,11 @@ async function loadConfig(){
       `<div class="tierhelp">The keyword list comes from a model call, so the same client can produce a different list run to run — and volume is a pricing input. Pinning forces the highest-volume terms the search data actually returned into the list regardless of what the model picks, so the price stops moving for reasons the client didn't cause.</div>`+
       cfgRow('Head terms pinned','cf_pinn',c.pin_head_terms,'0 turns pinning off entirely')+
       cfgRow('Minimum volume to pin','cf_pinvol',c.pin_min_volume,'ignore terms thinner than this')+
-      `<div class="tierhelp" style="margin-top:8px">Model in use: <b>${c.claude_model||'—'}</b> — ${c.claude_model_pinned?'pinned.':'<span style="color:var(--warn)">not pinned; set the CLAUDE_MODEL env var so an alias update can\u2019t reshape every list mid-cycle.</span>'}</div>`,
+      `<div class="tierhelp" style="margin-top:8px">Model in use: <b>${c.claude_model||'—'}</b> — ${c.claude_model_pinned?'a fixed snapshot — its behaviour won\u2019t change under you.':'<span style="color:var(--warn)">an ALIAS: it resolves to whatever the latest dated snapshot is, so the keyword list can change without any deploy. Set CLAUDE_MODEL to a dated ID or a 4.6-or-later model.</span>'}</div>`,
       'mechanical','STABILITY CONTROLS — NOT A PRICING DECISION') +
 
     cfgGroup('Request timeouts',
-      `<div class="tierhelp">Per-call and per-route ceilings. These must stay <b>below</b> the server's own worker timeout or the worker is killed before the app can report what went wrong — which surfaces as an unreadable 500. Render start command should be <code>gunicorn app:app --timeout 120 --workers 2</code>.</div>`+
+      `<div class="tierhelp">Per-call and per-route ceilings. These must stay <b>below</b> the server's own worker timeout or the worker is killed before the app can report what went wrong — which surfaces as an unreadable 500. Render start command should be <code>gunicorn app:app --timeout 120 --workers 1 --threads 4</code> — this app spends nearly all its time waiting on external APIs, so concurrency belongs in threads rather than a second worker process.</div>`+
       `<div class="tierhelp">Per DataForSEO call: <b>${c.dfs_timeout}s</b> · per route budget: <b>${c.request_budget_s}s</b>. Both are set by the DFS_TIMEOUT and REQUEST_BUDGET_S env vars, not editable here — they need to change together with the server setting.</div>`,
       'mechanical','ENV VARS — READ ONLY HERE');
 }

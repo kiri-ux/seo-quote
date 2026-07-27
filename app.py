@@ -90,6 +90,25 @@ def _source_fingerprint():
     return h.hexdigest()[:6]
 
 SOURCE_FP = _source_fingerprint()
+
+
+def model_is_snapshot(model_id):
+    """Is this model ID a FIXED snapshot, or an alias that can move under us?
+
+    Per Anthropic's model-versioning docs: from the 4.6 generation onward the
+    dateless ID *is* the canonical snapshot — claude-sonnet-4-6 does not float.
+    Only pre-4.6 dateless IDs (claude-sonnet-4-5 and earlier) are convenience
+    aliases resolving to the latest dated snapshot. Anything carrying an
+    explicit date is pinned by definition.
+    """
+    import re as _re
+    mid = (model_id or "").strip().lower()
+    if _re.search(r"-\d{8}$", mid):
+        return True                                   # explicit dated snapshot
+    m = _re.match(r"^claude-(?:sonnet|opus|haiku|fable|mythos)-(\d+)(?:-(\d+))?$", mid)
+    if not m:
+        return False                                  # unrecognised: treat as unpinned
+    return (int(m.group(1)), int(m.group(2) or 0)) >= (4, 6)
 def _build_stamp():
     """Build time in US Eastern (EST/EDT handled by the tzdb). Falls back to a
     fixed -05:00 if the container image ships without tzdata."""
@@ -426,7 +445,11 @@ def r50(x):
 #
 # IMPORTANT: also raise the server's own timeout, or long calls still die.
 # In Render, set the start command to:
-#     gunicorn app:app --timeout 120 --workers 2
+#     gunicorn app:app --timeout 120 --workers 1 --threads 4
+# Threads, not workers: nearly all of this app's time is spent WAITING on
+# DataForSEO and Anthropic, so concurrency should come from threads (one
+# process's memory) rather than a second worker process, which doubles memory
+# on a 512 MB Starter instance for no gain on I/O-bound work.
 # REQUEST_BUDGET_S must stay comfortably BELOW that number.
 DFS_TIMEOUT     = int(os.environ.get("DFS_TIMEOUT", "25"))      # per API call
 REQUEST_BUDGET_S = int(os.environ.get("REQUEST_BUDGET_S", "90"))  # per route
@@ -2803,7 +2826,7 @@ def api_config_get():
         # alias can move under you and quietly reshape every keyword list.
         # Pin it with the CLAUDE_MODEL env var.
         "claude_model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
-        "claude_model_pinned": bool(os.environ.get("CLAUDE_MODEL")),
+        "claude_model_pinned": model_is_snapshot(os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")),
         "source_fingerprint": SOURCE_FP,
         "dfs_timeout": DFS_TIMEOUT,
         "request_budget_s": REQUEST_BUDGET_S,
