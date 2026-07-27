@@ -189,22 +189,20 @@
 <header>
   <div class="hrow">
     <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— {{ build }}</span></h1>
+    <span style="display:flex;gap:8px;flex:none">
+    <button id="cfgBtn" title="Pricing config — internal, not partner-facing" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
     <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
+    </span>
   </div>
   <nav class="tabs">
     <a href="/" class="on">SEO</a>
     <a href="/reputation">Reputation Mgmt</a>
-    <button id="cfgBtn" title="Pricing config — internal, not partner-facing"
-      style="margin-left:14px;align-self:center;background:rgba(255,255,255,.12);color:#fff;
-             border:1px solid rgba(255,255,255,.28);padding:5px 12px;border-radius:7px;
-             font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;
-             letter-spacing:.05em;text-transform:uppercase;cursor:pointer">⚙ Pricing config</button>
   </nav>
 </header>
 
 <!-- Pricing config drawer (internal). Opens LEFT so it can't collide with the
      saved-quotes drawer on the right. -->
-<div id="cfgPanel" style="display:none;position:fixed;top:0;left:0;width:440px;max-width:92vw;height:100vh;background:#fff;box-shadow:4px 0 24px rgba(0,45,88,.18);z-index:200;overflow-y:auto;padding:20px 22px 60px">
+<div id="cfgPanel" style="display:none;position:fixed;top:0;right:0;width:440px;max-width:92vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,45,88,.18);z-index:200;overflow-y:auto;padding:20px 22px 60px">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
     <h2 style="margin:0;color:var(--atlas);font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">Pricing config</h2>
     <button id="cfgClose" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--muted)">&times;</button>
@@ -1562,6 +1560,7 @@ async function runStep4(){
 }
 // ---- config review panel (internal) ----
 async function openCfg(){
+  closeSaved();                       // both drawers live on the right
   $('cfgPanel').style.display='block';
   $('cfgBackdrop').style.display='block';
   const p=$('cfgPanel');
@@ -1798,6 +1797,7 @@ async function initReviewMode(){
     document.querySelectorAll('.wrap > .card').forEach((c,i)=>{ if(i===0) c.style.display='none'; });
     const cfg=document.querySelector('.wrap > .card[style*="margin-top"]'); if(cfg) cfg.style.display='none';
     const sb=document.getElementById('savedBtn'); if(sb) sb.style.display='none';
+    const cb=document.getElementById('cfgBtn'); if(cb) cb.style.display='none';   // internal config never shows on a review link
     // neuter every pipeline/save button — view, don't re-run
     ['step1','step2','step3','step4','saveBtn','saveNewBtn','shareBtn','retryFailed'].forEach(id=>{
       const el=$(id); if(el){ el.disabled=true; el.style.display='none'; }
@@ -2179,7 +2179,7 @@ $('savedClose').onclick=closeSaved;
 $('savedBackdrop').onclick=closeSaved;
 $('savedSearch').addEventListener('input', ()=>loadSavedList($('savedSearch').value));
 
-function openSaved(){ $('savedPanel').style.display='block'; $('savedBackdrop').style.display='block'; loadSavedList(''); }
+function openSaved(){ closeCfg(); $('savedPanel').style.display='block'; $('savedBackdrop').style.display='block'; loadSavedList(''); }
 function closeSaved(){ $('savedPanel').style.display='none'; $('savedBackdrop').style.display='none'; }
 
 // Two quotes can carry the same number and mean different deals — the tag
