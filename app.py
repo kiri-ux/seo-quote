@@ -1045,13 +1045,17 @@ TASK: choose exactly {max_services} SERVICES this business should target, and as
 RULES:
 1. A SERVICE is a short, generic phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". {"This is a NATIONAL product brand: these terms are the final keyword list and will NOT be crossed with cities. Qualify the long-tail entries by AUDIENCE or USE CASE instead of location (e.g. \'electrolyte gummies for athletes\', \'energy gummies for teen athletes\'), never by place." if national else "It will be crossed with city names later, so do NOT include any location."}
 2. Only services this business actually offers. Exclude anything they don't do.
-2a. NEVER include ANOTHER COMPANY'S name or trade name as a service — not the client's competitors,
-   not national brands in the same trade, not manufacturers. The keyword-idea list WILL contain them
-   (a search for "commercial construction company" surfaces the big national contractors), and they
-   look like plausible services because they end in a trade word. They are not. The client cannot rank
-   for a rival's brand, it does not belong in a proposal, and because those terms return "not ranking"
-   every time, including them inflates the quoted price on a client who actually ranks well.
-   A service names WHAT IS DONE, never WHO DOES IT.
+2a. NEVER include a COMPETITOR'S company name as a service. The keyword-idea list WILL contain them
+   (a search for "commercial construction company" surfaces the big national contractors) and they look
+   like plausible services because they end in a trade word. They are not. Someone searching a specific
+   firm's name wants that firm — the intent is navigational, the client will not outrank the brand for
+   its own name, and because those terms come back "not ranking" every time they also inflate the quoted
+   price on a client who actually ranks well.
+2b. A brand name IS allowed when the client sells, installs, or is certified in that product — an
+   authorized dealer genuinely competes for it and customers genuinely search it ("butler building
+   contractor", "trane furnace installation", "andersen window replacement"). The test is whether the
+   client can DELIVER the thing named. If the name is a rival who does the same work, exclude it; if it
+   is a product line the client carries, keep it. When you are unsure, leave it out.
 2b. BALANCE ACROSS SERVICE LINES — this is the rule that most often gets missed.
    Cover the business's WHOLE service range the way their own website menu does:
    no more than 2-3 variants of any one service family unless the business
