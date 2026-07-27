@@ -202,7 +202,7 @@ CFG = {
     # that deletes everything is measuring the description's length, not the
     # services' legitimacy — so above this drop ratio it stands down entirely
     # and says so rather than gutting the list.
-    "grounding_max_drop_ratio": 0.6,
+    "grounding_max_drop_ratio": 0.5,
     "cpc_adder_min_samples": 1,          # apply the CPC adder at/above this n
     "cpc_adder_low_confidence_n": 3,     # warn below this n
     "cpc_adder_knee": 62.0,                    # CPC above this earns the premium rate (just above Waytek's $60 — the highest "normal" client observed)
@@ -1029,11 +1029,16 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
             dropped.append((svc.get("service"), alien[0]))
             continue
         out.append(svc)
-    # Stand down when the corpus is too thin to be a fair test.
-    eligible = [x for x in (services or [])
-                if not (x.get("from_seed") or x.get("pinned"))]
-    max_ratio = float(CFG.get("grounding_max_drop_ratio", 0.6) or 0.6)
-    if eligible and len(dropped) / len(eligible) > max_ratio:
+    # Stand down when the corpus is too thin to be a fair test — but measure
+    # that against the WHOLE list, not just the model's share of it. Keller
+    # contributed only 3 non-seed services and 2 were competitors: a correct
+    # 2-of-3 read as a 67% drop and tripped the valve, so Turner and Clark
+    # survived (2026-07-27). Against the full list those 2 are 29% — plainly
+    # a targeted removal — while MPG's 8 wipe out 73% of its list, which is
+    # the runaway this valve exists to catch.
+    total = len(services or [])
+    max_ratio = float(CFG.get("grounding_max_drop_ratio", 0.5) or 0.5)
+    if total and len(dropped) / total > max_ratio:
         return list(services or []), None      # None = filter stood down
     return out, dropped
 
