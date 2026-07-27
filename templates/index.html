@@ -2271,14 +2271,28 @@ function kwBuiltNote(){
   const locked=$('kwlock')&&$('kwlock').checked;
   if(!ST.kw||!ST.kw.all){ n.textContent = locked?'Nothing to lock yet — build a list first.':''; return; }
   const age=built?Math.floor((Date.now()-built.getTime())/86400000):null;
-  const when=built?built.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'unknown date';
-  let t = (locked?'Locked. ':'') + 'List built '+when;
+  const when=built?built.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):null;
+  let t = (locked?'Locked. ':'');
+  t += when ? ('List built '+when) : 'List built before this quote was last saved';
   if(age!==null&&age>=1) t += ' ('+age+' day'+(age===1?'':'s')+' old)';
   t += locked ? ' — rebuilding will ask first.' : '.';
   if(age!==null&&age>=30) t += ' Search volumes have likely refreshed since.';
   n.textContent=t;
 }
-$('kwlock').addEventListener('change',()=>{ if(ST.inputs) ST.inputs.kw_locked=$('kwlock').checked; kwBuiltNote(); });
+$('kwlock').addEventListener('change',()=>{
+  if(ST.inputs) ST.inputs.kw_locked=$('kwlock').checked;
+  kwBuiltNote();
+  // Persist straight away. A lock the user has to remember to save is a lock
+  // that silently isn't set — and the whole point is to protect a reviewed
+  // list from being rebuilt by accident.
+  const note=$('kwlock_note');
+  if(CURRENT_QUOTE_ID!=null && !REVIEW_MODE && SAVE_ENABLED){
+    autoSave().then(()=>{ if(note) note.textContent += ' Saved.'; })
+              .catch(()=>{ if(note) note.textContent += ' (not saved — hit Update)'; });
+  }else if(note && !REVIEW_MODE){
+    note.textContent += ST.pricing ? '' : ' Saves with the quote once it\u2019s priced.';
+  }
+});
 
 async function loadSavedList(q){
   const list=$('savedList');

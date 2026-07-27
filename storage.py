@@ -198,6 +198,12 @@ def _norm_for_diff(p):
     except Exception:
         return p
     if isinstance(q, dict):
+        # The keyword lock is a UI preference, not quote content — toggling it
+        # must persist, but it must NOT push a version into history or every
+        # lock/unlock would leave a snapshot behind (2026-07-27).
+        inp = q.get("inputs")
+        if isinstance(inp, dict):
+            inp.pop("kw_locked", None)
         t = q.get("table")
         if isinstance(t, list):
             rows = []
