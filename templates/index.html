@@ -807,14 +807,6 @@ $('step1').addEventListener('click', async()=>{
           national_demand:!!inp.national_demand,
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
           site_terms:kw.site_terms||[]});
-        if(ref && ref.refine_error){
-          const w=document.createElement('div');
-          w.className='err'; w.style.margin='8px 0';
-          w.innerHTML='<b>Keyword refinement fell back to the raw list.</b><br>'
-            + escapeHtml(String(ref.refine_error)).slice(0,400)
-            + '<br><span class="nf">The list below is the unrefined API output — rebuild after fixing, or edit the terms by hand.</span>';
-          const p1b=$('p1'); if(p1b) p1b.appendChild(w);
-        }
         if(ref && ref.all){
           ref.built_at = new Date().toISOString();
           ST.kw=ref;
@@ -860,7 +852,21 @@ function kwBucket(title, bucketKey){
 
 function renderStep1(){
   const kw=ST.kw;
-  panel('p1',`
+  // The refine fallback message must render INSIDE this panel: renderStep1
+  // replaces #p1 wholesale, so anything appended before it was destroyed on
+  // the next line — which is why a failed AI pass looked like a silent
+  // downgrade instead of an error (2026-07-27).
+  // Two ways the AI pass can not happen: it raised (refine_error), or it
+  // returned nothing and the code quietly fell back to the seeds
+  // (refined_by_ai false). Both produce a visibly worse list, so both warn.
+  const refineErr = (kw.refine_error || kw.refined_by_ai === false) ? `
+    <div class="err" style="margin:0 0 10px">
+      <b>The AI refinement pass didn't run — this is the raw keyword-tool output.</b><br>
+      ${kw.refine_error ? escapeHtml(String(kw.refine_error)).slice(0,400)+'<br>' : ''}
+      <span class="nf">No AI pass ran, so the list isn't grouped into a service grid and may contain
+      informational or off-topic terms. Rebuild once the cause is fixed, or edit the terms by hand.</span>
+    </div>` : '';
+  panel('p1', refineErr + `
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
