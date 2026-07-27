@@ -230,7 +230,17 @@ CFG = {
         [65, 9],    # 65-80% -> +9%
         [50, 5],    # 50-65% -> +5%
         [45, 0],    # 45-50% -> par (buffer so the sign doesn't flip on a hair)
-        [0, -7],    # under 45% not ranking = well-ranked -> DISCOUNT
+        # RECALIBRATED 2026-07-27 (-7 -> -3). The -7 was fit on Susquehanna
+        # alone. Red Shoes is the second well-ranked client and it contradicts
+        # it: 80% of its terms rank — BETTER than Susquehanna's 60% — and it
+        # was quoted the standard $2,950 card, not a discount. Swept against
+        # both, -7 is the worst value in the range (7.7% error on Red Shoes);
+        # 0 to -3 is the best balance and the two are within noise of each
+        # other. -3 keeps a small, defensible nod to existing visibility
+        # without the one-client overfit. The residual on Susquehanna is an
+        # ANCHOR question (statewide at 2,350 for a small regional bureau),
+        # not a visibility one — don't chase it with this tier.
+        [0, -3],    # under 45% not ranking = well-ranked -> small discount
     ],
     # --- VOLUME-based pricing (fixed $ per additional search, declining marginal
     # rate, like tax brackets). Base price assumes a "normalized" volume up to
@@ -967,6 +977,49 @@ STATE_ABBREV = {
     "south dakota":"sd","tennessee":"tn","texas":"tx","utah":"ut","vermont":"vt",
     "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
 }
+
+# Words that carry no identifying weight, so they never need grounding.
+_GROUNDING_STOP = set("""a an and or the of for in on to with your our best top near me
+services service company companies agency agencies firm firms group inc llc co
+local affordable cheap professional expert experts quality quote quotes free
+""".split())
+
+
+def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, domain):
+    """Drop model-invented services containing a word the client never used.
+
+    Three rounds of prompt wording failed to stop competitor names getting in:
+    Keller Builds still came back with "turner construction company" and "clark
+    construction company" — the two largest national contractors — because the
+    keyword-idea pool is ranked by national volume and they sit at the top of
+    it looking exactly like services (2026-07-27).
+
+    Detecting "is this a competitor" in the abstract is hard. Detecting "did
+    the client ever say this word" is easy and gets the same answer: Keller's
+    seeds, description and site say commercial, industrial, agricultural,
+    warehouse — they never say Turner. A service has to be GROUNDED in the
+    client's own vocabulary. Seeds and pinned terms are exempt: seeds are the
+    client's words by definition, and a pin is backed by real search volume.
+    """
+    corpus = " ".join([
+        " ".join(seeds or []), business_desc or "",
+        " ".join(site_pages or []), brand or "", (domain or "").replace(".", " "),
+    ]).lower()
+    known = set(w.strip("-/") for w in corpus.replace(",", " ").split())
+    out, dropped = [], []
+    for svc in services or []:
+        if svc.get("from_seed") or svc.get("pinned"):
+            out.append(svc)
+            continue
+        name = (svc.get("service") or "").lower()
+        alien = [w for w in name.split()
+                 if w not in _GROUNDING_STOP and w not in known and len(w) > 2]
+        if alien:
+            dropped.append((svc.get("service"), alien[0]))
+            continue
+        out.append(svc)
+    return out, dropped
+
 
 def enforce_seed_services(services, seeds, max_services, markets, state, phrase_geos=None):
     """Make the partner's own seed terms the backbone of the service list.
@@ -1803,6 +1856,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                                     markets, state, phrase_geos)
                                if seeds else (services, 0))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
+        services, ungrounded = drop_ungrounded_services(
+            services, seeds, biz, [p.get("title", "") if isinstance(p, dict) else str(p)
+                                   for p in (site_pages or [])], brand, domain)
         services = rebalance_tiers(services)
         if geo_dropped is None and geo_dropped2 is None:
             geo_dropped = None
@@ -1845,6 +1901,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "pinned_head_terms": pinned,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
+            "dropped_ungrounded": [d[0] for d in ungrounded],
             "geo_filter_off": geo_dropped is None,
             "service_volume": service_volume,
             "volume_error": vol_err,
