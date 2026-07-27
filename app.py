@@ -192,6 +192,17 @@ CFG = {
     # many samples the adder still applies but the quote is flagged, because
     # the number is an extrapolation rather than a measurement. Raise this to
     # make thin samples fall back to the flat score buckets instead.
+    # Grounding filter safety valve (2026-07-27). Requiring every word of a
+    # model-invented service to appear in the client's own text catches
+    # competitor names cleanly when the client HAS a rich vocabulary — Keller
+    # says commercial/industrial/agricultural and never says Turner. It fails
+    # badly when they don't: MPG's whole description is "energy and electrolyte
+    # gummies for athletes", so hydration, caffeine, pre-workout and b12 all
+    # read as alien and 100% of the invented services were removed. A filter
+    # that deletes everything is measuring the description's length, not the
+    # services' legitimacy — so above this drop ratio it stands down entirely
+    # and says so rather than gutting the list.
+    "grounding_max_drop_ratio": 0.6,
     "cpc_adder_min_samples": 1,          # apply the CPC adder at/above this n
     "cpc_adder_low_confidence_n": 3,     # warn below this n
     "cpc_adder_knee": 62.0,                    # CPC above this earns the premium rate (just above Waytek's $60 — the highest "normal" client observed)
@@ -1018,6 +1029,12 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
             dropped.append((svc.get("service"), alien[0]))
             continue
         out.append(svc)
+    # Stand down when the corpus is too thin to be a fair test.
+    eligible = [x for x in (services or [])
+                if not (x.get("from_seed") or x.get("pinned"))]
+    max_ratio = float(CFG.get("grounding_max_drop_ratio", 0.6) or 0.6)
+    if eligible and len(dropped) / len(eligible) > max_ratio:
+        return list(services or []), None      # None = filter stood down
     return out, dropped
 
 
@@ -1901,7 +1918,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "pinned_head_terms": pinned,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
-            "dropped_ungrounded": [d[0] for d in ungrounded],
+            "dropped_ungrounded": [d[0] for d in (ungrounded or [])],
+            "grounding_stood_down": ungrounded is None,
             "geo_filter_off": geo_dropped is None,
             "service_volume": service_volume,
             "volume_error": vol_err,
