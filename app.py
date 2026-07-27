@@ -958,6 +958,52 @@ STATE_ABBREV = {
     "virginia":"va","washington":"wa","west virginia":"wv","wisconsin":"wi","wyoming":"wy",
 }
 
+def drop_foreign_geo_services(services, markets, state):
+    """Remove services naming a US state the client doesn't operate in.
+
+    The keyword-idea pool is ranked by national volume, so it fills with terms
+    anchored to whichever state searches most — a Northern Virginia insurer
+    came back with "state of california fire insurance" as a service
+    (Rockingham, 2026-07-27). No prompt wording reliably suppresses this,
+    because the term reads as a plausible insurance product; it is only wrong
+    once you know where the client sells. That is a fact the code has and the
+    model has to be told, so enforce it here rather than asking.
+
+    The client's own state and any state named in their markets are kept, so
+    "virginia farm insurance" survives for a Virginia client.
+    """
+    ours = set()
+    for m in list(markets or []) + [state or ""]:
+        t = (m or "").strip().lower()
+        if not t:
+            continue
+        for part in t.replace(",", " ").split():
+            if part in STATE_ABBREV:
+                ours.add(part)
+                ours.add(STATE_ABBREV[part])
+            elif part in set(STATE_ABBREV.values()):
+                ours.add(part)
+                for full, ab in STATE_ABBREV.items():
+                    if ab == part:
+                        ours.add(full)
+    out, dropped = [], []
+    for svc in services or []:
+        name = (svc.get("service") or "").lower()
+        toks = set(name.replace(",", " ").split())
+        foreign = [st for st in STATE_ABBREV
+                   if st not in ours and (f" {st} " in f" {name} ")]
+        # Two-word state names ("new york", "north carolina") need a substring
+        # test; single-word ones are covered by the token check above.
+        if not foreign:
+            foreign = [st for st in STATE_ABBREV
+                       if " " in st and st not in ours and st in name]
+        if foreign:
+            dropped.append((svc.get("service"), foreign[0]))
+            continue
+        out.append(svc)
+    return out, dropped
+
+
 def scrub_services(services, markets, state, phrase_geos=None):
     """Strip any market/state text out of the SERVICE names and de-duplicate.
 
@@ -1096,17 +1142,29 @@ TASK: choose exactly {max_services} SERVICES this business should target, and as
 RULES:
 1. A SERVICE is a short, generic phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". {"This is a NATIONAL product brand: these terms are the final keyword list and will NOT be crossed with cities. Qualify the long-tail entries by AUDIENCE or USE CASE instead of location (e.g. \'electrolyte gummies for athletes\', \'energy gummies for teen athletes\'), never by place." if national else "It will be crossed with city names later, so do NOT include any location."}
 2. Only services this business actually offers. Exclude anything they don't do.
+2s. THE PARTNER'S SEED TERMS COME FIRST. They were typed by someone who knows the account, so treat
+   them as the client's own service list. Any seed that is already a clean, bare service belongs in the
+   output essentially as written. Only when you have fewer seeds than {max_services} should you add
+   services of your own — and then from the business description and site pages before the keyword-idea
+   list, which is ranked by national volume and is full of competitor names and out-of-area terms.
+   Never spend a slot on an invented term while a usable seed goes unused.
 2a. NEVER include a COMPETITOR'S company name as a service. The keyword-idea list WILL contain them
    (a search for "commercial construction company" surfaces the big national contractors) and they look
    like plausible services because they end in a trade word. They are not. Someone searching a specific
    firm's name wants that firm — the intent is navigational, the client will not outrank the brand for
    its own name, and because those terms come back "not ranking" every time they also inflate the quoted
    price on a client who actually ranks well.
-2b. A brand name IS allowed when the client sells, installs, or is certified in that product — an
-   authorized dealer genuinely competes for it and customers genuinely search it ("butler building
-   contractor", "trane furnace installation", "andersen window replacement"). The test is whether the
-   client can DELIVER the thing named. If the name is a rival who does the same work, exclude it; if it
-   is a product line the client carries, keep it. When you are unsure, leave it out.
+2b. NARROW EXCEPTION: a brand name is allowed ONLY when it is a PHYSICAL PRODUCT LINE the client
+   resells or installs — "butler building contractor", "trane furnace installation", "andersen window
+   replacement". The client stocks or fits that manufacturer's goods, so customers really do search the
+   brand plus the service.
+   This exception does NOT cover a firm that PROVIDES THE SAME SERVICE as the client. An insurance
+   agency does not "carry" State Farm; a builder does not "carry" Turner; an agency does not "carry" a
+   rival agency. If the name belongs to a company a customer could hire INSTEAD of the client, it is a
+   competitor — exclude it, no matter how much search volume it has. The keyword-idea list is ranked by
+   volume, so the largest national competitor in the trade will almost always appear near the top and
+   will look tempting. It is still wrong.
+   When you cannot tell which kind of name it is, leave it out.
 2b. BALANCE ACROSS SERVICE LINES — this is the rule that most often gets missed.
    Cover the business's WHOLE service range the way their own website menu does:
    no more than 2-3 variants of any one service family unless the business
@@ -1619,6 +1677,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # like with like, and before the grid so nothing carries a geo into
         # the crossing.
         services = scrub_services(services, markets, state, phrase_geos)
+        services, geo_dropped = drop_foreign_geo_services(services, markets, state)
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
         services = scrub_services(services, markets, state, phrase_geos)
@@ -1653,6 +1712,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "grid": True,
             "services": services,
             "pinned_head_terms": pinned,
+            "dropped_out_of_area": [d[0] for d in geo_dropped],
             "service_volume": service_volume,
             "volume_error": vol_err,
             "volume_location": "United States" if national_demand else loc_string(markets, state),
