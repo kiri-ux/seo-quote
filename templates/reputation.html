@@ -3,72 +3,139 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>adtini · SEO &amp; Rep Mgmt Quote Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* ============================================================
+     adtini · Quote Builder — Reputation Mgmt
+     Design system matched to the SEO tab (Consent Scanner / Vici):
+     Atlas Blue / Velocity Blue / Vici Gold / Parchment
+     Type: Barlow (body) + Barlow Condensed (labels, headings, data)
+     ============================================================ */
   :root{
-    --atlas:#0C447C; --velocity:#378ADD; --gold:#E8A93C;
-    --parchment:#F6F1E7; --ink:#1a2231; --muted:#6b7686; --line:#dfe4ec;
+    --atlas:#002D58; --velocity:#0066B3; --gold:#F1B434; --parchment:#FDFBF7;
+    --ink:#16283B; --muted:#5B6B7C; --line:#D9DFE6; --card:#FFFFFF;
+    --ok:#1F7A4D; --ok-bg:#E7F4ED; --ok-line:#B7DCC7;
+    --warn:#9A6A00; --warn-bg:#FBF1D9; --warn-line:#E9D6A6;
+    --bad:#B3261E; --bad-bg:#F9E7E5; --bad-line:#E7B5B1;
+    --info-bg:#E8F1F8;
+    --demo:#7A3F92; --demo-line:#B06FC9; --demo-bg:#FAF6FC;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    background:var(--parchment);color:var(--ink);line-height:1.5}
-  header{background:var(--atlas);color:#fff;padding:14px 28px 0;position:sticky;top:0;z-index:95}
-  .hrow{display:flex;align-items:center;justify-content:space-between;gap:16px}
-  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.2px}
-  header h1 span{opacity:.7;font-size:13px;font-weight:400}
-  .tabs{display:flex;gap:4px;margin-top:12px}
-  .tabs a{display:inline-block;padding:9px 18px;border-radius:9px 9px 0 0;font-size:13.5px;
-    font-weight:600;text-decoration:none;color:rgba(255,255,255,.75);background:rgba(255,255,255,.08)}
-  .tabs a.on{background:var(--parchment);color:var(--atlas)}
-  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 60px}
+  body{margin:0;font-family:'Barlow',sans-serif;background:var(--parchment);
+    color:var(--ink);line-height:1.55}
+  a{color:var(--velocity)}
+
+  /* ---- header + tabs ---------------------------------------- */
+  header{background:var(--atlas);color:#fff;padding:18px 28px 0;position:sticky;top:0;z-index:95;
+    border-bottom:4px solid var(--gold)}
+  .hrow{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+  header h1{margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.04em;text-transform:uppercase}
+  header h1 span{font-family:'Barlow',sans-serif;text-transform:none;letter-spacing:0;
+    color:#7E93A8;font-size:11px;font-weight:400;opacity:1}
+  .tabs{display:flex;gap:6px;margin-top:14px}
+  .tabs a{display:inline-block;padding:8px 14px;font-family:'Barlow Condensed',sans-serif;
+    font-size:15px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+    text-decoration:none;color:#8FA4B8;background:none;
+    border-bottom:3px solid transparent;border-radius:0}
+  .tabs a:hover{color:#C6D4E1}
+  .tabs a.on{color:#fff;background:none;border-bottom-color:var(--gold)}
+
+  .wrap{max-width:1500px;margin:0 auto;padding:24px 20px 80px}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
   @media(max-width:840px){.grid{grid-template-columns:1fr}}
-  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:20px}
-  .card h2{margin:0 0 14px;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--atlas)}
-  label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
-  .help{font-weight:400;color:var(--muted);font-size:12px;margin:2px 0 7px;line-height:1.5}
-  input[type=text],input[type=number],select{width:100%;padding:9px 11px;border:1px solid var(--line);
-    border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+
+  /* ---- panels ------------------------------------------------ */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:22px 24px;margin-bottom:20px}
+  .card h2{margin:0 0 14px;font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--atlas)}
+  .sec{margin:20px 0 8px;font-family:'Barlow Condensed',sans-serif;color:var(--atlas);
+    font-size:13.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+
+  /* ---- form fields ------------------------------------------- */
+  label{display:block;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase;color:var(--atlas);margin:16px 0 6px}
+  label span{font-family:'Barlow',sans-serif;text-transform:none;letter-spacing:0}
+  .help{font-family:'Barlow',sans-serif;font-weight:400;color:var(--muted);font-size:12.5px;
+    margin:2px 0 8px;line-height:1.55;text-transform:none;letter-spacing:0}
+  input[type=text],input[type=number],textarea,select{width:100%;padding:11px 14px;
+    border:1px solid var(--line);border-radius:8px;font:14px 'Barlow',sans-serif;
+    background:#FCFCFB;color:var(--ink)}
+  input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{
+    outline:2px solid var(--velocity);outline-offset:1px}
   input[type=number]{max-width:140px}
+  textarea{resize:vertical;line-height:1.6}
   .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
   .row > div{flex:1;min-width:150px}
-  /* campaign type selector */
+  summary{font-family:'Barlow',sans-serif}
+
+  /* ---- strategy type selector -------------------------------- */
   .ctypes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
   @media(max-width:700px){.ctypes{grid-template-columns:1fr}}
-  .ctype{border:1.5px solid var(--line);border-radius:11px;padding:13px 12px;cursor:pointer;
-    background:#fff;text-align:center;user-select:none}
-  .ctype b{display:block;font-size:13.5px;color:var(--atlas)}
-  .ctype small{color:var(--muted);font-size:11.5px;line-height:1.35;display:block;margin-top:3px}
+  .ctype{border:1px solid var(--line);border-radius:10px;padding:14px 12px;cursor:pointer;
+    background:#fff;text-align:center;user-select:none;transition:border-color .15s}
+  .ctype:hover{border-color:var(--velocity)}
+  .ctype b{display:block;font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--atlas)}
+  .ctype small{color:var(--muted);font-size:12px;line-height:1.4;display:block;margin-top:4px}
   .ctype.on{border-color:var(--atlas);background:var(--atlas)}
-  .ctype.on b, .ctype.on small{color:#fff}
-  .ctype.on small{opacity:.8}
-  /* toggles */
-  .toggle-row{display:flex;align-items:center;gap:10px;margin-top:10px}
-  .toggle-row .lbl{font-weight:600;font-size:13px}
+  .ctype.on b{color:#fff}
+  .ctype.on small{color:#C6D4E1}
+
+  /* ---- toggles ------------------------------------------------ */
+  .toggle-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .toggle-row .lbl{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--atlas)}
   .switch{position:relative;width:44px;height:24px;flex:none}
   .switch input{opacity:0;width:0;height:0}
-  .slider{position:absolute;inset:0;background:#c7cedb;border-radius:24px;transition:.2s;cursor:pointer}
-  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .slider{position:absolute;inset:0;background:#C3CDD7;border-radius:24px;transition:.2s;cursor:pointer}
+  .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;
+    border-radius:50%;transition:.2s}
   .switch input:checked + .slider{background:var(--velocity)}
   .switch input:checked + .slider:before{transform:translateX(20px)}
-  .btn{margin-top:22px;width:100%;background:var(--gold);color:#3a2c08;border:none;padding:13px;
-    border-radius:9px;font-size:15px;font-weight:700;cursor:pointer}
-  .btn:disabled{opacity:.55;cursor:wait}
-  .btn2{background:#fff;border:1.5px solid var(--atlas);color:var(--atlas);padding:8px 14px;
-    border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer}
+
+  /* ---- buttons ------------------------------------------------ */
+  button{font-family:'Barlow',sans-serif}
+  button:focus-visible{outline:2px solid var(--velocity);outline-offset:2px}
+  .btn{margin-top:22px;width:100%;background:var(--velocity);color:#fff;border:none;padding:13px;
+    border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Barlow',sans-serif}
+  .btn:hover:not(:disabled){background:#005696}
+  .btn:disabled{background:#9DB6CB;cursor:wait}
+  .btn2{background:#fff;border:1px solid var(--line);color:var(--atlas);padding:8px 14px;
+    border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:'Barlow',sans-serif}
+  .btn2:hover{border-color:var(--velocity);color:var(--velocity)}
   .hidden{display:none}
+
+  /* ---- info tooltip ------------------------------------------- */
   .tipwrap{position:relative;display:inline-block;margin-left:6px;vertical-align:1px}
-  .tipicon{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
-    border-radius:50%;border:1px solid var(--atlas);color:var(--atlas);font-size:10.5px;font-weight:700;
-    cursor:help;user-select:none;background:#fff;line-height:1;font-style:normal}
-  .tipwrap .tip{display:none;position:absolute;left:-10px;top:20px;z-index:60;width:280px;max-width:72vw;
-    background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 18px rgba(0,45,88,.14);
-    padding:9px 12px;font-size:12px;font-weight:400;color:var(--muted);line-height:1.55}
-  .tipwrap:hover .tip{display:block}
-  .gmock{background:#fff;border:1px solid #dfe1e5;border-radius:12px;padding:14px;margin:8px 0;max-width:100%;
+  .tipicon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+    border-radius:50%;border:1.5px solid var(--velocity);color:var(--velocity);
+    font:600 9.5px/1 'Barlow',sans-serif;font-style:normal;cursor:help;user-select:none;
+    background:#fff;text-transform:lowercase;letter-spacing:0;vertical-align:1px}
+  .tipwrap .tip{display:none;position:absolute;left:-10px;top:22px;z-index:60;width:340px;max-width:72vw;
+    background:var(--atlas);color:#F4F8FB;border:none;border-top:3px solid var(--gold);border-radius:8px;
+    box-shadow:0 6px 24px rgba(0,45,88,.35);padding:10px 13px;margin:0;
+    font:13px/1.5 'Barlow',sans-serif;font-weight:400;font-style:normal;
+    white-space:normal;text-transform:none;letter-spacing:0;text-align:left}
+  .tipwrap .tip b{color:var(--gold)}
+  .tipwrap:hover .tip,.tipwrap.open .tip{display:block}
+
+  /* ---- demo rail ---------------------------------------------- */
+  .demorail{border:2px dashed var(--demo-line);border-radius:10px;padding:8px 13px;background:var(--demo-bg)}
+  .demorail > summary{cursor:pointer;user-select:none;font-family:'Barlow Condensed',sans-serif;
+    font-size:12px;font-weight:600;color:var(--demo);text-transform:uppercase;letter-spacing:.06em}
+
+  /* ---- Google SERP mock (intentionally Google-styled) --------- */
+  .gmock{background:#fff;border:1px solid #dfe1e5;border-radius:10px;padding:14px;margin:8px 0;max-width:100%;
     box-shadow:0 1px 6px rgba(32,33,36,.08)}
-  .gmock .gtitle{color:#70757a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .gmock .gtitle{font-family:'Barlow Condensed',sans-serif;color:#70757a;font-size:12px;
+    text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
   .acrow{display:flex;align-items:center;gap:10px;color:#202124;font-size:14px;padding:6px 10px;border-radius:6px}
   .acrow.negx{background:#fce8e6;color:#c5221f}
   .acrow .mag{opacity:.45;font-size:12px}
@@ -77,48 +144,82 @@
   .pasftile{display:flex;align-items:center;justify-content:space-between;background:#f1f3f4;color:#202124;
     font-size:13px;padding:10px 12px;border-radius:8px}
   .pasftile.negx{background:#fce8e6;color:#c5221f}
-  .tacpos{background:#e6f4ea!important;color:#137333!important}
+  .tacpos{background:var(--ok-bg)!important;color:var(--ok)!important}
   .shotimg{width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px}
-  .tac{display:inline-block;background:#eef4fb;color:var(--atlas);padding:1px 8px;border-radius:20px;
-    font-size:11px;font-weight:700;margin-left:6px}
-  .pillnote{display:inline-block;background:#fde8c8;color:#7a5410;padding:3px 10px;border-radius:20px;
-    font-size:11.5px;font-weight:600;margin-left:8px}
-  /* results */
-  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
-  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase}
-  td.amt,th.amt{text-align:right;white-space:nowrap}
-  .svc{font-weight:700;color:var(--atlas)}
+
+  /* ---- badges / flags ----------------------------------------- */
+  .tac{display:inline-block;background:var(--info-bg);color:var(--atlas);padding:2px 9px;border-radius:20px;
+    font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;margin-left:6px}
+  .pillnote{display:inline-block;background:var(--warn-bg);color:var(--warn);padding:3px 10px;border-radius:20px;
+    font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;margin-left:8px}
+  .own{display:inline-block;background:var(--ok-bg);color:var(--ok);padding:2px 9px;border-radius:20px;
+    font-family:'Barlow Condensed',sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;margin-left:6px}
+  .third{display:inline-block;background:var(--bad-bg);color:var(--bad);padding:2px 9px;border-radius:20px;
+    font-family:'Barlow Condensed',sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;margin-left:6px}
+  .neg{color:var(--bad);font-weight:700} .watch{color:var(--warn);font-weight:600}
+
+  /* ---- tables -------------------------------------------------- */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:'Barlow Condensed',sans-serif;color:var(--atlas);font-weight:600;font-size:12.5px;
+    text-transform:uppercase;letter-spacing:.05em;background:#F2F4F1}
+  td.amt,th.amt{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .svc{font-weight:600;color:var(--atlas)}
   .det{color:var(--muted);font-size:12.5px;margin-top:2px}
   .nlist{margin:4px 0 0;padding-left:16px;color:var(--muted);font-size:12px}
-  .phasehdr td{background:var(--parchment);font-weight:700;font-size:12px;color:var(--atlas);
-    text-transform:uppercase;letter-spacing:.5px;border-bottom:none}
+  .phasehdr td{background:var(--info-bg);font-family:'Barlow Condensed',sans-serif;font-weight:600;
+    font-size:12.5px;color:var(--atlas);text-transform:uppercase;letter-spacing:.06em;border-bottom:none}
+  .stbl{width:100%;border-collapse:collapse;font-size:12.5px}
+  .stbl th,.stbl td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .stbl th{font-family:'Barlow Condensed',sans-serif;color:var(--atlas);font-size:11.5px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.05em;background:#F2F4F1}
+  .stbl td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  /* ---- totals cards -------------------------------------------- */
   .totals{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 6px}
   @media(max-width:700px){.totals{grid-template-columns:1fr}}
-  .tot{border:1px solid var(--line);border-radius:11px;padding:16px;text-align:center;background:#fff}
-  .tot .name{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);min-height:15px}
-  .tot .price{font-size:24px;font-weight:700;color:var(--atlas);margin:5px 0 0;height:34px;display:flex;align-items:flex-end;justify-content:center;line-height:1}
-  .warn{background:#fde8c8;border:1px solid #e8c98e;color:#7a5410;padding:10px 13px;border-radius:9px;
-    font-size:12.5px;margin:10px 0}
-  .err{background:#fbe6e6;border:1px solid #e7a9a9;color:#8a2b2b;padding:12px 14px;border-radius:9px;font-size:13.5px}
+  .tot{border:1px solid var(--line);border-radius:10px;padding:18px;text-align:center;background:var(--card)}
+  .tot .name{font-family:'Barlow Condensed',sans-serif;font-size:12.5px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-height:15px}
+  .tot .price{font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:700;color:var(--atlas);
+    margin:4px 0 0;height:38px;display:flex;align-items:flex-end;justify-content:center;line-height:1.1}
+  .tot .mo{font-size:12px;color:var(--muted)}
+
+  /* ---- callouts ------------------------------------------------- */
+  .warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn);
+    padding:11px 14px;border-radius:8px;font-size:13px;margin:10px 0}
+  .err{background:var(--bad-bg);border:1px solid var(--bad-line);color:var(--bad);
+    padding:12px 14px;border-radius:8px;font-size:13.5px}
+  .why{font-size:12.5px;color:var(--muted);margin:-2px 0 10px;line-height:1.5;
+    border-left:3px solid var(--gold);padding-left:11px}
+  .calc{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    font-size:13.5px;margin-bottom:16px}
+  .calc code{background:var(--info-bg);color:var(--atlas);font-weight:600;padding:1px 7px;
+    border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-size:14px;letter-spacing:.02em}
+
+  /* ---- volume / internal rows ----------------------------------- */
   .volrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .volrow > div:first-child{flex:1;min-width:220px}
-  .volnote{font-size:12px;color:var(--muted);margin-top:6px}
-  .intl{margin-top:8px;padding:7px 11px;border:1px solid #c6d2e1;border-radius:8px;
-    font-size:11.5px;color:#33445c;background:#eef2f7;display:block;width:100%;box-sizing:border-box}
-  .intlhdr{font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#5b6c84;margin-bottom:3px}
+  .volnote{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .intl{margin-top:8px;padding:8px 12px;border:1px solid #BFD3E6;border-radius:8px;
+    font-size:12px;color:var(--ink);background:var(--info-bg);display:block;width:100%;box-sizing:border-box}
+  .intlhdr{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--atlas);margin-bottom:4px}
   .intlrow{display:flex;justify-content:space-between;gap:14px;padding:1.5px 0}
   .intlrow span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
-  .scanhdr{margin:16px 0 4px;color:var(--atlas);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+
+  .scanhdr{margin:18px 0 6px;font-family:'Barlow Condensed',sans-serif;color:var(--atlas);font-size:13.5px;
+    text-transform:uppercase;letter-spacing:.06em;font-weight:600}
   .scanhdr:first-child{margin-top:0}
-  .neg{color:#8a2b2b;font-weight:700} .watch{color:#7a5410;font-weight:600}
-  .own{display:inline-block;background:#e3eee3;color:#2f6b34;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700;margin-left:6px}
-  .third{display:inline-block;background:#fbe6e6;color:#8a2b2b;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700;margin-left:6px}
-  .stbl{width:100%;border-collapse:collapse;font-size:12.5px}
-  .stbl th,.stbl td{padding:5px 7px;border-bottom:1px solid var(--line);text-align:left}
-  .stbl th{color:var(--muted);font-size:11px;text-transform:uppercase}
-  .stbl td.n{text-align:right;white-space:nowrap}
-  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px dashed var(--line);padding-top:12px}
+  .note{font-size:12.5px;color:var(--muted);margin-top:18px;border-top:1px solid var(--line);
+    padding-top:12px;line-height:1.6}
+  .nf{color:var(--muted)}
+
+  @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -241,8 +342,8 @@
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
           <p class="help" id="negPhraseNote">Includes up to 3 negative phrase removals (count unconfirmed).</p>
-          <details style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:8px 0 2px;background:#faf6fc" open>
-            <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — search protection price formula ▸ click to expand</summary>
+          <details class="demorail" style="margin:8px 0 2px" open>
+            <summary>Demo only — search protection price formula ▸ click to expand</summary>
             <div class="help" id="spFormula" style="margin:8px 0 4px"></div>
           </details>
         </div>
@@ -263,8 +364,8 @@
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO brand shield &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
-        <details style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:2px 0;background:#faf6fc" open>
-          <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — brand shield price formula ▸ click to expand</summary>
+        <details class="demorail" style="margin:2px 0" open>
+          <summary>Demo only — brand shield price formula ▸ click to expand</summary>
           <div class="help" id="shieldFormula" style="margin:8px 0 4px"></div>
         </details>
         <label># of locations (review generation)</label>
@@ -279,7 +380,7 @@
     <div>
       <div class="card" id="outCard">
         <h2>Quote</h2>
-                <details id="ovPanel" style="margin:0 0 14px;border:1px solid #e0c98a;border-radius:9px;background:#fdfaf2;padding:10px 13px">
+                <details id="ovPanel" style="margin:0 0 14px;border:1px solid var(--warn-line);border-radius:9px;background:var(--warn-bg);padding:10px 13px">
         <summary style="cursor:pointer;font-weight:600;font-size:13px">⚙ Manual hard-cost overrides</summary>
         <p class="help" style="margin:8px 0 10px">Sets the <b>partner hard cost</b> directly for this quote — client price, margin, and internal rows all recompute from it. Blank = formula/rate card. Overrides save with the quote and re-price it automatically as you type (once a quote has been built).</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px">
@@ -290,7 +391,7 @@
           <div><label style="font-size:12px">Reputational AI Search — hard $/mo</label><input type="number" id="ovGeo" placeholder="formula" min="0"></div>
           <div><label style="font-size:12px">Brand Shield — hard $/mo base</label><input type="number" id="ovShield" placeholder="formula" min="0"></div>
         </div>
-        <p class="help" style="margin:8px 0 0">Search Protection maintenance keeps its % ratio off the overridden active rate. Shield per-extra-location stays on the config value. <button type="button" id="ovClear" style="background:#fff;color:#b04a4a;border:1px solid #e0c0c0;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
+        <p class="help" style="margin:8px 0 0">Search Protection maintenance keeps its % ratio off the overridden active rate. Shield per-extra-location stays on the config value. <button type="button" id="ovClear" style="background:#fff;color:var(--bad);border:1px solid var(--bad-line);padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
         </details>
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
@@ -467,7 +568,7 @@ function render(d, payload){
     if(internal) h += '<tr class="intltr"><td colspan="3" style="border-top:none;padding-top:0">'+internal+'</td></tr>';
   });
   h += '</table>';
-  h += '<p style="margin:10px 0 2px;padding:7px 11px;border:1px solid #e0b64f;background:#fdf6e4;color:#7a5c14;border-radius:8px;font-size:12px;line-height:1.45">Timelines are estimates from similar campaigns \u2014 actual pace depends on the volume and strength of the negative content as well as search engine response times.</p>';
+  h += '<p style="margin:10px 0 2px;padding:7px 11px;border:1px solid var(--warn-line);background:var(--warn-bg);color:var(--warn);border-radius:8px;font-size:12px;line-height:1.45">Timelines are estimates from similar campaigns \u2014 actual pace depends on the volume and strength of the negative content as well as search engine response times.</p>';
 
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
@@ -496,8 +597,8 @@ async function loadRepCfg(){
 
 // Shared row renderer for the demo formula boxes: label | calculation — brief why
 function fmRow(label, calc, why){
-  return '<div style="display:grid;grid-template-columns:118px 1fr;gap:8px;padding:3px 0;border-bottom:1px dotted #e4d5ee;align-items:baseline">'
-    + '<b style="font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#7a3f92">'+label+'</b>'
+  return '<div style="display:grid;grid-template-columns:118px 1fr;gap:8px;padding:3px 0;border-bottom:1px dotted var(--demo-line);align-items:baseline">'
+    + '<b style="font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--demo)">'+label+'</b>'
     + '<span>'+calc+(why ? ' <span style="color:var(--muted)">\u2014 '+why+'</span>' : '')+'</span></div>';
 }
 function fmFoot(txt){ return '<div style="color:var(--muted);margin-top:4px">'+txt+'</div>'; }
@@ -666,7 +767,7 @@ function renderTerms(d){
   if(d.negative_volume > 0){
     h += '<div class="warn"><b>'+d.negative_volume.toLocaleString()+' searches/mo</b> use clearly negative terms (lawsuit, complaints…). The auto-suggest tactic works by outweighing these with positive searches — so the campaign needs to drive more than '+d.negative_volume.toLocaleString()+' positive searches/mo to hold. Another <b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way.</div>';
   }else{
-    h += '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34"><b>No negative-term search demand detected</b> — nobody is searching lawsuit/complaint-style terms for this brand right now. '+(d.watch_volume>0 ? '<b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way — worth protecting.' : 'Watch-term volume is also minimal.')+'</div>';
+    h += '<div class="warn" style="background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)"><b>No negative-term search demand detected</b> — nobody is searching lawsuit/complaint-style terms for this brand right now. '+(d.watch_volume>0 ? '<b>'+d.watch_volume.toLocaleString()+'/mo</b> use watch terms ("reviews", "legit"…) that can cut either way — worth protecting.' : 'Watch-term volume is also minimal.')+'</div>';
   }
   const flagged = d.terms.filter(t=>t.class!=='neutral').slice(0,15);
   if(flagged.length){
@@ -923,7 +1024,7 @@ function renderBrandReco(){
     $('scanOut').prepend(box);
   }
   const matches = campaign === rec;
-  box.innerHTML = '<div style="border:1px solid var(--velocity);background:#eef5fb;border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
+  box.innerHTML = '<div style="border:1px solid var(--velocity);background:var(--info-bg);border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
     + '<b style="color:var(--atlas)">Recommended strategy: '+recLabel+'</b> \u2014 '+why+' '
     + (matches ? '<button class="btn2" type="button" disabled style="opacity:.5;cursor:default">\u2713 '+recLabel+' selected</button>'
                : '<button class="btn2" type="button" id="brandRecoBtn" data-rec="'+rec+'">Switch to '+recLabel+'</button>')
@@ -951,7 +1052,7 @@ function renderReco(){
       Object.entries(r.sets||{}).forEach(([id,v])=>{
         const f=$(id);
         if(f && +f.value && +f.value !== +v)
-          mism += ' <span style="color:#9a6700">Field shows '+f.value+' — <a href="#" onclick="document.getElementById(\''+id+'\').value='+v+';this.parentElement.remove();return false">set to '+v+'</a> to match the scan.</span>';
+          mism += ' <span style="color:var(--warn)">Field shows '+f.value+' — <a href="#" onclick="document.getElementById(\''+id+'\').value='+v+';this.parentElement.remove();return false">set to '+v+'</a> to match the scan.</span>';
       });
       note.innerHTML = '✓ Applied from scan — '+r.reason+'. <span style="color:var(--muted)">Toggle off above to remove.</span>'+mism;
       row.insertAdjacentElement('afterend', note);
@@ -1009,7 +1110,7 @@ function renderLocs(d, live){
   h += '<table class="stbl"><tr><th><input type="checkbox" id="lockAll" title="Select all"></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
   scanLocations.slice(0,60).forEach((l,i)=>{
     h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+(willCheck(l,i)?'checked':'')+'></td>'
-       + '<td>'+l.title+(matched[i]?'':' <span style="background:#fef3e2;color:#9a6700;font-size:10.5px;padding:1px 7px;border-radius:9px;vertical-align:1px">name differs</span>')
+       + '<td>'+l.title+(matched[i]?'':' <span style="background:var(--warn-bg);color:var(--warn);font-size:10.5px;padding:1px 7px;border-radius:9px;vertical-align:1px">name differs</span>')
        + '<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
@@ -1138,7 +1239,7 @@ function renderNegCounts(done){
   h += '<div class="row" style="margin:4px 0 6px"><div style="flex:0 0 240px"><label style="margin-top:0">Flag threshold</label><select id="negTh"><option value="12"'+(th==='12'?' selected':'')+'>1–2★ reviews</option><option value="1"'+(th==='1'?' selected':'')+'>1★ only</option></select></div></div>';
   h += (tot12 > 0
     ? '<div class="warn"><b>'+tot12.toLocaleString()+'</b> reviews flagged at the selected threshold (auto-filled into the removal quote) · '+tot3.toLocaleString()+' at 3★.</div>'
-    : '<div class="warn" style="background:#e3eee3;border-color:#b9d4b9;color:#2f6b34">No reviews flagged at the selected threshold · '+tot3.toLocaleString()+' at 3★.</div>');
+    : '<div class="warn" style="background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)">No reviews flagged at the selected threshold · '+tot3.toLocaleString()+' at 3★.</div>');
   h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1★</th><th style="text-align:right">2★</th><th style="text-align:right">3★</th></tr>';
   done.forEach(d=>{
     h += '<tr><td>'+(d.title||d.place_id)+(d.truncated?' <span class="third">more beyond depth</span>':'')+'</td>'
@@ -1293,7 +1394,7 @@ async function loadSavedList(){
         + new Date(x.updated_at).toLocaleDateString()+'</div>'
         + '<button class="btn2" onclick="loadSavedQuote('+x.id+')">Open</button> '
         + '<button class="btn2" onclick="showVersions('+x.id+', this)">History</button> '
-        + '<button class="btn2" style="border-color:#e7a9a9;color:#8a2b2b" onclick="deleteSavedQuote('+x.id+')">Delete</button>'
+        + '<button class="btn2" style="border-color:var(--bad-line);color:var(--bad)" onclick="deleteSavedQuote('+x.id+')">Delete</button>'
         + '<div class="vlist"></div></div>';
     });
     $('savedList').innerHTML = h;
@@ -1341,7 +1442,7 @@ async function showVersions(id, btn){
     + '<span>'+(i===0?'<b>Original</b>':'Edit '+i)+' · one-time '+m0(v.base)+' · '+m0(v.intermediate)+'/mo <span style="color:var(--muted)">'+new Date(v.snapshot_at).toLocaleString()+'</span></span>'
     + '<span style="display:flex;gap:6px;flex:0 0 auto">'
     + '<button class="btn2" style="padding:3px 9px;font-size:11px" onclick="loadVersion('+v.id+');return false">View</button>'
-    + '<button class="btn2" style="padding:3px 8px;font-size:11px;color:#b3261e;border-color:#e0c0c0" onclick="deleteVersion('+v.id+');return false">×</button>'
+    + '<button class="btn2" style="padding:3px 8px;font-size:11px;color:#b3261e;border-color:var(--bad-line)" onclick="deleteVersion('+v.id+');return false">×</button>'
     + '</span></div>').join('');
 }
 async function deleteVersion(vid){
@@ -1385,7 +1486,7 @@ const cfgIn = (id, val, step) => '<input type="number" step="'+(step||50)+'" id=
 function cfgRow(label, inner){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0"><span style="font-size:13px;color:var(--ink)">'+label+'</span><span>'+inner+'</span></div>'; }
 function cfgHdr(txt, flag, kind){
   const pill = flag ? ' <span style="font-size:10.5px;font-weight:600;letter-spacing:.02em;padding:2px 8px;border-radius:9px;vertical-align:1px;'
-    + (kind==='ok' ? 'background:#e6f4ea;color:#137333' : 'background:#fef3e2;color:#9a6700')
+    + (kind==='ok' ? 'background:#e6f4ea;color:#137333' : 'background:var(--warn-bg);color:var(--warn)')
     + '">'+flag+'</span>' : '';
   return '<div class="scanhdr" style="margin-top:14px">'+txt+pill+'</div>';
 }
@@ -1402,7 +1503,7 @@ function renderCfg(c){
   h += cfgRow('Auto-suggest/related component base — hard $/mo', cfgIn('c_as', c.bundle.as_base));
   h += cfgRow('Hard $ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Hard $ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
-  h += cfgRow('Included negative phrases <span style="font-weight:400;color:#9a6700">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
+  h += cfgRow('Included negative phrases <span style="font-weight:400;color:var(--warn)">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
   h += cfgRow('Maintenance % of active rate', cfgIn('c_maintpct', Math.round((c.bundle.maintenance_pct ?? 0.544)*1000)/10, 1));
   h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
@@ -1412,8 +1513,8 @@ function renderCfg(c){
   h += cfgRow('Setup /mo', cfgIn('c_geos', c.geo.setup));
   h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));
   h += cfgHdr('Reactive + Proactive bundle', 'discount unconfirmed', 'warn');
-  h += '<div style="background:#fef3e2;border:1px solid #f1b434;border-radius:8px;padding:4px 10px;margin:4px 0">'
-     + cfgRow('Reactive+Proactive bundle discount % <span style="font-weight:400;color:#9a6700">(applies to recurring lines when both phases are sold — 0 = no discount)</span>', cfgIn('c_bdisc', Math.round(c.bundle_discount_pct*100), 1))
+  h += '<div style="background:var(--warn-bg);border:1px solid var(--gold);border-radius:8px;padding:4px 10px;margin:4px 0">'
+     + cfgRow('Reactive+Proactive bundle discount % <span style="font-weight:400;color:var(--warn)">(applies to recurring lines when both phases are sold — 0 = no discount)</span>', cfgIn('c_bdisc', Math.round(c.bundle_discount_pct*100), 1))
      + '</div>';
   h += cfgHdr('Internal delivery cost');
   h += cfgRow('% of partner hard cost', cfgIn('c_intpct', Math.round((c.internal_cost_pct||0.2)*100), 1));
@@ -1456,10 +1557,10 @@ let SAVE_ENABLED = false;
     if(bar && !REVIEW_TOKEN){
       bar.style.display = 'block';
       if(SAVE_ENABLED){
-        bar.style.background='#e8f5ec'; bar.style.border='1px solid #b6e0c2'; bar.style.color='#2a7a4a';
+        bar.style.background='var(--ok-bg)'; bar.style.border='1px solid var(--ok-line)'; bar.style.color='var(--ok)';
         bar.textContent = '\u2713 Saving is on \u2014 quotes auto-save from the first scan, and you can reload them anytime.';
       }else{
-        bar.style.background='#fdf1d8'; bar.style.border='1px solid #e8c98a'; bar.style.color='#7a5410';
+        bar.style.background='var(--warn-bg)'; bar.style.border='1px solid var(--warn-line)'; bar.style.color='var(--warn)';
         bar.textContent = '\u26a0 Saving is OFF \u2014 '+(s.detail||'attach a Postgres database in Render.')+' Quotes will NOT be saved until this is fixed.';
       }
     }
@@ -1482,7 +1583,7 @@ if(REVIEW_TOKEN){
       lastQuote = (q.payload||{}).quote || null;
       if(lastQuote) render(lastQuote, {brand: $('brand').value.trim()});
       const bar = document.createElement('div');
-      bar.style.cssText = 'background:#F1B434;color:#002D58;font-weight:600;font-size:13px;padding:8px 16px;text-align:center';
+      bar.style.cssText = 'background:var(--gold);color:#002D58;font-weight:600;font-size:13px;padding:8px 16px;text-align:center';
       bar.textContent = 'Read-only review: “'+(q.name||'quote')+'” — viewing a shared snapshot; edits are disabled.';
       document.body.prepend(bar);
       ['savedBtn','cfgBtn','go'].forEach(id=>{ const el=$(id); if(el) el.style.display='none'; });

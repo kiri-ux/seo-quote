@@ -194,8 +194,30 @@
   <nav class="tabs">
     <a href="/" class="on">SEO</a>
     <a href="/reputation">Reputation Mgmt</a>
+    <button id="cfgBtn" title="Pricing config — internal, not partner-facing"
+      style="margin-left:14px;align-self:center;background:rgba(255,255,255,.12);color:#fff;
+             border:1px solid rgba(255,255,255,.28);padding:5px 12px;border-radius:7px;
+             font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;
+             letter-spacing:.05em;text-transform:uppercase;cursor:pointer">⚙ Pricing config</button>
   </nav>
 </header>
+
+<!-- Pricing config drawer (internal). Opens LEFT so it can't collide with the
+     saved-quotes drawer on the right. -->
+<div id="cfgPanel" style="display:none;position:fixed;top:0;left:0;width:440px;max-width:92vw;height:100vh;background:#fff;box-shadow:4px 0 24px rgba(0,45,88,.18);z-index:200;overflow-y:auto;padding:20px 22px 60px">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+    <h2 style="margin:0;color:var(--atlas);font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">Pricing config</h2>
+    <button id="cfgClose" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--muted)">&times;</button>
+  </div>
+  <div class="help" style="margin:4px 0 2px">Applies to the running session for live tuning — a redeploy reverts to the file defaults. Re-run the quote after applying.</div>
+  <div style="font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 12px;border-top:1px solid var(--line);padding-top:10px">Demo only — admin config, not partner-facing</div>
+  <div id="cfgFields" style="font-size:13px"></div>
+  <div style="position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);margin-top:18px;padding:12px 0 4px">
+    <button class="btn" id="cfgApply" style="margin:0">Apply changes</button>
+    <div id="cfgStatus" style="margin-top:7px;font-size:12.5px;color:var(--muted)"></div>
+  </div>
+</div>
+<div id="cfgBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,45,88,.25);z-index:40"></div>
 
 <!-- Saved quotes drawer -->
 <div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:200;overflow-y:auto;padding:20px">
@@ -346,18 +368,6 @@
   </div>
 </div>
 
-<!-- ============ CONFIG REVIEW (internal) ============ -->
-<div class="card" style="margin-top:24px;border:2px dashed #b06fc9;background:#faf6fc">
-  <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Demo only — admin config, not partner-facing</div>
-  <div class="help" style="margin:0 0 8px">In adtini every constant below lives in admin-side configuration — partners never see or edit pricing internals. Values are calibrated to actual proposals (2026-07-20, fit within ~7% across nine clients), so edits here are pricing-policy decisions, not tuning knobs.</div>
-  <h2 style="cursor:pointer;user-select:none" id="cfgToggle">⚙ Pricing config — review &amp; tweak <span id="cfgChevron" style="font-weight:400;color:var(--muted)">▸ click to expand</span></h2>
-  <div id="cfgBody" class="hidden">
-    <p class="why" style="margin-bottom:16px">Every number the pricing engine uses, grouped by the step it affects. Edit any value and click <b>Apply</b> to update the live session, then re-run a quote to see the effect. Changes last until the app restarts (they don't overwrite the code defaults) — note what works and we'll bake it in.</p>
-    <div id="cfgFields" style="font-size:13px"></div>
-    <button class="btn" id="cfgApply" style="margin-top:16px;max-width:200px">Apply changes</button>
-    <span id="cfgStatus" style="margin-left:12px;font-size:13px;color:var(--muted)"></span>
-  </div>
-</div>
 </div>
 
 <script>
@@ -1551,11 +1561,21 @@ async function runStep4(){
   }
 }
 // ---- config review panel (internal) ----
-$('cfgToggle').addEventListener('click', async()=>{
-  const body=$('cfgBody'), chev=$('cfgChevron');
-  const open=body.classList.toggle('hidden')===false;
-  chev.textContent = open ? '▾ click to collapse' : '▸ click to expand';
-  if(open && !body.dataset.loaded){ await loadConfig(); body.dataset.loaded='1'; }
+async function openCfg(){
+  $('cfgPanel').style.display='block';
+  $('cfgBackdrop').style.display='block';
+  const p=$('cfgPanel');
+  if(!p.dataset.loaded){ await loadConfig(); p.dataset.loaded='1'; }
+}
+function closeCfg(){
+  $('cfgPanel').style.display='none';
+  $('cfgBackdrop').style.display='none';
+}
+$('cfgBtn').addEventListener('click', openCfg);
+$('cfgClose').addEventListener('click', closeCfg);
+$('cfgBackdrop').addEventListener('click', closeCfg);
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && $('cfgPanel').style.display==='block') closeCfg();
 });
 
 function cfgRow(label, id, val, note){
@@ -1564,8 +1584,26 @@ function cfgRow(label, id, val, note){
     <input type="text" id="${id}" value="${val}" style="width:90px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
   </div>`;
 }
-function cfgGroup(title, rows){
-  return `<div style="margin:14px 0 6px"><div class="sec" style="margin:0 0 6px">${title}</div>${rows}</div>`;
+// Confidence badges mirror the Reputation tab: every group says how well its
+// numbers are evidenced, so nobody tunes a calibrated constant thinking it's a
+// guess — or trusts a guess thinking it's calibrated.
+const CFG_BADGE = {
+  confirmed: ['CALIBRATED — FITS ACTUAL PROPOSALS', 'var(--ok-bg)', 'var(--ok)'],
+  thin:      ['FIT ON ONE OR TWO CLIENTS — CONFIRM', 'var(--warn-bg)', 'var(--warn)'],
+  estimate:  ['INTERNAL ESTIMATE — PENDING REVIEW',  'var(--warn-bg)', 'var(--warn)'],
+  mechanical:['MECHANICAL — NOT A PRICING DECISION', '#EDEFF2', 'var(--muted)'],
+};
+function cfgBadge(kind, override){
+  const b=CFG_BADGE[kind]; if(!b) return '';
+  return `<span style="background:${b[1]};color:${b[2]};font-family:'Barlow Condensed',sans-serif;
+    font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+    border-radius:4px;padding:2px 7px;margin-left:7px;white-space:normal">${override||b[0]}</span>`;
+}
+function cfgGroup(title, rows, badge, badgeText){
+  return `<details open style="margin:16px 0 4px;border-top:1px solid var(--line);padding-top:12px">
+    <summary style="cursor:pointer;user-select:none;list-style:none;margin:0 0 8px">
+      <span class="sec" style="margin:0;display:inline">${title}</span>${cfgBadge(badge,badgeText)}
+    </summary>${rows}</details>`;
 }
 
 // Tier rows: render each [threshold, uplift] as a readable sentence with two
@@ -1632,7 +1670,8 @@ async function loadConfig(){
       cfgRow('Min services','cf_gmin',c.grid_min_services,'floor, used when there are many cities')+
       cfgRow('Max services','cf_gmax',c.grid_max_services,'ceiling, used when there are few/no cities')+
       cfgRow('Max cities','cf_gcity',c.grid_max_cities,'cities crossed against every service')+
-      cfgRow('State suffix (1/0)','cf_gsfx',c.grid_state_suffix?1:0,'1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"')) +
+      cfgRow('State suffix (1/0)','cf_gsfx',c.grid_state_suffix?1:0,'1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"'),
+      'mechanical','LIST SHAPE — NOT A PRICING DECISION') +
     cfgGroup('Step 2 · competition (hard cost)',
       `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
       cfgRow('CPC multiplier','cf_cpcmult',c.cpc_adder_mult,'$ of adder per $1 of median CPC (e.g. 3 → a $150 CPC adds $450)')+
@@ -1644,15 +1683,21 @@ async function loadConfig(){
       cfgRow('Bid break — low/mid ($)','cf_break1',bb[0],'flat fallback: under this → +$0')+
       cfgRow('Bid break — mid/high ($)','cf_break2',bb[1],'flat fallback: over this → top adder')+
       cfgRow('Adder · score 1','cf_add1',ca['1'],'flat fallback')+
-      cfgRow('Adder · score 2','cf_add2',ca['2'],'flat fallback')) +
+      cfgRow('Adder · score 2','cf_add2',ca['2'],'flat fallback'),
+      'confirmed') +
     cfgGroup('Step 3 · zero-ranking uplift',
       `<div class="tierhelp">When a share of the client's keywords aren't ranking, add a percentage to the price. Higher share not ranking → bigger uplift.</div>`+
       tierRows(c.zero_ranking_tiers,'cf_zr','If at least','% of terms aren\u2019t ranking → add','% to price')+
-      cfgRow('Positions checked (top-N)','cf_topn',c.zero_ranking_top_n,'a term counts as "ranking" if it appears in the top N results — SERP depth follows this (any value \u2264100 is one DataForSEO unit)')) +
+      cfgRow('Positions checked (top-N)','cf_topn',c.zero_ranking_top_n,'a term counts as "ranking" if it appears in the top N results — SERP depth follows this (any value \u2264100 is one DataForSEO unit)'),
+      'thin','UPLIFT CALIBRATED · DISCOUNT TIER FIT ON ONE CLIENT') +
     cfgGroup('Step 4 · volume-based pricing',
       `<div class="tierhelp">The base price assumes a normalized search volume. Above that baseline, add a fixed $ per additional monthly search, at a declining rate per band (like tax brackets). Edit the bands and rates to calibrate.</div>`+
       cfgRow('Normalized baseline (searches)','cf_volfree',c.vol_free_below,'volume at/below this adds nothing — the base already covers it')+
-      volBracketRows(c.volume_brackets)) +
+      volBracketRows(c.volume_brackets)+
+      `<div class="tierhelp" style="margin-top:10px">Volume prices <b>opportunity, not demand</b>. A client already ranking for its terms owns that traffic — you're maintaining it, not winning it — so the add ramps down as visibility improves. Susquehanna has the largest volume of any calibration client and the best rankings, and was quoted below the statewide anchor; this is what reconciles that.</div>`+
+      cfgRow('Ramp — no opportunity (% not ranking)','cf_ramp_lo',(c.vol_add_ramp||[40,60])[0],'at/below this the volume add is $0')+
+      cfgRow('Ramp — full opportunity (%)','cf_ramp_hi',(c.vol_add_ramp||[40,60])[1],'at/above this the full volume add applies; between the two it scales'),
+      'confirmed','FITS THREE ACTUALS WITHIN 2%') +
     cfgGroup('Step 4 · pricing (hard-cost anchors)',
       cfgRow('Single City','cf_ga_single',ga.single_city)+
       cfgRow('Contiguous region','cf_ga_contig',ga.contiguous_region)+
@@ -1664,7 +1709,31 @@ async function loadConfig(){
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
       cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'× tier price')+
-      cfgRow('Default markup (%)','cf_markup',c.default_markup_pct));
+      cfgRow('Default markup (%)','cf_markup',c.default_markup_pct)+
+      cfgRow('Nationwide extras multiplier','cf_nwx',c.nationwide_service_extras,'1 = volume + visibility apply at national scope (they are what separate national clients); 0 mutes both'),
+      'confirmed') +
+
+    cfgGroup('AI Search · GEO pricing',
+      `<div class="tierhelp">GEO is quoted as a <b>percentage of the client's own Core SEO price</b>, not a fixed rate card. Brendan: GEO runs 30–50% below SEO on average, climbing toward parity when the client has little existing visibility. The tiers below map visibility to that percentage — read high to low, first match wins.</div>`+
+      tierRows(c.geo_pct_tiers,'cf_geot','If at least','% of terms aren\u2019t ranking → GEO is','% of Core SEO')+
+      cfgRow('Default GEO %','cf_geodef',c.geo_pct_default,'used when there is no ranking data yet')+
+      cfgRow('Bundle discount (%)','cf_geodisc',c.geo_bundle_discount_pct,'off the GEO line when sold with Core SEO — all three tiers')+
+      cfgRow('Minimum term (months)','cf_term',c.min_term_months,'standard for both strategies')+
+      cfgRow('Minimum term — no visibility','cf_termzv',c.min_term_months_zero_visibility,'used when almost nothing ranks; results take longer')+
+      cfgRow('\u201cNo visibility\u201d threshold (%)','cf_zvpct',c.zero_visibility_pct_not_ranking,'% not ranking that counts as no visibility'),
+      'thin','GEO %% CEILING BACK-SOLVED FROM MPG — CONFIRM ON A SECOND CLIENT') +
+
+    cfgGroup('Keyword list consistency',
+      `<div class="tierhelp">The keyword list comes from a model call, so the same client can produce a different list run to run — and volume is a pricing input. Pinning forces the highest-volume terms the search data actually returned into the list regardless of what the model picks, so the price stops moving for reasons the client didn't cause.</div>`+
+      cfgRow('Head terms pinned','cf_pinn',c.pin_head_terms,'0 turns pinning off entirely')+
+      cfgRow('Minimum volume to pin','cf_pinvol',c.pin_min_volume,'ignore terms thinner than this')+
+      `<div class="tierhelp" style="margin-top:8px">Model in use: <b>${c.claude_model||'—'}</b> — ${c.claude_model_pinned?'pinned.':'<span style="color:var(--warn)">not pinned; set the CLAUDE_MODEL env var so an alias update can\u2019t reshape every list mid-cycle.</span>'}</div>`,
+      'mechanical','STABILITY CONTROLS — NOT A PRICING DECISION') +
+
+    cfgGroup('Request timeouts',
+      `<div class="tierhelp">Per-call and per-route ceilings. These must stay <b>below</b> the server's own worker timeout or the worker is killed before the app can report what went wrong — which surfaces as an unreadable 500. Render start command should be <code>gunicorn app:app --timeout 120 --workers 2</code>.</div>`+
+      `<div class="tierhelp">Per DataForSEO call: <b>${c.dfs_timeout}s</b> · per route budget: <b>${c.request_budget_s}s</b>. Both are set by the DFS_TIMEOUT and REQUEST_BUDGET_S env vars, not editable here — they need to change together with the server setting.</div>`,
+      'mechanical','ENV VARS — READ ONLY HERE');
 }
 
 $('cfgApply').addEventListener('click', async()=>{
@@ -1684,6 +1753,16 @@ $('cfgApply').addEventListener('click', async()=>{
     volume_brackets:readVolBrackets(),
     step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
     default_markup_pct:v('cf_markup'),
+    nationwide_service_extras:v('cf_nwx'),
+    vol_add_ramp:[v('cf_ramp_lo'), v('cf_ramp_hi')],
+    geo_pct_tiers:readTierRows('cf_geot'),
+    geo_pct_default:v('cf_geodef'),
+    geo_bundle_discount_pct:v('cf_geodisc'),
+    min_term_months:v('cf_term'),
+    min_term_months_zero_visibility:v('cf_termzv'),
+    zero_visibility_pct_not_ranking:v('cf_zvpct'),
+    pin_head_terms:v('cf_pinn'),
+    pin_min_volume:v('cf_pinvol'),
   };
   $('cfgStatus').textContent='Applying…';
   try{
