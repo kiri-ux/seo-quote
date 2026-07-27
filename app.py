@@ -63,6 +63,33 @@ def _json_error_guard(fn):
 import datetime as _dt
 BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
             or _dt.datetime.utcnow().strftime("dev-%m%d"))
+
+# SOURCE FINGERPRINT (2026-07-27).
+# The commit hash and the deploy time both describe the DEPLOY, not the code —
+# so there was no way to tell, before opening the app, whether the files you
+# uploaded are the ones running. Re-uploading the same file, or dropping one in
+# the wrong folder, still produces a fresh hash and a fresh timestamp. This
+# hashes the actual file contents instead: the same files always produce the
+# same six characters, and any change to any of them produces different ones.
+# Whoever hands over a build can state the expected value in advance.
+FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html")
+
+def _source_fingerprint():
+    import hashlib
+    here = os.path.dirname(os.path.abspath(__file__))
+    h = hashlib.sha256()
+    for rel in FINGERPRINT_FILES:
+        try:
+            with open(os.path.join(here, rel), "rb") as fh:
+                # Normalise line endings so a checkout on a different platform
+                # doesn't change the answer for identical content.
+                h.update(fh.read().replace(b"\r\n", b"\n"))
+        except Exception:
+            h.update(b"<missing>")
+        h.update(b"\x00")
+    return h.hexdigest()[:6]
+
+SOURCE_FP = _source_fingerprint()
 def _build_stamp():
     """Build time in US Eastern (EST/EDT handled by the tzdb). Falls back to a
     fixed -05:00 if the container image ships without tzdata."""
@@ -73,7 +100,8 @@ def _build_stamp():
     except Exception:
         now = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-5)))
         label = "ET"
-    return f"build {now.strftime('%Y-%m-%d %I:%M %p').lstrip('0')} {label} \u00b7 {BUILD_ID}"
+    return (f"build {now.strftime('%Y-%m-%d %I:%M %p').lstrip('0')} {label} "
+            f"\u00b7 {BUILD_ID} \u00b7 src {SOURCE_FP}")
 
 BUILD_STR = _build_stamp()
 BASE = "https://api.dataforseo.com/v3"
@@ -2776,6 +2804,7 @@ def api_config_get():
         # Pin it with the CLAUDE_MODEL env var.
         "claude_model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
         "claude_model_pinned": bool(os.environ.get("CLAUDE_MODEL")),
+        "source_fingerprint": SOURCE_FP,
         "dfs_timeout": DFS_TIMEOUT,
         "request_budget_s": REQUEST_BUDGET_S,
         "pin_head_terms": CFG.get("pin_head_terms", 3),
