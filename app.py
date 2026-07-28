@@ -1301,7 +1301,8 @@ def pin_head_services(services, cands, markets, state, brand, max_services):
                                           str(r.get("keyword") or ""))):
         if (c.get("volume") or 0) < min_vol:
             break
-        term = _strip_markets((c.get("keyword") or "").lower(), markets, state).strip()
+        term = clean_kw(strip_proximity(
+            _strip_markets((c.get("keyword") or "").lower(), markets, state))).strip()
         if not term or (b and b in term) or term in seen:
             continue
         seen.add(term)
@@ -3769,6 +3770,9 @@ Rules:
 - USE THE CUSTOMER'S VOCABULARY, not the site's page template. If most labels share one template word (a menu of "X Treatment & Therapy" condition pages, "Y Repair Services" pages), do NOT echo that word into every term — a person with anxiety types "anxiety therapist" or "anxiety therapy", not "anxiety treatment therapy". Vary the phrasing to match real searches.
 - When the labels are all variations of ONE parent service (conditions, specialties, sub-services), ALSO make sure the parent's everyday head terms are represented — the bread-and-butter words customers actually type ("therapist", "therapy", "counseling", "mental health clinic" for a behavioral-health practice) — by mapping the most general labels to those instead of to another templated variant.
 - Map to null anything that is NOT a purchasable service: careers, press, blog, media, "our process", team pages, generic CTAs.
+- NEVER add "near me", "nearby", "closest" or any other proximity phrase. Every term is crossed with
+  a city later, and "mattress store near me acworth ga" is not a phrase any human types — "near me"
+  IS the location. Write the bare service and let the grid add the place.
 - Lowercase, no geo, 2-5 words each.
 
 Return ONLY a JSON object mapping every input label to its search phrase or null. No preamble, no markdown fences."""
@@ -3786,8 +3790,15 @@ Return ONLY a JSON object mapping every input label to its search phrase or null
         text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
         parsed = json.loads(text)
         if isinstance(parsed, dict):
-            return {k: (v.strip().lower() if isinstance(v, str) and v.strip() else None)
-                    for k, v in parsed.items()}
+            out = {}
+            for k, v in parsed.items():
+                if not (isinstance(v, str) and v.strip()):
+                    out[k] = None
+                    continue
+                # Strip proximity here too. The prompt asks; this guarantees.
+                t = clean_kw(strip_proximity(v.strip().lower())).strip()
+                out[k] = t or None
+            return out
     except Exception:
         pass
     return {}
