@@ -2404,12 +2404,14 @@ async function refreshAddonSuggestion(){
     const cur=parseFloat(($('addon')||{}).value||0)||0;
     const match = cur===r.suggested;
     box.innerHTML=`<details style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:9px;padding:8px 11px;font-size:12.5px">
-      <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 currently set to '+cur} \u25b8 how this is worked out</summary>
+      <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 currently set to '+cur}`:'not enough rank data to suggest an add-on count'} \u25b8 how this is worked out</summary>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
       <div style="margin-top:7px" class="nf"><b>How the suggestion is made.</b> Two questions, in order.
         First, how many markets: <b>${r.markets}</b>. At three or fewer the answer is always one campaign, because related nearby markets normally run together.
         Above three it comes down to whether the client's footprint is <i>already</i> multi-market — the tool counts how many of the entered markets the site currently ranks in, taken from the step 3 table (<b>${r.covered} of ${r.measured}</b> measured here). Ranking across most of them means one presence to improve; ranking in one or none means every other market is a build from scratch.
-        Markets tagged with different states push toward add-ons, and only explicitly tagged states count — inferring a state from a city name gets "Cleveland" wrong.</div>
+        Markets tagged with different states push toward add-ons, and only explicitly tagged states count — inferring a state from a city name gets "Cleveland" wrong.
+        Coverage is read against the markets you <i>entered</i>, not the ones that happened to be measured: the grid only crosses the highest-demand cities, so a client can show "5 of 5" while nine markets were never looked at — and those nine are the lower-demand ones, the most likely to be greenfield.</div>
+      <div style="margin-top:7px" class="nf"><b>When this is worked out.</b> Every time step 3 renders, from the rank table held by this quote — nothing is stored. Reopening a saved quote recalculates it from the rankings captured when that quote was last run, so it reflects that snapshot rather than today's search results. Re-run step 3 for a current read.</div>
       <div style="margin-top:7px" class="nf">⚠ <b>It cannot see the budget</b>, which is the first thing that decides this in practice, and the rule is fit on two proposals: Skills of Central PA (8 markets, one campaign) and TN Water &amp; Air (12 markets, add-ons offered). Treat it as a prompt to think, not an answer — the field stays yours to set.</div>
     </details>`;
   }catch(e){ box.innerHTML=''; }

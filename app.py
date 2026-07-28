@@ -463,6 +463,7 @@ CFG = {
     # Central PA and TN Water & Air) — treat the suggestion as a prompt to
     # think, not a decision, until more actuals confirm them.
     "addon_free_markets": 3,        # at or below this, always one campaign
+    "addon_min_measured_share": 0.7,  # need rank data on this share before suggesting
     "addon_covered_share": 0.6,     # rank in this share of measured markets = one footprint
     "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
     "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
@@ -581,7 +582,7 @@ def recommend_addons(markets, state, rows, top_n=None):
     mk = [m for m in (markets or []) if m and m.strip()]
     n = len(mk)
     out = {"markets": n, "suggested": 0, "basis": "", "covered": 0,
-           "measured": 0, "states": 0, "confident": False}
+           "measured": 0, "unmeasured": 0, "states": 0, "confident": False}
     if n <= 1:
         out["basis"] = "single market — nothing to add on."
         return out
@@ -614,10 +615,27 @@ def recommend_addons(markets, state, rows, top_n=None):
                     covered.add(m)
     out["covered"], out["measured"] = len(covered), len(measured)
 
+    out["unmeasured"] = n - len(measured)
     if len(measured) < 2:
         out["basis"] = (f"{n} markets, but rankings were only measured in "
                         f"{len(measured)} of them — run step 3 across the markets "
                         f"before trusting a suggestion.")
+        return out
+
+    # Coverage has to be read against the markets ENTERED, not the ones that
+    # happened to be measured. The grid crosses only the top few cities by
+    # demand, so a client can show "5 of 5 measured" while nine markets were
+    # never looked at — and those nine are precisely the ones most likely to be
+    # greenfield, because they were the LOWEST-demand markets. Concluding "one
+    # footprint" from the best five is the tool marking its own homework.
+    meas_share = len(measured) / n
+    if meas_share < float(CFG.get("addon_min_measured_share", 0.7)):
+        out["basis"] = (f"{n} markets, but only {len(measured)} have rank data — "
+                        f"the grid crosses the highest-demand cities, so "
+                        f"{n - len(measured)} markets were never measured. Those are "
+                        f"the lower-demand ones, which are the most likely to be "
+                        f"greenfield, so no suggestion can be made from this. Raise "
+                        f"Grid max cities and re-run step 3 to decide properly.")
         return out
 
     share = len(covered) / len(measured)
