@@ -2022,6 +2022,7 @@ function reflectInputs(inp){
   fill('kw',    inp.keywords);
   fill('geo',   inp.geo_values);
   fill('spgeo', inp.phrase_geos||[]);
+  try{ syncStateSummary(); }catch(e){}
   Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
 
   if($('brand'))         $('brand').value = inp.brand||'';
@@ -2388,8 +2389,16 @@ function syncStateSummary(){
   el.textContent = sel.value ? ` · fallback state: ${sel.value}` : ' · no fallback state set';
   el.style.color = sel.value ? 'var(--muted)' : 'var(--warn)';
 }
-if($('state')) $('state').addEventListener('change', syncStateSummary);
+if($('state')){
+  // 'change' only fires on user input. Restoring a quote, or the browser
+  // restoring a value on reload, sets .value silently — so sync on those too,
+  // or the summary reports "no fallback state" while one is plainly selected.
+  $('state').addEventListener('change', syncStateSummary);
+  $('state').addEventListener('input', syncStateSummary);
+}
 try{ syncStateSummary(); }catch(e){}
+document.addEventListener('DOMContentLoaded', ()=>{ try{ syncStateSummary(); }catch(e){} });
+window.addEventListener('load', ()=>{ try{ syncStateSummary(); }catch(e){} });
 
 // Suggest an add-on count once step 3 has produced a rank table. Advisory
 // only — it cannot see the client's budget, which is the first thing the
