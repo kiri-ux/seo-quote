@@ -1489,18 +1489,29 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
-def pick_grid_cities(markets, state, limit, probe_term=""):
+def pick_grid_cities(markets, state, limit, probe_term="", explain=None):
+    """`explain` is an optional dict that gets filled with WHY these cities won.
+
+    Selection quietly discards markets the partner entered, which is the kind
+    of decision that should never be invisible — an operator seeing four of
+    thirteen cities in the grid has no way to tell whether the other nine were
+    judged or just dropped. The dict records the probe used, every city's
+    score, and what was cut.
+    """
     """Choose WHICH cities go in the grid when more are supplied than the cap.
     Taking the first N by input order picks alphabetically-early villages over
     real metros (e.g. 'Augusta Springs' before 'Fairfax'). Instead, rank the
     supplied cities by how much search demand they actually carry, using a
     generic '<city>' population-proxy query, and keep the biggest.
     Falls back to input order if the lookup fails."""
+    exp = explain if isinstance(explain, dict) else {}
+    exp.update({"limit": limit, "method": "", "probe": "", "kept": [], "dropped": []})
     cities = [m.strip() for m in markets if m.strip()]
     # drop a market that is actually the state name — it isn't a city
     if state:
         cities = [c for c in cities if c.lower() != state.strip().lower()]
     if len(cities) <= limit:
+        exp.update({"method": "all", "kept": [(c, None) for c in cities]})
         return cities
     try:
         # Probe with the state suffix so ambiguous names resolve to the RIGHT
@@ -1524,6 +1535,8 @@ def pick_grid_cities(markets, state, limit, probe_term=""):
         items = (data.get("tasks") or [{}])[0].get("result") or []
         vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                for it in items}
+        exp["probe"] = f"{term} <city>{sfx}"
+        exp["method"] = "client term"
         scored = {c: vol.get(f"{term} {c.lower()}{sfx}", 0) for c in cities}
         # If the client's own term returns nothing anywhere, the ranking is
         # noise — fall back to the population proxy rather than picking cities
@@ -1537,10 +1550,17 @@ def pick_grid_cities(markets, state, limit, probe_term=""):
             v2 = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                   for it in ((data2.get("tasks") or [{}])[0].get("result") or [])}
             scored = {c: v2.get(f"insurance {c.lower()}{sfx}", 0) for c in cities}
+            exp["probe"] = f"insurance <city>{sfx}"
+            exp["method"] = "population proxy"
         # Ties broken by name so the same input always gives the same cities.
         ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), c.lower()))
+        exp["kept"] = [(c, scored.get(c, 0)) for c in ranked[:limit]]
+        exp["dropped"] = [(c, scored.get(c, 0)) for c in ranked[limit:]]
         return ranked[:limit]
     except Exception:
+        exp.update({"method": "input order",
+                    "kept": [(c, None) for c in cities[:limit]],
+                    "dropped": [(c, None) for c in cities[limit:]]})
         return cities[:limit]
 
 
@@ -2020,8 +2040,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     if CFG.get("grid_mode"):
         cands = ultra + competitive + long_tail
         # Decide the city set FIRST so the service count can scale to it.
+        city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
-                                  probe_term=(seeds[0] if seeds else ""))
+                                  probe_term=(seeds[0] if seeds else ""),
+                                  explain=city_pick)
         # Search-phrase geos ("south jersey", "fox cities") cross into keyword
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
@@ -2111,6 +2133,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "grid": True,
             "services": services,
             "pinned_head_terms": pinned,
+            "city_selection": city_pick,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
             "dropped_ungrounded": [d[0] for d in (ungrounded or [])],

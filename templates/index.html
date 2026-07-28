@@ -880,6 +880,19 @@ function renderStep1(){
     ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
       <summary style="cursor:pointer;user-select:none"><b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.services.length} services${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}`:''} <span class="nf">— click for the service list</span>${kw.total_volume?'':`<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data${kw.volume_error?` — ${escapeHtml(kw.volume_error)}`:''}. The volume part of pricing will be $0.</span></div>`}</summary>
       <div style="margin-top:6px">${kw.services.map(s=>`${s.pinned?'<b title="Pinned — highest-volume term from the search data">📌 </b>':''}${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}</div>
+      ${(()=>{const cs=kw.city_selection; if(!cs||!cs.method) return '';
+        const money0=n=>Number(n).toLocaleString();
+        if(cs.method==='all') return `<div style="margin-top:6px" class="nf">🗺 <b>All ${cs.kept.length} market${cs.kept.length===1?'':'s'} used</b> — under the ${cs.limit}-city cap, so nothing was dropped.</div>`;
+        const why = cs.method==='client term'
+          ? `ranked by real search demand for <code>${escapeHtml(cs.probe||'')}</code> — the client's own service, so the markets kept are the ones where their work actually gets searched`
+          : cs.method==='population proxy'
+            ? `the client's own term returned no volume anywhere, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead`
+            : `the demand lookup failed, so markets were kept in the order they were entered — worth re-running before you quote`;
+        const fmt=a=>a.map(([c,v])=>`${escapeHtml(c)}${v==null?'':` <span class="nf">(${money0(v)}/mo)</span>`}`).join(' · ');
+        return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.
+          <div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>
+          ${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}
+        </div>`;})()}
       ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Keyword / Vertical Focus terms</b> — those are treated as the client's own service list and fill the grid before anything the AI proposes.</div>`:''}
       ${(kw.geo_filter_off)?`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`:''}
       ${(kw.grounding_stood_down)?`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Keyword / Vertical Focus</b> terms and rebuild to switch it back on. Check the list by eye for competitor names in the meantime.</div>`:''}
