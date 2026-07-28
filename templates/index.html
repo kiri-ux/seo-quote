@@ -1323,9 +1323,12 @@ function focusHtml(){
       <td style="padding:4px 10px 4px 0">${s.tag}</td>
       <td style="padding:4px 0" class="nf">${bits.join(' · ')||'—'}${s.cpc?` · CPC ~$${s.cpc.toFixed(0)}`:''}</td></tr>`;
   }).join('');
-  return `<h4 class="sec">Recommended focus <span class="nf">(demand × rank opportunity × click value)</span></h4>
+  return `<div style="border:2px solid var(--gold);background:#fffaf0;border-radius:10px;padding:11px 13px;margin:12px 0">
+  <div style="font-size:11px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Internal read — not used in proposals</div>
+  <h4 class="sec" style="margin-top:2px">Recommended focus <span class="nf">(demand × rank opportunity × click value)</span></h4>
   <div class="why">Positions 4–20 are where SEO pays back fastest — real demand, already on Google's radar, one push from page 1. Terms already at #1–3 need defending, not budget; "not found" terms are the long build. Sanity-check against what work the client actually <i>wants</i> more of — the formula can't know that.</div>
-  <table style="font-size:12.5px;border-collapse:collapse">${li}</table>`;
+  <table style="font-size:12.5px;border-collapse:collapse">${li}</table>
+  </div>`;
 }
 
 // ---------- STEP 4 ----------
@@ -1375,7 +1378,7 @@ function renderStep4(p){
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
-    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${ST.inputs.strategy==='Core SEO + AI Search'?` <span class="nf">(one product — the tiers below are the combined price; SEO vs AI Search split shown internally beneath. ${(ai&&ai.min_term_months)||6}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:ST.inputs.strategy==='Website Audit'?' <span class="nf">(audit is a separate deliverable — the ladder below prices Core SEO; audit pricing pending)</span>':''}</div>`:''}
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
     <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
     <details style="margin:4px 0">
