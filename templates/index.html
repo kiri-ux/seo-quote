@@ -2418,12 +2418,14 @@ async function refreshAddonSuggestion(){
     const r=await postJSON('/api/addon_suggestion',
       {geo_values:mk, state:($('state')?$('state').value:''), table:tbl,
        site_locations:((ST.kw&&ST.kw.site_locations)||[]),
-       site_pages_found:((ST.kw&&ST.kw.site_pages_found)||0)});
+       site_pages_found:((ST.kw&&ST.kw.site_pages_found)||0),
+       metro_groups:(((ST.kw&&ST.kw.city_selection)||{}).metro_groups||[])});
     const cur=parseFloat(($('addon')||{}).value||0)||0;
     const match = cur===r.suggested;
     box.innerHTML=`<details style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:9px;padding:8px 11px;font-size:12.5px">
       <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 currently set to '+cur}`:'not enough rank data to suggest an add-on count'} \u25b8 how this is worked out</summary>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
+      ${(r.collapsed>0)?`<div style="margin-top:7px" class="nf">🗺 <b>${r.pills} cities entered, ${r.markets} actual markets.</b> ${r.collapsed} of them collapsed because Google Ads returns the identical volume for each — it resolves a town to the nearest targetable location, so suburbs in one metro are literally the same place in the data. ${(r.metro_groups||[]).map(g=>escapeHtml(g.slice(0,6).join(', '))+(g.length>6?'…':'')).join(' | ')}. Everything below counts markets, not cities.</div>`:''}
       <div style="margin-top:7px" class="nf"><b>How the suggestion is made.</b> The question is not how many locations the client has — it is <b>which of the targeted markets they already operate in</b>. Counting locations gets it backwards: Skills of Central PA has around eight facilities and got one campaign, while TN Water &amp; Air has a single Knoxville location and was offered eleven add-ons. What separates them is that Skills already has a presence in every market it targets, so the work is improving coverage that exists, while TN was entering eleven markets it wasn't in.
         The client's own site answers this per market and costs nothing, since the crawl already runs: a location page for a targeted market means they operate there. Found here: <b>${(r.markets_with_location_page||0)} of ${r.markets} targeted markets have a location page</b> (${(r.site_locations||0)} location page${r.site_locations===1?'':'s'} on the site).${r.site_read===false?' <span style="color:var(--warn)"><b>The site could not be read on the last build</b>, so this signal is missing rather than negative — that is a gap, not evidence the client has one location.</span>':''}
         When the site publishes none, it falls back to two questions.

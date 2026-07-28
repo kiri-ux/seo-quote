@@ -572,7 +572,7 @@ def dfs_post(path, payload, timeout=None, method="POST"):
     return resp.json()
 
 def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
-                     site_pages_found=None):
+                     site_pages_found=None, metro_groups=None):
     """Suggest how many markets should be priced as separate campaigns.
 
     The judgement, per the pricing authority: 2-3 related nearby markets run
@@ -595,8 +595,19 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     or creating eleven" is the right one, and step 3 already answers it.
     """
     mk = [m for m in (markets or []) if m and m.strip()]
-    n = len(mk)
-    out = {"markets": n, "suggested": 0, "basis": "", "covered": 0,
+    # Collapse cities Google Ads treats as one place. Counting pills instead of
+    # markets inflates everything downstream: fourteen metro-Atlanta suburbs
+    # are two or three markets, not fourteen, and an add-on count built on
+    # fourteen is four times too big.
+    collapsed = 0
+    for g in (metro_groups or []):
+        members = [m for m in mk if m in g]
+        collapsed += max(0, len(members) - 1)
+    n = len(mk) - collapsed
+    out_pills = len(mk)
+    out = {"markets": n, "pills": out_pills, "collapsed": collapsed,
+           "metro_groups": [g for g in (metro_groups or []) if len(g) > 1],
+           "suggested": 0, "basis": "", "covered": 0,
            "measured": 0, "unmeasured": 0, "states": 0, "confident": False,
            "site_locations": 0}
     if n <= 1:
@@ -1750,6 +1761,51 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
+def group_by_metro(vectors, min_terms=2):
+    """Group cities that Google Ads treats as the same place.
+
+    Google Ads doesn't hold volume for every town — it resolves a city to the
+    nearest TARGETABLE location, which for most suburbs is the metro. So two
+    cities in one metro return the identical figure for every term, because
+    they are literally the same location as far as the data is concerned.
+
+    That makes "same market" free to detect: cities whose volume VECTOR across
+    several distinct terms matches exactly are one market. Woodstock entered
+    fourteen Georgia towns and seven returned exactly 10/mo on every probe —
+    not a floor artifact, one metro answering seven times (2026-07-28).
+
+    It matters because everything downstream counts markets: a client with
+    fourteen pills that are really three markets gets an add-on count, a grid
+    shape and a coverage percentage all built on a number that is four times
+    too big.
+
+    `vectors` maps city -> list of volumes, in a consistent term order.
+    Returns a list of groups, biggest first.
+    """
+    cities = [c for c, v in (vectors or {}).items() if v]
+    if len(cities) < 2:
+        return [[c] for c in cities]
+    # A single shared term proves nothing — thin terms report 0 or 10 almost
+    # everywhere. Require several, and require at least one to be non-zero, so
+    # cities aren't grouped on a shared absence of data.
+    groups, seen = [], set()
+    for c in cities:
+        if c in seen:
+            continue
+        vec = tuple(vectors[c])
+        if len(vec) < min_terms or not any(vec):
+            groups.append([c])
+            seen.add(c)
+            continue
+        same = [d for d in cities
+                if d not in seen and tuple(vectors.get(d, ())) == vec]
+        for d in same:
+            seen.add(d)
+        groups.append(same or [c])
+    groups.sort(key=len, reverse=True)
+    return groups
+
+
 def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
                     home_hint=""):
     """`explain` is an optional dict that gets filled with WHY these cities won.
@@ -1812,6 +1868,12 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         exp["method"] = "client term"
         scored = {c: sum(vol.get(f"{t} {c.lower()}{sfx}", 0) for t in terms)
                   for c in cities}
+        # The same lookup that ranks the cities also reveals which of them
+        # Google Ads treats as one place — no extra call.
+        vectors = {c: [vol.get(f"{t} {c.lower()}{sfx}", 0) for t in terms]
+                   for c in cities}
+        exp["metro_groups"] = [g for g in group_by_metro(vectors, min_terms=len(terms))
+                               if len(g) > 1]
         term = terms[0]
         # If the client's own term returns nothing anywhere, the ranking is
         # noise — fall back to the population proxy rather than picking cities
@@ -3632,7 +3694,8 @@ def api_addon_suggestion():
     state = derive_state(markets, (d.get("state") or "").strip())
     return jsonify(recommend_addons(markets, state, d.get("table") or [],
                                     site_locations=d.get("site_locations") or [],
-                                    site_pages_found=d.get("site_pages_found")))
+                                    site_pages_found=d.get("site_pages_found"),
+                                    metro_groups=d.get("metro_groups") or []))
 
 
 @app.route("/api/price", methods=["POST"])
