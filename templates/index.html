@@ -949,7 +949,7 @@ function step2Html(m){
     : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
         <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
   const marketWarn = (m.n_markets && m.n_markets > 8)
-    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> The grid uses the top cities by search demand, and volume is summed across those. But <b>bid/CPC and ranking</b> lookups measure ONE market — now the one with the most demand for this client's service rather than whichever was typed first (<code>${m.bid_location||''}</code>). For a whole state, choose <b>Statewide</b> with the state as the single market; for a metro footprint, enter just the cities you actually want.</div>`
+    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> The grid crosses the top cities by search demand and sums volume across them. <b>Bid and ranking</b> lookups measure a single market: <code>${m.bid_location||''}</code>, the one with the most demand for this client's service. For a whole state, choose <b>Statewide</b>; for a metro footprint, enter just the cities you want.</div>`
     : '';
   return `
       <h4 class="sec">Step 2 · Competition</h4>
