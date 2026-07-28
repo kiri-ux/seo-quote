@@ -2581,7 +2581,7 @@ def _volume_dollar_add(total_volume, free_below, brackets):
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
-                 national_demand=False):
+                 national_demand=False, geo_override=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
@@ -2758,6 +2758,26 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                   "client_list": {k: r50(v * p_list) for k, v in client.items()},
                   "hard_add":    {k: r50(v * p_net)  for k, v in hard.items()},
                   "client_add":  {k: r50(v * p_net)  for k, v in client.items()}}
+        # GEO can be overridden independently of SEO. The percentage model is
+        # a good default and a bad straitjacket: a client may have agreed a GEO
+        # number that has nothing to do with their SEO price — a flat retainer,
+        # a carried-over rate — and the alternative is overriding SEO to a
+        # fiction just to move GEO. The override sets the BASE and the ladder
+        # keeps its shape, scaling the upper tiers by the same ratio the SEO
+        # ladder uses, so the three tiers stay proportionate to each other.
+        try:
+            geo_base = float(geo_override) if geo_override not in (None, "") else None
+        except (TypeError, ValueError):
+            geo_base = None
+        if geo_base and geo_base > 0:
+            ratio = {k: (hard[k] / hard["base"] if hard["base"] else 1.0) for k in hard}
+            ai["hard_add"] = {k: r50(geo_base * ratio[k]) for k in hard}
+            ai["client_add"] = {k: r50(ai["hard_add"][k] * m) for k in hard}
+            ai["client_list"] = dict(ai["client_add"])
+            ai["manual_geo"] = True
+            ai["geo_pct_basis"] = "manual override"
+            ai["geo_pct"] = (round(ai["client_add"]["base"] / client["base"] * 100, 1)
+                             if client.get("base") else None)
         ai["hard_total"]   = {k: hard[k] + ai["hard_add"][k] for k in hard}
         ai["client_total"] = {k: client[k] + ai["client_add"][k] for k in client}
         ai["bundle_savings"] = {k: ai["client_list"][k] - ai["client_add"][k]
@@ -2771,6 +2791,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "volume_opportunity": round(vol_opportunity, 3),
             "min_term_months": min_term, "zero_visibility": zero_visibility,
             "extras_multiplier": _mult,
+            "manual_geo": bool(ai and ai.get("manual_geo")),
             "industry_rule": rule_key,
             "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
             "ai_search": ai,
@@ -2905,7 +2926,8 @@ def quote():
                           ecommerce=bool(d.get("ecommerce")),
                           industry=(d.get("industry") or ""),
                           ai_search=bool(d.get("ai_search")),
-                          national_demand=bool(d.get("national_demand")))
+                          national_demand=bool(d.get("national_demand")),
+                          geo_override=d.get("geo_override"))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -3384,13 +3406,15 @@ def api_price():
                      base_override=base_override, ecommerce=bool(d.get("ecommerce")),
                      industry=(d.get("industry") or ""),
                      ai_search=bool(d.get("ai_search")),
-                     national_demand=bool(d.get("national_demand")))
+                     national_demand=bool(d.get("national_demand")),
+                     geo_override=d.get("geo_override"))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "national_demand": p.get("national_demand", False),
                     "national_demand_reason": p.get("national_demand_reason", ""),
                     "min_term_months": p.get("min_term_months"),
                     "zero_visibility": p.get("zero_visibility", False),
                     "extras_multiplier": p.get("extras_multiplier", 1.0),
+                    "manual_geo": p.get("manual_geo", False),
                     "industry_rule": p.get("industry_rule"),
                     "industry_anchor_add": p.get("industry_anchor_add", 0),
                     "ai_search": p.get("ai_search"),

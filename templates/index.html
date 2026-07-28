@@ -1400,6 +1400,12 @@ function renderStep4(p){
             style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
           <span class="nf" style="font-size:12px">ladder steps at 38% — ~2,930 reproduces the $3,950 / $5,450 / $6,950 premium card</span>
         </div>
+        ${p.ai_search?`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px">
+          <label style="margin:0;font-size:12px">GEO partner hard cost</label>
+          <input type="text" id="geo_override" value="${(p.ai_search.manual_geo&&p.ai_search.hard_add)?p.ai_search.hard_add.base:''}" placeholder="optional"
+            style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
+          <span class="nf" style="font-size:12px">leave blank to keep the ${p.ai_search.geo_pct||''}% calculation. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
+        </div>`:''}
         <label style="margin:10px 0 4px;font-size:12px">Reason for the override <span class="req">*</span></label>
         <textarea id="base_reason" placeholder="Why the formula doesn&#39;t fit this client — e.g. established brand already ranking, existing agency relationship, scope outside the standard ladder"
           style="width:100%;min-height:52px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:'Barlow',sans-serif;resize:vertical">${(ST.baseReason||'').replace(/</g,'&lt;')}</textarea>
@@ -1490,7 +1496,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -1503,7 +1509,7 @@ function renderStep4(p){
     if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -1535,10 +1541,11 @@ function renderStep4(p){
     }
     if(msg){ msg.style.color='var(--muted)'; msg.textContent=''; }
     ST.baseReason=why;
+    ST.geoOverride=($('geo_override')?$('geo_override').value:'').trim();
     applyBase(val, why);
   };
   if($('base_clear')) $('base_clear').onclick=()=>{
-    ST.baseReason='';
+    ST.baseReason=''; ST.geoOverride='';
     if(ovrToggle) ovrToggle.checked=false;
     applyBase('','');
   };
@@ -1619,7 +1626,7 @@ async function runStep4(){
   const b4=$('step4');
   if(b4){ b4.disabled=true; b4.textContent='Pricing…'; }
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
-  ST.baseReason='';
+  ST.baseReason=''; ST.geoOverride='';
   // Calibration inputs: total head-term volume, and % of terms NOT ranking.
   // In grid mode the same service volume appears on every city row, so summing
   // rows would multiply it by the city count. Use the deduplicated per-service
@@ -1633,7 +1640,7 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{geo_override:ST.geoOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
@@ -1963,6 +1970,7 @@ function snapshotQuote(){
     totalVol: ST.totalVol, pctNotRanking: ST.pctNotRanking,
     baseOverride: ST.baseOverride||'',
     baseReason: ST.baseReason||'',
+    geoOverride: ST.geoOverride||'',
     actual: ST.actual||null
   };
 }
@@ -1977,6 +1985,7 @@ function restoreQuote(p){
   ST.pricing=p.pricing; ST.totalVol=p.totalVol; ST.pctNotRanking=p.pctNotRanking;
   ST.baseOverride=p.baseOverride||'';
   ST.baseReason=p.baseReason||'';
+  ST.geoOverride=p.geoOverride||'';
   ST.actual=p.actual||{};
   if(p.inputs){ try{ reflectInputs(p.inputs); }catch(e){} }
   // Step 1 — keyword list
