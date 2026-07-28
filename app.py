@@ -1488,7 +1488,7 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
-def pick_grid_cities(markets, state, limit):
+def pick_grid_cities(markets, state, limit, probe_term=""):
     """Choose WHICH cities go in the grid when more are supplied than the cap.
     Taking the first N by input order picks alphabetically-early villages over
     real metros (e.g. 'Augusta Springs' before 'Fairfax'). Instead, rank the
@@ -1508,7 +1508,14 @@ def pick_grid_cities(markets, state, limit):
         # towns above real metros. "insurance washington va" scores correctly.
         abbr = STATE_ABBREV.get((state or "").strip().lower(), "")
         sfx = f" {abbr}" if abbr else ""
-        probe = [f"insurance {c.lower()}{sfx}" for c in cities][:700]
+        # Probe with the CLIENT'S OWN service where we have one. "insurance"
+        # was a population proxy — it ranks cities by how big they are, not by
+        # how much demand this client has in them, and those differ: a commuter
+        # town can out-search a bigger neighbour for furniture and lose badly on
+        # insurance. Measuring the actual service picks the markets that matter
+        # to this quote. Falls back to the proxy when no seed is available.
+        term = clean_kw(strip_proximity((probe_term or "").lower())).strip() or "insurance"
+        probe = [f"{term} {c.lower()}{sfx}" for c in cities][:700]
         payload = [{"keywords": dfs_kw_list(probe),
                     "location_name": loc_string(cities, state),
                     "language_code": "en"}]
@@ -1516,9 +1523,21 @@ def pick_grid_cities(markets, state, limit):
         items = (data.get("tasks") or [{}])[0].get("result") or []
         vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                for it in items}
-        ranked = sorted(cities,
-                        key=lambda c: vol.get(f"insurance {c.lower()}{sfx}", 0),
-                        reverse=True)
+        scored = {c: vol.get(f"{term} {c.lower()}{sfx}", 0) for c in cities}
+        # If the client's own term returns nothing anywhere, the ranking is
+        # noise — fall back to the population proxy rather than picking cities
+        # by accident of ordering.
+        if term != "insurance" and not any(scored.values()):
+            probe2 = [f"insurance {c.lower()}{sfx}" for c in cities][:700]
+            data2 = dfs_post("/keywords_data/google_ads/search_volume/live",
+                             [{"keywords": dfs_kw_list(probe2),
+                               "location_name": loc_string(cities, state),
+                               "language_code": "en"}])
+            v2 = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
+                  for it in ((data2.get("tasks") or [{}])[0].get("result") or [])}
+            scored = {c: v2.get(f"insurance {c.lower()}{sfx}", 0) for c in cities}
+        # Ties broken by name so the same input always gives the same cities.
+        ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), c.lower()))
         return ranked[:limit]
     except Exception:
         return cities[:limit]
@@ -2000,7 +2019,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     if CFG.get("grid_mode"):
         cands = ultra + competitive + long_tail
         # Decide the city set FIRST so the service count can scale to it.
-        cities = pick_grid_cities(markets, state, CFG["grid_max_cities"])
+        cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
+                                  probe_term=(seeds[0] if seeds else ""))
         # Search-phrase geos ("south jersey", "fox cities") cross into keyword
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
