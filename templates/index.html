@@ -949,7 +949,10 @@ function step2Html(m){
     : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
         <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
   const marketWarn = (m.n_markets && m.n_markets > 8)
-    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> The grid crosses the top cities by search demand and sums volume across them. <b>Bid and ranking</b> lookups measure a single market: <code>${m.bid_location||''}</code>, the one with the most demand for this client's service. For a whole state, choose <b>Statewide</b>; for a metro footprint, enter just the cities you want.</div>`
+    ? `<details class="calc" style="background:#fdf1d8;border-color:#e8c98a">
+        <summary style="cursor:pointer;user-select:none">⚠ <b>${m.n_markets} markets entered</b> — bid and ranking measured in <code>${m.bid_location||''}</code></summary>
+        <div style="margin-top:6px">The grid crosses the top cities by search demand and sums volume across them. <b>Bid and ranking</b> lookups measure a single market: the one with the most demand for this client's service. For a whole state, choose <b>Statewide</b>; for a metro footprint, enter just the cities you want.</div>
+      </details>`
     : '';
   return `
       <h4 class="sec">Step 2 · Competition</h4>
@@ -957,7 +960,10 @@ function step2Html(m){
       ${marketWarn}
       ${bidLine}
       <div class="calc">${m.adder_basis==='cpc'
-        ? `${m.cpc_low_confidence?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:7px;font-size:12.5px;margin-bottom:8px">⚠ <b>This adder rests on ${m.cpc_n_bids} bid${m.cpc_n_bids===1?'':'s'}.</b> The adder scales off the <i>median</i> top-of-page bid, and above $${(1*62).toFixed(0)} every extra dollar of CPC adds several hundred to the quote — reliable on a real median, an extrapolation on a sample this thin. Spot-check the bid in Google Ads Keyword Planner before quoting, or add head terms so the median has something to sit on.</div>`:''}median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
+        ? `${m.cpc_low_confidence?`<details style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:7px;font-size:12.5px;margin-bottom:8px">
+          <summary style="cursor:pointer;user-select:none">⚠ <b>This adder rests on ${m.cpc_n_bids} bid${m.cpc_n_bids===1?'':'s'}</b></summary>
+          <div style="margin-top:6px">The adder scales off the <i>median</i> top-of-page bid, and above $62 every extra dollar of CPC adds several hundred to the quote — reliable on a real median, an extrapolation on a sample this thin. Spot-check the bid in Google Ads Keyword Planner before quoting, or add head terms so the median has something to sit on.</div>
+        </details>`:''}median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
         : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
       ${kdLine}
       ${stepBtn('step3','3 · Check rankings')}`;
