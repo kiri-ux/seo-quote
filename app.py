@@ -664,9 +664,9 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
                                 f"footprint rather than {n} builds.")
             else:
                 out["suggested"] = missing
-                out["basis"] = (f"The client operates in {len(with_page)} of {n} "
-                                f"markets. The other {missing} are new territory — a "
-                                f"separate build each.")
+                out["basis"] = (f"The site shows the client in {len(with_page)} of {n} "
+                                f"markets. They aren't in the other {missing} yet, so "
+                                f"each of those is a campaign from scratch.")
             out["confident"] = True
             return out
 
@@ -705,8 +705,8 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     meas_share = len(measured) / n
     if meas_share < float(CFG.get("addon_min_measured_share", 0.7)):
         out["basis"] = (f"Only {len(measured)} of {n} markets have rank data, and "
-                        f"the unmeasured ones are the lowest-demand — the most likely "
-                        f"to be greenfield. Raise Grid max cities and re-run step 3.")
+                        f"the unmeasured ones are the lowest-demand — the ones "
+                        f"the client is least likely to already be in. Raise Grid max cities and re-run step 3.")
         return out
 
     share = len(covered) / len(measured)
@@ -717,8 +717,8 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
         out["confident"] = True
     else:
         out["suggested"] = max(0, n - 1)
-        out["basis"] = (f"Ranking in only {len(covered)} of {len(measured)} markets "
-                        f"— the rest are greenfield, a separate build each.")
+        out["basis"] = (f"Ranking in only {len(covered)} of {len(measured)} markets, "
+                        f"so the rest are a campaign from scratch each.")
         out["confident"] = True
     if len(states) > 1:
         out["suggested"] = max(out["suggested"], n - 1)
