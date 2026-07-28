@@ -677,6 +677,37 @@ def fetch_keywords_for_site(domain, markets, state):
     except Exception:
         return []
 
+def get_client_site(url, timeout=10, headers=None, allow_redirects=True):
+    """GET a CLIENT'S OWN marketing site, tolerating a broken TLS chain.
+
+    Plenty of small-business sites serve a valid leaf certificate but omit the
+    intermediate, so the chain can't be built. Browsers paper over it — they
+    cache intermediates and follow the AIA pointer — and requests does not, so
+    the site menu and description auto-fill just fail with a wall of SSL text
+    (Woodstock Furniture, 2026-07-27).
+
+    Verification is attempted first and only relaxed on a certificate error,
+    for the client's own public pages. That content is read-only, used to
+    suggest keywords a human then reviews, and never a credential path. This
+    helper is deliberately NOT used for DataForSEO or Anthropic — those carry
+    API keys and must always verify.
+
+    Returns (response, insecure_flag). Raises the original error if the retry
+    also fails.
+    """
+    kw = {"timeout": timeout, "headers": headers or {},
+          "allow_redirects": allow_redirects}
+    try:
+        return requests.get(url, **kw), False
+    except requests.exceptions.SSLError:
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+        return requests.get(url, verify=False, **kw), True
+
+
 def fetch_site_pages(domain, limit=30):
     """Pull the client's page structure as readable topics — the names of the
     pages they've built, which map directly to their service taxonomy and are
@@ -715,7 +746,7 @@ def fetch_site_pages(domain, limit=30):
         last = None
         for hdrs in (_UA_B, _UA_T):
             try:
-                r = requests.get(url, timeout=timeout, headers=hdrs)
+                r, _insecure = get_client_site(url, timeout=timeout, headers=hdrs)
                 if r.status_code == 200 and "<" in (r.text or ""):
                     return r
                 last = r
@@ -3698,13 +3729,16 @@ def api_site_services():
     for url in dict.fromkeys([f"https://{dom}", f"https://{bare}", f"https://www.{bare}"]):
         for ua_name, ua in _UAS:
             try:
-                r = requests.get(url, timeout=10, allow_redirects=True,
-                                 headers={"User-Agent": ua,
-                                          "Accept": "text/html,application/xhtml+xml",
-                                          "Accept-Language": "en-US,en;q=0.9"})
+                r, insecure = get_client_site(
+                    url, timeout=10, allow_redirects=True,
+                    headers={"User-Agent": ua,
+                             "Accept": "text/html,application/xhtml+xml",
+                             "Accept-Language": "en-US,en;q=0.9"})
                 candidate = r.text[:800_000]
                 nlinks = candidate.lower().count("<a")
-                diag.append(f"{url} [{ua_name}] -> HTTP {r.status_code}, {nlinks} links")
+                diag.append(f"{url} [{ua_name}] -> HTTP {r.status_code}, {nlinks} links"
+                            + (" (TLS chain incomplete — read without verifying)"
+                               if insecure else ""))
                 if nlinks >= 5:
                     html = candidate
                     break
@@ -3716,7 +3750,16 @@ def api_site_services():
         if html and html.lower().count("<a") >= 5:
             break
     if not html:
-        return jsonify({"error": f"Couldn't fetch the site: {fetch_err}",
+        _fe = str(fetch_err)
+        if "CERTIFICATE_VERIFY_FAILED" in _fe or "SSLError" in _fe:
+            _fe = ("the site's HTTPS certificate chain is incomplete, and reading it "
+                   "without verification also failed. Browsers hide this; a server does "
+                   "not. Type the services into Keyword / Vertical Focus by hand — "
+                   "nothing else in the quote depends on reading the site.")
+        elif "Max retries" in _fe or "timed out" in _fe.lower():
+            _fe = ("the site didn't respond in time — it may be blocking automated "
+                   "requests. Enter the services by hand and continue.")
+        return jsonify({"error": f"Couldn't fetch the site: {_fe}",
                         "diag": diag}), 502
     p = _NavLinkParser()
     try:
