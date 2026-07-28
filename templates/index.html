@@ -1424,7 +1424,7 @@ function renderStep4(p){
       <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
         <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
         <tr><td style="padding:2px 12px 2px 0">Core SEO component</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
-        ${p.ai_search.client_list?`<tr class="nf"><td style="padding:2px 12px 2px 0">GEO on its own</td>${['base','intermediate','advanced'].map(k=>`<td style="text-align:right">${money(p.ai_search.client_list[k])}</td>`).join('')}</tr>`:''}
+        ${(p.ai_search.client_list && p.ai_search.bundle_discount_pct)?`<tr class="nf"><td style="padding:2px 12px 2px 0">GEO on its own</td>${['base','intermediate','advanced'].map(k=>`<td style="text-align:right">${money(p.ai_search.client_list[k])}</td>`).join('')}</tr>`:''}
         <tr><td style="padding:2px 12px 2px 0">AI Search / GEO component${p.ai_search.bundle_discount_pct?` <span class="nf" style="font-size:10.5px">(sold with SEO, ${p.ai_search.bundle_discount_pct}% off)</span>`:''}</td>${['base','intermediate','advanced'].map(k=>{
           const add=p.ai_search.client_add[k];
           return `<td style="text-align:right">+${money(add)}</td>`;

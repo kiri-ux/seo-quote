@@ -410,10 +410,17 @@ CFG = {
         [0,  50],   # 60%+ rank (established)  -> the full 50% discount
     ],
     "geo_pct_default": 60,                    # used when no ranking data exists
-    # Bundle discount: MPG's intermediate was "discounted from $4,250 to
-    # $4,050 in conjunction with the SEO campaign" = 4.7%. Brendan confirmed
-    # (2026-07-25) the discount applies to ALL THREE tiers, not just the
-    # intermediate — the proposal only showed it on one.
+    # Bundle discount off the GEO line when sold with Core SEO.
+    # Provenance: MPG's proposal (2026-06-10) listed the intermediate GEO at
+    # "$4,050, discounted from $4,250 in conjunction with the SEO campaign" =
+    # 4.7%, and the pricing authority confirmed (2026-07-25) it applies to all
+    # three tiers rather than just the one the proposal showed it on.
+    # It is doing real work in the fit: against MPG's actual GEO ladder,
+    #   5% -> 2,950 / 4,050 / 5,150   avg error 0.6%
+    #   0% -> 3,100 / 4,250 / 5,400   avg error 4.3%
+    # so it should only be zeroed on a decision that the practice has changed,
+    # not on the assumption that the number is stale. Set to 0 and the list
+    # row and the "sold with SEO" note disappear from the quote entirely.
     "geo_bundle_discount_pct": 5,
     # Minimum term. Brendan: "we usually do 6 months for both, however where
     # someone has like ZERO visibility sometimes we do 12 because it takes
