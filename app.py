@@ -655,27 +655,23 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
             missing = n - len(with_page)
             if missing <= 0:
                 out["suggested"] = 0
-                out["basis"] = (f"the site publishes a location page for all {n} "
-                                f"targeted markets — the client already operates in "
-                                f"each of them, so this is one footprint to improve.")
+                out["basis"] = (f"The client has a location page for all {n} markets "
+                                f"— one footprint to improve, not {n} to build.")
             elif len(with_page) >= max(2, int(n * 0.7)):
                 out["suggested"] = 0
-                out["basis"] = (f"the site publishes location pages for "
-                                f"{len(with_page)} of the {n} targeted markets — the "
-                                f"client already operates in most of them, so this "
-                                f"reads as one footprint rather than {n} builds.")
+                out["basis"] = (f"The client has location pages for {len(with_page)} "
+                                f"of {n} markets — already operating in most, so one "
+                                f"footprint rather than {n} builds.")
             else:
                 out["suggested"] = missing
-                out["basis"] = (f"the site publishes location pages for only "
-                                f"{len(with_page)} of the {n} targeted markets — the "
-                                f"other {missing} are markets the client doesn't yet "
-                                f"operate in, which is a separate build each.")
+                out["basis"] = (f"The client operates in {len(with_page)} of {n} "
+                                f"markets. The other {missing} are new territory — a "
+                                f"separate build each.")
             out["confident"] = True
             return out
 
     if n <= int(CFG.get("addon_free_markets", 3)):
-        out["basis"] = (f"{n} markets — 2–3 related markets normally run under one "
-                        f"campaign.")
+        out["basis"] = f"{n} markets — three or fewer run as one campaign."
         out["confident"] = True
         return out
 
@@ -696,9 +692,8 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
 
     out["unmeasured"] = n - len(measured)
     if len(measured) < 2:
-        out["basis"] = (f"{n} markets, but rankings were only measured in "
-                        f"{len(measured)} of them — run step 3 across the markets "
-                        f"before trusting a suggestion.")
+        out["basis"] = (f"Rankings measured in only {len(measured)} markets — run "
+                        f"step 3 first.")
         return out
 
     # Coverage has to be read against the markets ENTERED, not the ones that
@@ -709,31 +704,25 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     # footprint" from the best five is the tool marking its own homework.
     meas_share = len(measured) / n
     if meas_share < float(CFG.get("addon_min_measured_share", 0.7)):
-        out["basis"] = (f"{n} markets, but only {len(measured)} have rank data — "
-                        f"the grid crosses the highest-demand cities, so "
-                        f"{n - len(measured)} markets were never measured. Those are "
-                        f"the lower-demand ones, which are the most likely to be "
-                        f"greenfield, so no suggestion can be made from this. Raise "
-                        f"Grid max cities and re-run step 3 to decide properly.")
+        out["basis"] = (f"Only {len(measured)} of {n} markets have rank data, and "
+                        f"the unmeasured ones are the lowest-demand — the most likely "
+                        f"to be greenfield. Raise Grid max cities and re-run step 3.")
         return out
 
     share = len(covered) / len(measured)
     if share >= float(CFG.get("addon_covered_share", 0.6)):
         out["suggested"] = 0
-        out["basis"] = (f"{n} markets, and the site already ranks in "
-                        f"{len(covered)} of the {len(measured)} measured. That is one "
-                        f"footprint to improve, not {n} to build.")
+        out["basis"] = (f"Already ranking in {len(covered)} of {len(measured)} "
+                        f"markets — one footprint to improve, not {n} to build.")
         out["confident"] = True
     else:
         out["suggested"] = max(0, n - 1)
-        out["basis"] = (f"{n} markets and the site ranks in only "
-                        f"{len(covered)} of the {len(measured)} measured — every other "
-                        f"market is greenfield, which is a separate build each.")
+        out["basis"] = (f"Ranking in only {len(covered)} of {len(measured)} markets "
+                        f"— the rest are greenfield, a separate build each.")
         out["confident"] = True
     if len(states) > 1:
         out["suggested"] = max(out["suggested"], n - 1)
-        out["basis"] += (f" They also span {len(states)} states, which points to "
-                         f"separate territories rather than one region.")
+        out["basis"] += f" They span {len(states)} states — separate territories."
     return out
 
 
