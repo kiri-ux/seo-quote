@@ -208,6 +208,15 @@ CFG = {
     # to rank for something with no demand behind it.
     "region_min_volume": 10,
     "grounding_max_drop_ratio": 0.5,
+    # Rank-check batch budget. Was hardcoded at 24s "to stay well under the
+    # ~30s platform kill" — which was right when gunicorn's default 30s
+    # timeout applied, and is now far too tight: any keyword still waiting
+    # when the budget runs out is recorded as a FAILED lookup, which is what
+    # produces "7 lookups failed and were excluded" on a healthy account
+    # (2026-07-28). They aren't permanent failures; they're keywords that ran
+    # out of clock. Derived from REQUEST_BUDGET_S so raising the server
+    # timeout actually buys more lookups instead of nothing.
+    "rank_batch_budget_s": 0,           # 0 = derive from REQUEST_BUDGET_S
     "cpc_adder_min_samples": 1,          # apply the CPC adder at/above this n
     "cpc_adder_low_confidence_n": 3,     # warn below this n
     "cpc_adder_knee": 62.0,                    # CPC above this earns the premium rate (just above Waytek's $60 — the highest "normal" client observed)
@@ -3349,7 +3358,8 @@ def api_rankings():
             to_fetch.append(kw)
     try:
         with ThreadPoolExecutor(max_workers=CFG["rank_check_workers"]) as ex:
-            batch_deadline = time.time() + 24   # stay well under the ~30s platform kill
+            _budget = int(CFG.get("rank_batch_budget_s") or 0) or max(20, REQUEST_BUDGET_S - 15)
+            batch_deadline = time.time() + _budget
             futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n,
                               batch_deadline): kw for kw in to_fetch}
             done = {}
