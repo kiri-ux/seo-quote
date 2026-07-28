@@ -273,7 +273,7 @@
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
-    <label>Industry <span style="font-weight:400;color:var(--muted)">(RZ line item — demo stand-in, optional)</span></label>
+    <label>Industry <span class="req">*</span></label>
     <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries the big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
     <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
     <div class="toggle-row" style="margin-top:10px">
@@ -675,6 +675,10 @@ function collectInputs(){
   if(!stores.sites.length){renderErr('Add the client website — the rank check needs a domain to look for. Without one every keyword reads "Not Found" and the zero-ranking uplift wrongly inflates the price.');return null;}
   if(!stores.kw.length){renderErr('Add at least one keyword / vertical.');return null;}
   if(scope!=='nationwide' && !stores.geo.length){renderErr('Add at least one geographic targeting area (or choose Nationwide).');return null;}
+  // Industry drives the pricing rules (carrier premium, big-org card,
+  // national demand) and the grounding filter's sense of the client's
+  // vocabulary — an empty one silently opts out of all of it.
+  if(!stores.industry.length){renderErr('Add the industry — it selects the pricing rules that apply and helps the keyword list stay on-topic.');return null;}
   return {
     domain: stores.sites[0]||'', sites: stores.sites.slice(),
     keywords: stores.kw, brand: $('brand').value,
@@ -2409,13 +2413,15 @@ async function refreshAddonSuggestion(){
   if(mk.length<2 || !tbl.length){ box.innerHTML=''; return; }
   try{
     const r=await postJSON('/api/addon_suggestion',
-      {geo_values:mk, state:($('state')?$('state').value:''), table:tbl});
+      {geo_values:mk, state:($('state')?$('state').value:''), table:tbl,
+       site_locations:((ST.kw&&ST.kw.site_locations)||[])});
     const cur=parseFloat(($('addon')||{}).value||0)||0;
     const match = cur===r.suggested;
     box.innerHTML=`<details style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:9px;padding:8px 11px;font-size:12.5px">
       <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 currently set to '+cur}`:'not enough rank data to suggest an add-on count'} \u25b8 how this is worked out</summary>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
-      <div style="margin-top:7px" class="nf"><b>How the suggestion is made.</b> Two questions, in order.
+      <div style="margin-top:7px" class="nf"><b>How the suggestion is made.</b> The best evidence is the client's own site: if it publishes location pages, that is the client telling us how many places it runs, and each one needs its own listing, reviews and local content. It is also the exact test used to scope real proposals — <i>"this campaign would cover all locations mentioned on the website"</i>. Found here: <b>${(r.site_locations||0)} location page${r.site_locations===1?'':'s'}</b>.
+        When the site publishes none, it falls back to two questions.
         First, how many markets: <b>${r.markets}</b>. At three or fewer the answer is always one campaign, because related nearby markets normally run together.
         Above three it comes down to whether the client's footprint is <i>already</i> multi-market — the tool counts how many of the entered markets the site currently ranks in, taken from the step 3 table (<b>${r.covered} of ${r.measured}</b> measured here). Ranking across most of them means one presence to improve; ranking in one or none means every other market is a build from scratch.
         Markets tagged with different states push toward add-ons, and only explicitly tagged states count — inferring a state from a city name gets "Cleveland" wrong.

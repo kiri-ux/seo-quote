@@ -571,7 +571,7 @@ def dfs_post(path, payload, timeout=None, method="POST"):
     resp.raise_for_status()
     return resp.json()
 
-def recommend_addons(markets, state, rows, top_n=None):
+def recommend_addons(markets, state, rows, top_n=None, site_locations=None):
     """Suggest how many markets should be priced as separate campaigns.
 
     The judgement, per the pricing authority: 2-3 related nearby markets run
@@ -596,7 +596,8 @@ def recommend_addons(markets, state, rows, top_n=None):
     mk = [m for m in (markets or []) if m and m.strip()]
     n = len(mk)
     out = {"markets": n, "suggested": 0, "basis": "", "covered": 0,
-           "measured": 0, "unmeasured": 0, "states": 0, "confident": False}
+           "measured": 0, "unmeasured": 0, "states": 0, "confident": False,
+           "site_locations": 0}
     if n <= 1:
         out["basis"] = "single market — nothing to add on."
         return out
@@ -607,6 +608,28 @@ def recommend_addons(markets, state, rows, top_n=None):
     states = {(parse_market(m, "")[1] or "").lower() for m in mk if "," in m}
     states.discard("")
     out["states"] = len(states)
+
+    # The client's OWN site is the best evidence available, and it costs
+    # nothing: the crawl already ran for the keyword build. A site that
+    # publishes six location pages is telling us it has six locations, which
+    # is the unit every multi-location pricing model charges by — and it is
+    # the exact test used to scope Skills of Central PA. It also beats rank
+    # coverage, which can only see the handful of cities the grid crossed.
+    locs = [l for l in (site_locations or []) if l]
+    out["site_locations"] = len(locs)
+    if len(locs) >= 2:
+        out["suggested"] = max(0, len(locs) - 1)
+        out["basis"] = (f"the site publishes {len(locs)} location pages "
+                        f"({', '.join(locs[:6])}{'…' if len(locs) > 6 else ''}), so the "
+                        f"client has {len(locs)} places needing their own listing, "
+                        f"reviews and local content — one campaign plus "
+                        f"{len(locs) - 1} add-ons.")
+        out["confident"] = True
+        if len(locs) <= int(CFG.get("addon_free_markets", 3)):
+            out["suggested"] = 0
+            out["basis"] = (f"the site publishes {len(locs)} location pages — "
+                            f"2–3 related locations normally run under one campaign.")
+        return out
 
     if n <= int(CFG.get("addon_free_markets", 3)):
         out["basis"] = (f"{n} markets — 2–3 related markets normally run under one "
@@ -888,7 +911,37 @@ def get_client_site(url, timeout=10, headers=None, allow_redirects=True):
         return requests.get(url, verify=False, **kw), True
 
 
-def fetch_site_pages(domain, limit=30):
+# A page under one of these paths is a LOCATION page — the thing the industry
+# actually counts. Every multi-location pricing model turns on "each location
+# needs its own profile, reviews, local content and ideally its own location
+# page", and Brendan scoped Skills of Central PA with exactly this test:
+# "This campaign would cover all locations mentioned on the website."
+_LOCATION_PATH = re.compile(
+    r"/(?:our[-_])?(?:locations?|stores?|offices?|branch(?:es)?|showrooms?|"
+    r"clinics?|dealers?|service[-_]areas?|areas?[-_]we[-_]serve)(?:/|$)", re.I)
+# The index page itself isn't a location — "/locations/" lists them, and
+# "/locations/marietta/" is one.
+_LOCATION_INDEX = re.compile(
+    r"/(?:our[-_])?(?:locations?|stores?|offices?|branch(?:es)?|showrooms?|"
+    r"clinics?|dealers?|service[-_]areas?|areas?[-_]we[-_]serve)/?$", re.I)
+
+
+def location_pages_from_urls(urls):
+    """Location page slugs found in a set of site URLs, de-duplicated."""
+    out, seen = [], set()
+    for u in urls or []:
+        u = str(u or "")
+        if not _LOCATION_PATH.search(u) or _LOCATION_INDEX.search(u):
+            continue
+        slug = [p for p in u.split("?")[0].rstrip("/").split("/") if p]
+        name = (slug[-1] if slug else "").replace("-", " ").replace("_", " ").strip()
+        if name and name.lower() not in seen and len(name) < 40:
+            seen.add(name.lower())
+            out.append(name)
+    return out
+
+
+def fetch_site_pages(domain, limit=30, collect_urls=None):
     """Pull the client's page structure as readable topics — the names of the
     pages they've built, which map directly to their service taxonomy and are
     strong SEO keyword fuel. Tries sitemap.xml first (fast, standard); falls back
@@ -985,6 +1038,8 @@ def fetch_site_pages(domain, limit=30):
                 depth = u.rstrip("/").count("/") - 2
                 hinted = bool(_SERVICE_PATH_HINT.search(u)) if "_SERVICE_PATH_HINT" in globals() else False
                 return (_blogish(u), not hinted, depth)
+            if isinstance(collect_urls, list):
+                collect_urls.extend(locs)
             for url in sorted(locs, key=_rank):
                 if _blogish(url) and len(pages) >= 5:
                     continue
@@ -2238,7 +2293,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
     the list build."""
     site_terms = [{"keyword": k} for k in (site_terms_kw or [])]
-    site_pages = fetch_site_pages(domain)
+    _site_urls = []
+    site_pages = fetch_site_pages(domain, collect_urls=_site_urls)
+    site_locations = location_pages_from_urls(_site_urls)
     biz = business_desc.strip() if business_desc else ""
 
     # ---- GRID MODE: build a service x city grid like the real proposals -----
@@ -2340,6 +2397,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "services": services,
             "pinned_head_terms": pinned,
             "city_selection": city_pick,
+            "site_locations": site_locations,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
             "dropped_ungrounded": [d[0] for d in (ungrounded or [])],
@@ -3289,6 +3347,7 @@ def api_refine():
         # never reaches the browser — every one of these panels has been
         # rendering against undefined and showing nothing (2026-07-28).
         "city_selection": s1.get("city_selection") or {},
+        "site_locations": s1.get("site_locations") or [],
         "seed_services_used": s1.get("seed_services_used", 0),
         "pinned_head_terms": s1.get("pinned_head_terms") or [],
         "dropped_out_of_area": s1.get("dropped_out_of_area") or [],
@@ -3540,7 +3599,8 @@ def api_addon_suggestion():
     d = request.get_json(force=True) or {}
     markets = [m.strip() for m in d.get("geo_values", []) if m and m.strip()]
     state = derive_state(markets, (d.get("state") or "").strip())
-    return jsonify(recommend_addons(markets, state, d.get("table") or []))
+    return jsonify(recommend_addons(markets, state, d.get("table") or [],
+                                    site_locations=d.get("site_locations") or []))
 
 
 @app.route("/api/price", methods=["POST"])
