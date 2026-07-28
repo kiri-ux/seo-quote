@@ -330,11 +330,7 @@
       <div id="geoCheck" style="margin-top:8px"></div>
     </details>
 
-    <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span>
-      <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
-    <div class="help" style="margin:2px 0 6px">Markets run as their own campaign, counted <i>beyond</i> the first. 2–3 related nearby markets normally stay under one campaign — leave this at 0. Use add-ons when the markets are many, far apart, or competitively different.</div>
-    <input type="text" id="addon" placeholder="0" value="0">
-    <script>document.addEventListener('DOMContentLoaded',()=>{const a=document.getElementById('addon');if(a)a.addEventListener('input',()=>{try{refreshAddonSuggestion();}catch(e){}});});</script>
+
 
     <label>Has done SEO in the past</label>
     <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
@@ -683,7 +679,11 @@ function collectInputs(){
     keywords: stores.kw, brand: $('brand').value,
     business_desc: $('business_desc').value,
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
-    addon_markets: parseInt($('addon').value||'0',10),
+    // The field renders inside Step 4, which doesn't exist until a price has
+    // been produced — so on the first pass read the remembered value rather
+    // than a missing element.
+    addon_markets: parseInt(($('addon')||{}).value
+                            || ((ST.inputs&&ST.inputs.addon_markets)||0), 10) || 0,
     markup_pct: parseFloat($('markup').value||'35'),
     phrase_geos: stores.spgeo.slice(),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
@@ -1473,6 +1473,12 @@ function renderStep4(p){
       <div id="cmpSummary" style="font-size:12px;margin-top:8px"></div>
     </details>
     ${addon}
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+    <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span>
+      <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
+    <div class="help" style="margin:2px 0 6px">Markets run as their own campaign, counted <i>beyond</i> the first. 2–3 related nearby markets normally stay under one campaign — leave this at 0. Use add-ons when the markets are many, far apart, or competitively different.</div>
+    <input type="text" id="addon" placeholder="0" value="${(ST.inputs&&ST.inputs.addon_markets)||0}">
+    </div>
     <div id="addonSuggest" style="margin-top:10px"></div>
     <h4 class="sec" style="margin-top:18px">Keyword table</h4>
     <table style="font-size:12.5px">
@@ -1499,6 +1505,7 @@ function renderStep4(p){
     `);
   renderSaveRow();
   wireCompare(p.client_tiers);
+  try{ wireAddonField(); }catch(e){}
   try{ refreshAddonSuggestion(); }catch(e){}
   scheduleAutoSave();
   // live markup recompute (re-hits /api/price; pure math, instant)
@@ -2066,6 +2073,9 @@ function reflectInputs(inp){
   if(PILL_RENDER.industry) PILL_RENDER.industry();
   if($('state'))         $('state').value = inp.state||'';
   if($('addon'))         $('addon').value = (inp.addon_markets!=null?inp.addon_markets:0);
+  // Step 4 renders this field from ST.inputs, so the restored value has to
+  // land there too — the element may not exist yet on a reopened quote.
+  if(ST.inputs) ST.inputs.addon_markets = (inp.addon_markets!=null?inp.addon_markets:0);
   if($('markup'))        $('markup').value = (inp.markup_pct!=null?inp.markup_pct:35);
   // geo scope drives whether the add-on field is shown — re-run that toggle
   if($('geo_scope')) { try{ $('geo_scope').dispatchEvent(new Event('change')); }catch(e){} }
@@ -2383,6 +2393,22 @@ function primaryMarket(){
   if(cs && cs.kept && cs.kept.length && cs.method && cs.method!=='input order') return cs.kept[0][0];
   const g = (ST.inputs && ST.inputs.geo_values) || [];
   return g.length ? g[0] : '';
+}
+
+// Step 4 is re-rendered wholesale, so the add-on input is a new element every
+// time and its listeners have to be re-attached.
+function wireAddonField(){
+  const a = $('addon');
+  if(!a || a.dataset.wired) return;
+  a.dataset.wired = '1';
+  const push = ()=>{
+    if(!ST.inputs) return;
+    ST.inputs.addon_markets = parseInt(a.value || '0', 10) || 0;
+    try{ refreshAddonSuggestion(); }catch(e){}
+    try{ scheduleAutoSave(); }catch(e){}
+  };
+  a.addEventListener('input', push);
+  a.addEventListener('change', push);
 }
 
 function syncStateSummary(){
