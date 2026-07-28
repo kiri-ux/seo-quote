@@ -522,6 +522,25 @@ def dfs_post(path, payload, timeout=None, method="POST"):
     resp.raise_for_status()
     return resp.json()
 
+def primary_first(markets, primary):
+    """Put the highest-demand market at the front of the list.
+
+    Bid and rank lookups localise to markets[0], which was whatever the partner
+    typed first — usually alphabetical, so Acworth (210/mo) anchored a quote
+    whose real market was Marietta (880/mo). Step 1 already ranks the markets
+    by actual demand for the client's service; steps 2 and 3 should use that
+    answer rather than input order. Two signals that drive price — the CPC
+    adder and the zero-ranking uplift — were both being measured in the wrong
+    town.
+    """
+    mk = [m for m in (markets or []) if m and m.strip()]
+    p = (primary or "").strip()
+    if not p:
+        return mk
+    rest = [m for m in mk if m.strip().lower() != p.lower()]
+    return [p] + rest
+
+
 def loc_string(markets, state):
     if markets:
         city, st = parse_market(markets[0], state)
@@ -3088,6 +3107,7 @@ def api_metrics():
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     # phrase geos must be strippable so bare-term metrics resolve for
     # "managed it services south jersey" -> "managed it services"
+    markets = primary_first(markets, d.get("primary_market"))
     markets = markets + [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
     try:
@@ -3136,6 +3156,7 @@ def api_rankings_submit():
     kws     = [k for k in d.get("keywords", []) if k]
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
+    markets = primary_first(markets, d.get("primary_market"))
     top_n   = CFG["zero_ranking_top_n"]
     depth   = max(top_n, 10)
     nat, _r = resolve_national_demand(d.get("industry") or "",
@@ -3245,6 +3266,7 @@ def api_rankings():
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    markets = primary_first(markets, d.get("primary_market"))
     top_n = CFG["zero_ranking_top_n"]
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",

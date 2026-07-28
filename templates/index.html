@@ -947,7 +947,7 @@ function step2Html(m){
     : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
         <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
   const marketWarn = (m.n_markets && m.n_markets > 8)
-    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> The grid uses the top cities by search demand, and volume is summed across those. But <b>bid/CPC and ranking</b> lookups still use only the first market (<code>${m.bid_location||''}</code>). For a whole state, choose <b>Statewide</b> with the state as the single market; for a metro footprint, enter just the cities you actually want.</div>`
+    ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${m.n_markets} markets entered.</b> The grid uses the top cities by search demand, and volume is summed across those. But <b>bid/CPC and ranking</b> lookups measure ONE market — now the one with the most demand for this client's service rather than whichever was typed first (<code>${m.bid_location||''}</code>). For a whole state, choose <b>Statewide</b> with the state as the single market; for a metro footprint, enter just the cities you actually want.</div>`
     : '';
   return `
       <h4 class="sec">Step 2 · Competition</h4>
@@ -973,7 +973,7 @@ async function runStep2(){
   const b2s=$('step2');
   if(b2s){ b2s.disabled=true; b2s.textContent='Scoring…'; }
   try{
-    const m=await postJSON('/api/metrics',{phrase_geos:ST.inputs.phrase_geos||[],
+    const m=await postJSON('/api/metrics',{primary_market:primaryMarket(), phrase_geos:ST.inputs.phrase_geos||[],
       head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
     ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
     ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
@@ -1091,7 +1091,7 @@ async function _runStep3(retryOnlyFailed){
     ST.table = ST.table.filter(r=>!r.error);
     ST.errored = 0;
     try{
-      const sub=await postJSON('/api/rankings_submit',{industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), keywords:failedKws,
+      const sub=await postJSON('/api/rankings_submit',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), keywords:failedKws,
         geo_values:ST.inputs.geo_values, state:ST.inputs.state});
       const pending=(sub.tasks||[]).filter(t=>t.task_id);
       (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
@@ -1152,7 +1152,7 @@ async function _runStep3Live(todo, all, BATCH){
     let got=null;
     for(let attempt=0; attempt<2 && !got; attempt++){
       try{
-        got=await postJSON('/api/rankings',{industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), 
+        got=await postJSON('/api/rankings',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), 
           batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
           state:ST.inputs.state, brand:ST.inputs.brand});
       }catch(e){
@@ -2343,6 +2343,16 @@ $('spgeo_suggest').addEventListener('click', async()=>{
   }
   btn.disabled=false; btn.textContent='✦ Suggest from markets';
 });
+
+// Steps 2 and 3 localise to one market. Step 1 already worked out which one
+// carries the most demand for this client's service, so use that answer
+// instead of whatever was typed first.
+function primaryMarket(){
+  const cs = ST.kw && ST.kw.city_selection;
+  if(cs && cs.kept && cs.kept.length && cs.method && cs.method!=='input order') return cs.kept[0][0];
+  const g = (ST.inputs && ST.inputs.geo_values) || [];
+  return g.length ? g[0] : '';
+}
 
 async function loadSavedList(q){
   const list=$('savedList');
