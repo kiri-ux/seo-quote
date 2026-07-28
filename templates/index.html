@@ -1420,11 +1420,12 @@ function renderStep4(p){
       <div style="margin-top:8px"></div>
     ${p.ai_search?`
       <b style="color:var(--atlas)">Internal breakdown — SEO vs GEO</b>
-      <span class="nf">${p.ai_search.mode==='card'?'(GEO at the bundled rate card; the client sees one product price — the cards above)':`(GEO listed at <b>${p.ai_search.geo_pct}% of Core SEO</b>${p.ai_search.geo_pct_basis?` — ${p.ai_search.geo_pct_basis}`:''}, less a ${p.ai_search.bundle_discount_pct}% bundle discount)`}</span><br>
+      <span class="nf">${p.ai_search.mode==='card'?'(GEO at the bundled rate card; the client sees one product price — the cards above)':`(GEO priced at <b>${p.ai_search.geo_pct}% of Core SEO</b>${p.ai_search.geo_pct_basis?` — ${p.ai_search.geo_pct_basis}`:''})`}</span><br>
       <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
         <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
         <tr><td style="padding:2px 12px 2px 0">Core SEO component</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
-        <tr><td style="padding:2px 12px 2px 0">AI Search / GEO component</td>${['base','intermediate','advanced'].map(k=>{
+        ${p.ai_search.client_list?`<tr class="nf"><td style="padding:2px 12px 2px 0">GEO on its own</td>${['base','intermediate','advanced'].map(k=>`<td style="text-align:right">${money(p.ai_search.client_list[k])}</td>`).join('')}</tr>`:''}
+        <tr><td style="padding:2px 12px 2px 0">AI Search / GEO component${p.ai_search.bundle_discount_pct?` <span class="nf" style="font-size:10.5px">(sold with SEO, ${p.ai_search.bundle_discount_pct}% off)</span>`:''}</td>${['base','intermediate','advanced'].map(k=>{
           const add=p.ai_search.client_add[k];
           return `<td style="text-align:right">+${money(add)}</td>`;
         }).join('')}</tr>
@@ -1432,7 +1433,7 @@ function renderStep4(p){
       </table>
     `:''}
       <div style="font-size:12.5px;font-weight:600;color:var(--atlas);margin-bottom:2px${p.ai_search?';margin-top:14px;border-top:1px solid var(--line);padding-top:12px':''}">Compare to actual quote</div>
-      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter what was really quoted for this client to see how the formula compares. Helps spot where the formula runs high or low.${ai?' <b>Tracks the Core SEO component</b> — the calibration actuals are Core SEO quotes; enter the actual SEO ladder here, not a combined price.':''}</div>
+      <div class="nf" style="font-size:11.5px;margin-bottom:9px">Enter the Core SEO quote if it differs from the tool. Do not include GEO in this price.</div>
       <table style="font-size:12.5px;width:100%">
         <thead><tr>
           <th style="text-align:left">Tier</th><th style="text-align:right">Formula</th>
@@ -2097,7 +2098,7 @@ function wireCompare(c){
       out.innerHTML=`<span style="color:${color};font-weight:600">${sign}${money(diff)}</span> <span class="nf">(${sign}${pct}%)</span>`;
     });
     const s=$('cmpSummary'); if(!s) return;
-    if(!n){ s.innerHTML='<span class="nf">Enter the actual prices above to compare.</span>'; return; }
+    if(!n){ s.innerHTML=''; return; }
     const avg=Math.round(pctSum/n);
     let verdict;
     if(Math.abs(avg)<=5) verdict=`<span style="color:#2a7a4a">Formula is within ${Math.abs(avg)}% of the actual quote on average — good match.</span>`;
