@@ -1795,10 +1795,10 @@ async function loadConfig(){
       'confirmed') +
 
     cfgGroup('AI Search · GEO pricing',
-      `<div class="tierhelp">GEO is quoted as a <b>percentage of the client's own Core SEO price</b>, not a fixed rate card. GEO runs 30–50% below SEO on average, climbing toward parity when the client has little existing visibility. The tiers below map visibility to that percentage — read high to low, first match wins.</div>`+
+      `<div class="tierhelp">GEO is quoted as a <b>percentage of the client's own Core SEO price</b>, not a fixed rate card. GEO runs 30–50% below SEO on average, climbing toward parity when the client has little existing visibility. The tiers below map visibility to that percentage and are the whole of GEO pricing — read high to low, first match wins.</div>`+
       tierRows(c.geo_pct_tiers,'cf_geot','If at least','% of terms aren\u2019t ranking → GEO is','% of Core SEO')+
       cfgRow('Default GEO %','cf_geodef',c.geo_pct_default,'used when there is no ranking data yet')+
-      cfgRow('Bundle discount (%)','cf_geodisc',c.geo_bundle_discount_pct,'off the GEO line when sold with Core SEO — all three tiers')+
+      cfgRow('Bundle discount (%)','cf_geodisc',c.geo_bundle_discount_pct,'retired — its 5% is folded into the tiers above. Leave at 0 unless a separate discount comes back')+
       cfgRow('Minimum term (months)','cf_term',c.min_term_months,'standard for both strategies')+
       cfgRow('Minimum term — no visibility','cf_termzv',c.min_term_months_zero_visibility,'used when almost nothing ranks; results take longer')+
       cfgRow('\u201cNo visibility\u201d threshold (%)','cf_zvpct',c.zero_visibility_pct_not_ranking,'% not ranking that counts as no visibility'),

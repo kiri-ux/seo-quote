@@ -403,13 +403,19 @@ CFG = {
     # SEO -- slightly ABOVE Brendan's stated 50-75% normal band, which is
     # precisely what he said should happen for a client with no visibility.
     # (This assumes MPG's SEO ladder was 3,950/5,450/6,950 -- CONFIRM.)
+    # REVISED 2026-07-28: the separate bundle discount is gone and its 5% is
+    # folded into these percentages, so this table is now the WHOLE of GEO
+    # pricing. Every rate is its old value x 0.95, which leaves the quoted
+    # numbers identical — this is a simplification of how the price is
+    # expressed, not a change to what anyone pays. Two knobs describing one
+    # decision meant the headline rate was never the rate actually charged.
     "geo_pct_tiers": [
-        [90, 78],   # <10% of head terms rank  -> the MPG ceiling
-        [70, 70],   # 10-30% rank              -> top of the normal band
-        [40, 62],   # 30-60% rank              -> mid of the normal band
-        [0,  50],   # 60%+ rank (established)  -> the full 50% discount
+        [90, 74],   # <10% of head terms rank  -> the MPG ceiling (was 78 less 5%)
+        [70, 66],   # 10-30% rank              -> top of the normal band
+        [40, 59],   # 30-60% rank              -> mid of the normal band
+        [0,  48],   # 60%+ rank (established)  -> the established-client floor
     ],
-    "geo_pct_default": 60,                    # used when no ranking data exists
+    "geo_pct_default": 57,                    # used when no ranking data exists
     # Bundle discount off the GEO line when sold with Core SEO.
     # Provenance: MPG's proposal (2026-06-10) listed the intermediate GEO at
     # "$4,050, discounted from $4,250 in conjunction with the SEO campaign" =
@@ -421,7 +427,7 @@ CFG = {
     # so it should only be zeroed on a decision that the practice has changed,
     # not on the assumption that the number is stale. Set to 0 and the list
     # row and the "sold with SEO" note disappear from the quote entirely.
-    "geo_bundle_discount_pct": 5,
+    "geo_bundle_discount_pct": 0,             # RETIRED — folded into geo_pct_tiers
     # Minimum term. Brendan: "we usually do 6 months for both, however where
     # someone has like ZERO visibility sometimes we do 12 because it takes
     # that long to get results." Same trigger as the top geo_pct rung.
