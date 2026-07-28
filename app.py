@@ -609,27 +609,50 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None):
     states.discard("")
     out["states"] = len(states)
 
-    # The client's OWN site is the best evidence available, and it costs
-    # nothing: the crawl already ran for the keyword build. A site that
-    # publishes six location pages is telling us it has six locations, which
-    # is the unit every multi-location pricing model charges by — and it is
-    # the exact test used to scope Skills of Central PA. It also beats rank
-    # coverage, which can only see the handful of cities the grid crossed.
-    locs = [l for l in (site_locations or []) if l]
+    # PRESENCE PER MARKET, not a count of locations. Counting gets both known
+    # outcomes backwards: Skills of Central PA has ~8 facilities and got ONE
+    # campaign, TN Water & Air has one Knoxville location and was offered 11
+    # add-ons. Physical location count is nearly anti-correlated with add-on
+    # count, because the question isn't "how many places do they have" — it's
+    # "which of the markets we're targeting do they already operate in".
+    #
+    #   Skills targets 8 markets and has a presence in all 8  -> improving
+    #     coverage that exists -> one campaign.
+    #   TN targets 12 and has a presence in 1                 -> entering 11
+    #     new markets -> a campaign each.
+    #
+    # A location page or a Google Business Profile answers that per market,
+    # and so does a top-100 ranking. All three are the same question asked
+    # different ways, which is why they agree where we can check them.
+    locs = [str(l).lower() for l in (site_locations or []) if l]
     out["site_locations"] = len(locs)
-    if len(locs) >= 2:
-        out["suggested"] = max(0, len(locs) - 1)
-        out["basis"] = (f"the site publishes {len(locs)} location pages "
-                        f"({', '.join(locs[:6])}{'…' if len(locs) > 6 else ''}), so the "
-                        f"client has {len(locs)} places needing their own listing, "
-                        f"reviews and local content — one campaign plus "
-                        f"{len(locs) - 1} add-ons.")
-        out["confident"] = True
-        if len(locs) <= int(CFG.get("addon_free_markets", 3)):
-            out["suggested"] = 0
-            out["basis"] = (f"the site publishes {len(locs)} location pages — "
-                            f"2–3 related locations normally run under one campaign.")
-        return out
+    if locs:
+        with_page = [m for m in mk
+                     if any(l in (parse_market(m, state)[0] or m).lower()
+                            or (parse_market(m, state)[0] or m).lower() in l
+                            for l in locs)]
+        out["markets_with_location_page"] = len(with_page)
+        if len(with_page) >= 1:
+            missing = n - len(with_page)
+            if missing <= 0:
+                out["suggested"] = 0
+                out["basis"] = (f"the site publishes a location page for all {n} "
+                                f"targeted markets — the client already operates in "
+                                f"each of them, so this is one footprint to improve.")
+            elif len(with_page) >= max(2, int(n * 0.7)):
+                out["suggested"] = 0
+                out["basis"] = (f"the site publishes location pages for "
+                                f"{len(with_page)} of the {n} targeted markets — the "
+                                f"client already operates in most of them, so this "
+                                f"reads as one footprint rather than {n} builds.")
+            else:
+                out["suggested"] = missing
+                out["basis"] = (f"the site publishes location pages for only "
+                                f"{len(with_page)} of the {n} targeted markets — the "
+                                f"other {missing} are markets the client doesn't yet "
+                                f"operate in, which is a separate build each.")
+            out["confident"] = True
+            return out
 
     if n <= int(CFG.get("addon_free_markets", 3)):
         out["basis"] = (f"{n} markets — 2–3 related markets normally run under one "
