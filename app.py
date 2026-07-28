@@ -463,7 +463,14 @@ CFG = {
     # Central PA and TN Water & Air) — treat the suggestion as a prompt to
     # think, not a decision, until more actuals confirm them.
     "addon_free_markets": 3,        # at or below this, always one campaign
-    "addon_min_measured_share": 0.7,  # need rank data on this share before suggesting
+    # Need rank data on this share of the ENTERED markets before suggesting.
+    # Note the interaction with grid_max_cities: at 5 crossed cities, a client
+    # with 8+ markets can never clear 70% and will always be told there isn't
+    # enough data. That is the honest answer rather than a bug — the tool
+    # genuinely hasn't looked at those markets — but it means wide-footprint
+    # clients need Grid max cities raised for one run to decide add-ons, then
+    # dropped back for the proposal list.
+    "addon_min_measured_share": 0.7,
     "addon_covered_share": 0.6,     # rank in this share of measured markets = one footprint
     "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
     "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
@@ -492,10 +499,17 @@ CFG = {
     #   Serene       1 metro  x ~14 services = 20
     #   Skidmore     0 cities x ~20 services = 24
     # So services scale INVERSELY with cities to hold the total near target.
+    # REVISED 2026-07-28 after live tuning: min services 4 -> 7, max cities
+    # 10 -> 5. At the old settings a wide-footprint client hit the service
+    # FLOOR — 10 cities forced services down to 4, so a 40-row list showed
+    # only four things and read as padding rather than strategy. Trading
+    # cities for services keeps the total near target while nearly doubling
+    # the variety, and the cities that survive are the highest-demand ones
+    # for this client's own service, so the ones dropped cost least.
     "grid_target_keywords": 32,
-    "grid_min_services": 4,
+    "grid_min_services": 7,
     "grid_max_services": 20,
-    "grid_max_cities": 10,             # cities crossed against each service
+    "grid_max_cities": 5,             # cities crossed against each service
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
 }
 
