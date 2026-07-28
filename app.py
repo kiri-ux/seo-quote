@@ -571,7 +571,8 @@ def dfs_post(path, payload, timeout=None, method="POST"):
     resp.raise_for_status()
     return resp.json()
 
-def recommend_addons(markets, state, rows, top_n=None, site_locations=None):
+def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
+                     site_pages_found=None):
     """Suggest how many markets should be priced as separate campaigns.
 
     The judgement, per the pricing authority: 2-3 related nearby markets run
@@ -626,6 +627,13 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None):
     # different ways, which is why they agree where we can check them.
     locs = [str(l).lower() for l in (site_locations or []) if l]
     out["site_locations"] = len(locs)
+    # "No location pages" and "we couldn't read the site" look identical from
+    # an empty list, and they mean opposite things: the first is evidence, the
+    # second is a gap. Woodstock's site refused a TLS handshake, so its crawl
+    # returned nothing and the strongest signal was silently absent rather
+    # than negative.
+    out["site_read"] = (None if site_pages_found is None
+                        else bool(site_pages_found))
     if locs:
         with_page = [m for m in mk
                      if any(l in (parse_market(m, state)[0] or m).lower()
@@ -3623,7 +3631,8 @@ def api_addon_suggestion():
     markets = [m.strip() for m in d.get("geo_values", []) if m and m.strip()]
     state = derive_state(markets, (d.get("state") or "").strip())
     return jsonify(recommend_addons(markets, state, d.get("table") or [],
-                                    site_locations=d.get("site_locations") or []))
+                                    site_locations=d.get("site_locations") or [],
+                                    site_pages_found=d.get("site_pages_found")))
 
 
 @app.route("/api/price", methods=["POST"])
