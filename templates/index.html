@@ -334,6 +334,8 @@
       <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
     <div class="help" style="margin:2px 0 6px">Markets run as their own campaign, counted <i>beyond</i> the first. 2–3 related nearby markets normally stay under one campaign — leave this at 0. Use add-ons when the markets are many, far apart, or competitively different.</div>
     <input type="text" id="addon" placeholder="0" value="0">
+    <div id="addonSuggest" style="margin-top:7px"></div>
+    <script>document.addEventListener('DOMContentLoaded',()=>{const a=document.getElementById('addon');if(a)a.addEventListener('input',()=>{try{refreshAddonSuggestion();}catch(e){}});});</script>
 
     <label>Has done SEO in the past</label>
     <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
@@ -1004,6 +1006,7 @@ function step3Html(){
   // not count as "not ranking", since that would inflate the price.
   const checked = Math.max((ST.total||0) - (ST.errored||0), 0);
   const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
+  try{ refreshAddonSuggestion(); }catch(e){}
   const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
   const ctx=(ST.inputs&&ST.inputs.past_seo)
     ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
@@ -2387,6 +2390,30 @@ function syncStateSummary(){
 }
 if($('state')) $('state').addEventListener('change', syncStateSummary);
 try{ syncStateSummary(); }catch(e){}
+
+// Suggest an add-on count once step 3 has produced a rank table. Advisory
+// only — it cannot see the client's budget, which is the first thing the
+// pricing authority weighs.
+async function refreshAddonSuggestion(){
+  const box=$('addonSuggest'); if(!box) return;
+  const mk=(stores.geo||[]), tbl=(ST.table||[]);
+  if(mk.length<2 || !tbl.length){ box.innerHTML=''; return; }
+  try{
+    const r=await postJSON('/api/addon_suggestion',
+      {geo_values:mk, state:($('state')?$('state').value:''), table:tbl});
+    const cur=parseFloat(($('addon')||{}).value||0)||0;
+    const match = cur===r.suggested;
+    box.innerHTML=`<details style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:9px;padding:8px 11px;font-size:12.5px">
+      <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 currently set to '+cur} \u25b8 how this is worked out</summary>
+      <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
+      <div style="margin-top:7px" class="nf"><b>How the suggestion is made.</b> Two questions, in order.
+        First, how many markets: <b>${r.markets}</b>. At three or fewer the answer is always one campaign, because related nearby markets normally run together.
+        Above three it comes down to whether the client's footprint is <i>already</i> multi-market — the tool counts how many of the entered markets the site currently ranks in, taken from the step 3 table (<b>${r.covered} of ${r.measured}</b> measured here). Ranking across most of them means one presence to improve; ranking in one or none means every other market is a build from scratch.
+        Markets tagged with different states push toward add-ons, and only explicitly tagged states count — inferring a state from a city name gets "Cleveland" wrong.</div>
+      <div style="margin-top:7px" class="nf">⚠ <b>It cannot see the budget</b>, which is the first thing that decides this in practice, and the rule is fit on two proposals: Skills of Central PA (8 markets, one campaign) and TN Water &amp; Air (12 markets, add-ons offered). Treat it as a prompt to think, not an answer — the field stays yours to set.</div>
+    </details>`;
+  }catch(e){ box.innerHTML=''; }
+}
 
 async function loadSavedList(q){
   const list=$('savedList');

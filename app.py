@@ -453,7 +453,19 @@ CFG = {
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
     "client_floor": 0,                        # no floor — raised anchors carry pricing
-    "addon_market_ratio": 0.42,
+    # Add-on market pricing, per tier. Confirmed against TN Water & Air
+    # (2026-03-25): a Knoxville ladder of 2,250 / 2,950 / 3,650 with add-on
+    # markets at 950 / 1,250 / 1,750 — 42%, 42%, 48%. The flat 0.42 was right
+    # on the first two tiers and 11% light on advanced, because the extra work
+    # an advanced campaign does per location scales more than the shared work
+    # does. Per-tier ratios reproduce all three exactly.
+    # Add-on recommendation thresholds. Both fit on TWO proposals (Skills of
+    # Central PA and TN Water & Air) — treat the suggestion as a prompt to
+    # think, not a decision, until more actuals confirm them.
+    "addon_free_markets": 3,        # at or below this, always one campaign
+    "addon_covered_share": 0.6,     # rank in this share of measured markets = one footprint
+    "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
+    "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
     "ultra_bucket_size": 3,
     "competitive_bucket_size": 6,
     "list_cap": 20,
@@ -543,6 +555,90 @@ def dfs_post(path, payload, timeout=None, method="POST"):
                              data=json.dumps(payload), timeout=timeout)
     resp.raise_for_status()
     return resp.json()
+
+def recommend_addons(markets, state, rows, top_n=None):
+    """Suggest how many markets should be priced as separate campaigns.
+
+    The judgement, per the pricing authority: 2-3 related nearby markets run
+    under one campaign; many locations become separate campaigns; what tips it
+    is how different the markets are, how competitive they are, and the
+    client's budget. The last of those the tool cannot see, so this is a
+    suggestion with its reasoning attached, never an answer.
+
+    Count alone doesn't separate the two real proposals — Skills of Central PA
+    got ONE campaign across 8 Pennsylvania towns while TN Water & Air was
+    scoped to Knoxville with 12 markets offered as add-ons. What does separate
+    them is whether the client's footprint is ALREADY multi-market:
+
+      Skills ranks 1st/1st/1st/2nd/2nd/3rd across its towns — one domain
+      already serves them, so the work is improving a presence that exists.
+      TN ranks nowhere outside Knoxville — every other market is greenfield,
+      which is a separate build each.
+
+    "How many markets" is the wrong question. "Are we improving one footprint
+    or creating eleven" is the right one, and step 3 already answers it.
+    """
+    mk = [m for m in (markets or []) if m and m.strip()]
+    n = len(mk)
+    out = {"markets": n, "suggested": 0, "basis": "", "covered": 0,
+           "measured": 0, "states": 0, "confident": False}
+    if n <= 1:
+        out["basis"] = "single market — nothing to add on."
+        return out
+
+    # Only count states we actually KNOW — a market tagged "City, ST". Inferring
+    # them from a name-collision table and then telling the operator the client
+    # "spans 2 states" is a confident claim built on a guess.
+    states = {(parse_market(m, "")[1] or "").lower() for m in mk if "," in m}
+    states.discard("")
+    out["states"] = len(states)
+
+    if n <= int(CFG.get("addon_free_markets", 3)):
+        out["basis"] = (f"{n} markets — 2–3 related markets normally run under one "
+                        f"campaign.")
+        out["confident"] = True
+        return out
+
+    # Which markets does the client already rank in? A keyword carries its city,
+    # so match each market against the terms that mention it.
+    top = int(top_n or CFG.get("zero_ranking_top_n", 100))
+    covered, measured = set(), set()
+    for r in (rows or []):
+        kw = (r.get("kw") or "").lower()
+        pos = r.get("pos")
+        for m in mk:
+            city = (parse_market(m, state)[0] or m).strip().lower()
+            if city and city in kw:
+                measured.add(m)
+                if isinstance(pos, (int, float)) and pos <= top:
+                    covered.add(m)
+    out["covered"], out["measured"] = len(covered), len(measured)
+
+    if len(measured) < 2:
+        out["basis"] = (f"{n} markets, but rankings were only measured in "
+                        f"{len(measured)} of them — run step 3 across the markets "
+                        f"before trusting a suggestion.")
+        return out
+
+    share = len(covered) / len(measured)
+    if share >= float(CFG.get("addon_covered_share", 0.6)):
+        out["suggested"] = 0
+        out["basis"] = (f"{n} markets, and the site already ranks in "
+                        f"{len(covered)} of the {len(measured)} measured. That is one "
+                        f"footprint to improve, not {n} to build.")
+        out["confident"] = True
+    else:
+        out["suggested"] = max(0, n - 1)
+        out["basis"] = (f"{n} markets and the site ranks in only "
+                        f"{len(covered)} of the {len(measured)} measured — every other "
+                        f"market is greenfield, which is a separate build each.")
+        out["confident"] = True
+    if len(states) > 1:
+        out["suggested"] = max(out["suggested"], n - 1)
+        out["basis"] += (f" They also span {len(states)} states, which points to "
+                         f"separate territories rather than one region.")
+    return out
+
 
 def primary_first(markets, primary):
     """Put the highest-demand market at the front of the list.
@@ -634,7 +730,13 @@ def parse_market(m, default_state=""):
             # United States") and real search phrasing ("bucks county roofing")
             # — they just need the state attached to resolve.
             st = CITY_STATE.get(cl[:-len(" county")].strip(), "")
-        st = st or (default_state or "").strip()
+        # An EXPLICIT fallback state beats the metro map. The map is a guess
+        # from the city name alone, and city names collide: "Cleveland" maps to
+        # Ohio, so a Tennessee client with a Cleveland TN branch had its state
+        # silently rewritten (2026-07-28). Someone who selected a fallback
+        # state has told us where this client operates; a lookup table has not.
+        ds = (default_state or "").strip()
+        st = ds or st
     return city.strip(), st
 
 def market_city(m, default_state=""):
@@ -2792,8 +2894,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         ai["bundle_savings"] = {k: ai["client_list"][k] - ai["client_add"][k]
                                 for k in client} if "client_list" in ai else {}
 
-    hard_addon   = {k: r50(v * CFG["addon_market_ratio"]) for k, v in hard.items()}
-    client_addon = {k: r50(v * CFG["addon_market_ratio"]) for k, v in client.items()}
+    _ar = CFG.get("addon_market_ratio_tiers") or {}
+    _r  = lambda k: float(_ar.get(k, CFG["addon_market_ratio"]))
+    hard_addon   = {k: r50(v * _r(k)) for k, v in hard.items()}
+    client_addon = {k: r50(v * _r(k)) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
             "volume_captured": vol_captured,
@@ -3391,6 +3495,21 @@ def api_rankings():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa))})
+
+@app.route("/api/addon_suggestion", methods=["POST"])
+@_json_error_guard
+def api_addon_suggestion():
+    """Suggest an add-on market count from the assembled rank table.
+
+    Its own route because it needs the WHOLE table, which only exists on the
+    frontend after step 3 has looped its batches. No external calls — pure
+    arithmetic on data the quote already holds.
+    """
+    d = request.get_json(force=True) or {}
+    markets = [m.strip() for m in d.get("geo_values", []) if m and m.strip()]
+    state = derive_state(markets, (d.get("state") or "").strip())
+    return jsonify(recommend_addons(markets, state, d.get("table") or []))
+
 
 @app.route("/api/price", methods=["POST"])
 @_json_error_guard
