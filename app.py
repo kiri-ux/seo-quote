@@ -606,6 +606,7 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     n = len(mk) - collapsed
     out_pills = len(mk)
     out = {"markets": n, "pills": out_pills, "collapsed": collapsed,
+           "markets_absent": [],
            "metro_groups": [g for g in (metro_groups or []) if len(g) > 1],
            "suggested": 0, "basis": "", "covered": 0,
            "measured": 0, "unmeasured": 0, "states": 0, "confident": False,
@@ -650,21 +651,47 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
                      if any(l in (parse_market(m, state)[0] or m).lower()
                             or (parse_market(m, state)[0] or m).lower() in l
                             for l in locs)]
-        out["markets_with_location_page"] = len(with_page)
-        if len(with_page) >= 1:
-            missing = n - len(with_page)
+        # Presence has to be counted in MARKETS too. Counting cities against a
+        # collapsed market total gave "present in 5 of 2 markets", and the
+        # missing-market arithmetic went negative.
+        def _key(m):
+            g = next((tuple(sorted(x.lower() for x in grp))
+                      for grp in (metro_groups or []) if m in grp), None)
+            return g or m.lower()
+        present_keys = {_key(m) for m in with_page}
+        out["markets_with_location_page"] = len(present_keys)
+        # Name the gaps. A count tells the operator a decision was made; the
+        # list tells them WHICH markets it rests on, which is the part they can
+        # actually check against what they know about the client. When cities
+        # have been collapsed into metros, report one name per metro so the
+        # list matches the market count rather than the pill count.
+        absent, seen_grp = [], set()
+        for m in mk:
+            if m in with_page:
+                continue
+            grp = next((tuple(g) for g in (metro_groups or []) if m in g), None)
+            if grp:
+                if grp in seen_grp or any(x in with_page for x in grp):
+                    continue
+                seen_grp.add(grp)
+                absent.append(f"{m} +{len(grp)-1}" if len(grp) > 1 else m)
+            else:
+                absent.append(m)
+        out["markets_absent"] = absent
+        if present_keys:
+            missing = n - len(present_keys)
             if missing <= 0:
                 out["suggested"] = 0
                 out["basis"] = (f"The client has a presence in all {n} markets — one "
                                 f"footprint to improve, not {n} to build.")
-            elif len(with_page) >= max(2, int(n * 0.7)):
+            elif len(present_keys) >= max(2, int(n * 0.7)):
                 out["suggested"] = 0
-                out["basis"] = (f"The client has a presence in {len(with_page)} of "
+                out["basis"] = (f"The client has a presence in {len(present_keys)} of "
                                 f"{n} markets — operating in most, so one footprint "
                                 f"rather than {n} builds.")
             else:
                 out["suggested"] = missing
-                out["basis"] = (f"The client has a presence in {len(with_page)} of "
+                out["basis"] = (f"The client has a presence in {len(present_keys)} of "
                                 f"{n} markets. They aren't in the other {missing} yet, "
                                 f"so each of those is a campaign from scratch.")
             out["confident"] = True
