@@ -655,18 +655,18 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
             missing = n - len(with_page)
             if missing <= 0:
                 out["suggested"] = 0
-                out["basis"] = (f"The client has a location page for all {n} markets "
-                                f"— one footprint to improve, not {n} to build.")
+                out["basis"] = (f"The client has a presence in all {n} markets — one "
+                                f"footprint to improve, not {n} to build.")
             elif len(with_page) >= max(2, int(n * 0.7)):
                 out["suggested"] = 0
-                out["basis"] = (f"The client has location pages for {len(with_page)} "
-                                f"of {n} markets — already operating in most, so one "
-                                f"footprint rather than {n} builds.")
+                out["basis"] = (f"The client has a presence in {len(with_page)} of "
+                                f"{n} markets — operating in most, so one footprint "
+                                f"rather than {n} builds.")
             else:
                 out["suggested"] = missing
-                out["basis"] = (f"The site shows the client in {len(with_page)} of {n} "
-                                f"markets. They aren't in the other {missing} yet, so "
-                                f"each of those is a campaign from scratch.")
+                out["basis"] = (f"The client has a presence in {len(with_page)} of "
+                                f"{n} markets. They aren't in the other {missing} yet, "
+                                f"so each of those is a campaign from scratch.")
             out["confident"] = True
             return out
 
@@ -955,6 +955,40 @@ _LOCATION_PATH = re.compile(
 _LOCATION_INDEX = re.compile(
     r"/(?:our[-_])?(?:locations?|stores?|offices?|branch(?:es)?|showrooms?|"
     r"clinics?|dealers?|service[-_]areas?|areas?[-_]we[-_]serve)/?$", re.I)
+
+
+def google_business_cities(brand, domain):
+    """Cities where the client has a Google Business listing.
+
+    The rep tab already pulls these — one Business Listings search, about two
+    cents, returning every listing at once regardless of how many markets are
+    involved. The SEO tab was ignoring it and inferring presence from location
+    pages instead, which fails for anyone using a store-locator widget: it read
+    Woodstock Furniture as having zero locations while the rep tab found six
+    (2026-07-28).
+
+    A Google Business Profile IS the local presence an SEO campaign optimises,
+    so it answers "does the client operate in this market" more directly than
+    anything else available. Non-fatal — a failure just leaves the other
+    signals to decide.
+    """
+    try:
+        import rep_scan
+        res = rep_scan.scan_locations(brand, domain=domain) or {}
+    except Exception:
+        app.logger.exception("google_business_cities failed")
+        return [], None
+    cities, seen = [], set()
+    for loc in (res.get("locations") or []):
+        addr = (loc.get("address") or "")
+        # "1234 Main St, Marietta, GA 30060" -> the part before the state
+        parts = [p.strip() for p in addr.split(",") if p.strip()]
+        city = parts[-2] if len(parts) >= 2 else ""
+        city = re.sub(r"\s+\d{5}(-\d{4})?$", "", city).strip()
+        if city and city.lower() not in seen:
+            seen.add(city.lower())
+            cities.append(city)
+    return cities, len(res.get("locations") or [])
 
 
 def location_pages_from_urls(urls):
@@ -2387,6 +2421,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     _site_urls = []
     site_pages = fetch_site_pages(domain, collect_urls=_site_urls)
     site_locations = location_pages_from_urls(_site_urls)
+    # A Google Business listing is stronger evidence of operating in a market
+    # than a page on the website, and it is the only one that works when the
+    # site uses a store-locator widget. Merge, don't replace — a client can
+    # have a location page without a listing and vice versa.
+    gbp_cities, gbp_count = google_business_cities(brand, domain)
+    for c in gbp_cities:
+        if c.lower() not in {l.lower() for l in site_locations}:
+            site_locations.append(c)
     biz = business_desc.strip() if business_desc else ""
 
     # ---- GRID MODE: build a service x city grid like the real proposals -----
@@ -2489,6 +2531,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "pinned_head_terms": pinned,
             "city_selection": city_pick,
             "site_locations": site_locations,
+            "gbp_locations": gbp_count,
+            "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
             "dropped_ungrounded": [d[0] for d in (ungrounded or [])],
@@ -3439,6 +3483,8 @@ def api_refine():
         # rendering against undefined and showing nothing (2026-07-28).
         "city_selection": s1.get("city_selection") or {},
         "site_locations": s1.get("site_locations") or [],
+        "gbp_locations": s1.get("gbp_locations"),
+        "gbp_cities": s1.get("gbp_cities") or [],
         "seed_services_used": s1.get("seed_services_used", 0),
         "pinned_head_terms": s1.get("pinned_head_terms") or [],
         "dropped_out_of_area": s1.get("dropped_out_of_area") or [],
@@ -3690,10 +3736,12 @@ def api_addon_suggestion():
     d = request.get_json(force=True) or {}
     markets = [m.strip() for m in d.get("geo_values", []) if m and m.strip()]
     state = derive_state(markets, (d.get("state") or "").strip())
-    return jsonify(recommend_addons(markets, state, d.get("table") or [],
-                                    site_locations=d.get("site_locations") or [],
-                                    site_pages_found=d.get("site_pages_found"),
-                                    metro_groups=d.get("metro_groups") or []))
+    out = recommend_addons(markets, state, d.get("table") or [],
+                           site_locations=d.get("site_locations") or [],
+                           site_pages_found=d.get("site_pages_found"),
+                           metro_groups=d.get("metro_groups") or [])
+    out["gbp_locations"] = d.get("gbp_locations")
+    return jsonify(out)
 
 
 @app.route("/api/price", methods=["POST"])
