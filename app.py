@@ -1876,6 +1876,15 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
             v2 = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                   for it in ((data2.get("tasks") or [{}])[0].get("result") or [])}
             scored = {c: v2.get(f"insurance {c.lower()}{sfx}", 0) for c in cities}
+            # Regroup on the proxy too. Woodstock's seeds were niche enough to
+            # return nothing anywhere, so the vectors were all zeros and no two
+            # cities could be matched — the grouping went silent exactly when
+            # the fallback fired, which is the case it is most needed in
+            # (2026-07-28). The proxy resolves to the same Google Ads location
+            # as any other term, so it groups just as well.
+            vectors = {c: [v2.get(f"insurance {c.lower()}{sfx}", 0)] for c in cities}
+            exp["metro_groups"] = [g for g in group_by_metro(vectors, min_terms=1)
+                                   if len(g) > 1]
             exp["probe"] = f"insurance <city>{sfx}"
             exp["method"] = "population proxy"
         # Ties broken by name so the same input always gives the same cities.

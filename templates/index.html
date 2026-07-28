@@ -1388,13 +1388,7 @@ function renderStep4(p){
       <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.intermediate)}</b><br>AI Search <b>${money(ai.hard_add.intermediate)}</b></div>`:''}</div>
       <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${money(h.advanced)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.advanced)}</b><br>AI Search <b>${money(ai.hard_add.advanced)}</b></div>`:''}</div>
     </div>
-    <div class="calc"><b>Hard base:</b> anchor <code>${money(p.anchor)}</code> ${p.band}
-      + competitive adder <code>+${money(p.adder)}</code>${p.industry_rule?` + industry (${p.industry_rule}) <code>+${money(p.industry_anchor_add)}</code>`:''} = <code>${money(p.base_pre_uplift)}</code>
-      ${p.volume_add?`<br>+ volume add <code>+${money(p.volume_add)}</code> <span class="nf">(${Number(p.total_volume||0).toLocaleString()} total monthly searches, above the normalized baseline)</span>`:''}
-      ${p.zero_ranking_uplift_pct?`<br>+ zero-ranking uplift <code>+${p.zero_ranking_uplift_pct}%</code> <span class="nf">(${p.pct_not_ranking}% of terms not in the top 100)</span>`:''}
-      ${p.national_demand?`<br><span class="nf"><b>National demand</b> (${p.national_demand_reason||'auto'}) — volume is looked up without the geo qualifier, the base sits on the national anchor, and the ladder steps proportionally (38%) like the national quotes. Volume, competition and current visibility are what set the price from there.</span>`:''}
-      ${p.extras_multiplier===0?`<br><span class="nf">This industry prices on organisation size rather than SERP signals, so the volume add and zero-ranking uplift don't apply.</span>`:''}
-      <br>= partner hard cost <b>${money(p.base)}</b> · step <code>${money(p.step)}</code> (${p.base?Math.round(p.step/p.base*100):0}% of base)</div></div>
+</div>
     </details>
 
     <div style="background:#f7f7f9;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:10px 0">
