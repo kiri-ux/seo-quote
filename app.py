@@ -202,6 +202,11 @@ CFG = {
     # that deletes everything is measuring the description's length, not the
     # services' legitimacy — so above this drop ratio it stands down entirely
     # and says so rather than gutting the list.
+    # A suggested region name must clear this monthly volume WITH a service
+    # attached before it can enter the grid. Below it the name may be real but
+    # nobody searches it, and an unsearched keyword in a proposal is a promise
+    # to rank for something with no demand behind it.
+    "region_min_volume": 10,
     "grounding_max_drop_ratio": 0.5,
     "cpc_adder_min_samples": 1,          # apply the CPC adder at/above this n
     "cpc_adder_low_confidence_n": 3,     # warn below this n
@@ -1525,6 +1530,113 @@ def dfs_kw_list(terms):
     return out
 
 
+def claude_region_names(markets, state, brand="", business_desc=""):
+    """Ask for the vernacular names locals use for these markets.
+
+    Returns a list of candidate names — Appleton -> "fox cities", Cherry Hill
+    -> "south jersey", Lewisburg -> "central pa". These are proposals only;
+    nothing reaches the quote until search volume backs it (see
+    validate_region_names). Many markets have no such name and an empty list
+    is the correct answer for them.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    cities = [c for c in (markets or []) if c and c.strip()]
+    if not api_key or not cities:
+        return []
+    prompt = f"""Name the informal REGIONAL terms that local people use for these markets, and that they
+would plausibly type into Google along with a service.
+
+MARKETS: {", ".join(cities)}
+STATE: {state or "unknown"}
+
+Rules:
+1. Return only vernacular region names — the ones on local radio and in local business names.
+   "fox cities" (Appleton WI), "south jersey" (Cherry Hill NJ), "central pa" (Lewisburg PA),
+   "lehigh valley" (Bethlehem PA), "the triangle" (Raleigh NC), "inland empire" (Riverside CA).
+2. NEVER return: the city itself, the state on its own, a county name, a neighbourhood, a metro
+   area label nobody says out loud ("Allentown-Bethlehem-Easton MSA"), or a compass phrase you
+   invented ("north-central Wisconsin") unless it is genuinely in common use.
+3. Most markets have NO such term. Returning an empty list is a correct and expected answer —
+   a wrong region name is far worse than a missing one, because it becomes a keyword the client
+   is quoted to rank for.
+4. At most 3, lowercase, no state suffix.
+
+Return ONLY a JSON object, no prose, no markdown:
+{{"regions": ["fox cities"]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 300, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=25)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        out = []
+        for r in (json.loads(text).get("regions") or []):
+            name = clean_kw(str(r).lower()).strip()
+            if name and name not in out and len(name.split()) <= 4:
+                out.append(name)
+        return out[:3]
+    except Exception:
+        app.logger.exception("claude_region_names failed")
+        return []
+
+
+def validate_region_names(candidates, service_term, markets, state):
+    """Keep only region names with REAL search demand for this client's service.
+
+    A name being locally recognised doesn't mean anyone searches it with a
+    service attached, and an unsearched region name in the grid is a keyword
+    the client is being quoted to rank for. So each candidate is measured the
+    way it will actually be used — service + region — against the same phrase
+    built from the client's own city, which is the honest benchmark.
+
+    Testing the bare region name would not work: "fox cities" has volume as a
+    navigational query whether or not anyone searches "roofing fox cities".
+
+    Returns (kept, rejected) where each entry is (name, volume).
+    """
+    svc = clean_kw((service_term or "").lower()).strip()
+    cands = [c for c in (candidates or []) if c]
+    if not svc or not cands:
+        return [], []
+    city = next((c for c in (markets or []) if c and c.strip()), "")
+    if city:
+        _c, _st = parse_market(city, state)
+        _sfx = f"{_c} {STATE_ABBREV.get((_st or '').lower(), '')}".strip()
+        city_kw = clean_kw(f"{svc} {_sfx}")
+    else:
+        city_kw = svc
+    probe = dfs_kw_list([f"{svc} {c}" for c in cands] + ([city_kw] if city_kw else []))
+    if not probe:
+        return [], []
+    vols = {}
+    try:
+        payload = [{"keywords": probe,
+                    "location_name": loc_string(markets, state) or "United States",
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        for row in ((data.get("tasks") or [{}])[0].get("result") or []):
+            vols[(row.get("keyword") or "").lower()] = row.get("search_volume") or 0
+    except Exception:
+        app.logger.exception("validate_region_names lookup failed")
+        return [], [(c, None) for c in cands]
+
+    floor = int(CFG.get("region_min_volume", 10) or 10)
+    kept, rejected = [], []
+    for c in cands:
+        v = vols.get(f"{svc} {c}".lower(), 0)
+        (kept if v >= floor else rejected).append((c, v))
+    kept.sort(key=lambda t: -t[1])
+    return kept, rejected
+
+
 def build_grid(services, markets, state, prepicked=False):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
@@ -2744,6 +2856,41 @@ def export_csv():
 # STEPPED LIVE ENDPOINTS — each is its own short request so nothing times out.
 # The frontend calls them in sequence and holds state between steps.
 # ===========================================================================
+
+@app.route("/api/suggest_regions", methods=["POST"])
+@_json_error_guard
+def api_suggest_regions():
+    """Propose vernacular region names for the entered markets, then keep only
+    the ones with real search demand for the client's own service."""
+    d = request.get_json(force=True) or {}
+    markets = [m for m in (d.get("geo_values") or []) if m and m.strip()]
+    state = (d.get("state") or "").strip()
+    seeds = [k for k in (d.get("keywords") or []) if k and k.strip()]
+    if not markets:
+        return jsonify({"regions": [], "rejected": [],
+                        "note": "Add at least one geographic targeting area first."})
+    if not seeds:
+        return jsonify({"regions": [], "rejected": [],
+                        "note": "Add a Keyword / Vertical Focus term first — a region name is "
+                                "only tested against the client's own service."})
+    cands = claude_region_names(markets, state, d.get("brand") or "",
+                                d.get("business_desc") or "")
+    if not cands:
+        return jsonify({"regions": [], "rejected": [],
+                        "note": "No commonly-searched regional name for these markets. That is a "
+                                "normal answer — most markets don't have one."})
+    svc = clean_kw(seeds[0].lower()).strip()
+    kept, rejected = validate_region_names(cands, svc, markets, state)
+    return jsonify({
+        "regions": [{"name": n, "volume": v} for n, v in kept],
+        "rejected": [{"name": n, "volume": v} for n, v in rejected],
+        "tested_with": svc,
+        "note": "" if kept else
+                f"Suggested {', '.join(c for c in cands)} — but none reach "
+                f"{CFG.get('region_min_volume', 10)} searches a month with \u201c{svc}\u201d "
+                f"attached, so none are worth quoting against.",
+    })
+
 
 @app.route("/api/keywords", methods=["POST"])
 @_json_error_guard

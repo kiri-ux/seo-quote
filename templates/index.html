@@ -298,6 +298,9 @@
     <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
     <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
     <div class="pillbox" data-for="spgeo"><input type="text" id="spgeo_in" placeholder="south jersey, fox cities"></div>
+    <button id="spgeo_suggest" style="margin-top:8px;background:#fff;color:var(--velocity);border:1px solid var(--velocity);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from markets</button>
+    <span class="help" style="display:inline;margin-left:8px">proposes the regional names locals use, then keeps only the ones with real search volume behind your first focus term</span>
+    <div id="spgeo_out" style="margin-top:8px"></div>
 
     <div style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
       <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Validation UI: demo only — state data: real pipeline input</div>
@@ -2292,6 +2295,41 @@ $('kwlock').addEventListener('change',()=>{
   }else if(note && !REVIEW_MODE){
     note.textContent += ST.pricing ? '' : ' Saves with the quote once it\u2019s priced.';
   }
+});
+
+$('spgeo_suggest').addEventListener('click', async()=>{
+  const btn=$('spgeo_suggest'), out=$('spgeo_out');
+  const geos=(stores.geo||[]), kws=(stores.kw||[]);
+  btn.disabled=true; btn.textContent='Checking…';
+  out.innerHTML='<span class="nf" style="font-size:12.5px">Proposing names, then measuring each one against real search volume…</span>';
+  try{
+    const r=await postJSON('/api/suggest_regions',{
+      geo_values:geos, state:$('state')?$('state').value:'',
+      keywords:kws, brand:($('brand')?$('brand').value:''),
+      business_desc:($('business_desc')?$('business_desc').value:'')});
+    let h='';
+    if(r.regions&&r.regions.length){
+      h+=`<div class="nf" style="font-size:12.5px;margin-bottom:5px">Tested as “${escapeHtml(r.tested_with||'')} + region”. Click to add:</div>`;
+      h+=r.regions.map(x=>`<button class="strat spgeo_add" data-n="${escapeHtml(x.name)}" style="margin:0 6px 6px 0">+ ${escapeHtml(x.name)} <span class="nf">(${Number(x.volume).toLocaleString()}/mo)</span></button>`).join('');
+    }
+    if(r.rejected&&r.rejected.length){
+      h+=`<div class="nf" style="font-size:12px;margin-top:4px">Not added — too little search volume with a service attached: ${r.rejected.map(x=>escapeHtml(x.name)+(x.volume==null?'':` (${x.volume}/mo)`)).join(', ')}.</div>`;
+    }
+    if(r.note) h+=`<div class="nf" style="font-size:12.5px;margin-top:4px">${escapeHtml(r.note)}</div>`;
+    out.innerHTML=h||'<span class="nf" style="font-size:12.5px">Nothing to suggest.</span>';
+    out.querySelectorAll('.spgeo_add').forEach(b=>b.onclick=()=>{
+      const v=b.dataset.n;
+      if(!stores.spgeo.includes(v)){
+        stores.spgeo.push(v);
+        try{ PILL_RENDER.spgeo(); }catch(e){}
+        try{ scheduleAutoSave(); }catch(e){}
+      }
+      b.remove();
+    });
+  }catch(e){
+    out.innerHTML='<span class="err" style="display:block;font-size:12.5px">Couldn\u2019t check regions: '+escapeHtml(String(e&&e.message||e))+'</span>';
+  }
+  btn.disabled=false; btn.textContent='✦ Suggest from markets';
 });
 
 async function loadSavedList(q){
