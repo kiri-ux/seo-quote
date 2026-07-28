@@ -3054,6 +3054,17 @@ def api_refine():
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
         "all": conv(s1["all"]), "refined_by_ai": s1.get("refined_by_ai", False),
         "refine_attempted": True,
+        # Diagnostics from the list build. api_refine names the keys it
+        # forwards, so anything stage1b_refine returns that isn't listed here
+        # never reaches the browser — every one of these panels has been
+        # rendering against undefined and showing nothing (2026-07-28).
+        "city_selection": s1.get("city_selection") or {},
+        "seed_services_used": s1.get("seed_services_used", 0),
+        "pinned_head_terms": s1.get("pinned_head_terms") or [],
+        "dropped_out_of_area": s1.get("dropped_out_of_area") or [],
+        "geo_filter_off": bool(s1.get("geo_filter_off")),
+        "dropped_ungrounded": s1.get("dropped_ungrounded") or [],
+        "grounding_stood_down": bool(s1.get("grounding_stood_down")),
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
         "grid": s1.get("grid", False),
