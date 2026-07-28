@@ -303,7 +303,7 @@
     <div id="spgeo_out" style="margin-top:8px"></div>
 
     <details style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
-      <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Validation UI — demo only<span id="stateSummary" style="font-weight:400;text-transform:none;letter-spacing:0"></span></summary>
+      <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — validation UI<span id="stateSummary" style="font-weight:400;text-transform:none;letter-spacing:0"></span></summary>
       <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 2px">Validation UI: demo only — state data: real pipeline input</div>
       <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear — and the <b>search-phrase geos</b> field above maps 1:1 to a free-text field beside adtini&#39;s validated pickers — keyword text only, never location lookups. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
 
@@ -972,9 +972,10 @@ function step2Html(m){
 
 function devPipelineNote(){
   if(document.getElementById('pdev')) return;
-  panel('pdev', `<div style="border:2px dashed #b06fc9;border-radius:9px;padding:8px 12px;background:#faf6fc;font-size:12px">
-    <span style="font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Dev note — demo only</span><br>
-    Steps 2–4 below (competition → rankings → price) run as <b>one pipeline call</b> in adtini, triggered after the keyword list build and returning the full quote object. They're broken out here so each stage's output is reviewable and no single request outlives the platform timeout. The dashed rail marks the pipeline's scope.</div>`);
+  panel('pdev', `<details style="border:2px dashed #b06fc9;border-radius:9px;padding:8px 12px;background:#faf6fc;font-size:12px">
+    <summary style="cursor:pointer;user-select:none;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — steps 2–4 are one pipeline call in adtini ▸ click to expand</summary>
+    <div style="margin-top:6px"></div>
+    Steps 2–4 below (competition → rankings → price) run as <b>one pipeline call</b> in adtini, triggered after the keyword list build and returning the full quote object. They're broken out here so each stage's output is reviewable and no single request outlives the platform timeout. The dashed rail marks the pipeline's scope.</details>`);
 }
 
 async function runStep2(){
