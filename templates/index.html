@@ -889,7 +889,9 @@ function renderStep1(){
             ? `the client's own term returned no volume anywhere, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead`
             : `the demand lookup failed, so markets were kept in the order they were entered — worth re-running before you quote`;
         const fmt=a=>a.map(([c,v])=>`${escapeHtml(c)}${v==null?'':` <span class="nf">(${money0(v)}/mo)</span>`}`).join(' · ');
-        return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.
+        const tie=(cs.tied_at_cut&&cs.tied_at_cut.length>1)
+          ? `<div style="margin-top:3px;color:var(--warn)">⚠ <b>${cs.tied_at_cut.length} markets tied at ${cs.tie_value}/mo</b>, which is the floor the keyword tool reports for thin terms — so the cut between them was arbitrary, not measured. Pick the markets by hand if some matter more than others.</div>` : '';
+        return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.${tie}
           <div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>
           ${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}
         </div>`;})()}

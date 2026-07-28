@@ -1508,7 +1508,8 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
-def pick_grid_cities(markets, state, limit, probe_term="", explain=None):
+def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
+                    home_hint=""):
     """`explain` is an optional dict that gets filled with WHY these cities won.
 
     Selection quietly discards markets the partner entered, which is the kind
@@ -1545,8 +1546,19 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None):
         # town can out-search a bigger neighbour for furniture and lose badly on
         # insurance. Measuring the actual service picks the markets that matter
         # to this quote. Falls back to the proxy when no seed is available.
-        term = clean_kw(strip_proximity((probe_term or "").lower())).strip() or "insurance"
-        probe = [f"{term} {c.lower()}{sfx}" for c in cities][:700]
+        # Probe with EVERY seed and sum, not just the first one. seeds[0] is
+        # whatever the partner happened to type first — for Woodstock that was
+        # "furniture design consultation", a niche term with no volume in any
+        # market, so the real signal never got a chance and the generic proxy
+        # took over (2026-07-28). Summing across the seeds means one thin term
+        # can't blind the ranking.
+        terms = []
+        for t in (probe_term if isinstance(probe_term, (list, tuple)) else [probe_term]):
+            t = clean_kw(strip_proximity((t or "").lower())).strip()
+            if t and t not in terms:
+                terms.append(t)
+        terms = terms[:4] or ["insurance"]
+        probe = [f"{t} {c.lower()}{sfx}" for c in cities for t in terms][:700]
         payload = [{"keywords": dfs_kw_list(probe),
                     "location_name": loc_string(cities, state),
                     "language_code": "en"}]
@@ -1554,9 +1566,11 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None):
         items = (data.get("tasks") or [{}])[0].get("result") or []
         vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                for it in items}
-        exp["probe"] = f"{term} <city>{sfx}"
+        exp["probe"] = " / ".join(f"{t} <city>{sfx}" for t in terms)
         exp["method"] = "client term"
-        scored = {c: vol.get(f"{term} {c.lower()}{sfx}", 0) for c in cities}
+        scored = {c: sum(vol.get(f"{t} {c.lower()}{sfx}", 0) for t in terms)
+                  for c in cities}
+        term = terms[0]
         # If the client's own term returns nothing anywhere, the ranking is
         # noise — fall back to the population proxy rather than picking cities
         # by accident of ordering.
@@ -1572,9 +1586,25 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None):
             exp["probe"] = f"insurance <city>{sfx}"
             exp["method"] = "population proxy"
         # Ties broken by name so the same input always gives the same cities.
-        ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), c.lower()))
+        # Ties are common in small markets — DataForSEO floors thin terms at
+        # 10/mo, so seven towns can score identically and an alphabetical
+        # tiebreak silently drops the biggest one. Where the client's own name
+        # or domain contains a market, that market is almost always their
+        # flagship, so it wins a tie.
+        hint = (home_hint or "").lower()
+        def home_rank(c):
+            return 0 if (c.lower() in hint and len(c) > 3) else 1
+        ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), home_rank(c), c.lower()))
         exp["kept"] = [(c, scored.get(c, 0)) for c in ranked[:limit]]
         exp["dropped"] = [(c, scored.get(c, 0)) for c in ranked[limit:]]
+        # If the cut line falls inside a tie, the choice between those markets
+        # was arbitrary and the operator needs to know rather than assume the
+        # tool measured something.
+        if exp["dropped"]:
+            edge = scored.get(ranked[limit - 1], 0)
+            tied = [c for c in cities if scored.get(c, 0) == edge]
+            exp["tied_at_cut"] = tied if len(tied) > 1 else []
+            exp["tie_value"] = edge
         return ranked[:limit]
     except Exception:
         exp.update({"method": "input order",
@@ -2061,8 +2091,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
-                                  probe_term=(seeds[0] if seeds else ""),
-                                  explain=city_pick)
+                                  probe_term=list(seeds or []),
+                                  explain=city_pick,
+                                  home_hint=f"{brand} {domain}")
         # Search-phrase geos ("south jersey", "fox cities") cross into keyword
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
