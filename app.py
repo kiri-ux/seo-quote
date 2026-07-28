@@ -1097,9 +1097,10 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     clean = []
     seen = set()
     for sd in seeds or []:
-        name = clean_kw(_strip_markets((sd or "").lower(),
-                                       list(markets or []) + list(phrase_geos or []),
-                                       state)).strip()
+        name = clean_kw(strip_proximity(
+            _strip_markets((sd or "").lower(),
+                           list(markets or []) + list(phrase_geos or []),
+                           state))).strip()
         if name and name not in seen and len(name.split()) <= 6:
             seen.add(name)
             clean.append(name)
@@ -1228,6 +1229,27 @@ def drop_foreign_geo_services(services, markets, state):
     return out, dropped
 
 
+# Proximity phrases. Google reads these against the SEARCHER's location, so
+# they are a substitute for a place name, not a companion to one.
+_PROXIMITY_RE = re.compile(
+    r"\b(near me|nearby|near by|close to me|around me|in my area|"
+    r"near my location|closest|near you)\b")
+
+
+def strip_proximity(text):
+    """Remove 'near me'-style phrases from a SERVICE name.
+
+    The grid appends a city to every service, so a service carrying "near me"
+    becomes "mattress store near me acworth ga" (Woodstock Furniture,
+    2026-07-27). Nobody types that: "near me" IS the location, so pairing it
+    with an explicit city is a contradiction. Those terms report almost no
+    volume, and they go into a proposal as keywords the client is quoted to
+    rank for. Bare "near me" terms are legitimate — the grid just isn't where
+    they belong, because the grid's whole job is to add the place.
+    """
+    return re.sub(r"\s+", " ", _PROXIMITY_RE.sub(" ", (text or "").lower())).strip()
+
+
 def scrub_services(services, markets, state, phrase_geos=None):
     """Strip any market/state text out of the SERVICE names and de-duplicate.
 
@@ -1245,8 +1267,9 @@ def scrub_services(services, markets, state, phrase_geos=None):
     strip_list = list(markets or []) + [g for g in (phrase_geos or []) if g]
     out, seen = [], set()
     for svc in services or []:
-        name = clean_kw(_strip_markets((svc.get("service") or "").lower(),
-                                       strip_list, state)).strip()
+        name = clean_kw(strip_proximity(
+            _strip_markets((svc.get("service") or "").lower(),
+                           strip_list, state))).strip()
         if not name or name in seen:
             continue                      # empty after scrubbing, or a duplicate
         seen.add(name)
@@ -1366,6 +1389,9 @@ TASK: choose exactly {max_services} SERVICES this business should target, and as
 RULES:
 1. A SERVICE is a short, generic phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". {"This is a NATIONAL product brand: these terms are the final keyword list and will NOT be crossed with cities. Qualify the long-tail entries by AUDIENCE or USE CASE instead of location (e.g. \'electrolyte gummies for athletes\', \'energy gummies for teen athletes\'), never by place." if national else "It will be crossed with city names later, so do NOT include any location."}
 2. Only services this business actually offers. Exclude anything they don't do.
+2p. NEVER include "near me", "nearby", "closest" or any other proximity phrase. Every service is
+   crossed with a city later, and "mattress store near me acworth ga" is not a phrase any human
+   types — "near me" IS the location. Write the bare service; the grid adds the place.
 2s. THE PARTNER'S SEED TERMS COME FIRST. They were typed by someone who knows the account, so treat
    them as the client's own service list. Any seed that is already a clean, bare service belongs in the
    output essentially as written. Only when you have fewer seeds than {max_services} should you add
