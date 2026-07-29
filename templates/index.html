@@ -1493,7 +1493,13 @@ function renderStep4(p){
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span>
       <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
     <div class="help" style="margin:2px 0 6px">Markets run as their own campaign, counted <i>beyond</i> the first. 2–3 related nearby markets normally stay under one campaign — leave this at 0. Use add-ons when the markets are many, far apart, or competitively different.</div>
-    <input type="text" id="addon" placeholder="0" value="${(ST.inputs&&ST.inputs.addon_markets)||0}">
+    <div style="display:flex;align-items:center;gap:8px">
+      <button type="button" id="addonDown" style="width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:17px;line-height:1;cursor:pointer;color:var(--atlas)">&minus;</button>
+      <input type="text" id="addon" value="${(ST.inputs&&ST.inputs.addon_markets)||0}" style="width:64px;text-align:center">
+      <button type="button" id="addonUp" style="width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:17px;line-height:1;cursor:pointer;color:var(--atlas)">+</button>
+      <span class="nf" id="addonCap" style="font-size:12px"></span>
+    </div>
+    <div id="addonCost" style="margin-top:8px"></div>
     </div>
     <div id="addonSuggest" style="margin-top:10px"></div>
     <h4 class="sec" style="margin-top:18px">Keyword table</h4>
@@ -1521,6 +1527,8 @@ function renderStep4(p){
     `);
   renderSaveRow();
   wireCompare(p.client_tiers);
+  ST.addonRates = {primary:p.client_tiers, each:p.client_addon_per_market,
+                   hard:p.hard_addon_per_market};
   try{ wireAddonField(); }catch(e){}
   try{ refreshAddonSuggestion(); }catch(e){}
   scheduleAutoSave();
@@ -2415,18 +2423,53 @@ function primaryMarket(){
 
 // Step 4 is re-rendered wholesale, so the add-on input is a new element every
 // time and its listeners have to be re-attached.
+// Recompute the client total in the browser. The figures are already on the
+// page, so the number moves with the button rather than after a round-trip —
+// which is the point of a stepper.
+function renderAddonCost(){
+  const box=$('addonCost'); if(!box) return;
+  const R=ST.addonRates;
+  const n=parseInt(($('addon')||{}).value||'0',10)||0;
+  if(!R || !R.each){ box.innerHTML=''; return; }
+  if(!n){ box.innerHTML='<span class="nf" style="font-size:12px">No add-on markets — the price above is the whole quote.</span>'; return; }
+  const K=['base','intermediate','advanced'], L=['Base','Intermediate','Advanced'];
+  box.innerHTML=`<table style="width:100%;font-size:12.5px;border-collapse:collapse">
+    <tr><td></td>${L.map(l=>`<td style="text-align:right;font-weight:600">${l}</td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market</td>${K.map(k=>`<td style="text-align:right">${money(R.primary[k])}</td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}</td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">${n} add-on${n===1?'':'s'}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k]*n)}</td>`).join('')}</tr>
+    <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Client total</td>${K.map(k=>`<td style="text-align:right;border-top:1px solid var(--line)">${money(R.primary[k]+R.each[k]*n)}</td>`).join('')}</tr>
+  </table>
+  <div class="nf" style="font-size:11.5px;margin-top:3px">Partner hard cost per add-on — ${money(R.hard.base)} / ${money(R.hard.intermediate)} / ${money(R.hard.advanced)}.</div>`;
+}
+
 function wireAddonField(){
   const a = $('addon');
   if(!a || a.dataset.wired) return;
   a.dataset.wired = '1';
+  // The recommendation is a ceiling, not a target: every market above it is one
+  // the client already operates in, so charging an add-on for it would be
+  // charging twice for the same footprint. Below it is a live commercial
+  // choice — take fewer markets now, add the rest later.
+  const cap = ()=> (ST.addonMax==null ? 99 : ST.addonMax);
   const push = ()=>{
     if(!ST.inputs) return;
-    ST.inputs.addon_markets = parseInt(a.value || '0', 10) || 0;
+    let v = parseInt(a.value || '0', 10); if(isNaN(v) || v < 0) v = 0;
+    if(v > cap()) v = cap();
+    a.value = v;
+    ST.inputs.addon_markets = v;
+    try{ renderAddonCost(); }catch(e){}
     try{ refreshAddonSuggestion(); }catch(e){}
     try{ scheduleAutoSave(); }catch(e){}
   };
   a.addEventListener('input', push);
   a.addEventListener('change', push);
+  const step = d => ()=>{ ST.addonTouched = true; a.value = (parseInt(a.value||'0',10)||0) + d; push(); };
+  a.addEventListener('input', ()=>{ ST.addonTouched = true; });
+  const up=$('addonUp'), dn=$('addonDown');
+  if(up) up.onclick = step(1);
+  if(dn) dn.onclick = step(-1);
+  try{ renderAddonCost(); }catch(e){}
 }
 
 function syncStateSummary(){
@@ -2467,14 +2510,8 @@ async function refreshAddonSuggestion(){
       <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Internal — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 set to '+cur}`:'not enough data to suggest'}</div>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
       ${(r.markets_absent&&r.markets_absent.length)?`<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--line)">
-        <div style="font-size:12px;font-weight:600;color:var(--atlas);margin-bottom:4px">Which of these to include
-          <button type="button" id="addonAll" style="margin-left:8px;background:none;border:none;color:var(--velocity);font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:underline">all</button>
-          <button type="button" id="addonNone" style="background:none;border:none;color:var(--velocity);font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:underline">none</button>
-        </div>
-        <div id="addonPicks">${r.markets_absent.map((m,ix)=>`<label class="strat" style="margin:0 6px 6px 0"><input type="checkbox" class="addonPick" data-m="${escapeHtml(m)}" ${((ST.inputs&&ST.inputs.addon_picked)?ST.inputs.addon_picked.includes(m):ix<cur)?'checked':''}>${escapeHtml(m)}</label>`).join('')}</div>
-        <div class="nf" style="font-size:11.5px;margin-top:2px">Ticking a market counts it as an add-on and re-prices. The names are carried into the quote so the proposal can say which markets are included.</div>
+        <div style="font-size:12px;color:var(--muted)">Markets these would cover: ${r.markets_absent.map(m=>escapeHtml(m)).join(' \u00b7 ')}</div>
       </div>`:''}
-      ${(r.confident && !match)?`<button type="button" id="addonApply" data-n="${r.suggested}" style="margin-top:8px;background:var(--velocity);color:#fff;border:none;padding:6px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Include all ${r.suggested}</button>`:''}
       <table style="margin-top:8px;font-size:12px;border-collapse:collapse">
         ${(r.collapsed>0)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b> — ${r.pills} cities entered, ${r.collapsed} share a metro</td></tr>`
                          :`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b></td></tr>`}
@@ -2485,29 +2522,25 @@ async function refreshAddonSuggestion(){
       <div style="margin-top:8px" class="nf"><b>The rule.</b> Three markets or fewer run as one campaign. Above that, a market the client already operates in — a location page, or a ranking — is covered by the main campaign; the rest are new territory and priced as add-ons.</div>
       <div style="margin-top:6px" class="nf"><b>Freshness.</b> Recalculated whenever step 3 renders. Location pages date from the last keyword build, rankings from the last step 3 — a reopened quote shows that snapshot, not today.</div>
     </div>`;
-    // Ticking markets IS the add-on count — the number field follows the
-    // selection rather than the other way round, so the quote knows which
-    // markets were bought and not merely how many.
-    const setPicks=(names)=>{
-      if(ST.inputs) ST.inputs.addon_picked=names;
-      const f=$('addon'); if(!f) return;
-      f.value=names.length;
-      f.dispatchEvent(new Event('input'));
-      f.dispatchEvent(new Event('change'));
-    };
-    const readPicks=()=>Array.from(document.querySelectorAll('.addonPick'))
-                            .filter(b=>b.checked).map(b=>b.dataset.m);
-    document.querySelectorAll('.addonPick').forEach(b=>b.onchange=()=>setPicks(readPicks()));
-    const all=$('addonAll'), none=$('addonNone');
-    if(all)  all.onclick =()=>{document.querySelectorAll('.addonPick').forEach(b=>b.checked=true);  setPicks(readPicks());};
-    if(none) none.onclick=()=>{document.querySelectorAll('.addonPick').forEach(b=>b.checked=false); setPicks([]);};
-    const ap=$('addonApply');
-    if(ap) ap.onclick=()=>{
-      const f=$('addon'); if(!f) return;
-      f.value=ap.dataset.n;
-      f.dispatchEvent(new Event('input'));
-      f.dispatchEvent(new Event('change'));
-    };
+    // The suggestion is the ceiling: above it the client already operates in
+    // the market, so an add-on would charge twice for one footprint. And it is
+    // the DEFAULT, because making the operator click up to the answer the
+    // evidence supports buries the finding. Only seeded while untouched, so a
+    // deliberate choice is never overwritten.
+    if(r.confident){
+      ST.addonMax = r.suggested;
+      const capEl=$('addonCap');
+      if(capEl) capEl.textContent = `of ${r.suggested} recommended`;
+      const f=$('addon');
+      if(f){
+        const v = parseInt(f.value||'0',10)||0;
+        if((!ST.addonTouched && v !== r.suggested) || v > r.suggested){
+          f.value = r.suggested;
+          if(ST.inputs) ST.inputs.addon_markets = r.suggested;
+          try{ renderAddonCost(); }catch(e){}
+        }
+      }
+    }
   }catch(e){ box.innerHTML=''; }
 }
 
