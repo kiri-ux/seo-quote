@@ -3037,7 +3037,7 @@ def _volume_dollar_add(total_volume, free_below, brackets):
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
-                 national_demand=False, geo_override=None):
+                 national_demand=False, geo_override=None, addon_override=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     m = 1.0 + (markup_pct / 100.0)
@@ -3243,6 +3243,20 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     _r  = lambda k: float(_ar.get(k, CFG["addon_market_ratio"]))
     hard_addon   = {k: r50(v * _r(k)) for k, v in hard.items()}
     client_addon = {k: r50(v * _r(k)) for k, v in client.items()}
+    # An add-on market can be negotiated independently of the ratio. A client
+    # taking eleven of them will argue the per-market rate long before the
+    # primary campaign, and the alternative is distorting the whole ladder to
+    # move one number. Sets the BASE; the upper tiers keep the SEO ladder's
+    # shape so the three stay proportionate.
+    try:
+        _ao = float(addon_override) if addon_override not in (None, "") else None
+    except (TypeError, ValueError):
+        _ao = None
+    manual_addon = bool(_ao and _ao > 0)
+    if manual_addon:
+        _ar2 = {k: (hard[k] / hard["base"] if hard["base"] else 1.0) for k in hard}
+        hard_addon   = {k: r50(_ao * _ar2[k]) for k in hard}
+        client_addon = {k: r50(hard_addon[k] * m) for k in hard}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
             "volume_captured": vol_captured,
@@ -3250,6 +3264,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "min_term_months": min_term, "zero_visibility": zero_visibility,
             "extras_multiplier": _mult,
             "manual_geo": bool(ai and ai.get("manual_geo")),
+            "manual_addon": manual_addon,
             "industry_rule": rule_key,
             "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
             "ai_search": ai,
@@ -3385,7 +3400,8 @@ def quote():
                           industry=(d.get("industry") or ""),
                           ai_search=bool(d.get("ai_search")),
                           national_demand=bool(d.get("national_demand")),
-                          geo_override=d.get("geo_override"))
+                          geo_override=d.get("geo_override"),
+                          addon_override=d.get("addon_override"))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -3891,7 +3907,8 @@ def api_price():
                      industry=(d.get("industry") or ""),
                      ai_search=bool(d.get("ai_search")),
                      national_demand=bool(d.get("national_demand")),
-                     geo_override=d.get("geo_override"))
+                     geo_override=d.get("geo_override"),
+                     addon_override=d.get("addon_override"))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "national_demand": p.get("national_demand", False),
                     "national_demand_reason": p.get("national_demand_reason", ""),
@@ -3899,6 +3916,7 @@ def api_price():
                     "zero_visibility": p.get("zero_visibility", False),
                     "extras_multiplier": p.get("extras_multiplier", 1.0),
                     "manual_geo": p.get("manual_geo", False),
+                    "manual_addon": p.get("manual_addon", False),
                     "industry_rule": p.get("industry_rule"),
                     "industry_anchor_add": p.get("industry_anchor_add", 0),
                     "ai_search": p.get("ai_search"),
