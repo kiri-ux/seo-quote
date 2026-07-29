@@ -1018,6 +1018,91 @@ def google_business_cities(brand, domain):
     return cities, len(res.get("locations") or [])
 
 
+# Headings that introduce a client's own list of markets.
+_SERVICE_AREA_HEADING = re.compile(
+    r"(?:where\s+we\s+(?:serve|work)|service\s+areas?|areas?\s+we\s+serve|"
+    r"proudly\s+serve|communities\s+we\s+serve|our\s+locations|"
+    r"cities\s+we\s+serve)", re.I)
+
+# Words that show up in these lists but aren't markets.
+_NOT_A_MARKET = re.compile(
+    r"^(?:and\s+)?(?:surrounding|nearby|other|all|more)\b|"
+    r"\b(?:areas?|communities|region|counties|county|and\s+beyond)$", re.I)
+
+# Calls to action and nav labels sit immediately after these lists and are
+# capitalised exactly like place names, so shape alone can't tell them apart —
+# "Book Now" survived every structural test (2026-07-28).
+_CTA_WORDS = re.compile(
+    r"\b(?:book|call|contact|get|start|started|learn|read|more|free|quote|"
+    r"schedule|request|now|today|us|home|about|services?|products?|offers?|"
+    r"menu|search|login|sign|apply|shop|buy|order|view|see|click|here|next|"
+    r"back|close|submit|send|email|phone|hours|reviews?|blog|news|faq|careers?|"
+    r"privacy|terms|sitemap|contact)\b", re.I)
+
+
+def service_areas_from_html(html):
+    """Pull the market list off a client's 'Where We Serve' page.
+
+    TN Water & Air names eighteen service areas on one page under "We proudly
+    serve the following areas". Its proposal then prices twelve distinct
+    markets — the same list with the metro clusters collapsed. That list is
+    the source SSG actually scoped from, and we were reading neither it nor
+    anything close: the URL matcher sees no /locations/ paths because the
+    areas are body text, and the Google Business pull returns three, because
+    three offices serve twelve markets (2026-07-28).
+
+    So read the page. Anchor on a heading, take the short text items that
+    follow, and stop at the first stretch of prose — the lists are always
+    short link or list-item labels, never sentences.
+    """
+    if not html:
+        return []
+    m = _SERVICE_AREA_HEADING.search(html)
+    if not m:
+        return []
+    window = html[m.end():m.end() + 12000]
+    items = re.findall(r">([^<>{}]{2,40})<", window)
+    out, seen = [], set()
+    for raw in items:
+        t = re.sub(r"\s+", " ", raw).strip(" \u00b7|,-–—\t")
+        if not t or len(t) < 3 or len(t.split()) > 4:
+            continue
+        if not re.match(r"^[A-Z][A-Za-z.'\-]*(?:\s+[A-Za-z.'\-]+)*$", t):
+            continue          # markets are capitalised; nav junk usually isn't
+        if _NOT_A_MARKET.search(t) or _CTA_WORDS.search(t):
+            continue
+        low = t.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        out.append(t)
+        if len(out) >= 40:
+            break
+    return out
+
+
+def fetch_service_areas(domain):
+    """Find and read the client's service-area page. Non-fatal."""
+    if not domain:
+        return []
+    base = domain if domain.startswith("http") else f"https://{domain}"
+    base = base.rstrip("/")
+    paths = ["/service-areas", "/service-area", "/areas-we-serve", "/where-we-serve",
+             "/where-we-work", "/locations", "/service-areas/", ""]
+    for p in paths:
+        try:
+            r, _ = get_client_site(base + p, timeout=8,
+                                   headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code != 200 or "<" not in (r.text or ""):
+                continue
+            found = service_areas_from_html(r.text[:400_000])
+            if len(found) >= 3:
+                return found
+        except Exception:
+            continue
+    return []
+
+
 def location_pages_from_urls(urls):
     """Location page slugs found in a set of site URLs, de-duplicated."""
     out, seen = [], set()
@@ -2452,6 +2537,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     # than a page on the website, and it is the only one that works when the
     # site uses a store-locator widget. Merge, don't replace — a client can
     # have a location page without a listing and vice versa.
+    # The client's own service-area list is the closest thing to the market
+    # list a proposal is scoped from — better than listings for anyone whose
+    # markets outnumber their premises.
+    service_areas = fetch_service_areas(domain)
+    for a in service_areas:
+        if a.lower() not in {l.lower() for l in site_locations}:
+            site_locations.append(a)
     gbp_cities, gbp_count = google_business_cities(brand, domain)
     for c in gbp_cities:
         if c.lower() not in {l.lower() for l in site_locations}:
@@ -2558,6 +2650,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "pinned_head_terms": pinned,
             "city_selection": city_pick,
             "site_locations": site_locations,
+            "service_areas": service_areas,
             "gbp_locations": gbp_count,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
@@ -3510,6 +3603,7 @@ def api_refine():
         # rendering against undefined and showing nothing (2026-07-28).
         "city_selection": s1.get("city_selection") or {},
         "site_locations": s1.get("site_locations") or [],
+        "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_services_used": s1.get("seed_services_used", 0),
@@ -3768,6 +3862,7 @@ def api_addon_suggestion():
                            site_pages_found=d.get("site_pages_found"),
                            metro_groups=d.get("metro_groups") or [])
     out["gbp_locations"] = d.get("gbp_locations")
+    out["service_areas"] = len(d.get("service_areas") or [])
     return jsonify(out)
 
 

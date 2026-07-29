@@ -2459,7 +2459,8 @@ async function refreshAddonSuggestion(){
        site_locations:((ST.kw&&ST.kw.site_locations)||[]),
        site_pages_found:((ST.kw&&ST.kw.site_pages_found)||0),
        metro_groups:(((ST.kw&&ST.kw.city_selection)||{}).metro_groups||[]),
-       gbp_locations:((ST.kw&&ST.kw.gbp_locations)||0)});
+       gbp_locations:((ST.kw&&ST.kw.gbp_locations)||0),
+       service_areas:((ST.kw&&ST.kw.service_areas)||[])});
     const cur=parseFloat(($('addon')||{}).value||0)||0;
     const match = cur===r.suggested;
     box.innerHTML=`<div style="border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 12px;font-size:12.5px">
@@ -2477,7 +2478,7 @@ async function refreshAddonSuggestion(){
       <table style="margin-top:8px;font-size:12px;border-collapse:collapse">
         ${(r.collapsed>0)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b> — ${r.pills} cities entered, ${r.collapsed} share a metro</td></tr>`
                          :`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b></td></tr>`}
-        <tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">Presence</td><td>${(r.markets_with_location_page||0)} of ${r.markets} markets${r.gbp_locations?` <span class="nf">(${r.gbp_locations} Google Business listing${r.gbp_locations===1?'':'s'} + location pages)</span>`:''}${r.site_read===false?` <span style="color:var(--warn)">— the site couldn\u2019t be read, so this is missing rather than zero</span>`:(((r.site_locations||0)===0&&!r.gbp_locations)?` <span class="nf">— no location pages or Google listings found, so the ranking row decides instead</span>`:'')}</td></tr>
+        <tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">Presence</td><td>${(r.markets_with_location_page||0)} of ${r.markets} markets${(r.gbp_locations||r.service_areas)?` <span class="nf">(${[r.gbp_locations?`${r.gbp_locations} Google Business listing${r.gbp_locations===1?'':'s'}`:'', r.service_areas?`${r.service_areas} service areas named on the site`:'', 'location pages'].filter(Boolean).join(' + ')})</span>`:''}${r.site_read===false?` <span style="color:var(--warn)">— the site couldn\u2019t be read, so this is missing rather than zero</span>`:(((r.site_locations||0)===0&&!r.gbp_locations)?` <span class="nf">— no location pages or Google listings found, so the ranking row decides instead</span>`:'')}</td></tr>
         ${(r.markets_absent&&r.markets_absent.length)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">No presence in</td><td>${r.markets_absent.map(m=>escapeHtml(m)).join(' \u00b7 ')}${r.markets_absent.some(m=>/ \+\d/.test(m))?`<div class="nf" style="font-size:11px;margin-top:2px">\u201cMarietta +3\u201d means Marietta and three neighbouring towns that Google treats as one place, so they count as a single market.</div>`:''}</td></tr>`:''}
         <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Rankings</td><td>${r.covered||0} of ${r.measured||0} measured markets</td></tr>
       </table>
