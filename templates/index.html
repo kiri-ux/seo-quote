@@ -2444,8 +2444,8 @@ async function refreshAddonSuggestion(){
        gbp_locations:((ST.kw&&ST.kw.gbp_locations)||0)});
     const cur=parseFloat(($('addon')||{}).value||0)||0;
     const match = cur===r.suggested;
-    box.innerHTML=`<details style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:9px;padding:8px 11px;font-size:12.5px">
-      <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 set to '+cur}`:'not enough data to suggest'} \u25b8 how this is worked out</summary>
+    box.innerHTML=`<div style="border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 12px;font-size:12.5px">
+      <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Internal — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 set to '+cur}`:'not enough data to suggest'}</div>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
       ${(r.confident && !match)?`<button type="button" id="addonApply" data-n="${r.suggested}" style="margin-top:8px;background:var(--velocity);color:#fff;border:none;padding:6px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Set the field to ${r.suggested}</button>`:''}
       <table style="margin-top:8px;font-size:12px;border-collapse:collapse">
@@ -2457,7 +2457,7 @@ async function refreshAddonSuggestion(){
       </table>
       <div style="margin-top:8px" class="nf"><b>The rule.</b> Three markets or fewer run as one campaign. Above that, a market the client already operates in — a location page, or a ranking — is covered by the main campaign; the rest are new territory and priced as add-ons.</div>
       <div style="margin-top:6px" class="nf"><b>Freshness.</b> Recalculated whenever step 3 renders. Location pages date from the last keyword build, rankings from the last step 3 — a reopened quote shows that snapshot, not today.</div>
-    </details>`;
+    </div>`;
     const ap=$('addonApply');
     if(ap) ap.onclick=()=>{
       const f=$('addon'); if(!f) return;
