@@ -1369,29 +1369,6 @@ function renderStep4(p){
   // price (that IS the product's price); the SEO vs AI Search split is internal.
   const ai=p.ai_search;
   const h=ai?ai.hard_total:p.hard_tiers, c=ai?ai.client_total:p.client_tiers;
-  let addon='';
-  if(p.addon_markets>0){
-    const ha=p.hard_addon_per_market, ca=p.client_addon_per_market;
-    const n=p.addon_markets, ct=p.client_tiers;
-    // The client is buying the primary campaign PLUS n add-ons, so show the
-    // number they will actually be quoted. Per-market figures alone leave the
-    // reader doing the multiplication, and the total is the decision.
-    const tot=k=>ct[k]+ca[k]*n;
-    addon=`<div class="calc"><b>Add-on markets (${n})</b>
-      <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-top:5px">
-        <tr><td></td><td style="text-align:right;font-weight:600">Base</td><td style="text-align:right;font-weight:600">Intermediate</td><td style="text-align:right;font-weight:600">Advanced</td></tr>
-        <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market</td>
-            <td style="text-align:right">${money(ct.base)}</td><td style="text-align:right">${money(ct.intermediate)}</td><td style="text-align:right">${money(ct.advanced)}</td></tr>
-        <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on</td>
-            <td style="text-align:right">${money(ca.base)}</td><td style="text-align:right">${money(ca.intermediate)}</td><td style="text-align:right">${money(ca.advanced)}</td></tr>
-        <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Total, ${n} add-on${n===1?'':'s'}</td>
-            <td style="text-align:right;border-top:1px solid var(--line)">${money(tot('base'))}</td>
-            <td style="text-align:right;border-top:1px solid var(--line)">${money(tot('intermediate'))}</td>
-            <td style="text-align:right;border-top:1px solid var(--line)">${money(tot('advanced'))}</td></tr>
-      </table>
-      ${((ST.inputs&&ST.inputs.addon_picked)||[]).length?`<div class="nf" style="font-size:11.5px;margin-top:4px">Markets included: ${((ST.inputs&&ST.inputs.addon_picked)||[]).map(m=>escapeHtml(m)).join(' \u00b7 ')}.</div>`:''}
-      <div class="nf" style="font-size:11.5px;margin-top:4px">Partner hard cost per add-on — ${money(ha.base)} / ${money(ha.intermediate)} / ${money(ha.advanced)}.</div></div>`;
-  }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
@@ -1482,12 +1459,11 @@ function renderStep4(p){
       <span style="color:var(--muted);font-size:13px">%</span>
     </div>
     <div class="tiers">
-      <div class="tier"><div class="name">Base</div><div class="price">${money(c.base)}</div><div class="mo">/month</div>${p.ai_search?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b style="color:var(--ink)">${money(p.client_tiers.base)}</b><br>AI Search <b style="color:var(--ink)">${money(p.ai_search.client_add.base)}</b></div>`:''}</div>
-      <div class="tier mid"><div class="name">Intermediate</div><div class="price">${money(c.intermediate)}</div><div class="mo">/month</div>${p.ai_search?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b style="color:var(--ink)">${money(p.client_tiers.intermediate)}</b><br>AI Search <b style="color:var(--ink)">${money(p.ai_search.client_add.intermediate)}</b></div>`:''}</div>
-      <div class="tier"><div class="name">Advanced</div><div class="price">${money(c.advanced)}</div><div class="mo">/month</div>${p.ai_search?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b style="color:var(--ink)">${money(p.client_tiers.advanced)}</b><br>AI Search <b style="color:var(--ink)">${money(p.ai_search.client_add.advanced)}</b></div>`:''}</div>
+      <div class="tier"><div class="name">Base</div><div class="price" id="tp_base">${money(c.base)}</div><div class="mo">/month</div><div class="nf" id="ta_base" style="font-size:11px;margin-top:2px"></div>${p.ai_search?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b style="color:var(--ink)">${money(p.client_tiers.base)}</b><br>AI Search <b style="color:var(--ink)">${money(p.ai_search.client_add.base)}</b></div>`:''}</div>
+      <div class="tier mid"><div class="name">Intermediate</div><div class="price" id="tp_intermediate">${money(c.intermediate)}</div><div class="mo">/month</div><div class="nf" id="ta_intermediate" style="font-size:11px;margin-top:2px"></div>${p.ai_search?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b style="color:var(--ink)">${money(p.client_tiers.intermediate)}</b><br>AI Search <b style="color:var(--ink)">${money(p.ai_search.client_add.intermediate)}</b></div>`:''}</div>
+      <div class="tier"><div class="name">Advanced</div><div class="price" id="tp_advanced">${money(c.advanced)}</div><div class="mo">/month</div><div class="nf" id="ta_advanced" style="font-size:11px;margin-top:2px"></div>${p.ai_search?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b style="color:var(--ink)">${money(p.client_tiers.advanced)}</b><br>AI Search <b style="color:var(--ink)">${money(p.ai_search.client_add.advanced)}</b></div>`:''}</div>
     </div>
 
-    ${addon}
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span>
       <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
@@ -1526,8 +1502,13 @@ function renderStep4(p){
     `);
   renderSaveRow();
   wireCompare(p.client_tiers);
-  ST.addonRates = {primary:p.client_tiers, each:p.client_addon_per_market,
-                   hard:p.hard_addon_per_market};
+  // The primary figure has to be what the CLIENT pays for market one — which
+  // on a Core SEO + AI Search quote is the combined total, not the SEO leg.
+  // Using client_tiers made the add-on table's "Client total" exclude AI
+  // Search entirely (2026-07-28).
+  ST.addonRates = {primary:(p.ai_search? p.ai_search.client_total : p.client_tiers),
+                   seo:p.client_tiers, ai:(p.ai_search? p.ai_search.client_add : null),
+                   each:p.client_addon_per_market, hard:p.hard_addon_per_market};
   try{ wireAddonField(); }catch(e){}
   try{ refreshAddonSuggestion(); }catch(e){}
   scheduleAutoSave();
@@ -2430,12 +2411,21 @@ function renderAddonCost(){
   const R=ST.addonRates;
   const n=parseInt(($('addon')||{}).value||'0',10)||0;
   if(!R || !R.each){ box.innerHTML=''; return; }
+  const K0=['base','intermediate','advanced'];
+  // Keep the headline cards in step with the stepper — they are the number the
+  // client is quoted, and a card that ignores seven add-on markets is wrong by
+  // more than the campaign itself.
+  K0.forEach(k=>{
+    const pe=$('tp_'+k), ae=$('ta_'+k);
+    if(pe) pe.textContent = money(R.primary[k] + R.each[k]*n);
+    if(ae) ae.textContent = n ? `${money(R.primary[k])} + ${n} add-on${n===1?'':'s'}` : '';
+  });
   if(!n){ box.innerHTML='<span class="nf" style="font-size:12px">No add-on markets — the price above is the whole quote.</span>'; return; }
   const K=['base','intermediate','advanced'], L=['Base','Intermediate','Advanced'];
   box.innerHTML=`<table style="width:100%;font-size:12.5px;border-collapse:collapse">
     <tr><td></td>${L.map(l=>`<td style="text-align:right;font-weight:600">${l}</td>`).join('')}</tr>
-    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market</td>${K.map(k=>`<td style="text-align:right">${money(R.primary[k])}</td>`).join('')}</tr>
-    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}</td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market${R.ai?' (SEO + AI Search)':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.primary[k])}</td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' (Core SEO only)':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}</td>`).join('')}</tr>
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">${n} add-on${n===1?'':'s'}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k]*n)}</td>`).join('')}</tr>
     <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Client total</td>${K.map(k=>`<td style="text-align:right;border-top:1px solid var(--line)">${money(R.primary[k]+R.each[k]*n)}</td>`).join('')}</tr>
   </table>
