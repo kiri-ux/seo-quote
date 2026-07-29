@@ -2447,16 +2447,24 @@ async function refreshAddonSuggestion(){
     box.innerHTML=`<details style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:9px;padding:8px 11px;font-size:12.5px">
       <summary style="cursor:pointer;user-select:none;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Demo only — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 set to '+cur}`:'not enough data to suggest'} \u25b8 how this is worked out</summary>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
+      ${(r.confident && !match)?`<button type="button" id="addonApply" data-n="${r.suggested}" style="margin-top:8px;background:var(--velocity);color:#fff;border:none;padding:6px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Set the field to ${r.suggested}</button>`:''}
       <table style="margin-top:8px;font-size:12px;border-collapse:collapse">
         ${(r.collapsed>0)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b> — ${r.pills} cities entered, ${r.collapsed} share a metro</td></tr>`
                          :`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b></td></tr>`}
         <tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">Presence</td><td>${(r.markets_with_location_page||0)} of ${r.markets} markets${r.gbp_locations?` <span class="nf">(${r.gbp_locations} Google Business listing${r.gbp_locations===1?'':'s'} + location pages)</span>`:''}${r.site_read===false?` <span style="color:var(--warn)">— the site couldn\u2019t be read, so this is missing rather than zero</span>`:(((r.site_locations||0)===0&&!r.gbp_locations)?` <span class="nf">— no location pages or Google listings found, so the ranking row decides instead</span>`:'')}</td></tr>
-        ${(r.markets_absent&&r.markets_absent.length)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">No presence in</td><td>${r.markets_absent.map(m=>escapeHtml(m)).join(' \u00b7 ')}<div class="nf" style="font-size:11px;margin-top:2px">A name followed by +n stands for a whole metro — those cities were collapsed into one market.</div></td></tr>`:''}
+        ${(r.markets_absent&&r.markets_absent.length)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">No presence in</td><td>${r.markets_absent.map(m=>escapeHtml(m)).join(' \u00b7 ')}${r.markets_absent.some(m=>/ \+\d/.test(m))?`<div class="nf" style="font-size:11px;margin-top:2px">\u201cMarietta +3\u201d means Marietta and three neighbouring towns that Google treats as one place, so they count as a single market.</div>`:''}</td></tr>`:''}
         <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Rankings</td><td>${r.covered||0} of ${r.measured||0} measured markets</td></tr>
       </table>
       <div style="margin-top:8px" class="nf"><b>The rule.</b> Three markets or fewer run as one campaign. Above that, a market the client already operates in — a location page, or a ranking — is covered by the main campaign; the rest are new territory and priced as add-ons.</div>
       <div style="margin-top:6px" class="nf"><b>Freshness.</b> Recalculated whenever step 3 renders. Location pages date from the last keyword build, rankings from the last step 3 — a reopened quote shows that snapshot, not today.</div>
     </details>`;
+    const ap=$('addonApply');
+    if(ap) ap.onclick=()=>{
+      const f=$('addon'); if(!f) return;
+      f.value=ap.dataset.n;
+      f.dispatchEvent(new Event('input'));
+      f.dispatchEvent(new Event('change'));
+    };
   }catch(e){ box.innerHTML=''; }
 }
 
