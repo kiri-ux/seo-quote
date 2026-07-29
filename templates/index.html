@@ -1371,9 +1371,25 @@ function renderStep4(p){
   let addon='';
   if(p.addon_markets>0){
     const ha=p.hard_addon_per_market, ca=p.client_addon_per_market;
-    addon=`<div class="calc"><b>Add-on markets (${p.addon_markets}):</b><br>
-      hard cost — Base ${money(ha.base)} · Int ${money(ha.intermediate)} · Adv ${money(ha.advanced)} (each/mo)<br>
-      client — Base ${money(ca.base)} · Int ${money(ca.intermediate)} · Adv ${money(ca.advanced)} (each/mo)</div>`;
+    const n=p.addon_markets, ct=p.client_tiers;
+    // The client is buying the primary campaign PLUS n add-ons, so show the
+    // number they will actually be quoted. Per-market figures alone leave the
+    // reader doing the multiplication, and the total is the decision.
+    const tot=k=>ct[k]+ca[k]*n;
+    addon=`<div class="calc"><b>Add-on markets (${n})</b>
+      <table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-top:5px">
+        <tr><td></td><td style="text-align:right;font-weight:600">Base</td><td style="text-align:right;font-weight:600">Intermediate</td><td style="text-align:right;font-weight:600">Advanced</td></tr>
+        <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market</td>
+            <td style="text-align:right">${money(ct.base)}</td><td style="text-align:right">${money(ct.intermediate)}</td><td style="text-align:right">${money(ct.advanced)}</td></tr>
+        <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on</td>
+            <td style="text-align:right">${money(ca.base)}</td><td style="text-align:right">${money(ca.intermediate)}</td><td style="text-align:right">${money(ca.advanced)}</td></tr>
+        <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Total, ${n} add-on${n===1?'':'s'}</td>
+            <td style="text-align:right;border-top:1px solid var(--line)">${money(tot('base'))}</td>
+            <td style="text-align:right;border-top:1px solid var(--line)">${money(tot('intermediate'))}</td>
+            <td style="text-align:right;border-top:1px solid var(--line)">${money(tot('advanced'))}</td></tr>
+      </table>
+      ${((ST.inputs&&ST.inputs.addon_picked)||[]).length?`<div class="nf" style="font-size:11.5px;margin-top:4px">Markets included: ${((ST.inputs&&ST.inputs.addon_picked)||[]).map(m=>escapeHtml(m)).join(' \u00b7 ')}.</div>`:''}
+      <div class="nf" style="font-size:11.5px;margin-top:4px">Partner hard cost per add-on — ${money(ha.base)} / ${money(ha.intermediate)} / ${money(ha.advanced)}.</div></div>`;
   }
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
@@ -1987,6 +2003,7 @@ function snapshotQuote(){
     baseOverride: ST.baseOverride||'',
     baseReason: ST.baseReason||'',
     geoOverride: ST.geoOverride||'',
+    addonPicked: (ST.inputs&&ST.inputs.addon_picked)||[],
     actual: ST.actual||null
   };
 }
@@ -2002,6 +2019,7 @@ function restoreQuote(p){
   ST.baseOverride=p.baseOverride||'';
   ST.baseReason=p.baseReason||'';
   ST.geoOverride=p.geoOverride||'';
+  if(ST.inputs) ST.inputs.addon_picked=p.addonPicked||[];
   ST.actual=p.actual||{};
   if(p.inputs){ try{ reflectInputs(p.inputs); }catch(e){} }
   // Step 1 — keyword list
@@ -2447,7 +2465,15 @@ async function refreshAddonSuggestion(){
     box.innerHTML=`<div style="border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 12px;font-size:12.5px">
       <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Internal — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 set to '+cur}`:'not enough data to suggest'}</div>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
-      ${(r.confident && !match)?`<button type="button" id="addonApply" data-n="${r.suggested}" style="margin-top:8px;background:var(--velocity);color:#fff;border:none;padding:6px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Set the field to ${r.suggested}</button>`:''}
+      ${(r.markets_absent&&r.markets_absent.length)?`<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--line)">
+        <div style="font-size:12px;font-weight:600;color:var(--atlas);margin-bottom:4px">Which of these to include
+          <button type="button" id="addonAll" style="margin-left:8px;background:none;border:none;color:var(--velocity);font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:underline">all</button>
+          <button type="button" id="addonNone" style="background:none;border:none;color:var(--velocity);font-size:11.5px;font-weight:600;cursor:pointer;text-decoration:underline">none</button>
+        </div>
+        <div id="addonPicks">${r.markets_absent.map((m,ix)=>`<label class="strat" style="margin:0 6px 6px 0"><input type="checkbox" class="addonPick" data-m="${escapeHtml(m)}" ${((ST.inputs&&ST.inputs.addon_picked)?ST.inputs.addon_picked.includes(m):ix<cur)?'checked':''}>${escapeHtml(m)}</label>`).join('')}</div>
+        <div class="nf" style="font-size:11.5px;margin-top:2px">Ticking a market counts it as an add-on and re-prices. The names are carried into the quote so the proposal can say which markets are included.</div>
+      </div>`:''}
+      ${(r.confident && !match)?`<button type="button" id="addonApply" data-n="${r.suggested}" style="margin-top:8px;background:var(--velocity);color:#fff;border:none;padding:6px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer">Include all ${r.suggested}</button>`:''}
       <table style="margin-top:8px;font-size:12px;border-collapse:collapse">
         ${(r.collapsed>0)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b> — ${r.pills} cities entered, ${r.collapsed} share a metro</td></tr>`
                          :`<tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Markets</td><td><b>${r.markets}</b></td></tr>`}
@@ -2458,6 +2484,22 @@ async function refreshAddonSuggestion(){
       <div style="margin-top:8px" class="nf"><b>The rule.</b> Three markets or fewer run as one campaign. Above that, a market the client already operates in — a location page, or a ranking — is covered by the main campaign; the rest are new territory and priced as add-ons.</div>
       <div style="margin-top:6px" class="nf"><b>Freshness.</b> Recalculated whenever step 3 renders. Location pages date from the last keyword build, rankings from the last step 3 — a reopened quote shows that snapshot, not today.</div>
     </div>`;
+    // Ticking markets IS the add-on count — the number field follows the
+    // selection rather than the other way round, so the quote knows which
+    // markets were bought and not merely how many.
+    const setPicks=(names)=>{
+      if(ST.inputs) ST.inputs.addon_picked=names;
+      const f=$('addon'); if(!f) return;
+      f.value=names.length;
+      f.dispatchEvent(new Event('input'));
+      f.dispatchEvent(new Event('change'));
+    };
+    const readPicks=()=>Array.from(document.querySelectorAll('.addonPick'))
+                            .filter(b=>b.checked).map(b=>b.dataset.m);
+    document.querySelectorAll('.addonPick').forEach(b=>b.onchange=()=>setPicks(readPicks()));
+    const all=$('addonAll'), none=$('addonNone');
+    if(all)  all.onclick =()=>{document.querySelectorAll('.addonPick').forEach(b=>b.checked=true);  setPicks(readPicks());};
+    if(none) none.onclick=()=>{document.querySelectorAll('.addonPick').forEach(b=>b.checked=false); setPicks([]);};
     const ap=$('addonApply');
     if(ap) ap.onclick=()=>{
       const f=$('addon'); if(!f) return;
