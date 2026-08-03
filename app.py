@@ -472,6 +472,14 @@ CFG = {
     # dropped back for the proposal list.
     "addon_min_measured_share": 0.7,
     "addon_covered_share": 0.6,     # rank in this share of measured markets = one footprint
+    # Add-ons are priced off the CORE SEO ladder only — no AI Search component.
+    # This is an assumption, not a calibration: TN Water & Air is the only
+    # proposal with add-on markets and predates AI Search, while MPG is the
+    # only AI Search proposal and has no add-ons. The reasoning is that AI
+    # Search work is brand-level — Brendan's GEO tiers are defined by premium
+    # content placements, which lift the whole brand rather than a suburb — but
+    # it is worth a lot: at Woodstock's 7 add-ons it is ~$5,600/mo on base
+    # alone. Confirm before treating it as settled.
     "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
     "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
     "ultra_bucket_size": 3,
@@ -1991,7 +1999,16 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
             if t and t not in terms:
                 terms.append(t)
         terms = terms[:4] or ["insurance"]
-        probe = [f"{t} {c.lower()}{sfx}" for c in cities for t in terms][:700]
+        # Build the probe key the SAME way it will be sent. dfs_kw_list strips
+        # punctuation, so a market tagged "Hollidaysburg, PA" was looked up as
+        # "...hollidaysburg, pa" while the API was asked for "...hollidaysburg
+        # pa" — every volume read as zero, the proxy fallback fired, the metro
+        # vectors were all zeros so nothing grouped, and the city ranking fell
+        # back to alphabetical (2026-08-03). It only bit clients whose markets
+        # carry a state tag, which is the format we ask for.
+        _ck = {c: clean_kw(parse_market(c, state)[0] or c).lower() for c in cities}
+        key = lambda t, c: clean_kw(f"{t} {_ck[c]}{sfx}")
+        probe = [key(t, c) for c in cities for t in terms][:700]
         payload = [{"keywords": dfs_kw_list(probe),
                     "location_name": loc_string(cities, state),
                     "language_code": "en"}]
@@ -2001,12 +2018,10 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
                for it in items}
         exp["probe"] = " / ".join(f"{t} <city>{sfx}" for t in terms)
         exp["method"] = "client term"
-        scored = {c: sum(vol.get(f"{t} {c.lower()}{sfx}", 0) for t in terms)
-                  for c in cities}
+        scored = {c: sum(vol.get(key(t, c), 0) for t in terms) for c in cities}
         # The same lookup that ranks the cities also reveals which of them
         # Google Ads treats as one place — no extra call.
-        vectors = {c: [vol.get(f"{t} {c.lower()}{sfx}", 0) for t in terms]
-                   for c in cities}
+        vectors = {c: [vol.get(key(t, c), 0) for t in terms] for c in cities}
         exp["metro_groups"] = [g for g in group_by_metro(vectors, min_terms=len(terms))
                                if len(g) > 1]
         term = terms[0]
@@ -2014,21 +2029,21 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # noise — fall back to the population proxy rather than picking cities
         # by accident of ordering.
         if term != "insurance" and not any(scored.values()):
-            probe2 = [f"insurance {c.lower()}{sfx}" for c in cities][:700]
+            probe2 = [key("insurance", c) for c in cities][:700]
             data2 = dfs_post("/keywords_data/google_ads/search_volume/live",
                              [{"keywords": dfs_kw_list(probe2),
                                "location_name": loc_string(cities, state),
                                "language_code": "en"}])
             v2 = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                   for it in ((data2.get("tasks") or [{}])[0].get("result") or [])}
-            scored = {c: v2.get(f"insurance {c.lower()}{sfx}", 0) for c in cities}
+            scored = {c: v2.get(key("insurance", c), 0) for c in cities}
             # Regroup on the proxy too. Woodstock's seeds were niche enough to
             # return nothing anywhere, so the vectors were all zeros and no two
             # cities could be matched — the grouping went silent exactly when
             # the fallback fired, which is the case it is most needed in
             # (2026-07-28). The proxy resolves to the same Google Ads location
             # as any other term, so it groups just as well.
-            vectors = {c: [v2.get(f"insurance {c.lower()}{sfx}", 0)] for c in cities}
+            vectors = {c: [v2.get(key("insurance", c), 0)] for c in cities}
             exp["metro_groups"] = [g for g in group_by_metro(vectors, min_terms=1)
                                    if len(g) > 1]
             exp["probe"] = f"insurance <city>{sfx}"
