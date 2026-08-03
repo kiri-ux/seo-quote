@@ -1311,6 +1311,7 @@ def fetch_local_volume(terms, markets, state, national=False):
             raise
 
     totals, per_city, errs, ok = {}, {}, [], 0
+    city_locs = {}
     counted_locs, fallback_cities, results = set(), [], []
     try:
         with ThreadPoolExecutor(max_workers=min(len(cities), 8)) as ex:
@@ -1340,6 +1341,14 @@ def fetch_local_volume(terms, markets, state, national=False):
     non_us = [r for r in results if r[2] != "United States"]
     us_skipped = False
     for city, rows, used_loc in sorted(results, key=lambda r: r[2] == "United States"):
+        # DataForSEO tells us which location it ACTUALLY used for each city —
+        # that is exact market identity, not an inference. Two cities resolving
+        # to the same effective location are the same market, which is the
+        # question the add-on count turns on. Inferring it from volume vectors
+        # instead only worked where the geo-modified probe had volume, so it
+        # failed silently in exactly the small rural markets where collapsing
+        # matters most (2026-08-03).
+        city_locs[city] = used_loc
         count_it = used_loc not in counted_locs
         if used_loc == "United States" and non_us:
             count_it = False
@@ -1363,6 +1372,10 @@ def fetch_local_volume(terms, markets, state, national=False):
         notes.append("no city-level volume for "
                      + ", ".join(sorted(set(c.strip() for c in fallback_cities)))
                      + " — used broader-location volume, counted once (not per city)")
+    # Hand the resolved locations back so the caller can collapse cities that
+    # Google treats as one market. Stashed on the dict rather than widening the
+    # signature, since three call sites unpack this tuple.
+    per_city["__city_locs__"] = city_locs
     return totals, per_city, ("; ".join(notes) or None)
 
 
@@ -2651,6 +2664,21 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         vols, per_city, vol_err = fetch_local_volume(
             svc_names, [] if national_demand else cities, state,
             national=national_demand)
+        # Collapse cities that resolved to the SAME Google Ads location. This
+        # is the exact answer — DataForSEO reports the location it used — and
+        # it replaces the volume-vector inference, which needed the geo-modified
+        # probe to have volume and therefore gave up in small rural markets.
+        _cl = (per_city or {}).get("__city_locs__") or {}
+        if _cl and not national_demand:
+            by_loc = {}
+            for _c, _l in _cl.items():
+                by_loc.setdefault(_l, []).append(_c)
+            _groups = [g for g in by_loc.values() if len(g) > 1]
+            if _groups:
+                city_pick["metro_groups"] = _groups
+                city_pick["grouped_by"] = "resolved location"
+            elif not city_pick.get("metro_groups"):
+                city_pick["metro_groups"] = []
         for r in full:
             svc_l = (r.get("service") or "").lower()
             city_l = (r.get("city") or "").lower()
