@@ -630,6 +630,12 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     states.discard("")
     out["states"] = len(states)
 
+    if n <= int(CFG.get("addon_free_markets", 3)):
+        out["basis"] = f"{n} markets — three or fewer run as one campaign."
+        out["confident"] = True
+        return out
+
+
     # PRESENCE PER MARKET, not a count of locations. Counting gets both known
     # outcomes backwards: Skills of Central PA has ~8 facilities and got ONE
     # campaign, TN Water & Air has one Knoxville location and was offered 11
@@ -704,11 +710,6 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
                                 f"so each of those is a campaign from scratch.")
             out["confident"] = True
             return out
-
-    if n <= int(CFG.get("addon_free_markets", 3)):
-        out["basis"] = f"{n} markets — three or fewer run as one campaign."
-        out["confident"] = True
-        return out
 
     # Which markets does the client already rank in? A keyword carries its city,
     # so match each market against the terms that mention it.
@@ -2668,15 +2669,29 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # is the exact answer — DataForSEO reports the location it used — and
         # it replaces the volume-vector inference, which needed the geo-modified
         # probe to have volume and therefore gave up in small rural markets.
-        _cl = (per_city or {}).get("__city_locs__") or {}
-        if _cl and not national_demand:
-            by_loc = {}
-            for _c, _l in _cl.items():
-                by_loc.setdefault(_l, []).append(_c)
-            _groups = [g for g in by_loc.values() if len(g) > 1]
+        # Group on the PER-CITY VOLUMES that were just fetched. Google Ads holds
+        # demand at the nearest targetable location, so cities in one market
+        # return the identical figure for every service — Brent Cogan's five
+        # towns all came back 30 / 10 / 10 (2026-08-03).
+        #
+        # Two earlier attempts missed this. Matching on the geo-modified probe
+        # ("electrical panel upgrade hollidaysburg pa") needed volume the term
+        # doesn't have in a rural county, so every vector was zero. Matching on
+        # the location NAME failed because the name recorded is the one we
+        # SENT — "Bellwood,Pennsylvania" — not the one Google resolved it to.
+        # These volumes are the resolution, observed rather than inferred.
+        if per_city and not national_demand:
+            _svcs = [x.lower() for x in svc_names]
+            _vecs = {}
+            for _c in cities:
+                _cl2 = _c.strip().lower()
+                _v = [per_city.get((_cl2, _s)) for _s in _svcs]
+                if any(x is not None for x in _v):
+                    _vecs[_c] = [(0 if x is None else x) for x in _v]
+            _groups = [g for g in group_by_metro(_vecs, min_terms=1) if len(g) > 1]
             if _groups:
                 city_pick["metro_groups"] = _groups
-                city_pick["grouped_by"] = "resolved location"
+                city_pick["grouped_by"] = "identical per-city search volume"
             elif not city_pick.get("metro_groups"):
                 city_pick["metro_groups"] = []
         for r in full:
@@ -2701,6 +2716,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "services": services,
             "pinned_head_terms": pinned,
             "city_selection": city_pick,
+            "city_locs": {c: l for c, l in
+                          ((per_city or {}).get("__city_locs__") or {}).items()},
             "site_locations": site_locations,
             "service_areas": service_areas,
             "gbp_locations": gbp_count,
@@ -3670,6 +3687,7 @@ def api_refine():
         # never reaches the browser — every one of these panels has been
         # rendering against undefined and showing nothing (2026-07-28).
         "city_selection": s1.get("city_selection") or {},
+        "city_locs": s1.get("city_locs") or {},
         "site_locations": s1.get("site_locations") or [],
         "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),
@@ -3930,6 +3948,10 @@ def api_addon_suggestion():
                            site_pages_found=d.get("site_pages_found"),
                            metro_groups=d.get("metro_groups") or [])
     out["gbp_locations"] = d.get("gbp_locations")
+    # Surface HOW the markets were counted. Four rounds of this were spent
+    # guessing which branch ran because nothing on screen said (2026-08-03).
+    out["grouped_by"] = d.get("grouped_by") or ""
+    out["city_locs"] = d.get("city_locs") or {}
     out["service_areas"] = len(d.get("service_areas") or [])
     return jsonify(out)
 
