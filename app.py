@@ -1258,6 +1258,14 @@ def fetch_site_pages(domain, limit=30, collect_urls=None):
         return pages[:limit]
 
 
+def _bare_city(m, state=""):
+    """The city name alone — the form every per-city lookup uses."""
+    try:
+        return (parse_market(m, state)[0] or m).strip().lower()
+    except Exception:
+        return (m or "").strip().lower()
+
+
 def fetch_local_volume(terms, markets, state, national=False):
     """Search volume for bare service terms across THE CITIES BEING TARGETED.
 
@@ -1361,7 +1369,13 @@ def fetch_local_volume(terms, markets, state, national=False):
                 v = it.get("search_volume") or 0
                 if count_it:
                     totals[k] = totals.get(k, 0) + v
-                per_city[(city.strip().lower(), k)] = v
+                # Key on the BARE city, which is how every consumer reads it.
+                # Writing "altoona, pa" while the grid rows and the metro
+                # grouping both look up "altoona" meant every per-city lookup
+                # missed, rows silently fell back to the summed service total —
+                # printing the same number for every city — and the grouping
+                # had nothing to compare (2026-08-03).
+                per_city[(_bare_city(city, state), k)] = v
     notes = []
     if us_skipped:
         notes.append("some geos had no local volume data and fell back to "
@@ -2684,7 +2698,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             _svcs = [x.lower() for x in svc_names]
             _vecs = {}
             for _c in cities:
-                _cl2 = _c.strip().lower()
+                _cl2 = _bare_city(_c, state)
                 _v = [per_city.get((_cl2, _s)) for _s in _svcs]
                 if any(x is not None for x in _v):
                     _vecs[_c] = [(0 if x is None else x) for x in _v]
