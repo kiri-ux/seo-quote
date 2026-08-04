@@ -294,6 +294,7 @@
     <label>Geographic targeting areas<span class="req" id="georeq">*</span> <span style="font-weight:400;color:var(--muted)" id="georeq_note">(except Nationwide)</span></label>
     <div class="help">Cities the keywords should target. For multi-state regions, tag each city with its state — “Cherry Hill, NJ” then Enter — and each keyword gets that city&#39;s own suffix. Untagged cities use the State field below. At least one entry required (except Nationwide).</div>
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
+    <div id="marketSummary" style="margin-top:6px"></div>
 
     <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
     <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
@@ -391,6 +392,10 @@ function wirePills(key, inputId){
     });
   }
   PILL_RENDER[key] = render;
+  if(key === 'geo'){
+    const wrapped = render;
+    PILL_RENDER[key] = ()=>{ wrapped(); try{ scheduleMarketSummary(); }catch(e){} };
+  }
   const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
   const US_ST_NAMES=new Set(['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming']);
   function commit(){
@@ -2488,6 +2493,34 @@ function jumpToPriceIfHashed(){
   const t=$('p4'); if(t) t.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
+// What the entered geos actually amount to. Distinct from add-on markets and
+// asked much earlier: this is the count everything downstream is built on, so
+// seeing it wrong at the top saves running a whole quote to find out.
+let _mktTimer = null;
+async function refreshMarketSummary(){
+  const box = $('marketSummary'); if(!box) return;
+  const mk = (stores.geo || []);
+  if(mk.length < 2){ box.innerHTML=''; return; }
+  try{
+    const r = await postJSON('/api/markets',
+      {geo_values: mk, state: ($('state') ? $('state').value : '')});
+    const parts = (r.groups||[]).map(g=>{
+      const a = escapeHtml(String(g.anchor).split(',')[0]);
+      return g.size > 1
+        ? `<b>${a}</b> <span class="nf">+${g.size-1}</span>`
+        : `<b>${a}</b>`;
+    });
+    const un = (r.unlocated||[]).length
+      ? `<div class="nf" style="margin-top:2px">Couldn\u2019t place ${r.unlocated.map(x=>escapeHtml(x)).join(', ')} \u2014 counted separately.</div>` : '';
+    const same = r.cities === r.markets;
+    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${r.cities} ${r.cities===1?'city':'cities'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`;
+  }catch(e){ box.innerHTML=''; }
+}
+function scheduleMarketSummary(){
+  clearTimeout(_mktTimer);
+  _mktTimer = setTimeout(()=>{ try{ refreshMarketSummary(); }catch(e){} }, 250);
+}
+
 function syncStateSummary(){
   const el=$('stateSummary'), sel=$('state');
   if(!el||!sel) return;
@@ -2499,6 +2532,7 @@ if($('state')){
   // restoring a value on reload, sets .value silently — so sync on those too,
   // or the summary reports "no fallback state" while one is plainly selected.
   $('state').addEventListener('change', syncStateSummary);
+  $('state').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }catch(e){} });
   $('state').addEventListener('input', syncStateSummary);
 }
 try{ syncStateSummary(); }catch(e){}

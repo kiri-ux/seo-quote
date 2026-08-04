@@ -2007,6 +2007,25 @@ def _zip_index():
     return idx
 
 
+def city_size(market, state=""):
+    """Rough size proxy — how many ZIP codes a city has.
+
+    Used to name a market after its recognisable centre. Sorting by latitude
+    made a seven-town Blair County market read as "Claysburg +6" when anyone
+    would call it Altoona.
+    """
+    city, st = parse_market(market, state)
+    city = (city or "").strip().lower()
+    abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "").upper()
+    try:
+        import zipcodes
+        return sum(1 for r in zipcodes.list_all()
+                   if str(r.get("city", "")).lower() == city
+                   and (not abbr or str(r.get("state", "")).upper() == abbr))
+    except Exception:
+        return 0
+
+
 def city_coords(market, state=""):
     """Latitude/longitude for an entered market, or None."""
     city, st = parse_market(market, state)
@@ -2871,9 +2890,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "services": services,
             "pinned_head_terms": pinned,
             "city_selection": city_pick,
-            "city_volumes": {c: max([v for (cc, _s), v in (per_city or {}).items()
-                                     if isinstance(cc, str) and cc == _bare_city(c, state)]
-                                    or [0])
+            # per_city is keyed by (city, keyword) tuples but also carries the
+            # "__city_locs__" side-channel, so every key has to be checked
+            # before it is unpacked — destructuring in the comprehension blew
+            # up the whole refine pass with "too many values to unpack"
+            # (2026-08-03).
+            "city_volumes": {c: max([v for k, v in (per_city or {}).items()
+                                     if isinstance(k, tuple) and len(k) == 2
+                                     and k[0] == _bare_city(c, state)] or [0])
                              for c in cities},
             "city_locs": {c: l for c, l in
                           ((per_city or {}).get("__city_locs__") or {}).items()},
@@ -4090,6 +4114,39 @@ def api_rankings():
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa))})
+
+@app.route("/api/markets", methods=["POST"])
+@_json_error_guard
+def api_markets():
+    """How many distinct MARKETS the entered geos actually cover.
+
+    Separate question from add-on markets, and asked much earlier: this is
+    "what does this footprint amount to", which decides the grid shape, the
+    coverage percentages and the market count everything else is built on. It
+    runs off bundled coordinates, so there is no API call and it can answer
+    the moment the geos are typed rather than after a full build.
+    """
+    d = request.get_json(force=True) or {}
+    mk = [m for m in (d.get("geo_values") or []) if m and m.strip()]
+    state = (d.get("state") or "").strip()
+    if not mk:
+        return jsonify({"cities": 0, "markets": 0, "groups": [], "unlocated": []})
+    groups, located, unlocated = group_by_distance(mk, state)
+    named = []
+    for g in sorted(groups, key=len, reverse=True):
+        anchor = max(g, key=lambda m: city_size(m, state)) if len(g) > 1 else g[0]
+        named.append({"anchor": anchor,
+                      "members": [anchor] + [m for m in g if m != anchor],
+                      "size": len(g)})
+    return jsonify({
+        "cities": len(mk),
+        "markets": len(groups) + len(unlocated),
+        "groups": named,
+        "unlocated": unlocated,
+        "radius": int(CFG.get("market_radius_miles", 25)),
+        "located": len(located),
+    })
+
 
 @app.route("/api/addon_suggestion", methods=["POST"])
 @_json_error_guard
