@@ -1155,6 +1155,11 @@ def location_pages_from_urls(urls):
     out, seen = [], set()
     for u in urls or []:
         u = str(u or "")
+        # Sitemap files are now collected alongside page URLs (they identify a
+        # storefront by name), and "/locations/sitemap.xml" would otherwise be
+        # read as a location called "sitemap.xml".
+        if u.split("?")[0].lower().endswith(".xml"):
+            continue
         if not _LOCATION_PATH.search(u) or _LOCATION_INDEX.search(u):
             continue
         slug = [p for p in u.split("?")[0].rstrip("/").split("/") if p]
@@ -1240,11 +1245,20 @@ def fetch_site_pages(domain, limit=30, collect_urls=None):
             if r is None or r.status_code != 200 or "<" not in r.text:
                 continue
             locs = re.findall(r"<loc>\s*(.*?)\s*</loc>", r.text, re.I)
+            index_locs = []
             if locs and all(l.lower().endswith(".xml") for l in locs[:3]):
                 # sitemap INDEX — service pages live in "page" sitemaps, so read
                 # those first; blog-post sitemaps are last resort
                 kids = sorted(locs, key=lambda l: (("page" not in l.lower()),
                                                    ("post" in l.lower())))
+                # Keep the index's OWN entries. They are thrown away below when
+                # the children are read, and their NAMES are evidence in their
+                # own right — "sitemap_products_1.xml" identifies a storefront
+                # without costing a fetch. That mattered for Grav: this sort
+                # deliberately reads the pages sitemap first, and the 8s budget
+                # then ran out before the products sitemap, so every product URL
+                # was missed and the store went undetected (2026-08-04).
+                index_locs = list(locs)
                 child_locs = []
                 for child in kids[:4]:
                     if time.time() > deadline:
@@ -1264,6 +1278,7 @@ def fetch_site_pages(domain, limit=30, collect_urls=None):
                 return (_blogish(u), not hinted, depth)
             if isinstance(collect_urls, list):
                 collect_urls.extend(locs)
+                collect_urls.extend(index_locs)   # names are evidence; see above
             for url in sorted(locs, key=_rank):
                 if _blogish(url) and len(pages) >= 5:
                     continue
@@ -1288,7 +1303,13 @@ def fetch_site_pages(domain, limit=30, collect_urls=None):
         res = (data["tasks"][0]["result"] or [])
         for block in res:
             for it in (block.get("items") or []):
-                t = slug_to_topic(it.get("url") or "")
+                u = it.get("url") or ""
+                # This fallback never fed collect_urls, so on any site without a
+                # readable sitemap the caller got page topics but ZERO urls —
+                # silently disabling both storefront and location-page detection.
+                if u and isinstance(collect_urls, list):
+                    collect_urls.append(u)
+                t = slug_to_topic(u)
                 if t and t.lower() not in seen:
                     seen.add(t.lower()); pages.append(t)
         return pages[:limit]
@@ -1432,7 +1453,7 @@ def fetch_local_volume(terms, markets, state, national=False):
     return totals, per_city, ("; ".join(notes) or None)
 
 
-def fetch_exact_volume(keywords, markets, state):
+def fetch_exact_volume(keywords, markets, state, national=False):
     """Exact-match search volume. The Google Ads keywords_for_keywords endpoint
     we use to GENERATE terms returns GROUPED (broad) volumes that merge similar
     terms — which is why the numbers looked inflated/off. For the FINAL list we
@@ -1441,14 +1462,22 @@ def fetch_exact_volume(keywords, markets, state):
     if not keywords:
         return {}
     out = {}
-    # Labs endpoint takes numeric location_code; use the city if known, else US.
-    loc_code = 2840
+    # The comment here used to say "use the city if known, else US" while the
+    # code hardcoded 2840 (US) unconditionally, so EVERY client's exact volume
+    # was pulled nationally — overstating demand, and therefore price, on every
+    # local quote (2026-08-04). Labs accepts location_name, so send the client's
+    # actual market unless this really is a national pull.
+    loc_name = "" if national else loc_string(markets, state)
+    def _loc_field():
+        if loc_name and loc_name != "United States":
+            return {"location_name": loc_name}
+        return {"location_code": 2840}
     try:
         # batch up to 1000 per call
         for i in range(0, len(keywords), 1000):
             chunk = keywords[i:i+1000]
             payload = [{"keywords": [k.lower() for k in chunk],
-                        "location_code": loc_code, "language_code": "en"}]
+                        **_loc_field(), "language_code": "en"}]
             data = dfs_post("/dataforseo_labs/google/keyword_overview/live", payload)
             res = (data["tasks"][0]["result"] or [])
             for block in res:
@@ -3019,7 +3048,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
 
     full = (ultra + competitive + long_tail)[:CFG["list_cap"]]
 
-    exact = fetch_exact_volume([r["keyword"] for r in full], markets, state)
+    exact = fetch_exact_volume([r["keyword"] for r in full], markets, state,
+                               national=national_demand)
     if exact:
         for r in full:
             v = exact.get(r["keyword"].lower())
@@ -3115,7 +3145,68 @@ def _strip_markets(kw, markets, state=None):
             break
     return k
 
-def stage3_metrics(head, markets, state):
+# Verticals Google Ads restricts. The Keyword Planner "metrics for keywords you
+# provide" endpoint (search_volume) policy-filters these and returns NO rows,
+# while the keyword-IDEAS endpoint answers normally — which is why a cannabis
+# client can show real volumes in Step 1 and a $0 adder in Step 2 off the same
+# API key (Grav, 2026-08-04). Matched by substring against the RZ industry text.
+# Substrings, so they must not appear inside innocent categories: bare "gun"
+# hits "Burgundy" and bare "adult" hits "Adult Day Care" / "Adult Education",
+# both real RZ categories that are not restricted at all.
+RESTRICTED_VERTICALS = (
+    "cannabis", "marijuana", "cbd", "hemp", "kratom", "vape", "smoke shop",
+    "dispensary", "tobacco", "firearm", "ammunition", "gun shop", "gun range",
+    "gambling", "casino", "sportsbook", "adult entertainment",
+)
+
+
+def restricted_vertical(industry=""):
+    """Which restricted term (if any) this industry matches. '' when none."""
+    ind = (industry or "").strip().lower()
+    for k in RESTRICTED_VERTICALS:
+        if k in ind:
+            return k
+    return ""
+
+
+def fetch_bids_via_ideas(terms, location_name):
+    """Top-of-page bids from the keyword-IDEAS endpoint.
+
+    Used only when search_volume returns nothing. Same Google Ads account, same
+    payload shape — but keywords_for_keywords is not policy-filtered, so it is
+    the one endpoint that answers for restricted verticals. It returns cpc and
+    bid fields alongside search_volume; the candidate-pool parse throws them
+    away, so they were being paid for and discarded.
+
+    Ideas responses are seeded BY the terms and come back with extra keywords,
+    so only exact matches on what we asked for are kept. Returns
+    ({keyword: {bid, cpc, volume}}, error_or_None).
+    """
+    kws = dfs_kw_list(terms)
+    if not kws:
+        return {}, None
+    try:
+        payload = [{"keywords": kws[:200], "location_name": location_name,
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/keywords_for_keywords/live", payload)
+        task0 = (data.get("tasks") or [{}])[0]
+        if task0.get("status_code") not in (20000, None):
+            return {}, f"{task0.get('status_code')}: {task0.get('status_message')}"
+        want = set(kws)
+        out = {}
+        for it in (task0.get("result") or []):
+            k = (it.get("keyword") or "").lower()
+            if k not in want:
+                continue                      # ideas the seed pulled in, not ours
+            out[k] = {"bid": it.get("high_top_of_page_bid") or 0,
+                      "cpc": it.get("cpc") or it.get("high_top_of_page_bid") or 0,
+                      "volume": it.get("search_volume") or 0}
+        return out, None
+    except Exception as e:
+        return {}, str(e)
+
+
+def stage3_metrics(head, markets, state, national=False, industry=""):
     geo_kws = [r["keyword"] for r in head]
     if not geo_kws:
         return {"adder": 0, "median_score": 0, "bids": {}, "cpc": {}, "kd": {}}
@@ -3128,7 +3219,11 @@ def stage3_metrics(head, markets, state):
     # returns no rows even for real terms). Advertiser demand for the adder
     # doesn't need city precision, so fall back city -> state -> US and report
     # which level actually supplied the data.
-    primary_loc = loc_string(markets, state)
+    # Step 1 prices national demand on geo-less volume; Step 2 has to measure
+    # competition on the SAME basis or the two halves of one quote describe
+    # different markets. This was never plumbed through, so a nationwide client
+    # with cities entered had its bids read from those cities (2026-08-04).
+    primary_loc = "United States" if national else loc_string(markets, state)
     loc_chain = [primary_loc]
     if state and f"{state},United States" not in loc_chain:
         loc_chain.append(f"{state},United States")
@@ -3167,6 +3262,21 @@ def stage3_metrics(head, markets, state):
             bid_err = str(e)
     bare_bid = {it["keyword"]: (it.get("high_top_of_page_bid") or 0) for it in items}
     bare_cpc = {it["keyword"]: (it.get("cpc") or it.get("high_top_of_page_bid") or 0) for it in items}
+
+    # FALLBACK. search_volume gave us no usable bid — either it returned no rows
+    # at all, or rows with every bid blank. Ask the ideas endpoint, which is not
+    # policy-filtered. Costs one extra call and only on the failing path.
+    bid_source = "search_volume"
+    ideas_err = None
+    if not any(bare_bid.values()):
+        ideas, ideas_err = fetch_bids_via_ideas(bare_unique, bid_loc_used)
+        if any((v or {}).get("bid") for v in ideas.values()):
+            bare_bid = {k: v["bid"] for k, v in ideas.items() if v.get("bid")}
+            for k, v in ideas.items():
+                if v.get("cpc"):
+                    bare_cpc[k] = v["cpc"]
+            bid_source = "keyword_ideas"
+            bid_err = None
     bare_kd, kd_err = fetch_keyword_difficulty(bare_unique, markets, state)
 
     # Attribute to both the geo key (for the table) and the bare key.
@@ -3225,9 +3335,18 @@ def stage3_metrics(head, markets, state):
         else:
             adder = 0
             adder_basis = "cpc"
+    # No bid data from EITHER endpoint. The adder is then not a measurement of
+    # $0 competition, it is an absence of evidence — and this quote is priced as
+    # if the vertical were free. Say so and make the operator decide.
+    restricted = restricted_vertical(industry)
+    adder_blocked = not bid_vals
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
             "cpc_low_confidence": cpc_low_conf, "cpc_n_bids": n_bids,
             "flat_adder": flat_adder,
+            "bid_source": bid_source,
+            "bid_ideas_error": ideas_err,
+            "adder_blocked": adder_blocked,
+            "restricted_vertical": restricted,
             "bid_error": bid_err,
             "bid_location": bid_loc_used,
             "bid_location_fallback": (bid_loc_used != primary_loc),
@@ -4052,8 +4171,15 @@ def api_metrics():
     markets = primary_first(markets, d.get("primary_market"))
     markets = markets + [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
+    # Same national-demand basis Step 1 used, resolved the same way rather than
+    # trusted from the client, so the two steps cannot disagree.
+    nat, _nr = resolve_national_demand(
+        industry=(d.get("industry") or ""),
+        band=d.get("geo_scope", d.get("band", "")),
+        manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")))
     try:
-        m3 = stage3_metrics(head, markets, state)
+        m3 = stage3_metrics(head, markets, state, national=nat,
+                            industry=(d.get("industry") or ""))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}."}), 502
     except Exception as e:
@@ -4063,6 +4189,11 @@ def api_metrics():
                     "cpc_low_confidence": m3.get("cpc_low_confidence"),
                     "cpc_n_bids": m3.get("cpc_n_bids"),
                     "flat_adder": m3.get("flat_adder"),
+                    "bid_source": m3.get("bid_source"),
+                    "bid_ideas_error": m3.get("bid_ideas_error"),
+                    "adder_blocked": m3.get("adder_blocked"),
+                    "restricted_vertical": m3.get("restricted_vertical"),
+                    "national_demand": nat,
                     "bid_error": m3.get("bid_error"),
                     "bid_location": m3.get("bid_location"),
                     "bid_terms_queried": m3.get("bid_terms_queried"),

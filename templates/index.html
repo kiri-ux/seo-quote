@@ -959,10 +959,16 @@ function step2Html(m){
     ? ``
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
   const bs=m.bid_stats;
+  const viaIdeas = m.bid_source==='keyword_ideas';
   const bidLine = bs
-    ? `<div class="calc">head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data)</span></div>`
-    : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data came back</b> — the competitive adder fell back to $0, which will UNDER-price a high-value vertical. Don't quote off this without checking.
-        <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' The API returned no rows for these terms at that location.'}</div></div>`;
+    ? `<div class="calc"${viaIdeas?' style="background:var(--ok-bg,#E7F4ED);border-color:var(--ok-line,#B7DCC7)"':''}>head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data)</span>${viaIdeas?`<div class="nf" style="margin-top:5px">Keyword Planner returned nothing for these terms${m.restricted_vertical?` — expected for a restricted vertical (<b>${escapeHtml(m.restricted_vertical)}</b>)`:''}, so these came from the keyword-ideas endpoint instead. Same Google Ads account, same location; ideas data is not policy-filtered.</div>`:''}</div>`
+    : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data from either endpoint</b> — there is nothing to compute a competitive adder from, so the $0 below is missing evidence rather than a measurement of cheap competition.
+        <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' Keyword Planner returned no rows.'}${m.bid_ideas_error?` Keyword-ideas fallback said: <b>${escapeHtml(m.bid_ideas_error)}</b>.`:' The keyword-ideas fallback also came back empty.'}</div>
+        ${m.restricted_vertical?`<div class="nf" style="margin-top:5px">🚫 <b>${escapeHtml(m.restricted_vertical)}</b> is a Google Ads restricted vertical — bid data is routinely withheld here, so this is expected rather than a fault. Set the adder from comparable accounts.</div>`:''}
+        <div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label style="margin:0;font-size:12.5px">Competitive adder <input type="number" id="adderManual" min="0" step="50" placeholder="e.g. 500" style="width:110px;margin-left:6px"></label>
+          <label style="margin:0;font-size:12.5px;font-weight:400"><input type="checkbox" id="adderAccept"> quote with <b>+$0</b> — competition really is negligible</label>
+        </div></div>`;
   const marketWarn = (m.n_markets && m.n_markets > 8)
     ? `<details class="calc" style="background:#fdf1d8;border-color:#e8c98a">
         <summary style="cursor:pointer;user-select:none">⚠ <b>${m.n_markets} markets entered</b> — bid and ranking measured in <code>${m.bid_location||''}</code></summary>
@@ -998,11 +1004,32 @@ async function runStep2(){
   if(b2s){ b2s.disabled=true; b2s.textContent='Scoring…'; }
   try{
     const m=await postJSON('/api/metrics',{primary_market:primaryMarket(), phrase_geos:ST.inputs.phrase_geos||[],
-      head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state});
+      head:ST.kw.head.map(r=>r.kw), geo_values:ST.inputs.geo_values, state:ST.inputs.state,
+      // Step 2 measured competition on a different basis than Step 1 priced
+      // demand on, because none of this was ever sent.
+      industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:ST.inputs.geo_scope,
+      national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
     ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
     ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
+    // A $0 adder with no bid data behind it is missing evidence, not measured
+    // cheapness. Hold pricing until someone decides which it is.
+    ST.adderBlocked = !!m.adder_blocked; ST.adderAck = false;
     ST._m2=m;   // keep for save/restore
     panel('p2', step2Html(m));
+    if(ST.adderBlocked){
+      const mi=$('adderManual'), ak=$('adderAccept');
+      // Either input satisfies the gate, and they are mutually exclusive: a
+      // typed adder is a decision, and so is explicitly accepting $0.
+      if(mi) mi.oninput = ()=>{
+        const v=parseInt(mi.value||'',10);
+        if(!isNaN(v) && v>=0){ ST.adder=v; ST.adderAck=true; if(ak) ak.checked=false; }
+        else { ST.adderAck=false; }
+      };
+      if(ak) ak.onchange = ()=>{
+        if(ak.checked){ ST.adder=0; ST.adderAck=true; if(mi) mi.value=''; }
+        else { ST.adderAck=false; }
+      };
+    }
     $('step3').onclick = ()=>runStep3();
   }catch(e){ panel('p2',`<div class="err">${e.message}</div>`); }
   finally{
@@ -1666,6 +1693,14 @@ function renderStep4(p){
 }
 
 async function runStep4(){
+  // No bid data from either endpoint means the adder is unknown, not zero.
+  // Pricing anyway is how a restricted-vertical quote goes out with the whole
+  // competition component silently missing.
+  if(ST.adderBlocked && !ST.adderAck){
+    renderErr('Step 2 returned no bid data, so the competitive adder is unknown. Enter an adder in Step 2, or tick “quote with +$0” to confirm that is deliberate.');
+    const mi=$('adderManual'); if(mi) mi.focus();
+    return;
+  }
   const b4=$('step4');
   if(b4){ b4.disabled=true; b4.textContent='Pricing…'; }
   ST.baseOverride='';   // fresh quote starts on the formula, not a stale override
