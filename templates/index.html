@@ -960,7 +960,11 @@ function step2Html(m){
   // from Labs (organic difficulty), not Google Ads, so it is the one competition
   // signal that still answers in a vertical where advertising is banned outright
   // and bid data can never exist. Show it (2026-08-04).
-  const kdLine = (m.median_kd!=null)
+  // Suppressed when the adder was DERIVED from difficulty — that line already
+  // states the same 53/100, so showing both printed the number twice in a row.
+  const kdLine = (m.adder_basis==='kd')
+    ? ``
+    : (m.median_kd!=null)
     ? `<div class="calc">median organic keyword difficulty <code>${m.median_kd}</code>/100 <span class="nf">(Labs organic data — independent of Google Ads bid data)</span></div>`
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
   const bs=m.bid_stats;
@@ -1000,9 +1004,12 @@ function step2Html(m){
           <div style="margin-top:7px"><label style="margin:0;font-size:12.5px">Competitive adder <input type="number" id="adderManual" min="0" step="50" placeholder="e.g. 150" style="width:100px;margin-left:6px"></label></div>`}
           <div id="adderGateHost"></div>
         </div></div>`;
+  // Neutral, not amber: this describes how the measurement works, it is not a
+  // fault and there is nothing to fix. Amber here read as a second error
+  // sitting directly above the real one.
   const marketWarn = (m.n_markets && m.n_markets > 8)
-    ? `<details class="calc" style="background:#fdf1d8;border-color:#e8c98a">
-        <summary style="cursor:pointer;user-select:none">⚠ <b>${m.n_markets} markets entered</b> — bid and ranking measured in <code>${m.bid_location||''}</code></summary>
+    ? `<details class="calc" style="background:var(--info-bg);border-color:#C3D7E8">
+        <summary style="cursor:pointer;user-select:none">ℹ <b>${m.n_markets} markets entered</b> — bid and ranking measured in <code>${m.bid_location||''}</code></summary>
         <div style="margin-top:6px">The grid crosses the top cities by search demand and sums volume across them. <b>Bid and ranking</b> lookups measure a single market: the one with the most demand for this client's service. For a whole state, choose <b>Statewide</b>; for a metro footprint, enter just the cities you want.</div>
       </details>`
     : '';

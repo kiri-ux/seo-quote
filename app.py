@@ -1461,20 +1461,24 @@ def fetch_local_volume(terms, markets, state, national=False):
 
 
 def _labs_loc_field(markets, state, national=False):
-    """location field for a LABS payload — always a numeric code.
+    """location field for a LABS payload. Always country-level US (2840).
 
-    Falls back to 2840 (US) when the client's market has no code, because a
-    national figure is wrong-but-usable whereas an invalid field returns
-    nothing at all and silently zeroes the volume component of the price.
+    Two rounds of trying to target Labs at the client's actual market both
+    failed against the API (2026-08-04): location_name is rejected outright
+    ("40501 Invalid Field: 'location_name'"), and a Google Ads city code is
+    rejected too ("Invalid Field: 'location_code'") because Labs keys off its
+    own, much smaller location set — Google Ads criteria IDs for suburbs are
+    not in it.
+
+    Country level is also the CORRECT granularity here, which is why the
+    keyword-difficulty call has always hardcoded 2840 with the note that
+    difficulty "is a national-level organic metric". Labs CPC is modelled the
+    same way. Nothing is lost: per-market volume comes from fetch_local_volume,
+    which calls a Google Ads endpoint that does accept a location_name.
+
+    Returns (payload_fragment, label) — the label is what the UI reports.
     """
-    if national:
-        return {"location_code": 2840}, "United States"
-    name = loc_string(markets, state)
-    if not name or name == "United States":
-        return {"location_code": 2840}, "United States"
-    code = us_location_code(name)
-    return ({"location_code": code}, name) if code else ({"location_code": 2840},
-                                                         "United States")
+    return {"location_code": 2840}, "United States"
 
 
 def fetch_exact_volume(keywords, markets, state, national=False):
@@ -5012,13 +5016,11 @@ _LOCATIONS_CACHE = {"names": None, "codes": None}
 
 
 def us_location_code(name):
-    """Numeric location_code for a DataForSEO location_name.
+    """Numeric Google Ads location_code for a DataForSEO location_name.
 
-    LABS endpoints reject location_name outright with "40501 Invalid Field:
-    'location_name'" — only the Google Ads endpoints accept names. Anything
-    aimed at Labs has to resolve to a code first. Same locations list that
-    us_location_names() already fetches, so no extra call in practice.
-    Returns None when the name isn't recognised.
+    NOT usable for Labs endpoints — Labs keys off its own location set and
+    rejects Google Ads city codes ("40501 Invalid Field: 'location_code'").
+    Kept for Google-Ads-side lookups. Returns None when unrecognised.
     """
     if not name:
         return None
