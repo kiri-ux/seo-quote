@@ -2652,6 +2652,20 @@ window.addEventListener('load', ()=>{ try{ syncStateSummary(); }catch(e){} });
 // Suggest an add-on count once step 3 has produced a rank table. Advisory
 // only — it cannot see the client's budget, which is the first thing the
 // pricing authority weighs.
+// The entered markets are not always cities — counties are fully supported
+// (parse_market resolves "Anderson County, TN", and "bucks county roofing" is
+// real search phrasing), but every label said "cities", which reads as though
+// the tool had misunderstood the input. Pick the noun from what was entered.
+function placeNoun(n, plural){
+  const src = (typeof stores!=='undefined' && stores.geo && stores.geo.length) ? stores.geo : [];
+  const many = plural!==undefined ? plural : (n!==1);
+  if(!src.length) return many?'markets':'market';
+  const co = src.filter(m=>/\bcount(y|ies)\b/i.test(String(m))).length;
+  if(co===src.length) return many?'counties':'county';
+  if(co>0) return many?'locations':'location';
+  return many?'cities':'city';
+}
+
 async function refreshAddonSuggestion(){
   const box=$('addonSuggest'); if(!box) return;
   const mk=(stores.geo||[]), tbl=(ST.table||[]);
@@ -2672,7 +2686,11 @@ async function refreshAddonSuggestion(){
     // Hide the internal suggestion card entirely when the recommendation is
     // zero add-on markets — a single-market quote has nothing to add on, so the
     // box is just noise. The seeding below still runs so the field caps at 0.
-    if(r.confident && r.suggested===0){
+    // Hidden whenever the recommendation is zero — including the low-confidence
+    // "not enough data" state, which also recommends nothing. Was gated on
+    // r.confident too, so the not-enough-data card kept showing on quotes that
+    // were never going to carry add-ons (2026-08-04).
+    if(r.suggested===0){
       box.innerHTML='';
     } else {
     box.innerHTML=`<div style="border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 12px;font-size:12.5px">
@@ -2682,8 +2700,8 @@ async function refreshAddonSuggestion(){
         <div style="font-size:12px;color:var(--muted)">Markets these would cover: ${r.markets_absent.map(m=>escapeHtml(m)).join(' \u00b7 ')}</div>
       </div>`:''}
       <table style="margin-top:8px;font-size:12px;border-collapse:collapse">
-        <tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">Markets</td><td><b>${r.markets}</b>${(r.collapsed>0)?` — ${r.pills} cities entered, ${r.collapsed} share a market`:''}
-          <div class="nf" style="font-size:11px;margin-top:2px">${(r.collapsed>0)?`Grouped by ${escapeHtml(r.grouped_by||'search volume')}.`:'No cities were grouped.'}${Object.keys(r.city_locs||{}).length?` Resolved locations: ${Object.entries(r.city_locs).map(([c,l])=>escapeHtml(c)+' \u2192 '+escapeHtml(String(l).split(',')[0])).join(' \u00b7 ')}.`:' No resolved locations were captured \u2014 rebuild from step 1.'}</div></td></tr>
+        <tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">Markets</td><td><b>${r.markets}</b>${(r.collapsed>0)?` — ${r.pills} ${placeNoun(r.pills)} entered, ${r.collapsed} share a market`:''}
+          <div class="nf" style="font-size:11px;margin-top:2px">${(r.collapsed>0)?`Grouped by ${escapeHtml(r.grouped_by||'search volume')}.`:`No ${placeNoun(2)} were grouped.`}${Object.keys(r.city_locs||{}).length?` Resolved locations: ${Object.entries(r.city_locs).map(([c,l])=>escapeHtml(c)+' \u2192 '+escapeHtml(String(l).split(',')[0])).join(' \u00b7 ')}.`:' No resolved locations were captured \u2014 rebuild from step 1.'}</div></td></tr>
         ${(r.markets>3)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">Presence</td><td>${(r.markets_with_location_page||0)} of ${r.markets} markets${(r.gbp_locations||r.service_areas)?` <span class="nf">(${[r.gbp_locations?`${r.gbp_locations} Google Business listing${r.gbp_locations===1?'':'s'}`:'', r.service_areas?`${r.service_areas} service areas named on the site`:'', 'location pages'].filter(Boolean).join(' + ')})</span>`:''}${r.site_read===false?` <span style="color:var(--warn)">— the site couldn\u2019t be read, so this is missing rather than zero</span>`:(((r.site_locations||0)===0&&!r.gbp_locations)?` <span class="nf">— no location pages or Google listings found, so the ranking row decides instead</span>`:'')}</td></tr>
         ${(r.markets_absent&&r.markets_absent.length)?`<tr><td style="padding:2px 10px 2px 0;color:var(--muted);vertical-align:top">No presence in</td><td>${r.markets_absent.map(m=>escapeHtml(m)).join(' \u00b7 ')}${r.markets_absent.some(m=>/ \+\d/.test(m))?`<div class="nf" style="font-size:11px;margin-top:2px">\u201cMarietta +3\u201d means Marietta and three neighbouring towns that Google treats as one place, so they count as a single market.</div>`:''}</td></tr>`:''}
         <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Rankings</td><td>${r.covered||0} of ${r.measured||0} measured markets</td></tr>`:''}

@@ -785,7 +785,9 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     if meas_share < float(CFG.get("addon_min_measured_share", 0.7)):
         out["basis"] = (f"Only {len(measured)} of {n} markets have rank data, and "
                         f"the unmeasured ones are the lowest-demand — the ones "
-                        f"the client is least likely to already be in. Raise Grid max cities and re-run step 3.")
+                        f"the client is least likely to already be in. Raise the Grid max "
+                        f"cities cap \u2014 it limits markets of any kind, counties "
+                        f"included \u2014 and re-run step 3.")
         return out
 
     share = len(covered) / len(measured)
@@ -2976,7 +2978,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             _groups = [g for g in group_by_metro(_vecs, min_terms=1) if len(g) > 1]
             if _groups:
                 city_pick["metro_groups"] = _groups
-                city_pick["grouped_by"] = "identical per-city search volume"
+                city_pick["grouped_by"] = "identical per-market search volume"
             elif not city_pick.get("metro_groups"):
                 city_pick["metro_groups"] = []
         for r in full:
