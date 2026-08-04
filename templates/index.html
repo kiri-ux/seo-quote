@@ -2560,6 +2560,12 @@ async function refreshAddonSuggestion(){
        service_areas:((ST.kw&&ST.kw.service_areas)||[])});
     const cur=parseFloat(($('addon')||{}).value||0)||0;
     const match = cur===r.suggested;
+    // Hide the internal suggestion card entirely when the recommendation is
+    // zero add-on markets — a single-market quote has nothing to add on, so the
+    // box is just noise. The seeding below still runs so the field caps at 0.
+    if(r.confident && r.suggested===0){
+      box.innerHTML='';
+    } else {
     box.innerHTML=`<div style="border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 12px;font-size:12.5px">
       <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Internal — ${r.confident?`suggested ${r.suggested} add-on market${r.suggested===1?'':'s'}${match?'':' \u2014 set to '+cur}`:'not enough data to suggest'}</div>
       <div style="margin-top:7px">${escapeHtml(r.basis)}</div>
@@ -2576,6 +2582,7 @@ async function refreshAddonSuggestion(){
       <div style="margin-top:8px" class="nf"><b>The rule.</b> Three markets or fewer run as one campaign. Above that, a market the client already operates in — a location page, or a ranking — is covered by the main campaign; the rest are new territory and priced as add-ons.</div>
       <div style="margin-top:6px" class="nf"><b>Freshness.</b> Recalculated whenever step 3 renders. Location pages date from the last keyword build, rankings from the last step 3 — a reopened quote shows that snapshot, not today.</div>
     </div>`;
+    }
     // The suggestion is the ceiling: above it the client already operates in
     // the market, so an add-on would charge twice for one footprint. And it is
     // the DEFAULT, because making the operator click up to the answer the
