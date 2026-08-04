@@ -631,7 +631,13 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
            "measured": 0, "unmeasured": 0, "states": 0, "confident": False,
            "site_locations": 0}
     if n <= 1:
+        # A single market is a CONFIDENT zero, not an absence of information.
+        # Leaving confident False made the panel say "not enough data to
+        # suggest" and — worse — meant the stepper was never clamped, so a
+        # field left at 5 from an earlier run kept charging for five add-on
+        # markets that the tool had just determined don't exist (2026-08-03).
         out["basis"] = "single market — nothing to add on."
+        out["confident"] = True
         return out
 
     # Only count states we actually KNOW — a market tagged "City, ST". Inferring
