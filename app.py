@@ -72,7 +72,12 @@ BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
 # hashes the actual file contents instead: the same files always produce the
 # same six characters, and any change to any of them produces different ones.
 # Whoever hands over a build can state the expected value in advance.
-FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html")
+# reputation.html added 2026-08-04: it was the one shipped template NOT covered,
+# so a rep-mgmt-only change left the fingerprint identical and there was no way
+# to confirm from the header that the deploy had taken. rep_pricing/rep_scan
+# included for the same reason — they carry the rep quote's actual maths.
+FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html",
+                     "templates/reputation.html", "rep_pricing.py", "rep_scan.py")
 
 def _source_fingerprint():
     import hashlib
@@ -1521,22 +1526,63 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
     the client ever say this word" is easy and gets the same answer: Keller's
     seeds, description and site say commercial, industrial, agricultural,
     warehouse — they never say Turner. A service has to be GROUNDED in the
-    client's own vocabulary. Seeds and pinned terms are exempt: seeds are the
-    client's words by definition, and a pin is backed by real search volume.
+    client's own vocabulary. Seeds are exempt — they are the client's words by
+    definition.
+
+    Pins are NOT exempt (2026-08-04). They used to be, on the reasoning that a
+    pin is backed by real search volume. Volume proves a term is SEARCHED, not
+    that it is the client's: Grav, a smoke shop, had "glass water pitcher",
+    "glass chess set" and "glass water carafe" pinned — kitchenware and board
+    games that match on the word "glass" and sit high in the keyword pool. They
+    then bypassed this filter, which would have caught all three, because
+    pitcher/chess/carafe appear nowhere in the client's vocabulary.
+
+    Returns (services, dropped, blocked_pins). `dropped` is the model's own
+    picks that failed; `blocked_pins` is reported separately because a pin is
+    forced in for PRICE STABILITY, so the operator needs to see when one was
+    refused rather than have it vanish.
     """
     corpus = " ".join([
         " ".join(seeds or []), business_desc or "",
         " ".join(site_pages or []), brand or "", (domain or "").replace(".", " "),
     ]).lower()
-    known = set(w.strip("-/") for w in corpus.replace(",", " ").split())
-    out, dropped = [], []
+    # Matching is singular/plural-insensitive. Site navigation is written in
+    # the plural ("Bongs For Sale", "Bubblers", "Nectar Collectors") while a
+    # service is written in the singular ("glass bong"), so exact word matching
+    # called the client's own catalogue foreign and removed real services as
+    # unrecognised (Grav, 2026-08-04). Fold both sides to a bare stem instead.
+    def _stem(w):
+        w = w.strip("-/")
+        if len(w) > 3 and w.endswith("es") and w[-3] in "sxzh":
+            return w[:-2]
+        if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+            return w[:-1]
+        return w
+
+    known = set()
+    for w in corpus.replace(",", " ").split():
+        known.add(w.strip("-/"))
+        known.add(_stem(w))
+
+    def _alien(svc):
+        return [w for w in (svc.get("service") or "").lower().split()
+                if w not in _GROUNDING_STOP and len(w) > 2
+                and w not in known and _stem(w) not in known]
+
+    out, dropped, blocked_pins = [], [], []
     for svc in services or []:
-        if svc.get("from_seed") or svc.get("pinned"):
+        if svc.get("from_seed"):
             out.append(svc)
             continue
-        name = (svc.get("service") or "").lower()
-        alien = [w for w in name.split()
-                 if w not in _GROUNDING_STOP and w not in known and len(w) > 2]
+        alien = _alien(svc)
+        if alien and svc.get("pinned"):
+            # Always enforced, and deliberately NOT counted toward the
+            # stand-down ratio below. That valve asks "is the corpus too thin
+            # to judge the MODEL fairly"; pins are a handful of terms whose
+            # only job is to hold the price steady, and a junk pin corrupts
+            # pricing directly. Refuse it and say so.
+            blocked_pins.append((svc.get("service"), alien[0]))
+            continue
         if alien:
             dropped.append((svc.get("service"), alien[0]))
             continue
@@ -1548,11 +1594,19 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
     # survived (2026-07-27). Against the full list those 2 are 29% — plainly
     # a targeted removal — while MPG's 8 wipe out 73% of its list, which is
     # the runaway this valve exists to catch.
-    total = len(services or [])
+    # Pins sit outside this measurement on both sides of the fraction — they
+    # are enforced unconditionally above, so counting them would let three bad
+    # pins trip the valve and hand the model's competitors back too.
+    unpinned = [s for s in (services or []) if not s.get("pinned")]
+    total = len(unpinned)
     max_ratio = float(CFG.get("grounding_max_drop_ratio", 0.5) or 0.5)
     if total and len(dropped) / total > max_ratio:
-        return list(services or []), None      # None = filter stood down
-    return out, dropped
+        # Stood down for the model's picks only. Blocked pins stay blocked.
+        blocked_l = {(b[0] or "").lower() for b in blocked_pins}
+        return ([s for s in (services or [])
+                 if (s.get("service") or "").lower() not in blocked_l],
+                None, blocked_pins)          # None = filter stood down
+    return out, dropped, blocked_pins
 
 
 def enforce_seed_services(services, seeds, max_services, markets, state, phrase_geos=None):
@@ -2747,6 +2801,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     _site_urls = []
     site_pages = fetch_site_pages(domain, collect_urls=_site_urls)
     site_locations = location_pages_from_urls(_site_urls)
+    # A storefront on the client's own site is national demand, whatever the
+    # RZ tag says. This has to happen HERE — before the volume pull below — or
+    # the flip would only take effect on a second run, and the quote in front
+    # of the operator would still be priced on per-city volume.
+    ecom_found, ecom_reason = detect_ecommerce(_site_urls)
+    if ecom_found and not national_demand:
+        national_demand = True
+        national_demand_reason = f"storefront detected — {ecom_reason}"
+    else:
+        national_demand_reason = ""
     # A Google Business listing is stronger evidence of operating in a market
     # than a page on the website, and it is the only one that works when the
     # site uses a store-locator widget. Merge, don't replace — a client can
@@ -2819,7 +2883,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                                     markets, state, phrase_geos)
                                if seeds else (services, 0))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
-        services, ungrounded = drop_ungrounded_services(
+        services, ungrounded, blocked_pins = drop_ungrounded_services(
             services, seeds, biz, [p.get("title", "") if isinstance(p, dict) else str(p)
                                    for p in (site_pages or [])], brand, domain)
         services = rebalance_tiers(services)
@@ -2902,6 +2966,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "grid": True,
             "services": services,
             "pinned_head_terms": pinned,
+            # [(term, offending_word)] — pins refused for being ungrounded.
+            "blocked_pins": [[b[0], b[1]] for b in (blocked_pins or [])],
             "city_selection": city_pick,
             # per_city is keyed by (city, keyword) tuples but also carries the
             # "__city_locs__" side-channel, so every key has to be checked
@@ -2927,6 +2993,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "volume_error": vol_err,
             "volume_location": "United States" if national_demand else loc_string(markets, state),
             "national_demand": bool(national_demand),
+            "national_demand_reason": national_demand_reason,
+            "ecommerce_detected": bool(ecom_found),
+            "ecommerce_reason": ecom_reason,
             "state_missing": bool(cities) and not state
                              and not any(market_state(c)
                                          or c.strip().lower() in STATE_ABBREV
@@ -2967,6 +3036,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         "refined_by_ai": used_claude,
         "business_desc": biz_out if used_claude else "",
         "site_pages_found": len(site_pages),
+        # Carried on this path too — the storefront read is independent of
+        # whether the grid build ran, and dropping it here would silently undo
+        # the flip for any client that falls through to the non-grid list.
+        "national_demand": bool(national_demand),
+        "national_demand_reason": national_demand_reason,
+        "ecommerce_detected": bool(ecom_found),
+        "ecommerce_reason": ecom_reason,
     }
 
 # ---------------------------------------------------------------------------
@@ -3270,6 +3346,10 @@ def resolve_national_demand(industry="", band="", manual=False):
       2. Geo scope of nationwide — no cities, so the pull is already geo-less.
       3. Manual operator checkbox, for the cases RZ mistags.
 
+    A fourth source — an actual storefront detected on the client's own site —
+    is applied inside stage1b_refine, because it is only knowable once the
+    sitemap has been read. See detect_ecommerce().
+
     Returns (bool, reason_string) so the UI can show WHY it flipped.
     """
     if manual:
@@ -3280,6 +3360,51 @@ def resolve_national_demand(industry="", band="", manual=False):
     for k, r in (CFG.get("industry_pricing") or {}).items():
         if k in ind and r.get("national_demand"):
             return True, f"industry: {k}"
+    return False, ""
+
+
+# Storefront fingerprints, checked against the sitemap URLs already collected
+# by fetch_site_pages. Ordered most-specific first so the reason names the
+# platform when it can. Each entry: (label, regex, weight_threshold).
+_ECOM_SIGNATURES = [
+    ("Shopify",      re.compile(r"/(collections|products)/", re.I)),
+    ("WooCommerce",  re.compile(r"/(product-category|product-tag)/", re.I)),
+    ("BigCommerce",  re.compile(r"/(categories|brands)/[^/]+/?$", re.I)),
+    ("Magento",      re.compile(r"/catalog/(product|category)/", re.I)),
+    ("store",        re.compile(r"/(shop|store|product|catalogue|catalog)/", re.I)),
+]
+# A cart or checkout route is conclusive on its own — nothing but a store has
+# one — so it does not need the repetition threshold the catalog paths do.
+_ECOM_CHECKOUT = re.compile(r"/(cart|checkout|basket|my-account/orders)\b", re.I)
+
+
+def detect_ecommerce(urls, min_hits=3):
+    """Is the client running a storefront? Reads ONLY the sitemap URLs that
+    fetch_site_pages already collected — no extra HTTP calls, no extra latency.
+
+    Exists because national-demand pricing hangs off the RZ industry tag, and
+    the tag is routinely missing or wrong: a smoke shop selling nationwide gets
+    filed under a local retail category, so its volume is pulled per-city and
+    the quote is built on the wrong demand figure entirely.
+
+    A single /product/ URL is not a store — brochure sites use that path for
+    one product page — so catalog patterns need `min_hits` distinct matches.
+    A cart or checkout route is accepted on its own.
+
+    Returns (bool, reason_string).
+    """
+    urls = [u for u in (urls or []) if u]
+    if not urls:
+        return False, ""
+    for u in urls:
+        if _ECOM_CHECKOUT.search(u):
+            return True, "cart/checkout page on site"
+    if any("sitemap_products" in u.lower() for u in urls):
+        return True, "Shopify product sitemap"
+    for label, rx in _ECOM_SIGNATURES:
+        hits = {u for u in urls if rx.search(u)}
+        if len(hits) >= min_hits:
+            return True, f"{len(hits)} {label} product URLs on site"
     return False, ""
 
 
@@ -3891,6 +4016,7 @@ def api_refine():
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_services_used": s1.get("seed_services_used", 0),
         "pinned_head_terms": s1.get("pinned_head_terms") or [],
+        "blocked_pins": s1.get("blocked_pins") or [],
         "dropped_out_of_area": s1.get("dropped_out_of_area") or [],
         "geo_filter_off": bool(s1.get("geo_filter_off")),
         "dropped_ungrounded": s1.get("dropped_ungrounded") or [],
@@ -3905,8 +4031,13 @@ def api_refine():
         "volume_location": s1.get("volume_location"),
         "state_missing": s1.get("state_missing", False),
         "grid_cities": s1.get("grid_cities", []),
-        "national_demand": nat_demand,
-        "national_demand_reason": nat_reason,
+        # stage1b_refine can UPGRADE this after reading the site (a storefront
+        # is national demand even when the RZ tag missed it), so its answer
+        # wins over the one resolved before the site was fetched.
+        "national_demand": bool(s1.get("national_demand", nat_demand)),
+        "national_demand_reason": s1.get("national_demand_reason") or nat_reason,
+        "ecommerce_detected": bool(s1.get("ecommerce_detected")),
+        "ecommerce_reason": s1.get("ecommerce_reason") or "",
     })
 
 @app.route("/api/metrics", methods=["POST"])
