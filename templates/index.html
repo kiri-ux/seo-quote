@@ -2513,7 +2513,8 @@ async function refreshMarketSummary(){
     const un = (r.unlocated||[]).length
       ? `<div class="nf" style="margin-top:2px">Couldn\u2019t place ${r.unlocated.map(x=>escapeHtml(x)).join(', ')} \u2014 counted separately.</div>` : '';
     const same = r.cities === r.markets;
-    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${r.cities} ${r.cities===1?'city':'cities'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`;
+    const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Cities within <b>${r.radius} miles</b> of each other count as one market, named after the largest. This is what the geos <b>cover</b> — not the add-on count, though everything downstream counts markets rather than cities.<br><br>Straight-line distance, not drive time, so overrule it when you know better. Radius is set in Pricing config.</div></span>`;
+    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${r.cities} ${r.cities===1?'city':'cities'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`;
   }catch(e){ box.innerHTML=''; }
 }
 function scheduleMarketSummary(){
