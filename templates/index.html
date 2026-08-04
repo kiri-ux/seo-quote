@@ -990,20 +990,31 @@ function step2Html(m){
     : '';
   const bidLine = bs
     ? `<div class="calc"${fellBack?` style="background:${viaLabs?'#fdf1d8':'var(--ok-bg,#E7F4ED)'};border-color:${viaLabs?'#e8c98a':'var(--ok-line,#B7DCC7)'}"`:''}>head-term top-of-page bids — median <code>$${bs.median}</code> · range <code>$${bs.min}</code>–<code>$${bs.max}</code> <span class="nf">(${bs.n}/${bs.n_total} with bid data)</span>${fellBack?`<div class="nf" style="margin-top:5px">${srcNote}</div>`:''}</div>`
-    : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>No bid data from either endpoint</b> — there is nothing to compute a competitive adder from, so the $0 below is missing evidence rather than a measurement of cheap competition.
-        <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`“${t}”`).join(', ')||'—'} at location <code>${m.bid_location||'—'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' Keyword Planner returned no rows.'}${m.bid_ideas_error?` Keyword-ideas fallback said: <b>${escapeHtml(m.bid_ideas_error)}</b>.`:' The keyword-ideas fallback also came back empty.'}${m.bid_labs_error?` DataForSEO Labs said: <b>${escapeHtml(m.bid_labs_error)}</b>.`:' DataForSEO Labs carried no bid for them either.'}</div>
-        ${m.restricted_vertical?`<div class="nf" style="margin-top:5px">🚫 <b>${escapeHtml(m.restricted_vertical)}</b> is a Google Ads restricted vertical. Advertising here is banned outright, so there is no advertiser bid pool to measure — this is a permanent absence, not a failed lookup, and re-running will not fix it.</div>`:''}
-        <div style="margin-top:10px;padding-top:9px;border-top:1px solid #e8c98a">
-          <b style="font-size:12.5px">What to do:</b>
-          ${(kdAdder!=null)?`<div style="margin-top:6px;font-size:12.5px">Organic difficulty is the competition signal that still works here — median <b>${m.median_kd}/100</b>, which is <b>${kdScore===0?'low':kdScore===1?'moderate':'high'}</b>. Scored on the same ladder the tool uses for bids, the adder has been set to <b>+${money(kdAdder)}</b> automatically.</div>
-          <div style="margin-top:7px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-            <span class="nf" style="font-size:12px">Override adder:</span>
-            <input type="number" id="adderManual" min="0" step="50" placeholder="${kdAdder}" style="width:100px">
-            <button class="btn2" type="button" id="adderReset" style="display:none">Back to +${money(kdAdder)}</button>
-          </div>`:`<div style="margin-top:6px;font-size:12.5px">No organic difficulty either, so there is nothing to reason from and the adder cannot be derived. Enter one from comparable accounts — <b>0</b> is valid if you're satisfied competition is negligible.</div>
-          <div style="margin-top:7px"><label style="margin:0;font-size:12.5px">Competitive adder <input type="number" id="adderManual" min="0" step="50" placeholder="e.g. 150" style="width:100px;margin-left:6px"></label></div>`}
-          <div id="adderGateHost"></div>
-        </div></div>`;
+    : (kdAdder!=null)
+    // RESOLVED, not a problem. The adder was derived and applied; there is
+    // nothing for the operator to do. Previously this rendered as an amber
+    // warning whose first line read "the $0 below is missing evidence" while
+    // the line underneath said +$150 — alarming, contradictory, and it implied
+    // an action that was already taken (2026-08-04).
+    ? `<div class="calc" style="background:var(--info-bg);border-color:#C3D7E8">
+        Google Ads carries no bid data for this vertical, so the adder was set from <b>organic difficulty</b> instead — see the line below. <span class="nf">No action needed.</span>
+        <div style="margin-top:8px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+          <span class="nf" style="font-size:12px">Override adder:</span>
+          <input type="number" id="adderManual" min="0" step="50" placeholder="${kdAdder}" style="width:100px">
+          <button class="btn2" type="button" id="adderReset" style="display:none">Back to +${money(kdAdder)}</button>
+        </div>
+        <div id="adderGateHost"></div>
+        <details class="nf" style="margin-top:8px"><summary style="cursor:pointer;user-select:none;font-size:12px">What was tried \u25b8</summary>
+          <div style="margin-top:5px;font-size:12px">Looked up ${(m.bid_terms_queried||[]).map(t=>`\u201c${t}\u201d`).join(', ')||'\u2014'} at location <code>${m.bid_location||'\u2014'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:' Keyword Planner returned no rows.'}${m.bid_ideas_error?` Keyword-ideas fallback said: <b>${escapeHtml(m.bid_ideas_error)}</b>.`:' The keyword-ideas fallback also came back empty.'}${m.bid_labs_error?` DataForSEO Labs said: <b>${escapeHtml(m.bid_labs_error)}</b>.`:' DataForSEO Labs carried no bid for them either.'}${m.restricted_vertical?` <b>${escapeHtml(m.restricted_vertical)}</b> is a Google Ads restricted vertical \u2014 advertising is banned outright, so no auction exists and re-running will not change this.`:''}</div>
+        </details>
+       </div>`
+    // Genuinely blocked: no bids anywhere AND no difficulty either. This one
+    // really does need a human, so it keeps the alarm styling.
+    : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Action needed \u2014 no competition data at all</b>. Neither Google Ads endpoint returned bids and there is no organic difficulty to fall back on, so the adder cannot be derived. Enter one from comparable accounts \u2014 <b>0</b> is valid if you're satisfied competition is negligible.
+        <div class="nf" style="margin-top:5px">Looked up ${(m.bid_terms_queried||[]).map(t=>`\u201c${t}\u201d`).join(', ')||'\u2014'} at location <code>${m.bid_location||'\u2014'}</code>.${m.bid_error?` API said: <b>${m.bid_error}</b>.`:''}</div>
+        <div style="margin-top:8px"><label style="margin:0;font-size:12.5px">Competitive adder <input type="number" id="adderManual" min="0" step="50" placeholder="e.g. 150" style="width:100px;margin-left:6px"></label></div>
+        <div id="adderGateHost"></div>
+       </div>`;
   // Neutral, not amber: this describes how the measurement works, it is not a
   // fault and there is nothing to fix. Amber here read as a second error
   // sitting directly above the real one.

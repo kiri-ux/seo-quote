@@ -2400,9 +2400,27 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # tiebreak silently drops the biggest one. Where the client's own name
         # or domain contains a market, that market is almost always their
         # flagship, so it wins a tie.
-        hint = (home_hint or "").lower()
+        # Matching the WHOLE market string ("clarendon hills, il") against the
+        # hint could never succeed: a domain is "clarendonchiro.com", with no
+        # space, no state and usually only the first word of the town. So
+        # compare on the bare city, on its de-spaced form, and on its first
+        # token — which is what a domain almost always carries (2026-08-04).
+        hint_raw = (home_hint or "").lower()
+        hint_squashed = re.sub(r"[^a-z0-9]", "", hint_raw)
+
         def home_rank(c):
-            return 0 if (c.lower() in hint and len(c) > 3) else 1
+            bare = (parse_market(c, state)[0] or c).strip().lower()
+            if not bare:
+                return 1
+            squashed = re.sub(r"[^a-z0-9]", "", bare)
+            if len(squashed) > 3 and squashed in hint_squashed:
+                return 0                       # "clarendonhills" in the hint
+            if len(bare) > 3 and bare in hint_raw:
+                return 0                       # "clarendon hills" spelled out
+            first = bare.split()[0]
+            if len(first) >= 5 and first in hint_squashed:
+                return 0                       # "clarendon" in clarendonchiro
+            return 1
         ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), home_rank(c), c.lower()))
         if under_cap:
             exp["method"] = "all"
@@ -2934,7 +2952,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
                                   probe_term=list(seeds or []),
                                   explain=city_pick,
-                                  home_hint=f"{brand} {domain}")
+                                  # Location pages and named service areas are
+                                  # direct evidence of where the client
+                                  # actually operates — better than the domain
+                                  # alone, which only ever names one town.
+                                  home_hint=" ".join(
+                                      [brand or "", domain or ""]
+                                      + [str(x) for x in (site_locations or [])]
+                                      + [str(x) for x in (service_areas or [])]))
         # Search-phrase geos ("south jersey", "fox cities") cross into keyword
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
