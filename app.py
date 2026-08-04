@@ -181,6 +181,11 @@ CFG = {
     },
     "competitive_adder": {0: 0, 1: 150, 2: 300},   # FLAT fallback (used when no bid data)
     "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2 (for the fallback)
+    # Organic-difficulty breaks, used ONLY when no bid data exists anywhere (a
+    # Google Ads restricted vertical). KD scores onto the SAME 0/1/2 ladder as
+    # bids, so the suggestion reuses the existing calibration instead of
+    # inventing a second one: <30 -> 0, 30-60 -> 1, >60 -> 2.
+    "kd_score_breaks": [30, 60],
     # --- CPC-scaled competitive adder ---
     # The competitive adder scales with the median top-of-page bid (CPC), because
     # CPC is the market's own measure of how valuable a click is: high-CPC verticals
@@ -3403,6 +3408,15 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
     # if the vertical were free. Say so and make the operator decide.
     restricted = restricted_vertical(industry)
     adder_blocked = not bid_vals
+    # When there are no bids anywhere, organic difficulty is the only competition
+    # signal left — so turn it into an actual dollar figure rather than handing
+    # the operator a 0-100 number and asking them to invent one. Scored on the
+    # same ladder as bids, so it is a suggestion in the tool's own units.
+    kd_suggested_adder = kd_score = None
+    if adder_blocked and median_kd is not None:
+        klo, khi = CFG.get("kd_score_breaks", [30, 60])
+        kd_score = 2 if median_kd > khi else 1 if median_kd >= klo else 0
+        kd_suggested_adder = CFG["competitive_adder"][kd_score]
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
             "cpc_low_confidence": cpc_low_conf, "cpc_n_bids": n_bids,
             "flat_adder": flat_adder,
@@ -3410,6 +3424,8 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
             "bid_ideas_error": ideas_err,
             "bid_labs_error": labs_err,
             "adder_blocked": adder_blocked,
+            "kd_suggested_adder": kd_suggested_adder,
+            "kd_score": kd_score,
             "restricted_vertical": restricted,
             "bid_error": bid_err,
             "bid_location": bid_loc_used,
@@ -4257,6 +4273,8 @@ def api_metrics():
                     "bid_ideas_error": m3.get("bid_ideas_error"),
                     "bid_labs_error": m3.get("bid_labs_error"),
                     "adder_blocked": m3.get("adder_blocked"),
+                    "kd_suggested_adder": m3.get("kd_suggested_adder"),
+                    "kd_score": m3.get("kd_score"),
                     "restricted_vertical": m3.get("restricted_vertical"),
                     "national_demand": nat,
                     "bid_error": m3.get("bid_error"),
