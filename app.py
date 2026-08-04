@@ -1460,6 +1460,23 @@ def fetch_local_volume(terms, markets, state, national=False):
     return totals, per_city, ("; ".join(notes) or None)
 
 
+def _labs_loc_field(markets, state, national=False):
+    """location field for a LABS payload — always a numeric code.
+
+    Falls back to 2840 (US) when the client's market has no code, because a
+    national figure is wrong-but-usable whereas an invalid field returns
+    nothing at all and silently zeroes the volume component of the price.
+    """
+    if national:
+        return {"location_code": 2840}, "United States"
+    name = loc_string(markets, state)
+    if not name or name == "United States":
+        return {"location_code": 2840}, "United States"
+    code = us_location_code(name)
+    return ({"location_code": code}, name) if code else ({"location_code": 2840},
+                                                         "United States")
+
+
 def fetch_exact_volume(keywords, markets, state, national=False):
     """Exact-match search volume. The Google Ads keywords_for_keywords endpoint
     we use to GENERATE terms returns GROUPED (broad) volumes that merge similar
@@ -1472,19 +1489,17 @@ def fetch_exact_volume(keywords, markets, state, national=False):
     # The comment here used to say "use the city if known, else US" while the
     # code hardcoded 2840 (US) unconditionally, so EVERY client's exact volume
     # was pulled nationally — overstating demand, and therefore price, on every
-    # local quote (2026-08-04). Labs accepts location_name, so send the client's
-    # actual market unless this really is a national pull.
-    loc_name = "" if national else loc_string(markets, state)
-    def _loc_field():
-        if loc_name and loc_name != "United States":
-            return {"location_name": loc_name}
-        return {"location_code": 2840}
+    # local quote (2026-08-04). Labs takes a numeric location_code ONLY — the
+    # first cut of this sent location_name and every local lookup came back
+    # "40501 Invalid Field", which this function swallows into {} and prices as
+    # zero volume. Resolve to a code instead.
+    loc_field, _loc_used = _labs_loc_field(markets, state, national)
     try:
         # batch up to 1000 per call
         for i in range(0, len(keywords), 1000):
             chunk = keywords[i:i+1000]
             payload = [{"keywords": [k.lower() for k in chunk],
-                        **_loc_field(), "language_code": "en"}]
+                        **loc_field, "language_code": "en"}]
             data = dfs_post("/dataforseo_labs/google/keyword_overview/live", payload)
             res = (data["tasks"][0]["result"] or [])
             for block in res:
@@ -1543,10 +1558,46 @@ STATE_ABBREV = {
 }
 
 # Words that carry no identifying weight, so they never need grounding.
+# Words that carry no evidence about WHOSE service a term is. "can" and "get"
+# were missing, so a pinned question was reported as blocked because the client
+# "never uses the word can" — technically true, entirely beside the point
+# (2026-08-04).
 _GROUNDING_STOP = set("""a an and or the of for in on to with your our best top near me
 services service company companies agency agencies firm firms group inc llc co
 local affordable cheap professional expert experts quality quote quotes free
+how what why when where which who whose can could should would will does did
+is are was were do has have had am get gets getting rid without into from
+about after before during over under you your they them their there here
+that this these those not new more most less much many any all out off per
 """.split())
+
+# Questions, as opposed to services. The service-list prompt has always said
+# "never a question", but pinning skips the model entirely and reads straight
+# from the volume-ranked candidate pool, where questions are plentiful and
+# frequently outrank every real service in the set.
+# Interrogatives are conclusive wherever they lead a phrase.
+_QUESTION_LEAD = re.compile(r"^(?:how|what|why|when|where|which|who|whose)\b", re.I)
+# Auxiliaries are NOT. "can am repair" is a Can-Am dealer, "am radio antenna" is
+# a product, "will call service" is a fulfilment term — all led by an auxiliary,
+# none of them questions. Real questions built on an auxiliary run longer ("does
+# insurance cover chiropractic care"), so require length before treating one as
+# a question. A false positive here silently deletes a real service, which is
+# worse than a question slipping through to the grounding filter.
+_AUX_LEAD = re.compile(r"^(?:is|are|was|were|do|does|did|can|could|should|"
+                       r"would|will|has|have|had|am)\b", re.I)
+_AUX_MIN_WORDS = 4
+
+
+def is_question_kw(text):
+    """Is this a question phrase rather than a service a client could sell?"""
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if "?" in t or "how to" in t:
+        return True
+    if _QUESTION_LEAD.search(t):
+        return True
+    return bool(_AUX_LEAD.search(t)) and len(t.split()) >= _AUX_MIN_WORDS
 
 
 def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, domain):
@@ -1870,6 +1921,13 @@ def pin_head_services(services, cands, markets, state, brand, max_services):
         term = clean_kw(strip_proximity(
             _strip_markets((c.get("keyword") or "").lower(), markets, state))).strip()
         if not term or (b and b in term) or term in seen:
+            continue
+        # A question is never a service, so it should never be pinned. Skipping
+        # it HERE rather than letting the grounding filter catch it downstream
+        # means the slot goes to the next real head term instead of being spent
+        # and then discarded — and the operator stops being told that "how to
+        # get rid of a headache" was blocked over the word "get" (2026-08-04).
+        if is_question_kw(term):
             continue
         seen.add(term)
         ranked.append((term, c.get("volume") or 0))
@@ -3234,10 +3292,7 @@ def fetch_bids_via_labs(terms, markets, state, national=False):
     kws = dfs_kw_list(terms)
     if not kws:
         return {}, None
-    loc_name = "" if national else loc_string(markets, state)
-    loc_field = ({"location_name": loc_name}
-                 if loc_name and loc_name != "United States"
-                 else {"location_code": 2840})
+    loc_field, _loc_used = _labs_loc_field(markets, state, national)
     try:
         payload = [{"keywords": [k.lower() for k in kws[:1000]],
                     **loc_field, "language_code": "en"}]
@@ -4953,7 +5008,31 @@ def api_serp_fetch():
 # Degrades gracefully: if no DATABASE_URL, /api/quotes/status reports disabled
 # and the UI shows "attach a database to enable" instead of the Save controls.
 # ---------------------------------------------------------------------------
-_LOCATIONS_CACHE = {"names": None}
+_LOCATIONS_CACHE = {"names": None, "codes": None}
+
+
+def us_location_code(name):
+    """Numeric location_code for a DataForSEO location_name.
+
+    LABS endpoints reject location_name outright with "40501 Invalid Field:
+    'location_name'" — only the Google Ads endpoints accept names. Anything
+    aimed at Labs has to resolve to a code first. Same locations list that
+    us_location_names() already fetches, so no extra call in practice.
+    Returns None when the name isn't recognised.
+    """
+    if not name:
+        return None
+    if _LOCATIONS_CACHE.get("codes") is None:
+        try:
+            data = dfs_get("/keywords_data/google_ads/locations/us")
+            items = (data.get("tasks") or [{}])[0].get("result") or []
+            _LOCATIONS_CACHE["codes"] = {
+                (it.get("location_name") or "").strip().lower(): it.get("location_code")
+                for it in items
+                if it.get("location_name") and it.get("location_code")}
+        except Exception:
+            _LOCATIONS_CACHE["codes"] = {}
+    return _LOCATIONS_CACHE["codes"].get(str(name).strip().lower())
 
 def dfs_get(path, timeout=60):
     login = os.environ.get("DFS_LOGIN", "")
