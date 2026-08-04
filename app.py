@@ -1996,8 +1996,15 @@ def _zip_index():
             # its neighbours (2026-08-03).
             if not la or not lo:
                 continue
-            key = (str(r.get("city", "")).lower(), str(r.get("state", "")).upper())
-            acc.setdefault(key, []).append((la, lo))
+            st_ = str(r.get("state", "")).upper()
+            acc.setdefault((str(r.get("city", "")).lower(), st_), []).append((la, lo))
+            # Some cities have no ZIPs of their own and appear only as an
+            # alternate name on a neighbour's — Milton GA shares Alpharetta's
+            # 30004/30009 — so they were reported as unplaceable and counted
+            # as separate markets (2026-08-03). Index the alternates too, at
+            # the host ZIP's coordinates, which is where they actually are.
+            for alt in (r.get("acceptable_cities") or []):
+                acc.setdefault((str(alt).lower(), st_), []).append((la, lo))
 
         def _med(xs):
             xs = sorted(xs)
