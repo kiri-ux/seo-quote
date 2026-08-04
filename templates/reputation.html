@@ -1019,22 +1019,47 @@ function renderBrandReco(){
   if(lowRated) reasons.push(lowRated+' low-rated result'+(lowRated!==1?'s':'')+' in the top 10');
   if(removable) reasons.push(removable+' removable page'+(removable!==1?'s':''));
   if(aiNeg) reasons.push('negative AI Overview');
-  const rec = reasons.length ? 'bundle' : 'proactive';
+  // Reviews are counted by a separate manual step, so "clean" is only a real
+  // finding once that step has run. Until then the scan cannot see the review
+  // profile at all, and calling a brand healthy on unmeasured reviews is the
+  // one way this card can be confidently wrong.
+  const reviewsCounted = !!(window._negDone && window._negDone.length);
+  const flaggedReviews = (window._scanProv||{}).flagged || 0;
+  // Nothing wrong anywhere AND nothing wrong in the reviews = there is no
+  // problem to sell against. Recommending a monthly shield here prices a
+  // campaign the evidence does not support.
+  const nothingNeeded = !reasons.length && reviewsCounted && flaggedReviews === 0;
+  const rec = reasons.length ? 'bundle' : (nothingNeeded ? 'none' : 'proactive');
   const recLabel = rec==='bundle' ? 'Reactive + Proactive' : 'Proactive';
   const why = reasons.length
     ? 'Negatives found \u2014 clean up first, then protect: ' + reasons.join(' \u00b7 ') + '.'
-    : 'No negative signals found \u2014 the position is healthy; protect it before something ranks.';
+    : (nothingNeeded
+        ? 'No negative signals and no flagged reviews \u2014 nothing to clean up and nothing to defend against. Quote reputation work only if the client asks for it.'
+        : 'No negative signals found \u2014 the position is healthy; protect it before something ranks.'
+          + (reviewsCounted ? '' : ' <span style="color:var(--muted)">Reviews have not been counted yet \u2014 run the count to confirm the profile is clean.</span>'));
   let box = document.getElementById('brandReco');
   if(!box){
     box = document.createElement('div'); box.id = 'brandReco';
     $('scanOut').prepend(box);
   }
+  if(rec==='none'){
+    // Green, because this is good news about the client rather than a strategy
+    // to pick. The opt-in button stays so a rep whose client asks for coverage
+    // anyway is not stuck, but nothing here nudges toward the sale.
+    box.innerHTML = '<div style="border:1px solid var(--ok-line);background:var(--ok-bg);border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
+      + '<b style="color:var(--ok)">Recommended: no reputation management needed</b> \u2014 '+why+' '
+      + (campaign==='proactive'
+          ? '<button class="btn2" type="button" disabled style="opacity:.5;cursor:default">\u2713 Proactive selected</button>'
+          : '<button class="btn2" type="button" id="brandRecoBtn" data-rec="proactive">Quote Proactive anyway</button>')
+      + '</div>';
+  }else{
   const matches = campaign === rec;
   box.innerHTML = '<div style="border:1px solid var(--velocity);background:var(--info-bg);border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
     + '<b style="color:var(--atlas)">Recommended strategy: '+recLabel+'</b> \u2014 '+why+' '
     + (matches ? '<button class="btn2" type="button" disabled style="opacity:.5;cursor:default">\u2713 '+recLabel+' selected</button>'
                : '<button class="btn2" type="button" id="brandRecoBtn" data-rec="'+rec+'">Switch to '+recLabel+'</button>')
     + '</div>';
+  }
   const bb = document.getElementById('brandRecoBtn');
   if(bb) bb.onclick = ()=>{
     const el = document.querySelector('.ctype[data-c="'+bb.dataset.rec+'"]');
@@ -1255,6 +1280,10 @@ function renderNegCounts(done){
   h += '</table>';
   $('negOut').innerHTML = h;
   document.getElementById('negTh').onchange = ()=> renderNegCounts(window._negDone);
+  // The strategy card sits above this block and now depends on the flagged
+  // count, so it has to be redrawn whenever the count lands or the threshold
+  // changes — otherwise it keeps showing the pre-count recommendation.
+  if(document.getElementById('brandReco')) renderBrandReco();
 }
 
 // ---------------- saving (mirrors SEO tool: auto-save when priced) ----------------
@@ -1419,11 +1448,14 @@ function restoreScan(sc){
   if(sc.data.autocomplete) renderAutocomplete(sc.data.autocomplete);
   if(sc.data.locations) renderLocs(sc.data.locations);
   renderReco();
-  renderBrandReco();
+  // Restore the review counts BEFORE the strategy card is drawn — the card
+  // reads the flagged count, and on a reopened quote it was previously drawn
+  // first and so always showed the not-yet-counted recommendation.
   if(sc.negDone && sc.negDone.length && document.getElementById('negOut')){
     window._negDone = sc.negDone;
     renderNegCounts(sc.negDone);
   }
+  renderBrandReco();
   window._scanProv = sc.prov || window._scanProv;
   $('scanProg').textContent = 'Restored from saved quote. Re-run Scan brand for fresh data.';
 }
