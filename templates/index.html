@@ -964,6 +964,18 @@ function step2Html(m){
     ? `<div class="calc">median organic keyword difficulty <code>${m.median_kd}</code>/100 <span class="nf">(Labs organic data — independent of Google Ads bid data)</span></div>`
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
   const bs=m.bid_stats;
+  // The suggestion branch used to key off m.kd_suggested_adder alone, so when
+  // that field was absent the panel announced "no organic difficulty either"
+  // while the very next box displayed a difficulty of 29/100. Derive it here
+  // when the server didn't send one — the number is already in m.median_kd, so
+  // the two statements can never contradict each other again. Server value wins
+  // when present; these mirror the CFG defaults (kd_score_breaks /
+  // competitive_adder) and are only a fallback.
+  const KD_BREAKS=[30,60], KD_LADDER={0:0,1:150,2:300};
+  const kdScore = (m.kd_score!=null) ? m.kd_score
+    : (m.median_kd!=null ? (m.median_kd>KD_BREAKS[1]?2:(m.median_kd>=KD_BREAKS[0]?1:0)) : null);
+  const kdAdder = (m.kd_suggested_adder!=null) ? m.kd_suggested_adder
+    : (kdScore!=null ? KD_LADDER[kdScore] : null);
   const viaIdeas = m.bid_source==='keyword_ideas';
   const viaLabs  = m.bid_source==='labs';
   const fellBack = viaIdeas || viaLabs;
@@ -979,11 +991,11 @@ function step2Html(m){
         ${m.restricted_vertical?`<div class="nf" style="margin-top:5px">🚫 <b>${escapeHtml(m.restricted_vertical)}</b> is a Google Ads restricted vertical. Advertising here is banned outright, so there is no advertiser bid pool to measure — this is a permanent absence, not a failed lookup, and re-running will not fix it.</div>`:''}
         <div style="margin-top:10px;padding-top:9px;border-top:1px solid #e8c98a">
           <b style="font-size:12.5px">What to do:</b>
-          ${(m.kd_suggested_adder!=null)?`<div style="margin-top:6px;font-size:12.5px">Organic difficulty is the competition signal that still works here — median <b>${m.median_kd}/100</b>, which is <b>${m.kd_score===0?'low':m.kd_score===1?'moderate':'high'}</b>. On the same scale the tool uses for bids, that suggests:</div>
+          ${(kdAdder!=null)?`<div style="margin-top:6px;font-size:12.5px">Organic difficulty is the competition signal that still works here — median <b>${m.median_kd}/100</b>, which is <b>${kdScore===0?'low':kdScore===1?'moderate':'high'}</b>. On the same scale the tool uses for bids, that suggests:</div>
           <div style="margin-top:7px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-            <button class="btn2" type="button" id="adderUseSuggested" style="font-weight:700">Use +${money(m.kd_suggested_adder)} and continue</button>
+            <button class="btn2" type="button" id="adderUseSuggested" style="font-weight:700">Use +${money(kdAdder)} and continue</button>
             <span class="nf" style="font-size:12px">or enter your own:</span>
-            <input type="number" id="adderManual" min="0" step="50" placeholder="${m.kd_suggested_adder}" style="width:100px">
+            <input type="number" id="adderManual" min="0" step="50" placeholder="${kdAdder}" style="width:100px">
           </div>`:`<div style="margin-top:6px;font-size:12.5px">No organic difficulty either, so there is nothing to suggest from. Enter an adder from comparable accounts — <b>0</b> is valid if you're satisfied competition is negligible.</div>
           <div style="margin-top:7px"><label style="margin:0;font-size:12.5px">Competitive adder <input type="number" id="adderManual" min="0" step="50" placeholder="e.g. 150" style="width:100px;margin-left:6px"></label></div>`}
           <div id="adderGateHost"></div>
@@ -1045,7 +1057,11 @@ async function runStep2(){
       };
       // One click is the whole interaction in the common case; typing a number
       // is the override. Either counts as the decision the gate is waiting for.
-      if(sug) sug.onclick = ()=>{ if(mi) mi.value=''; settled(m.kd_suggested_adder||0, 'from organic difficulty'); };
+      // Must reuse the SAME derivation the button label was rendered from, or
+      // clicking "Use +$150" could quietly set a different number.
+      const sugVal = (m.kd_suggested_adder!=null) ? m.kd_suggested_adder
+        : (m.median_kd!=null ? ({0:0,1:150,2:300})[m.median_kd>60?2:(m.median_kd>=30?1:0)] : 0);
+      if(sug) sug.onclick = ()=>{ if(mi) mi.value=''; settled(sugVal, 'from organic difficulty'); };
       if(mi) mi.oninput = ()=>{
         const v=parseInt(mi.value||'',10);
         if(!isNaN(v) && v>=0) settled(v, 'manually');
