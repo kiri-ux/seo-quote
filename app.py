@@ -3206,6 +3206,54 @@ def fetch_bids_via_ideas(terms, location_name):
         return {}, str(e)
 
 
+def fetch_bids_via_labs(terms, markets, state, national=False):
+    """Bids and CPC from the DataForSEO LABS keyword database.
+
+    The last resort, and the one most likely to answer in a restricted vertical.
+    Labs is DataForSEO's own aggregated database rather than a live Google Ads
+    call, so it is not subject to the ad-policy filtering that empties
+    search_volume for cannabis and friends — which is exactly why keyword
+    DIFFICULTY has been coming back for these clients all along.
+
+    The keyword_info block this reads already reaches us on every Step 1 run:
+    fetch_exact_volume calls the same endpoint and keeps search_volume alone,
+    discarding cpc and the bid fields sitting beside it.
+
+    NOTE: Labs CPC is modelled, not a live auction reading, so it can differ
+    from Google Ads. The caller reports which source supplied the number so an
+    adder built on Labs is never mistaken for one built on Google Ads.
+    Returns ({keyword: {bid, cpc, volume}}, error_or_None).
+    """
+    kws = dfs_kw_list(terms)
+    if not kws:
+        return {}, None
+    loc_name = "" if national else loc_string(markets, state)
+    loc_field = ({"location_name": loc_name}
+                 if loc_name and loc_name != "United States"
+                 else {"location_code": 2840})
+    try:
+        payload = [{"keywords": [k.lower() for k in kws[:1000]],
+                    **loc_field, "language_code": "en"}]
+        data = dfs_post("/dataforseo_labs/google/keyword_overview/live", payload)
+        task0 = (data.get("tasks") or [{}])[0]
+        if task0.get("status_code") not in (20000, None) and not task0.get("result"):
+            return {}, f"{task0.get('status_code')}: {task0.get('status_message')}"
+        out = {}
+        for block in (task0.get("result") or []):
+            for it in (block.get("items") or []):
+                k = (it.get("keyword") or "").lower()
+                ki = it.get("keyword_info") or {}
+                if not k:
+                    continue
+                bid = ki.get("high_top_of_page_bid") or 0
+                out[k] = {"bid": bid,
+                          "cpc": ki.get("cpc") or bid or 0,
+                          "volume": ki.get("search_volume") or 0}
+        return out, None
+    except Exception as e:
+        return {}, str(e)
+
+
 def stage3_metrics(head, markets, state, national=False, industry=""):
     geo_kws = [r["keyword"] for r in head]
     if not geo_kws:
@@ -3267,16 +3315,31 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
     # at all, or rows with every bid blank. Ask the ideas endpoint, which is not
     # policy-filtered. Costs one extra call and only on the failing path.
     bid_source = "search_volume"
-    ideas_err = None
+    ideas_err = labs_err = None
+
+    def _adopt(src, got):
+        """Take bids from a fallback source. Returns True if it supplied any."""
+        nonlocal bare_bid, bid_source, bid_err
+        if not any((v or {}).get("bid") for v in got.values()):
+            return False
+        bare_bid = {k: v["bid"] for k, v in got.items() if v.get("bid")}
+        for k, v in got.items():
+            if v.get("cpc"):
+                bare_cpc[k] = v["cpc"]
+        bid_source = src
+        bid_err = None
+        return True
+
     if not any(bare_bid.values()):
+        # 2nd: Google Ads keyword IDEAS — same account, not policy-filtered.
         ideas, ideas_err = fetch_bids_via_ideas(bare_unique, bid_loc_used)
-        if any((v or {}).get("bid") for v in ideas.values()):
-            bare_bid = {k: v["bid"] for k, v in ideas.items() if v.get("bid")}
-            for k, v in ideas.items():
-                if v.get("cpc"):
-                    bare_cpc[k] = v["cpc"]
-            bid_source = "keyword_ideas"
-            bid_err = None
+        if not _adopt("keyword_ideas", ideas):
+            # 3rd: LABS. Its own database rather than a live Ads call, so it is
+            # the source that still answers when advertising in the vertical is
+            # banned outright. Modelled CPC, hence last.
+            labs, labs_err = fetch_bids_via_labs(bare_unique, markets, state,
+                                                 national=national)
+            _adopt("labs", labs)
     bare_kd, kd_err = fetch_keyword_difficulty(bare_unique, markets, state)
 
     # Attribute to both the geo key (for the table) and the bare key.
@@ -3345,6 +3408,7 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
             "flat_adder": flat_adder,
             "bid_source": bid_source,
             "bid_ideas_error": ideas_err,
+            "bid_labs_error": labs_err,
             "adder_blocked": adder_blocked,
             "restricted_vertical": restricted,
             "bid_error": bid_err,
@@ -4191,6 +4255,7 @@ def api_metrics():
                     "flat_adder": m3.get("flat_adder"),
                     "bid_source": m3.get("bid_source"),
                     "bid_ideas_error": m3.get("bid_ideas_error"),
+                    "bid_labs_error": m3.get("bid_labs_error"),
                     "adder_blocked": m3.get("adder_blocked"),
                     "restricted_vertical": m3.get("restricted_vertical"),
                     "national_demand": nat,
