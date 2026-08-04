@@ -462,6 +462,13 @@ CFG = {
     # Add-on recommendation thresholds. Both fit on TWO proposals (Skills of
     # Central PA and TN Water & Air) — treat the suggestion as a prompt to
     # think, not a decision, until more actuals confirm them.
+    # Markets within this many miles of each other are one market. 25 is a
+    # metro radius and separates the two clients we can check — Brent Cogan's
+    # towns span 22 miles, TN Water & Air's are 101 and 160 apart — but it is
+    # fitted on two proposals, so treat it as a starting point.
+    # Straight-line, not drive time: two towns 20 miles apart across a ridge or
+    # a state line can still be separate markets.
+    "market_radius_miles": 25,
     "addon_free_markets": 3,        # at or below this, always one campaign
     # Need rank data on this share of the ENTERED markets before suggesting.
     # Note the interaction with grid_max_cities: at 5 crossed cities, a client
@@ -580,7 +587,7 @@ def dfs_post(path, payload, timeout=None, method="POST"):
     return resp.json()
 
 def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
-                     site_pages_found=None, metro_groups=None):
+                     site_pages_found=None, metro_groups=None, city_volumes=None):
     """Suggest how many markets should be priced as separate campaigns.
 
     The judgement, per the pricing authority: 2-3 related nearby markets run
@@ -607,6 +614,10 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     # markets inflates everything downstream: fourteen metro-Atlanta suburbs
     # are two or three markets, not fourteen, and an add-on count built on
     # fourteen is four times too big.
+    # "Thin" = fewer than half the markets return any volume at all. Below
+    # that, grouping has nothing to work with and the count is guesswork.
+    _cv = city_volumes or {}
+    thin_volume = bool(_cv) and sum(1 for v in _cv.values() if v) < max(2, len(_cv) / 2)
     collapsed = 0
     for g in (metro_groups or []):
         members = [m for m in mk if m in g]
@@ -633,6 +644,22 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     if n <= int(CFG.get("addon_free_markets", 3)):
         out["basis"] = f"{n} markets — three or fewer run as one campaign."
         out["confident"] = True
+        return out
+
+
+    # ABSTAIN when the markets carry almost no search volume. Grouping infers
+    # market identity from demand patterns, and a town with no demand has no
+    # pattern — three separate attempts at this (geo-modified probe, resolved
+    # location name, per-city volume) all failed on Brent Cogan's seven Blair
+    # County towns for the same underlying reason: the data does not contain
+    # the answer (2026-08-03). Counting them as seven separate markets is a
+    # confident wrong answer worth $6,000/mo, which is worse than no answer.
+    if thin_volume:
+        out["basis"] = (f"{n} markets entered, but they carry almost no search "
+                        f"volume individually — there is no demand pattern to tell "
+                        f"whether they are one market or several. Decide by hand: "
+                        f"towns within a short drive of each other are normally one "
+                        f"campaign.")
         return out
 
 
@@ -1932,6 +1959,109 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
+# --- geographic market grouping -------------------------------------------
+# Three attempts at inferring market identity from SEARCH DEMAND all failed on
+# the same client: geo-modified probes, resolved location names, and per-city
+# volumes. The reason was the same each time — Blair County towns have no
+# measurable individual demand, so no demand-based method can say whether they
+# are one market or seven. Distance always can, and it is the thing the rule
+# actually means: "2-3 related NEARBY markets normally run under one campaign".
+#
+# Brent Cogan's seven towns span 22 miles end to end. TN Water & Air's markets
+# are 101 and 160 miles apart. One threshold separates them.
+_ZIP_INDEX = None
+
+
+def _zip_index():
+    """city+state -> mean lat/long, built once from the bundled ZIP dataset."""
+    global _ZIP_INDEX
+    if _ZIP_INDEX is not None:
+        return _ZIP_INDEX
+    idx = {}
+    try:
+        import zipcodes
+        acc = {}
+        for r in zipcodes.list_all():
+            if r.get("country") != "US" or not r.get("lat"):
+                continue
+            la, lo = float(r["lat"]), float(r["long"])
+            # The dataset carries placeholder rows at 0,0 — Kennesaw GA has one,
+            # and averaging it in put the city in the Atlantic, 1,100 miles from
+            # its neighbours (2026-08-03).
+            if not la or not lo:
+                continue
+            key = (str(r.get("city", "")).lower(), str(r.get("state", "")).upper())
+            acc.setdefault(key, []).append((la, lo))
+
+        def _med(xs):
+            xs = sorted(xs)
+            n_ = len(xs)
+            return xs[n_ // 2] if n_ % 2 else (xs[n_ // 2 - 1] + xs[n_ // 2]) / 2
+
+        # Median, not mean: one stray record can't drag a city across the map.
+        idx = {k: (_med([a for a, _ in v]), _med([b for _, b in v]))
+               for k, v in acc.items()}
+    except Exception:
+        app.logger.warning("zipcodes not available — geographic grouping is off")
+    _ZIP_INDEX = idx
+    return idx
+
+
+def city_coords(market, state=""):
+    """Latitude/longitude for an entered market, or None."""
+    city, st = parse_market(market, state)
+    city = (city or "").strip().lower()
+    if not city:
+        return None
+    abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "")
+    idx = _zip_index()
+    if abbr:
+        hit = idx.get((city, abbr.upper()))
+        if hit:
+            return hit
+    # No usable state: accept a unique national match, never a guess between
+    # several — there are Springfields in thirty states.
+    hits = [v for (c, _s), v in idx.items() if c == city]
+    return hits[0] if len(hits) == 1 else None
+
+
+def miles_between(a, b):
+    from math import radians, sin, cos, asin, sqrt
+    (la1, lo1), (la2, lo2) = a, b
+    la1, lo1, la2, lo2 = map(radians, [la1, lo1, la2, lo2])
+    h = sin((la2 - la1) / 2) ** 2 + cos(la1) * cos(la2) * sin((lo2 - lo1) / 2) ** 2
+    return 2 * 3958.8 * asin(sqrt(h))
+
+
+def group_by_distance(markets, state="", radius=None):
+    """Cluster markets that sit within `radius` miles of each other.
+
+    Single-link: A joins B's cluster if it is within the radius of ANY member,
+    so a chain of neighbouring towns stays one market rather than splitting on
+    the arithmetic of where the centre happens to fall.
+
+    Returns (groups, located, unlocated).
+    """
+    r = float(radius if radius is not None else CFG.get("market_radius_miles", 25))
+    pts, unlocated = {}, []
+    for m in (markets or []):
+        c = city_coords(m, state)
+        (pts.__setitem__(m, c) if c else unlocated.append(m))
+    # Complete-link: a city joins only if it is within the radius of EVERY
+    # member, which caps the cluster's diameter at the radius. Single-link
+    # chained Jasper into metro Atlanta through Canton even though Jasper is
+    # 36 miles from Marietta — a market has a size, not just neighbours.
+    groups = []
+    for m in sorted(pts, key=lambda x: (pts[x][0], pts[x][1])):
+        for g in groups:
+            if all(miles_between(pts[m], pts[o]) <= r for o in g):
+                g.append(m)
+                break
+        else:
+            groups.append([m])
+    return groups, list(pts), unlocated
+
+
 def group_by_metro(vectors, min_terms=2):
     """Group cities that Google Ads treats as the same place.
 
@@ -2694,7 +2824,18 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # the location NAME failed because the name recorded is the one we
         # SENT — "Bellwood,Pennsylvania" — not the one Google resolved it to.
         # These volumes are the resolution, observed rather than inferred.
-        if per_city and not national_demand:
+        # Distance first — it is the only signal that works when the markets
+        # have no measurable demand, which is exactly when grouping matters.
+        if not national_demand:
+            _g, _loc, _un = group_by_distance(markets, state)
+            _real = [x for x in _g if len(x) > 1]
+            if _real:
+                city_pick["metro_groups"] = _real
+                city_pick["grouped_by"] = (
+                    f"distance — markets within {int(CFG.get('market_radius_miles', 25))} "
+                    f"miles of each other")
+                city_pick["unlocated_markets"] = _un
+        if not city_pick.get("metro_groups") and per_city and not national_demand:
             _svcs = [x.lower() for x in svc_names]
             _vecs = {}
             for _c in cities:
@@ -2730,6 +2871,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "services": services,
             "pinned_head_terms": pinned,
             "city_selection": city_pick,
+            "city_volumes": {c: max([v for (cc, _s), v in (per_city or {}).items()
+                                     if isinstance(cc, str) and cc == _bare_city(c, state)]
+                                    or [0])
+                             for c in cities},
             "city_locs": {c: l for c, l in
                           ((per_city or {}).get("__city_locs__") or {}).items()},
             "site_locations": site_locations,
@@ -3702,6 +3847,7 @@ def api_refine():
         # rendering against undefined and showing nothing (2026-07-28).
         "city_selection": s1.get("city_selection") or {},
         "city_locs": s1.get("city_locs") or {},
+        "city_volumes": s1.get("city_volumes") or {},
         "site_locations": s1.get("site_locations") or [],
         "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),
@@ -3960,7 +4106,8 @@ def api_addon_suggestion():
     out = recommend_addons(markets, state, d.get("table") or [],
                            site_locations=d.get("site_locations") or [],
                            site_pages_found=d.get("site_pages_found"),
-                           metro_groups=d.get("metro_groups") or [])
+                           metro_groups=d.get("metro_groups") or [],
+                           city_volumes=d.get("city_volumes") or {})
     out["gbp_locations"] = d.get("gbp_locations")
     # Surface HOW the markets were counted. Four rounds of this were spent
     # guessing which branch ran because nothing on screen said (2026-08-03).

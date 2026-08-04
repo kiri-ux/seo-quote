@@ -2520,6 +2520,7 @@ async function refreshAddonSuggestion(){
        metro_groups:(((ST.kw&&ST.kw.city_selection)||{}).metro_groups||[]),
        grouped_by:(((ST.kw&&ST.kw.city_selection)||{}).grouped_by||''),
        city_locs:((ST.kw&&ST.kw.city_locs)||{}),
+       city_volumes:((ST.kw&&ST.kw.city_volumes)||{}),
        gbp_locations:((ST.kw&&ST.kw.gbp_locations)||0),
        service_areas:((ST.kw&&ST.kw.service_areas)||[])});
     const cur=parseFloat(($('addon')||{}).value||0)||0;
