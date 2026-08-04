@@ -991,12 +991,12 @@ function step2Html(m){
         ${m.restricted_vertical?`<div class="nf" style="margin-top:5px">🚫 <b>${escapeHtml(m.restricted_vertical)}</b> is a Google Ads restricted vertical. Advertising here is banned outright, so there is no advertiser bid pool to measure — this is a permanent absence, not a failed lookup, and re-running will not fix it.</div>`:''}
         <div style="margin-top:10px;padding-top:9px;border-top:1px solid #e8c98a">
           <b style="font-size:12.5px">What to do:</b>
-          ${(kdAdder!=null)?`<div style="margin-top:6px;font-size:12.5px">Organic difficulty is the competition signal that still works here — median <b>${m.median_kd}/100</b>, which is <b>${kdScore===0?'low':kdScore===1?'moderate':'high'}</b>. On the same scale the tool uses for bids, that suggests:</div>
+          ${(kdAdder!=null)?`<div style="margin-top:6px;font-size:12.5px">Organic difficulty is the competition signal that still works here — median <b>${m.median_kd}/100</b>, which is <b>${kdScore===0?'low':kdScore===1?'moderate':'high'}</b>. Scored on the same ladder the tool uses for bids, the adder has been set to <b>+${money(kdAdder)}</b> automatically.</div>
           <div style="margin-top:7px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-            <button class="btn2" type="button" id="adderUseSuggested" style="font-weight:700">Use +${money(kdAdder)} and continue</button>
-            <span class="nf" style="font-size:12px">or enter your own:</span>
+            <span class="nf" style="font-size:12px">Override if you know better:</span>
             <input type="number" id="adderManual" min="0" step="50" placeholder="${kdAdder}" style="width:100px">
-          </div>`:`<div style="margin-top:6px;font-size:12.5px">No organic difficulty either, so there is nothing to suggest from. Enter an adder from comparable accounts — <b>0</b> is valid if you're satisfied competition is negligible.</div>
+            <button class="btn2" type="button" id="adderReset" style="display:none">Back to +${money(kdAdder)}</button>
+          </div>`:`<div style="margin-top:6px;font-size:12.5px">No organic difficulty either, so there is nothing to reason from and the adder cannot be derived. Enter one from comparable accounts — <b>0</b> is valid if you're satisfied competition is negligible.</div>
           <div style="margin-top:7px"><label style="margin:0;font-size:12.5px">Competitive adder <input type="number" id="adderManual" min="0" step="50" placeholder="e.g. 150" style="width:100px;margin-left:6px"></label></div>`}
           <div id="adderGateHost"></div>
         </div></div>`;
@@ -1016,6 +1016,8 @@ function step2Html(m){
           <summary style="cursor:pointer;user-select:none">⚠ <b>This adder rests on ${m.cpc_n_bids} bid${m.cpc_n_bids===1?'':'s'}</b></summary>
           <div style="margin-top:6px">The adder scales off the <i>median</i> top-of-page bid, and above $62 every extra dollar of CPC adds several hundred to the quote — reliable on a real median, an extrapolation on a sample this thin. Spot-check the bid in Google Ads Keyword Planner before quoting, or add head terms so the median has something to sit on.</div>
         </details>`:''}median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
+        : m.adder_basis==='kd'
+        ? `organic difficulty <code>${m.median_kd}</code>/100 → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(applied automatically — no bid data exists in this vertical, so difficulty is scored on the same ladder bids use)</span>`
         : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
       ${kdLine}
       ${stepBtn('step3','3 · Check rankings')}`;
@@ -1044,28 +1046,33 @@ async function runStep2(){
     ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
     // A $0 adder with no bid data behind it is missing evidence, not measured
     // cheapness. Hold pricing until someone decides which it is.
-    ST.adderBlocked = !!m.adder_blocked; ST.adderAck = false;
+    // Blocked ONLY when nothing could be derived; a KD-derived adder needs no
+    // confirmation, so it is pre-acknowledged.
+    ST.adderBlocked = !!m.adder_blocked; ST.adderAck = !m.adder_blocked;
     ST._m2=m;   // keep for save/restore
     panel('p2', step2Html(m));
-    if(ST.adderBlocked){
-      const mi=$('adderManual'), sug=$('adderUseSuggested');
+    if(ST.adderBlocked || m.adder_basis==='kd'){
+      const mi=$('adderManual'), rst=$('adderReset');
       const clearGate=()=>{ const n=document.getElementById('adderGateMsg'); if(n) n.remove(); };
-      const settled=(v, note)=>{
-        ST.adder=v; ST.adderAck=true; clearGate();
-        const host=$('adderGateHost');
-        if(host) host.innerHTML=`<div class="nf" style="margin-top:7px;color:#137333">✓ Competitive adder set to <b>+${money(v)}</b> ${note}. Continue to step 3.</div>`;
-      };
-      // One click is the whole interaction in the common case; typing a number
-      // is the override. Either counts as the decision the gate is waiting for.
-      // Must reuse the SAME derivation the button label was rendered from, or
-      // clicking "Use +$150" could quietly set a different number.
-      const sugVal = (m.kd_suggested_adder!=null) ? m.kd_suggested_adder
-        : (m.median_kd!=null ? ({0:0,1:150,2:300})[m.median_kd>60?2:(m.median_kd>=30?1:0)] : 0);
-      if(sug) sug.onclick = ()=>{ if(mi) mi.value=''; settled(sugVal, 'from organic difficulty'); };
+      // The KD-derived adder is already APPLIED by the server, so nothing here
+      // has to be clicked. This only handles a deliberate override.
+      const autoVal = (m.adder_basis==='kd') ? m.adder : null;
+      const note=(msg,col)=>{ const h=$('adderGateHost'); if(h) h.innerHTML=`<div class="nf" style="margin-top:7px;color:${col}">${msg}</div>`; };
       if(mi) mi.oninput = ()=>{
         const v=parseInt(mi.value||'',10);
-        if(!isNaN(v) && v>=0) settled(v, 'manually');
-        else { ST.adderAck=false; const host=$('adderGateHost'); if(host) host.innerHTML=''; }
+        if(!isNaN(v) && v>=0){
+          ST.adder=v; ST.adderAck=true; clearGate();
+          if(rst && autoVal!=null) rst.style.display='';
+          note(`✎ Overridden — competitive adder <b>+${money(v)}</b>${autoVal!=null?` instead of the derived +${money(autoVal)}`:''}.`, '#7a5410');
+        } else if(autoVal!=null){
+          ST.adder=autoVal; ST.adderAck=true;   // blank box falls back to derived
+          if(rst) rst.style.display='none';
+          note('', '#137333');
+        } else { ST.adderAck=false; note('', '#137333'); }
+      };
+      if(rst) rst.onclick = ()=>{
+        if(mi) mi.value=''; ST.adder=autoVal||0; ST.adderAck=true;
+        rst.style.display='none'; clearGate(); note('', '#137333');
       };
     }
     $('step3').onclick = ()=>runStep3();
@@ -1076,10 +1083,22 @@ async function runStep2(){
   }
 }
 
+// Rows that must not count either way: failed lookups, and ones Google is still
+// crawling. DERIVED FROM THE TABLE rather than read from the ST.errored counter.
+// That counter is mutated in a dozen places and restoreQuote never restored it,
+// so reopening a saved quote left it at 0 while queued rows sat in the table —
+// every one of them then counted as "not ranking". On Grav that moved the
+// denominator from 8 to 17, pushing 38% not-ranking to 65%: a different
+// zero-ranking tier AND a bigger volume ramp, for a ~30% price rise with
+// nothing about the client changed (2026-08-04).
+function excludedRows(){
+  return (ST.table||[]).filter(r=>r && (r.error || r.queued)).length;
+}
+
 function step3Html(){
   // Errored lookups are EXCLUDED from the denominator — a failed API call must
   // not count as "not ranking", since that would inflate the price.
-  const checked = Math.max((ST.total||0) - (ST.errored||0), 0);
+  const checked = Math.max((ST.total||0) - excludedRows(), 0);
   const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
   try{ refreshAddonSuggestion(); }catch(e){}
   const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
@@ -1286,7 +1305,7 @@ async function _finishOrRetry(retryOnlyFailed, all){
 }
 
 function finishStep3(){
-  const checkedOk = Math.max(ST.total - ST.errored, 0) || 1;
+  const checkedOk = Math.max(ST.total - excludedRows(), 0) || 1;
   ST.zero = (ST.ranked/checkedOk) < 0.10;
   // Long tail comes from the grid itself (lower-competition services x cities).
   // The People-Also-Ask harvest is deliberately NOT folded in: it produces
@@ -1764,7 +1783,7 @@ async function runStep4(){
     : (ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
   // Exclude failed lookups from the denominator — a timed-out SERP call must not
   // be treated as "not ranking", or a flaky API call would raise the price.
-  const checkedOk = Math.max((ST.total||0) - (ST.errored||0), 0);
+  const checkedOk = Math.max((ST.total||0) - excludedRows(), 0);
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
@@ -2111,6 +2130,9 @@ function restoreQuote(p){
   ST.inputs=p.inputs; ST.kw=p.kw; ST.adder=p.adder; ST.score=p.score;
   ST.adder_basis=p.adder_basis; ST.cpc_used=p.cpc_used;
   ST.table=p.table||[]; ST.paa=p.paa||[]; ST.ranked=p.ranked||0; ST.total=p.total||0;
+  // Rebuilt from the restored table — it was simply never restored, leaving the
+  // retry button and every denominator working off a stale 0.
+  ST.errored=(ST.table||[]).filter(r=>r && (r.error||r.queued)).length;
   ST.zero=p.zero; ST.longtail=p.longtail; ST.cpc=p.cpc||{}; ST.kd=p.kd||{};
   ST.pricing=p.pricing; ST.totalVol=p.totalVol; ST.pctNotRanking=p.pctNotRanking;
   ST.baseOverride=p.baseOverride||'';

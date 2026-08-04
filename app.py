@@ -3407,16 +3407,23 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
     # $0 competition, it is an absence of evidence — and this quote is priced as
     # if the vertical were free. Say so and make the operator decide.
     restricted = restricted_vertical(industry)
-    adder_blocked = not bid_vals
+    no_bids = not bid_vals
     # When there are no bids anywhere, organic difficulty is the only competition
-    # signal left — so turn it into an actual dollar figure rather than handing
-    # the operator a 0-100 number and asking them to invent one. Scored on the
-    # same ladder as bids, so it is a suggestion in the tool's own units.
+    # signal left. Score it on the SAME 0/1/2 ladder as bids and APPLY it: an
+    # adder the tool can derive from evidence should not need to be typed in by
+    # hand. The operator can still override, but the default is now a reasoned
+    # number rather than a blank field (2026-08-04).
     kd_suggested_adder = kd_score = None
-    if adder_blocked and median_kd is not None:
+    if no_bids and median_kd is not None:
         klo, khi = CFG.get("kd_score_breaks", [30, 60])
         kd_score = 2 if median_kd > khi else 1 if median_kd >= klo else 0
         kd_suggested_adder = CFG["competitive_adder"][kd_score]
+        adder = kd_suggested_adder
+        adder_basis = "kd"
+    # Only a total absence of evidence still stops the quote: no bids from any
+    # of the three sources AND no organic difficulty either. Then there really
+    # is nothing to reason from and a human has to supply the number.
+    adder_blocked = no_bids and kd_suggested_adder is None
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
             "cpc_low_confidence": cpc_low_conf, "cpc_n_bids": n_bids,
             "flat_adder": flat_adder,
