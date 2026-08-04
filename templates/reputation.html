@@ -1132,7 +1132,14 @@ function renderLocs(d, live){
   const anyMatch = matched.some(Boolean);
   // pre-check: name-matching locations only — single gets checked only if it
   // matches; under-4.0★ pre-checks also require a name match.
-  const willCheck = (l,i)=> matched[i] && (single || (l.rating||5) < 4);
+  const _ref = refRegion();
+  const inRegion = scanLocations.map(l=>locRegionMatch(l, _ref));
+  const _flag = flagshipIdx();
+  // The flagship is the client, so its reviews are always worth counting —
+  // they are what the removal quote is built from. Everything else still has
+  // to be name-matched, in-region AND under 4.0* to be selected unattended.
+  const willCheck = (l,i)=> matched[i] && inRegion[i]
+                            && (single || i === _flag || (l.rating||5) < 4);
   const prechecked = scanLocations.slice(0,60).filter((l,i)=>willCheck(l,i)).length;
   h += '<details class="locwrap"'+(autoOpen?' open':'')+'><summary style="cursor:pointer;font-size:13px;color:var(--atlas);font-weight:600;padding:6px 0">'
      + (single ? (matched[0] ? 'Single location — auto-selected for the count' : 'Single location — name differs from the client, review before counting')
@@ -1142,6 +1149,7 @@ function renderLocs(d, live){
   scanLocations.slice(0,60).forEach((l,i)=>{
     h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+(willCheck(l,i)?'checked':'')+'></td>'
        + '<td>'+l.title+(matched[i]?'':' <span style="background:var(--warn-bg);color:var(--warn);font-size:10.5px;padding:1px 7px;border-radius:9px;vertical-align:1px">name differs</span>')
+       + ((matched[i] && !inRegion[i])?' <span style="background:var(--warn-bg);color:var(--warn);font-size:10.5px;padding:1px 7px;border-radius:9px;vertical-align:1px">different region\u2009\u2014\u2009not counted</span>':'')
        + '<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
@@ -1180,6 +1188,36 @@ function renderLocs(d, live){
     }
   }
 }
+// A name match alone is not the client. "Clarendon Chiropractic Clinic" in
+// Londonderry, Northern Ireland matched "Clarendon Chiropractic" in Westmont,
+// Illinois, auto-selected itself because it sat under 4.0*, and put three of
+// someone else's one-star reviews straight into the removal quote
+// (2026-08-04). Region has to agree before anything is counted automatically.
+function usRegion(addr){
+  // "200 E Chicago Ave, Westmont, IL 60559" -> IL. Foreign addresses have no
+  // ", ST 12345" tail, which is exactly the signal we want.
+  const m = String(addr||'').match(/,\s*([A-Z]{2})\s+(\d{5})(?:-\d{4})?\s*$/);
+  return m ? m[1] : null;
+}
+// The flagship: the name-matched listing with the most reviews. That is the
+// client's real premises far more reliably than input order.
+function flagshipIdx(){
+  let bi = -1;
+  (scanLocations||[]).forEach((l,i)=>{
+    if(!locNameMatch(l.title)) return;
+    if(bi < 0 || (l.reviews||0) > (scanLocations[bi].reviews||0)) bi = i;
+  });
+  return bi;
+}
+function refRegion(){
+  const i = flagshipIdx();
+  return i >= 0 ? usRegion(scanLocations[i].address) : null;
+}
+function locRegionMatch(l, ref){
+  if(!ref) return true;              // no US reference at all — don't block
+  return usRegion(l.address) === ref;
+}
+
 function locNameMatch(title){
   const norm = s => (s||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ')
     .replace(/\b(inc|incorporated|llc|ltd|limited|co|corp|corporation|company)\b/g,'')
@@ -1192,7 +1230,9 @@ function autoCountLowest(){
   // Auto-count the 3 lowest-rated NAME-MATCHED locations (cheap: ~$0.03
   // each). Non-matching listings (e.g. a similarly-named business the title
   // search picked up) never spend without a human check.
-  const order = scanLocations.map((l,i)=>({i, r: l.rating||5, v: l.reviews||0, ok: locNameMatch(l.title)}))
+  const _ref2 = refRegion();
+  const order = scanLocations.map((l,i)=>({i, r: l.rating||5, v: l.reviews||0,
+                                           ok: locNameMatch(l.title) && locRegionMatch(l, _ref2)}))
     .filter(x=>x.ok)
     .sort((a,b)=> a.r - b.r || b.v - a.v).slice(0,3).map(x=>x.i);
   order.forEach(i=>{ const c = document.querySelector('.locck[data-i="'+i+'"]'); if(c) c.checked = true; });
@@ -1209,6 +1249,11 @@ async function submitNegCount(autoPids){
     : [...document.querySelectorAll('.locck:checked')].map(c=>scanLocations[+c.dataset.i].place_id).filter(Boolean);
   if(!pids.length){ $('negProg').textContent = 'Check at least one location.'; return; }
   $('countNegBtn').disabled = true;
+  // Wipe the previous run's table NOW. renderNegCounts early-returns while the
+  // new pulls are still empty, so the old rows stayed on screen — and a
+  // location removed from the selection appeared to survive the re-run.
+  window._negDone = null;
+  const _no = document.getElementById('negOut'); if(_no) _no.innerHTML = '';
   $('negProg').textContent = 'Queuing '+pids.length+' pulls…';
   try{
     const r = await (await fetch('/api/rep_reviews_submit', {method:'POST', headers:{'Content-Type':'application/json'},
