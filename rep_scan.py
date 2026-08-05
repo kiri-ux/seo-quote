@@ -29,6 +29,39 @@ def init(dfs_post):
 
 
 # ---------------------------------------------------------------- negatives
+def _squash(t):
+    return re.sub(r"[^a-z0-9]", "", (t or "").lower())
+
+
+def names_client(phrase, brand, domain=""):
+    """Does this search phrase actually name THIS client?
+
+    Google's related-searches and People-Also-Search-For blocks are topical, not
+    brand-scoped: a scan of "hot tubs etc reviews" returns "Hot Springs hot tub
+    reviews complaints" and "Bullfrog hot tub reviews" — a manufacturer and a
+    competitor. Those were rendered into the client's proposal visual, and the
+    Hot Springs "complaints" phrase was counted as a NEGATIVE SIGNAL against a
+    client it has nothing to do with, which both recommends a cleanup campaign
+    and prices one (2026-08-05).
+
+    Matching is on the squashed brand and the bare domain, so punctuation and
+    spacing don't matter ("Hot Tubs Etc." -> hottubsetc). When neither yields a
+    usable key the filter stands down rather than emptying the panel.
+    """
+    keys = []
+    b = _squash(brand)
+    if len(b) > 3:
+        keys.append(b)
+    host = (domain or "").split("//")[-1].split("/")[0].replace("www.", "")
+    d = _squash(host.rsplit(".", 1)[0] if "." in host else host)
+    if len(d) > 3 and d not in keys:
+        keys.append(d)
+    if not keys:
+        return True
+    p = _squash(phrase)
+    return any(k in p for k in keys)
+
+
 NEG_MODIFIERS = {
     "lawsuit", "lawsuits", "complaint", "complaints", "scam", "scams",
     "fraud", "ripoff", "rip-off", "sue", "sued", "suing", "settlement",
@@ -217,6 +250,10 @@ def scan_serp(brand, domain=""):
             related = [x for x in (it.get("items") or []) if x][:10]
         elif t == "people_also_search":
             pasf += [x for x in (it.get("items") or []) if isinstance(x, str)][:8]
+    # Drop phrases that name a different company BEFORE anything counts them.
+    off_brand = [x for x in (related + pasf) if not names_client(x, brand, domain)]
+    related = [x for x in related if names_client(x, brand, domain)]
+    pasf = [x for x in pasf if names_client(x, brand, domain)]
     neg_related = [x for x in related
                    if any(m in x.lower() for m in NEG_MODIFIERS)]
     neg_pasf = [x for x in pasf if any(m in x.lower() for m in NEG_MODIFIERS)]
@@ -226,6 +263,7 @@ def scan_serp(brand, domain=""):
             "ai_overview": ai_text, "ai_negative": ai_negative,
             "related": related, "negative_related": neg_related,
             "pasf": pasf, "negative_pasf": neg_pasf,
+            "off_brand_phrases": off_brand,
             "owned_in_top10": owned_top10}
 
 

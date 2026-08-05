@@ -966,6 +966,15 @@ function renderFacsimiles(ac){
     });
     h += '</div></div>';
   }
+  // Filtering is never silent: an operator who expects a phrase to be here
+  // needs to know it was removed on purpose, and why.
+  const offb = serp.off_brand_phrases || [];
+  if(offb.length){
+    h += '<div class="help" style="margin:6px 0 0">\u26a0 '+offb.length+' phrase'+(offb.length!==1?'s':'')
+       + ' excluded \u2014 they name a different company, so they are neither shown to the client nor counted as negative signals: '
+       + offb.map(x=>'\u201c'+x+'\u201d').join(' \u00b7 ')
+       + '. Google\u2019s related searches are topical, not brand-scoped, so competitors and manufacturers routinely appear.</div>';
+  }
   return h;
 }
 
