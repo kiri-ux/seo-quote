@@ -1187,6 +1187,32 @@ function renderReco(){
   const ovIds = ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'];
   if(ovIds.some(id=>+($(id)&&$(id).value||0))) $('ovPanel').open = true;
 }
+// Both facts, always stated. Only the failing half used to be shown — a row
+// with no badge left you inferring that the name matched, and there was never
+// any signal about the address at all.
+function locBadge(text, kind, tip){
+  const c = kind==='ok'   ? 'background:var(--ok-bg);color:var(--ok)'
+          : kind==='warn' ? 'background:var(--warn-bg);color:var(--warn)'
+          :                 'background:#EEF1F4;color:var(--muted)';
+  return ' <span title="'+(tip||'')+'" style="'+c+';font-size:10.5px;padding:1px 7px;'
+       + 'border-radius:9px;vertical-align:1px;white-space:nowrap">'+text+'</span>';
+}
+function locTags(nameOk, regionOk, ref){
+  let out = nameOk
+    ? locBadge('name matches', 'ok', 'Listing title matches the client name')
+    : locBadge('name differs', 'warn', 'Listing title does not match the client name \u2014 not counted automatically');
+  // With no name-matched US listing there is no reference address to compare
+  // against, so claiming a match or a mismatch would both be guesses.
+  if(!ref){
+    out += locBadge('address unverified', 'muted', 'No name-matched US listing to compare against, so the region could not be checked');
+  }else if(regionOk){
+    out += locBadge('address matches', 'ok', 'Same state as the client\u2019s main listing ('+ref+')');
+  }else{
+    out += locBadge('address differs', 'warn', 'Different state or country from the client\u2019s main listing ('+ref+') \u2014 not counted automatically');
+  }
+  return out;
+}
+
 function renderLocs(d, live){
   let box = document.getElementById('locsBlock');
   if(!box){ box = document.createElement('div'); box.id = 'locsBlock'; $('scanOut').appendChild(box); }
@@ -1242,8 +1268,7 @@ function renderLocs(d, live){
   h += '<table class="stbl"><tr><th><input type="checkbox" id="lockAll" title="Select all"></th><th>Location</th><th style="text-align:right">Rating</th><th style="text-align:right">Reviews</th></tr>';
   scanLocations.slice(0,60).forEach((l,i)=>{
     h += '<tr><td><input type="checkbox" class="locck" data-i="'+i+'" '+(willCheck(l,i)?'checked':'')+'></td>'
-       + '<td>'+l.title+(matched[i]?'':' <span style="background:var(--warn-bg);color:var(--warn);font-size:10.5px;padding:1px 7px;border-radius:9px;vertical-align:1px">name differs</span>')
-       + ((matched[i] && !inRegion[i])?' <span style="background:var(--warn-bg);color:var(--warn);font-size:10.5px;padding:1px 7px;border-radius:9px;vertical-align:1px">different region\u2009\u2014\u2009not counted</span>':'')
+       + '<td>'+l.title+locTags(matched[i], inRegion[i], _ref)
        + '<div class="help" style="margin:0">'+(l.address||'')+'</div></td>'
        + '<td class="n">'+(l.rating? l.rating+'★':'—')+'</td><td class="n">'+l.reviews.toLocaleString()+'</td></tr>';
   });
