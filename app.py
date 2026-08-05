@@ -581,20 +581,43 @@ def _remaining(deadline, minimum=5):
     return left if left >= minimum else None
 
 
-def dfs_post(path, payload, timeout=None, method="POST"):
+def dfs_post(path, payload, timeout=None, method="POST", retries=1):
+    """One DataForSEO call, retried once on a TRANSIENT failure.
+
+    There was no retry at all, so a single read timeout was fatal to whatever
+    depended on it. On a Ski Barn quote the volume lookup timed out once and
+    the whole volume component of the price silently became $0 (2026-08-04).
+
+    Only network-level failures and 5xx are retried — a 4xx is a real answer
+    about the request and repeating it just wastes the budget. Two attempts at
+    the 25s default fit inside the 90s per-route budget.
+    """
     if timeout is None:
         timeout = DFS_TIMEOUT
     login = os.environ.get("DFS_LOGIN", "")
     pw    = os.environ.get("DFS_PASSWORD", "")
     token = base64.b64encode(f"{login}:{pw}".encode()).decode()
     hdrs = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
-    if method == "GET":
-        resp = requests.get(BASE + path, headers=hdrs, timeout=timeout)
-    else:
-        resp = requests.post(BASE + path, headers=hdrs,
-                             data=json.dumps(payload), timeout=timeout)
-    resp.raise_for_status()
-    return resp.json()
+    last = None
+    for attempt in range(int(retries) + 1):
+        try:
+            if method == "GET":
+                resp = requests.get(BASE + path, headers=hdrs, timeout=timeout)
+            else:
+                resp = requests.post(BASE + path, headers=hdrs,
+                                     data=json.dumps(payload), timeout=timeout)
+            if resp.status_code >= 500 and attempt < retries:
+                last = requests.HTTPError(f"HTTP {resp.status_code}")
+                time.sleep(1.0 + attempt)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = e
+            if attempt >= retries:
+                break
+            time.sleep(1.0 + attempt)
+    raise last
 
 def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
                      site_pages_found=None, metro_groups=None, city_volumes=None):
@@ -3028,6 +3051,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         vols, per_city, vol_err = fetch_local_volume(
             svc_names, [] if national_demand else cities, state,
             national=national_demand)
+        # LAST RESORT for a national quote: Labs carries per-term volume and is
+        # a different service, so a Google Ads outage doesn't take it down too.
+        # Restricted to national_demand deliberately — Labs answers at country
+        # level, which for a national quote is the SAME figure, but for a local
+        # one it would substitute national demand for local and inflate the
+        # price. A local quote keeps the honest error instead.
+        volume_source = "google_ads"
+        if vol_err and national_demand and svc_names:
+            _lv = fetch_exact_volume(svc_names, [], "", national=True)
+            if _lv and any(_lv.values()):
+                vols = _lv
+                volume_source = "labs"
+                vol_err = None
         # Collapse cities that resolved to the SAME Google Ads location. This
         # is the exact answer — DataForSEO reports the location it used — and
         # it replaces the volume-vector inference, which needed the geo-modified
@@ -3115,6 +3151,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "volume_location": "United States" if national_demand else loc_string(markets, state),
+            "volume_source": volume_source,
             "national_demand": bool(national_demand),
             "national_demand_reason": national_demand_reason,
             "ecommerce_detected": bool(ecom_found),
@@ -4321,6 +4358,7 @@ def api_refine():
         "total_volume": s1.get("total_volume", None),
         "volume_error": s1.get("volume_error"),
         "volume_location": s1.get("volume_location"),
+        "volume_source": s1.get("volume_source") or "google_ads",
         "state_missing": s1.get("state_missing", False),
         "grid_cities": s1.get("grid_cities", []),
         # stage1b_refine can UPGRADE this after reading the site (a storefront
