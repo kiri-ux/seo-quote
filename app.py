@@ -3781,6 +3781,29 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     m = cal_to_hard / (1.0 - mg)                           # basis -> retail
     to_true_hard = 1.0 - mg                                # retail -> true cost
 
+    # PARTNER HARD COST IS THE CANONICAL, ROUNDED FIGURE (2026-08-05). The
+    # ladder is now built cost-first: calibration basis -> true partner cost,
+    # rounded to a clean $50 -> retail = cost / (1 - margin), rounded UP to $50.
+    #
+    # Cost rounds to the NEAREST $50, not up. Rounding both numbers up compounds
+    # (cost ceils, then retail ceils again) and drifted retail +$0-100 above the
+    # calibrated prices, mean +$37. Nearest-$50 on the cost cancels most of that:
+    # retail is unchanged on 146 of 240 anchor values, mean drift +$0.40, worst
+    # case one $50 step either way, and all three live anchors land exactly on
+    # today's prices (2050 -> $2,800, 2100 -> $2,850, 2350 -> $3,200).
+    #
+    # Consequence to accept: with both figures on $50 boundaries the realised
+    # margin lands 35.1-35.9% rather than exactly 35%. Two clean numbers and an
+    # exact ratio cannot all three hold at once.
+    def r50n(x):
+        return int(round(round(x, 6) / 50.0) * 50)
+
+    def cost_of(basis):
+        return r50n(basis * cal_to_hard)
+
+    def retail_of(cost):
+        return r50(cost / (1.0 - mg))
+
     # Resolve the industry rule FIRST — national demand has to be known before
     # the anchor is picked, because it routes to the national anchor.
     rule_key, rule = None, None
@@ -3895,18 +3918,24 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
 
-    client_base = r50(base * m)
+    # Cost first, then retail from cost.
+    hard_cost = {k: cost_of(v) for k, v in hard.items()}
+    client_base = retail_of(hard_cost["base"])
     floor = CFG.get("client_floor", 0)
     floored = False
     if floor and client_base < floor:
         client_base = floor
         floored = True
-        cstep = r50(step * m) if CFG.get("tier_step_flat") else r50(client_base * CFG["step_ratio"])
+        cstep = (retail_of(cost_of(step)) if CFG.get("tier_step_flat")
+                 else r50(client_base * CFG["step_ratio"]))
         client = {"base": client_base,
                   "intermediate": client_base + cstep,
                   "advanced": client_base + 2*cstep}
+        # Floored: retail was overridden, so cost has to be restated from it or
+        # the two would describe different quotes.
+        hard_cost = {k: r50n(v * to_true_hard) for k, v in client.items()}
     else:
-        client = {k: r50(v * m) for k, v in hard.items()}
+        client = {k: retail_of(v) for k, v in hard_cost.items()}
 
     # ---- minimum term (applies to the whole quote, not just GEO) ----
     zv_thresh = CFG.get("zero_visibility_pct_not_ranking", 90)
@@ -3998,12 +4027,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         client_addon = {k: r50(hard_addon[k] * m) for k in hard}
     # True partner cost is a share of RETAIL, so derive it from the client
     # tiers rather than from the calibration basis.
-    hard_true = {k: int(round(v * to_true_hard)) for k, v in client.items()}
+    hard_true = dict(hard_cost)          # already clean $50 figures
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "hard_true_tiers": hard_true,
             "margin_pct_of_gross": round(mg * 100, 2),
-            "agency_profit_tiers": {k: int(round(client[k] - hard_true[k]))
-                                    for k in client},
+            "agency_profit_tiers": {k: client[k] - hard_true[k] for k in client},
+            "margin_realised_pct": {k: (round((client[k] - hard_true[k]) / client[k] * 100, 1)
+                                        if client[k] else 0.0) for k in client},
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
             "volume_captured": vol_captured,
             "volume_opportunity": round(vol_opportunity, 3),

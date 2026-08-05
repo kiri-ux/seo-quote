@@ -348,7 +348,7 @@
 
 
     <label title="Retail price = partner hard cost ÷ (1 − margin) — the same convention as the Reputation Mgmt tool and the SSG/Vici grid.">Retail margin % <span style="font-weight:400;color:var(--muted)">(of gross — agency’s share of retail)</span></label>
-    <div class="help">Was labelled “markup on hard cost” and computed as ×1.35, which is a 25.9% margin, not 35%. Now ÷(1−margin), matching Reputation Mgmt. At 35% every retail price is unchanged — the calibration was fitted to quoted retail — but partner cost and agency profit are now correct.</div>
+    <div class="help">Retail is built <b>from partner hard cost</b>: cost is rounded to a clean $50, then retail = cost ÷ (1 − margin), rounded up to $50. Was a markup (×1.35), which is only a 25.9% margin. Because both figures sit on $50 boundaries the realised margin lands within about a point of the target — two round numbers and an exact ratio can’t all hold at once.</div>
     <div class="help">Internal pricing starts at partner hard cost; the client price is partner hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
     <input type="text" id="markup" placeholder="35" value="35">
 
@@ -666,6 +666,14 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
 // ---- stepped live flow ----
 const $=id=>document.getElementById(id);
 function money(n){return '$'+n.toLocaleString();}
+// Costs are measured, not quoted: show them to the cent. money() drops a
+// trailing .50 via toLocaleString's default 0-3 digits being inconsistent
+// across values, so internal figures use this instead.
+function moneyExact(n){
+  const v = Number(n)||0;
+  return '$'+v.toLocaleString(undefined, {minimumFractionDigits: (v % 1 ? 2 : 0),
+                                          maximumFractionDigits: 2});
+}
 function renderErr(msg){$('out').innerHTML=`<div class="err">${msg}</div>`;}
 
 const ST = {inputs:null, kw:null, adder:null, score:null,
@@ -1479,7 +1487,9 @@ function renderStep4(p){
   // Core SEO + AI Search is ONE PRODUCT: the tier cards show the combined
   // price (that IS the product's price); the SEO vs AI Search split is internal.
   const ai=p.ai_search;
-  const h=ai?ai.hard_total:p.hard_tiers, c=ai?ai.client_total:p.client_tiers;
+  // Was p.hard_tiers — the r50'd CALIBRATION BASIS, not a real cost. The true
+  // partner cost is derived from retail and is exact.
+  const h=ai?ai.hard_total:(p.hard_true_tiers||p.hard_tiers), c=ai?ai.client_total:p.client_tiers;
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
@@ -1489,9 +1499,9 @@ function renderStep4(p){
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px">Demo only — internal costs${ai?', SEO vs AI Search split and calibration':' and calibration'} &#9656; click to expand</summary>
       <div style="margin-top:9px;font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px">Partner hard cost${ai?' — Core SEO + AI Search combined':''}</div>
     <div class="tiers">
-      <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${money(h.base)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.base)}</b><br>AI Search <b>${money(ai.hard_add.base)}</b></div>`:''}</div>
-      <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${money(h.intermediate)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.intermediate)}</b><br>AI Search <b>${money(ai.hard_add.intermediate)}</b></div>`:''}</div>
-      <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${money(h.advanced)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.advanced)}</b><br>AI Search <b>${money(ai.hard_add.advanced)}</b></div>`:''}</div>
+      <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${moneyExact(h.base)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.base)}</b><br>AI Search <b>${money(ai.hard_add.base)}</b></div>`:''}</div>
+      <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${moneyExact(h.intermediate)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.intermediate)}</b><br>AI Search <b>${money(ai.hard_add.intermediate)}</b></div>`:''}</div>
+      <div class="tier"><div class="name">Advanced</div><div class="price" style="color:var(--muted)">${moneyExact(h.advanced)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.advanced)}</b><br>AI Search <b>${money(ai.hard_add.advanced)}</b></div>`:''}</div>
     </div>
     </div>
 

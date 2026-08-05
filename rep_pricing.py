@@ -297,8 +297,15 @@ def _mrows(hard, unit_suffix="", total=None, tbd=False):
     may be True (renders the red 'TBD \u2014 confirm' flag) or a string
     (renders that flag text instead, e.g. 'quoted manually')."""
     ip = INTERNAL_COST_PCT["pct"]
+    def _fmt(x):
+        # To the cent. These are COSTS — the $50 round-up is a pricing
+        # convention for what a client pays, and the rate card itself carries
+        # halves ($552.50), so rounding here reported money that was never
+        # spent (2026-08-05).
+        return f"{x:,.2f}" if round(x % 1, 2) else f"{x:,.0f}"
+
     def v(x):
-        return f"${x:,.0f}{unit_suffix}" + (f" \u00b7 ${x/hard*total:,.0f} total"
+        return f"${_fmt(x)}{unit_suffix}" + (f" \u00b7 ${_fmt(x/hard*total)} total"
                                             if total is not None else "")
     if isinstance(tbd, str):
         # manually quoted — no % basis and no computed figure to imply one
