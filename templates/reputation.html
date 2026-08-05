@@ -794,10 +794,66 @@ function renderTerms(d){
   tb.innerHTML = h;
 }
 
+// Mirror of names_client() in rep_scan.py. The server filters on a fresh pull,
+// but every already-saved quote still carries the unfiltered phrases, so a
+// reopened quote would show a competitor's "complaints" forever. Filtering at
+// render time fixes them all for free.
+function namesClient(phrase, brand, domain){
+  const sq = t => String(t||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const keys = [];
+  const b = sq(brand); if(b.length > 3) keys.push(b);
+  const host = String(domain||'').split('//').pop().split('/')[0].replace(/^www\./,'');
+  const d = sq(host.indexOf('.')>=0 ? host.slice(0, host.lastIndexOf('.')) : host);
+  if(d.length > 3 && keys.indexOf(d) < 0) keys.push(d);
+  if(!keys.length) return true;
+  const p = sq(phrase);
+  return keys.some(k => p.indexOf(k) >= 0);
+}
+function offBrand(list, brand, domain){
+  return (list||[]).filter(x => !namesClient(x, brand, domain));
+}
+function onBrand(list, brand, domain){
+  return (list||[]).filter(x => namesClient(x, brand, domain));
+}
+// Rebuilt from scratch rather than added to: a Set only grows, so a re-pull left
+// the phrase that prompted the re-pull still sitting in the count.
+function rebuildNegPhrases(){
+  const brand = ($('brand')||{}).value || '';
+  const domain = ($('domain')||{}).value || '';
+  const sd = window._scanData || {};
+  const out = new Set();
+  const serp = sd.serp || {};
+  onBrand([...(serp.negative_related||[]), ...(serp.negative_pasf||[])], brand, domain)
+    .forEach(x => out.add(String(x).toLowerCase()));
+  Object.values(sd.autocomplete || {}).forEach(a=>{
+    ((a && a.negative) || []).forEach(x => out.add(String(x).toLowerCase()));
+  });
+  window._negPhrases = out;
+}
+
+async function retrySerp(){
+  const brand = ($('brand')||{}).value.trim();
+  const domain = ($('domain')||{}).value.trim();
+  if(!brand) return;
+  const sb = document.getElementById('serpBlock');
+  if(sb) sb.innerHTML = '<div class="help">Re-pulling results\u2026 (one call; nothing else re-runs)</div>';
+  try{
+    const resp = await fetch('/api/rep_scan_serp', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({brand, domain})});
+    const r = await resp.json();
+    if(!r.error){ window._scanData = window._scanData || {}; window._scanData.serp = r; }
+    renderSerp(r);
+    rebuildNegPhrases();
+    try{ bumpNegPhrases(); }catch(e){}
+    try{ renderBrandReco(); }catch(e){}
+  }catch(e){ if(sb) sb.innerHTML = '<div class="err">Re-pull failed: '+e+'</div>'; }
+}
+
 function renderSerp(d){
   const sb = document.getElementById('serpBlock') || $('scanOut');
   if(d.error){ sb.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
-  let h = '<div class="scanhdr">Top Google Results · "'+d.query+'"</div>';
+  let h = '<div class="scanhdr">Top Google Results · "'+d.query+'"'
+        + ' <button class="btn2 serpRetry" type="button" style="float:right;font-size:11.5px;padding:3px 9px;font-weight:600">\u21bb Re-pull results</button></div>';
   h += '<p class="help" style="margin:2px 0 6px">The top 10 results (plus discussion threads ranking with them) when someone searches "'+d.query+'" — <b>'+d.owned_in_top10+' of 10</b> are client-controlled, and each gets the action shown.</p>';
   h += '<details style="margin:0 0 8px"><summary class="help" style="display:inline;cursor:pointer;margin:0">How results are classified ▸</summary>'
      + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 2px">'
@@ -846,11 +902,13 @@ function renderSerp(d){
   // Negative related/PASF phrases still feed the bundle counter + reco —
   // the visual exhibit on the right is where they're shown.
   if(d.negative_related && d.negative_related.length){
-    d.negative_related.forEach(x=>window._negPhrases.add(x.toLowerCase()));
+    onBrand(d.negative_related, ($('brand')||{}).value||'', ($('domain')||{}).value||'')
+      .forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
   if(d.negative_pasf && d.negative_pasf.length){
-    d.negative_pasf.forEach(x=>window._negPhrases.add(x.toLowerCase()));
+    onBrand(d.negative_pasf, ($('brand')||{}).value||'', ($('domain')||{}).value||'')
+      .forEach(x=>window._negPhrases.add(x.toLowerCase()));
     bumpNegPhrases();
   }
   sb.innerHTML = h;
@@ -866,11 +924,13 @@ function renderSerp(d){
 // property-assigned handlers, so the shot button binds at the container.
 $('scanOut').addEventListener('click', e => {
   if (e.target && e.target.classList && e.target.classList.contains('acRetry')){ retryAutocomplete(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('serpRetry')){ retrySerp(); return; }
   if (e.target && e.target.id === 'shotBtn')
     captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
 });
 $('shotCard').addEventListener('click', e => {
   if (e.target && e.target.classList && e.target.classList.contains('acRetry')){ retryAutocomplete(); return; }
+  if (e.target && e.target.classList && e.target.classList.contains('serpRetry')){ retrySerp(); return; }
   if (e.target && e.target.id === 'shotBtn')
     captureShot(((window._scanData||{}).serp||{}).query || ($('brand').value.trim()+' reviews').toLowerCase());
 });
@@ -957,9 +1017,13 @@ function renderFacsimiles(ac){
       h += '</div>';
     }
   });
-  const tiles = (serp.pasf && serp.pasf.length) ? serp.pasf : (serp.related||[]).slice(0,8);
+  // Filter here as well as server-side, so a quote saved before the filter
+  // existed renders clean instead of carrying the old phrases forever.
+  const _b = ($('brand')||{}).value || '', _d = ($('domain')||{}).value || '';
+  const _pasf = onBrand(serp.pasf, _b, _d), _rel = onBrand(serp.related, _b, _d);
+  const tiles = (_pasf && _pasf.length) ? _pasf : (_rel||[]).slice(0,8);
   if(tiles.length){
-    const negs = new Set([...(serp.negative_pasf||[]), ...(serp.negative_related||[])].map(x=>x.toLowerCase()));
+    const negs = new Set(onBrand([...(serp.negative_pasf||[]), ...(serp.negative_related||[])], _b, _d).map(x=>x.toLowerCase()));
     h += '<div class="gmock"><div class="gtitle">People also search for (rendered from live data)</div><div class="pasfgrid">';
     tiles.forEach(x=>{
       h += '<div class="pasftile'+(negs.has(x.toLowerCase())?' negx':'')+'"><span>'+boldMod(x, brand)+'</span><span class="mag">🔍</span></div>';
@@ -968,7 +1032,9 @@ function renderFacsimiles(ac){
   }
   // Filtering is never silent: an operator who expects a phrase to be here
   // needs to know it was removed on purpose, and why.
-  const offb = serp.off_brand_phrases || [];
+  const offb = (serp.off_brand_phrases && serp.off_brand_phrases.length)
+    ? serp.off_brand_phrases
+    : offBrand([...(serp.related||[]), ...(serp.pasf||[])], _b, _d);
   if(offb.length){
     h += '<div class="help" style="margin:6px 0 0">\u26a0 '+offb.length+' phrase'+(offb.length!==1?'s':'')
        + ' excluded \u2014 they name a different company, so they are neither shown to the client nor counted as negative signals: '
