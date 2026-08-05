@@ -499,6 +499,16 @@ $('ovClear').onclick = ()=>{
 
 function money(x){ return '$'+x.toLocaleString(); }
 
+// A phase-2 row headed "Months 4+" that reads "Ongoing" in its own timeline
+// column states the same fact two different ways and looks like a
+// contradiction. Anchor it to the phase it sits under. Only inside a bundle:
+// a Proactive-only quote has no phases, and there "Ongoing" is exactly right.
+function phaseTimeline(l, isBundle){
+  const t = String(l.timeline || '');
+  if(isBundle && l.phase === 2 && /^ongoing$/i.test(t.trim())) return 'Ongoing \u2014 months 4+';
+  return t;
+}
+
 function render(d, payload){
   let h = '';
   (d.warnings||[]).forEach(w=> h += '<div class="warn">'+w+'</div>');
@@ -566,7 +576,7 @@ function render(d, payload){
       : '';
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
-       + '</td><td>'+l.timeline+'</td><td class="amt">'
+       + '</td><td>'+phaseTimeline(l, isBundle)+'</td><td class="amt">'
        + (l.unit_label
           ? '<div style="font-weight:700;color:var(--atlas)">'+l.unit_label+'</div><div class="help" style="margin:3px 0 0;text-align:right">up to '+money(l.total)+'<br>'+l.qty.toLocaleString()+' flagged</div>'
           : (l.kind==='per_asset'?'up to ':'')+money(l.total)+per)
@@ -1165,6 +1175,7 @@ function renderLocs(d, live){
   h += '</table></details>';
   const counted = !!(window._negDone && window._negDone.length);
   h += '<div style="margin-top:10px"><button class="btn2" id="countNegBtn" type="button">'+(counted?'Re-run count for checked locations':'Count negatives for checked locations')+'</button>'
+     + '<button class="btn2" id="addNegBtn" type="button" style="margin-left:8px;display:'+(counted?'':'none')+'">+ Count newly checked only</button>'
      + '<div class="help" id="negProg" style="margin-top:6px"></div></div>'
      + '<div id="negOut"></div>';
   box.innerHTML = h;
@@ -1172,6 +1183,7 @@ function renderLocs(d, live){
     window._cntDelegated = true;
     $('scanOut').addEventListener('click', e=>{
       if(e.target && e.target.id === 'countNegBtn') submitNegCount();
+      if(e.target && e.target.id === 'addNegBtn') submitNegCount(null, {incremental:true});
     });
   }
   const uln = document.getElementById('useListName');
@@ -1202,6 +1214,14 @@ function renderLocs(d, live){
 // Illinois, auto-selected itself because it sat under 4.0*, and put three of
 // someone else's one-star reviews straight into the removal quote
 // (2026-08-04). Region has to agree before anything is counted automatically.
+// Google returns one listing per branch, all titled identically — a chain like
+// Ski Barn produces three rows reading "Ski Barn" with nothing to tell them
+// apart. The address is already on scanLocations; join on place_id.
+function addrForPlace(pid){
+  if(!pid) return '';
+  const hit = (scanLocations||[]).find(l=>l.place_id===pid);
+  return hit ? (hit.address||'') : '';
+}
 function usRegion(addr){
   // "200 E Chicago Ave, Westmont, IL 60559" -> IL. Foreign addresses have no
   // ", ST 12345" tail, which is exactly the signal we want.
@@ -1252,25 +1272,44 @@ function autoCountLowest(){
   }
 }
 
-async function submitNegCount(autoPids){
+async function submitNegCount(autoPids, opts){
+  // incremental = count only the locations not already counted, and KEEP the
+  // rows we have. Each pull is a queued task plus polling, so re-running twenty
+  // finished branches to add a twenty-first is pure waste (2026-08-05).
+  const incremental = !!(opts && opts.incremental);
   const gen = ++negGen;             // invalidates any poller from a prior run
-  const pids = (autoPids && autoPids.length) ? autoPids
+  const checked = (autoPids && autoPids.length) ? autoPids
     : [...document.querySelectorAll('.locck:checked')].map(c=>scanLocations[+c.dataset.i].place_id).filter(Boolean);
-  if(!pids.length){ $('negProg').textContent = 'Check at least one location.'; return; }
+  const prior = (window._negDone || []).filter(Boolean);
+  const already = new Set(prior.map(d=>d.place_id).filter(Boolean));
+  const pids = incremental ? checked.filter(p=>!already.has(p)) : checked;
+  if(!pids.length){
+    $('negProg').textContent = incremental
+      ? (checked.length ? 'Every checked location has already been counted — tick a new one first.'
+                        : 'Check a location to add.')
+      : 'Check at least one location.';
+    return;
+  }
   $('countNegBtn').disabled = true;
-  // Wipe the previous run's table NOW. renderNegCounts early-returns while the
-  // new pulls are still empty, so the old rows stayed on screen — and a
-  // location removed from the selection appeared to survive the re-run.
-  window._negDone = null;
-  const _no = document.getElementById('negOut'); if(_no) _no.innerHTML = '';
-  $('negProg').textContent = 'Queuing '+pids.length+' pulls…';
+  const _ab = document.getElementById('addNegBtn'); if(_ab) _ab.disabled = true;
+  // A FULL run wipes the previous table now: renderNegCounts early-returns
+  // while the new pulls are still empty, so old rows stayed on screen and a
+  // de-selected location appeared to survive. An incremental run must NOT.
+  const seed = {};
+  if(incremental){
+    prior.forEach(d=>{ seed[d.id || d.place_id] = d; });
+  }else{
+    window._negDone = null;
+    const _no = document.getElementById('negOut'); if(_no) _no.innerHTML = '';
+  }
+  $('negProg').textContent = (incremental?'Adding ':'Queuing ')+pids.length+' pull'+(pids.length!==1?'s':'')+'…';
   try{
     const r = await (await fetch('/api/rep_reviews_submit', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({place_ids: pids})})).json();
     if(r.error){ $('negProg').textContent = r.error; $('countNegBtn').disabled=false; return; }
     reviewTasks = r.tasks.filter(t=>t.ok).map(t=>t.id);
     $('negProg').textContent = 'Queued '+reviewTasks.length+' — polling…';
-    pollNegCount(0, {}, gen);
+    pollNegCount(0, seed, gen);
   }catch(e){ $('negProg').textContent = 'Submit failed: '+e; $('countNegBtn').disabled=false; }
 }
 
@@ -1290,6 +1329,8 @@ async function pollNegCount(attempt, doneMap, gen){
     }else{
       $('negProg').textContent = 'Complete.';
       $('countNegBtn').disabled = false;
+      const _ab2 = document.getElementById('addNegBtn');
+      if(_ab2){ _ab2.disabled = false; _ab2.style.display = ''; }
     }
   }catch(e){ setTimeout(()=>pollNegCount(attempt+1, doneMap, gen), 5000); }
 }
@@ -1306,7 +1347,11 @@ function applyThreshold(done, th){
   }
   autoSave();
   window._scanProv = {
-    locations: done.map(d=>d.title||d.place_id),
+    // Was three identical "Ski Barn" strings in the saved quote record too.
+    locations: done.map(d=>{
+      const a=addrForPlace(d.place_id);
+      return (d.title||d.place_id) + (a?' \u2014 '+a:'');
+    }),
     total_locations: scanLocations.length,
     truncated: done.some(d=>d.truncated),
     flagged: tot,
@@ -1327,7 +1372,9 @@ function renderNegCounts(done){
     : '<div class="warn" style="background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)">No reviews flagged at the selected threshold · '+tot3.toLocaleString()+' at 3★.</div>');
   h += '<table class="stbl"><tr><th>Location</th><th style="text-align:right">Profile</th><th style="text-align:right">1★</th><th style="text-align:right">2★</th><th style="text-align:right">3★</th></tr>';
   done.forEach(d=>{
-    h += '<tr><td>'+(d.title||d.place_id)+(d.truncated?' <span class="third">more beyond depth</span>':'')+'</td>'
+    const _addr = addrForPlace(d.place_id);
+    h += '<tr><td>'+(d.title||d.place_id)+(d.truncated?' <span class="third">more beyond depth</span>':'')
+       + (_addr?'<div class="help" style="margin:0">'+_addr+'</div>':'')+'</td>'
        + '<td class="n">'+(d.profile_rating||'—')+'★ / '+(d.profile_reviews||0).toLocaleString()+'</td>'
        + '<td class="n">'+(d.neg_1||0)+'</td><td class="n">'+(d.neg_2||0)+'</td><td class="n">'+d.weak_3+'</td></tr>';
   });
