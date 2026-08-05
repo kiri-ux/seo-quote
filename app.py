@@ -234,7 +234,10 @@ CFG = {
     "cpc_adder_cap": 1500,                     # max adder (hard cost) so a freak CPC can't explode price
     "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
-    "default_markup_pct": 35,                 # client = hard × 1.35 ≈ original client price
+    # Now a MARGIN OF GROSS (agency share of retail), matching rep_pricing and
+    # the SSG/Vici grid: retail = hard / (1 - margin). Was a markup-on-cost
+    # (x1.35 = a 25.9% margin). Retail output at 35% is unchanged.
+    "default_markup_pct": 35,
     # top-N deepened 20 -> 100 (2026-07-20, Media Venue): a client with page-3-5
     # footholds (ranks 25/27/33/51 in Brendan's own table) was scoring "80% not
     # ranking" and drawing the +14% uplift, +18% over his base. "Not in top 20"
@@ -3759,7 +3762,24 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  national_demand=False, geo_override=None, addon_override=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
-    m = 1.0 + (markup_pct / 100.0)
+    # RETAIL IS CANONICAL (2026-08-05). The anchors and every hard-dollar extra
+    # in CFG were back-solved from Brendan's QUOTED tier prices as
+    # client / 1.35, so they are a calibration basis, not a real cost. The
+    # agency split is 35% OF GROSS (see the SSG/Vici grid: agency profit =
+    # retail x 0.35, Vici bills retail x 0.65), which is what the reputation
+    # tool already does. Reading those anchors as true cost overstated partner
+    # cost by 14% and implied a 25.9% margin instead of 35%.
+    #
+    # Fixed WITHOUT touching a single calibrated constant: convert the
+    # calibration basis to true cost once, then divide by (1 - margin). At the
+    # calibrated 35% this is algebraically identical to the old x1.35, so every
+    # client price is unchanged; away from 35% it now moves the way a
+    # margin-of-gross should. CAL_* are frozen history, not business inputs.
+    CAL_MARKUP, CAL_MARGIN = 1.35, 0.35
+    cal_to_hard = CAL_MARKUP * (1.0 - CAL_MARGIN)          # 0.8775
+    mg = min(0.95, max(0.0, markup_pct / 100.0))           # margin OF GROSS
+    m = cal_to_hard / (1.0 - mg)                           # basis -> retail
+    to_true_hard = 1.0 - mg                                # retail -> true cost
 
     # Resolve the industry rule FIRST — national demand has to be known before
     # the anchor is picked, because it routes to the national anchor.
@@ -3976,7 +3996,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         _ar2 = {k: (hard[k] / hard["base"] if hard["base"] else 1.0) for k in hard}
         hard_addon   = {k: r50(_ao * _ar2[k]) for k in hard}
         client_addon = {k: r50(hard_addon[k] * m) for k in hard}
+    # True partner cost is a share of RETAIL, so derive it from the client
+    # tiers rather than from the calibration basis.
+    hard_true = {k: int(round(v * to_true_hard)) for k, v in client.items()}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "hard_true_tiers": hard_true,
+            "margin_pct_of_gross": round(mg * 100, 2),
+            "agency_profit_tiers": {k: int(round(client[k] - hard_true[k]))
+                                    for k in client},
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
             "volume_captured": vol_captured,
             "volume_opportunity": round(vol_opportunity, 3),

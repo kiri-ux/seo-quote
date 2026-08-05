@@ -347,7 +347,8 @@
     </div>
 
 
-    <label>Client markup <span style="font-weight:400;color:var(--muted)">(% on top of partner hard cost)</span></label>
+    <label title="Retail price = partner hard cost ÷ (1 − margin) — the same convention as the Reputation Mgmt tool and the SSG/Vici grid.">Retail margin % <span style="font-weight:400;color:var(--muted)">(of gross — agency’s share of retail)</span></label>
+    <div class="help">Was labelled “markup on hard cost” and computed as ×1.35, which is a 25.9% margin, not 35%. Now ÷(1−margin), matching Reputation Mgmt. At 35% every retail price is unchanged — the calibration was fitted to quoted retail — but partner cost and agency profit are now correct.</div>
     <div class="help">Internal pricing starts at partner hard cost; the client price is partner hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
     <input type="text" id="markup" placeholder="35" value="35">
 
