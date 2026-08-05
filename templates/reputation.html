@@ -1013,26 +1013,35 @@ function renderBrandReco(){
   const removable = (serp.organic||[]).filter(o=>o.tactic==='site removal').length
                   + ((serp.forums||[]).filter(f=>f.tactic==='site removal').length);
   const aiNeg = (serp.ai_negative||[]).length;
-  const reasons = [];
-  if(negVol) reasons.push(negVol.toLocaleString()+'/mo negative-term searches');
-  if(negPhr) reasons.push(negPhr+' negative suggest/related phrase'+(negPhr!==1?'s':''));
-  if(lowRated) reasons.push(lowRated+' low-rated result'+(lowRated!==1?'s':'')+' in the top 10');
-  if(removable) reasons.push(removable+' removable page'+(removable!==1?'s':''));
-  if(aiNeg) reasons.push('negative AI Overview');
   // Reviews are counted by a separate manual step, so "clean" is only a real
   // finding once that step has run. Until then the scan cannot see the review
   // profile at all, and calling a brand healthy on unmeasured reviews is the
   // one way this card can be confidently wrong.
   const reviewsCounted = !!(window._negDone && window._negDone.length);
   const flaggedReviews = (window._scanProv||{}).flagged || 0;
+  const reasons = [];
+  if(negVol) reasons.push(negVol.toLocaleString()+'/mo negative-term searches');
+  if(negPhr) reasons.push(negPhr+' negative suggest/related phrase'+(negPhr!==1?'s':''));
+  if(lowRated) reasons.push(lowRated+' low-rated result'+(lowRated!==1?'s':'')+' in the top 10');
+  if(removable) reasons.push(removable+' removable page'+(removable!==1?'s':''));
+  if(aiNeg) reasons.push('negative AI Overview');
+  // Flagged reviews are REACTIVE work by definition — the tool has already
+  // auto-filled them into the removal quote. Leaving them out of this list let
+  // the card recommend Proactive-only while the quote underneath it contained
+  // review removals, which is the tool disagreeing with itself (2026-08-04).
+  if(flaggedReviews) reasons.push(flaggedReviews+' review'+(flaggedReviews!==1?'s':'')+' flagged for removal');
   // Nothing wrong anywhere AND nothing wrong in the reviews = there is no
   // problem to sell against. Recommending a monthly shield here prices a
   // campaign the evidence does not support.
   const nothingNeeded = !reasons.length && reviewsCounted && flaggedReviews === 0;
   const rec = reasons.length ? 'bundle' : (nothingNeeded ? 'none' : 'proactive');
   const recLabel = rec==='bundle' ? 'Reactive + Proactive' : 'Proactive';
+  // Applies to every branch, not just the clean one: until the counts land the
+  // recommendation is based on the SERP alone and can still flip.
+  const pending = reviewsCounted ? ''
+    : ' <span style="color:var(--warn)">Provisional \u2014 Google review counts are still outstanding, and flagged reviews would add reactive work.</span>';
   const why = reasons.length
-    ? 'Negatives found \u2014 clean up first, then protect: ' + reasons.join(' \u00b7 ') + '.'
+    ? 'Negatives found \u2014 clean up first, then protect: ' + reasons.join(' \u00b7 ') + '.' + pending
     : (nothingNeeded
         ? 'No negative signals and no flagged reviews \u2014 nothing to clean up and nothing to defend against. Quote reputation work only if the client asks for it.'
         : 'No negative signals found \u2014 the position is healthy; protect it before something ranks.'
