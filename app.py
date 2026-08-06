@@ -3117,6 +3117,83 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             if v is not None:
                 r["volume"] = v
         service_volume = {s: vols.get(s.lower(), 0) for s in svc_names}
+
+        # TIERS RECONCILED AGAINST MEASURED DEMAND (2026-08-05).
+        # Tiers are assigned by the model on judgement, BEFORE any volume is
+        # known, and nothing reconciled them afterwards — rebalance_tiers only
+        # guarantees no column is empty. On Ski Barn that put "ski jeans" at
+        # 60,500/mo in Long Tail while "ski equipment rental" at 1,600/mo sat in
+        # Ultra Competitive. A proposal whose Long Tail column carries the
+        # biggest numbers reads as though the tool doesn't understand the market.
+        #
+        # Re-sorts by volume while PRESERVING the tier COUNTS the model chose,
+        # so the proposal keeps its shape and only the assignment changes. Terms
+        # with no volume data keep their original position rather than being
+        # dumped into Long Tail on missing data.
+        tier_moves = []
+        try:
+            _order = ["ultra", "competitive", "long_tail"]
+            _counts = {t: sum(1 for x in services if x.get("tier") == t)
+                       for t in _order}
+            _measured = [x for x in services
+                         if (service_volume.get(x["service"]) or 0) > 0]
+            if len(_measured) >= 3 and sum(_counts.values()) == len(services):
+                _ranked = sorted(_measured,
+                                 key=lambda x: -(service_volume.get(x["service"]) or 0))
+                # Walk the ranked list, filling ultra first, then competitive.
+                # Unmeasured terms keep whatever tier they already had, so the
+                # per-tier capacity has to account for them.
+                _unmeasured_in = {t: sum(1 for x in services
+                                         if x.get("tier") == t and x not in _measured)
+                                  for t in _order}
+                _cap = {t: max(0, _counts[t] - _unmeasured_in[t]) for t in _order}
+                _i = 0
+                for t in _order:
+                    for _ in range(_cap[t]):
+                        if _i >= len(_ranked):
+                            break
+                        _svc = _ranked[_i]
+                        if _svc.get("tier") != t:
+                            tier_moves.append({"service": _svc["service"],
+                                               "from": _svc.get("tier"), "to": t,
+                                               "volume": service_volume.get(_svc["service"], 0)})
+                            _svc["tier"] = t
+                        _i += 1
+                if tier_moves:
+                    g = build_grid(services, grid_cities, state, prepicked=True)
+                    full = g["ultra"] + g["competitive"] + g["long_tail"]
+                    for r in full:
+                        _v = service_volume.get(r["keyword"])
+                        if _v is None:
+                            _v = vols.get((r.get("keyword") or "").lower())
+                        if _v is not None:
+                            r["volume"] = _v
+        except Exception:
+            app.logger.exception("tier reconciliation failed")
+            tier_moves = []
+
+        # National demand on a client with PHYSICAL PREMISES is usually a
+        # mis-scope, not a product brand. The signals to catch it are already
+        # collected; nothing was checking them (Ski Barn: NJ stores, priced
+        # nationwide, so every term came back as national head demand).
+        scope_warning = ""
+        if national_demand and (gbp_count or site_locations):
+            _bits = []
+            if gbp_count:
+                _bits.append(f"{gbp_count} Google Business listing"
+                             f"{'' if gbp_count == 1 else 's'}")
+            if site_locations:
+                _bits.append(f"{len(site_locations)} location page"
+                             f"{'' if len(site_locations) == 1 else 's'} on the site")
+            scope_warning = (
+                "Priced on NATIONAL demand, but this client has "
+                + " and ".join(_bits)
+                + ". A retailer with premises usually wants local demand \u2014 the "
+                  "keywords, volumes and rankings here are all national, which "
+                  "prices a different campaign. Confirm this is a product brand "
+                  "selling everywhere; if it is a store, set Geo scope to the "
+                  "client's region and enter their markets.")
+
         return {
             "ultra": g["ultra"], "competitive": g["competitive"],
             "long_tail": g["long_tail"],
@@ -3145,6 +3222,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "site_locations": site_locations,
             "service_areas": service_areas,
             "gbp_locations": gbp_count,
+            "tier_moves": tier_moves,
+            "scope_warning": scope_warning,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
@@ -4421,6 +4500,8 @@ def api_refine():
         "city_locs": s1.get("city_locs") or {},
         "city_volumes": s1.get("city_volumes") or {},
         "site_locations": s1.get("site_locations") or [],
+        "tier_moves": s1.get("tier_moves") or [],
+        "scope_warning": s1.get("scope_warning") or "",
         "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
