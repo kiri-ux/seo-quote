@@ -263,6 +263,23 @@
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
+    <label>Campaign goal</label>
+    <div class="help">Arrives with the order in adtini — this selector is the demo stand-in. It shapes <b>keyword intent</b> (a ski shop chasing footfall wants “ski rental near me”; the same shop chasing ecommerce wants “buy ski jackets online”) and it cross-checks your geo scope: a goal that happens in a place, priced on national demand, is flagged. It does <b>not</b> move the price — there’s no calibration tying goals to dollars.</div>
+    <select id="goal">
+      <option value="">— not supplied —</option>
+      <option value="In-Store Sales">In-Store Sales</option>
+      <option value="B2B Sales">B2B Sales</option>
+      <option value="Information Requests">Information Requests</option>
+      <option value="Branding &amp; Awareness">Branding &amp; Awareness</option>
+      <option value="Mobile App Download">Mobile App Download</option>
+      <option value="Website Traffic">Website Traffic</option>
+      <option value="Leads/Form Fillouts">Leads/Form Fillouts</option>
+      <option value="Online Sales">Online Sales</option>
+      <option value="Phone Calls">Phone Calls</option>
+      <option value="Job Recruitment">Job Recruitment</option>
+      <option value="Event Attendance">Event Attendance</option>
+    </select>
+
     <label>Industry <span class="req">*</span></label>
     <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries the big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
     <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
@@ -704,6 +721,7 @@ function collectInputs(){
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
     ecommerce: false,   // legacy flag — superseded by the "Retail - General / E-commerce" RZ industry
     national_demand: !!($('natdemand')&&$('natdemand').checked),
+    goal: ($('goal')&&$('goal').value)||'',
     kw_locked: !!($('kwlock')&&$('kwlock').checked),
     industry: stores.industry.join(' | '),
     industries: stores.industry.slice(),
@@ -829,7 +847,7 @@ $('step1').addEventListener('click', async()=>{
         const ref=await postJSON('/api/refine',{phrase_geos:ST.inputs.phrase_geos||[],
           keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
           domain:inp.domain, business_desc:inp.business_desc,
-          industry:inp.industry||'', geo_scope:inp.geo_scope,
+          industry:inp.industry||'', geo_scope:inp.geo_scope, goal:inp.goal||'',
           national_demand:!!inp.national_demand,
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
           site_terms:kw.site_terms||[]});
@@ -2224,6 +2242,7 @@ function reflectInputs(inp){
   if($('kwlock')) $('kwlock').checked = !!inp.kw_locked;
   try{ kwBuiltNote(); }catch(e){}
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
+  if($('goal')) $('goal').value = inp.goal||'';
   if($('natdemand_auto')) $('natdemand_auto').textContent = '';
   if(inp.ecommerce && !stores.industry.length){
     stores.industry.push('Retail - General / E-commerce');

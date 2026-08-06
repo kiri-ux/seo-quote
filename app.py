@@ -1592,6 +1592,46 @@ STATE_ABBREV = {
 # were missing, so a pinned question was reported as blocked because the client
 # "never uses the word can" — technically true, entirely beside the point
 # (2026-08-04).
+# CAMPAIGN GOAL — verbatim from the adtini order form. Like the RZ industry
+# list, this ARRIVES with the order; the demo carries a selector so it can be
+# exercised. Added 2026-08-05 after a Ski Barn quote priced a New Jersey ski
+# retailer on national demand: the goal would have said in-store sales, and the
+# contradiction was sitting there unread.
+GOAL_OPTIONS = [
+    "In-Store Sales", "B2B Sales", "Information Requests",
+    "Branding & Awareness", "Mobile App Download", "Website Traffic",
+    "Leads/Form Fillouts", "Online Sales", "Phone Calls",
+    "Job Recruitment", "Event Attendance",
+]
+
+# What each goal implies about WHERE demand lives. Deliberately three-valued:
+# "" means the goal genuinely doesn't say, and guessing would be worse than
+# staying quiet. Used to CONTRADICT the operator's scope, never to override it —
+# the goal is a statement of intent, not a pricing input, and there is no
+# calibration data tying goals to price.
+GOAL_SCOPE = {
+    "In-Store Sales":       "local",      # footfall has an address
+    "Phone Calls":          "local",      # service businesses take local calls
+    "Event Attendance":     "local",      # an event happens somewhere
+    "Job Recruitment":      "local",      # roles are located
+    "Information Requests": "",
+    "Leads/Form Fillouts":  "",           # local trade or national B2B
+    "Branding & Awareness": "",
+    "Website Traffic":      "",
+    "B2B Sales":            "national",
+    "Online Sales":         "national",   # ecommerce sells everywhere
+    "Mobile App Download":  "national",
+}
+
+# Goals an SEO keyword campaign is a poor instrument for. Not blocked — flagged,
+# because the price would look like a retail campaign for work that isn't one.
+GOAL_OFF_PATTERN = {"Mobile App Download", "Job Recruitment"}
+
+
+def goal_scope(goal):
+    return GOAL_SCOPE.get((goal or "").strip(), "")
+
+
 _GROUNDING_STOP = set("""a an and or the of for in on to with your our best top near me
 services service company companies agency agencies firm firms group inc llc co
 local affordable cheap professional expert experts quality quote quotes free
@@ -2013,8 +2053,50 @@ def pin_head_services(services, cands, markets, state, brand, max_services):
     return out, [t for t, _ in missing]
 
 
+# Term INTENT differs by goal even when the product list is identical. A ski
+# retailer chasing footfall wants "ski shop", "ski rental near me", "ski shop
+# open sunday"; the same retailer chasing ecommerce wants "buy ski jackets
+# online", "ski jackets free shipping". Same catalogue, different keywords, and
+# nothing was telling the model which campaign it was building (2026-08-05).
+_GOAL_TERM_RULE = {
+    "In-Store Sales": "GOAL IS IN-STORE SALES. Favour terms with shopping-trip "
+        "intent — shop/store/rental/hire forms, and the categories someone "
+        "drives to a shop for. Avoid pure ecommerce phrasing (\"free shipping\", "
+        "\"online only\").",
+    "Online Sales": "GOAL IS ONLINE SALES. Favour transactional ecommerce "
+        "phrasing — buy/order/online/shipping forms and specific product "
+        "categories a basket is built from. Avoid store-visit phrasing.",
+    "Phone Calls": "GOAL IS PHONE CALLS. Favour terms someone searches when "
+        "they want to speak to a person now — service + urgency forms, "
+        "emergency/same-day/consultation variants.",
+    "Leads/Form Fillouts": "GOAL IS LEAD FORMS. Favour consideration-stage "
+        "service terms — quote/estimate/consultation/pricing variants.",
+    "B2B Sales": "GOAL IS B2B SALES. Favour commercial and trade phrasing — "
+        "wholesale/supplier/commercial/bulk/for-business variants, not consumer "
+        "retail terms.",
+    "Information Requests": "GOAL IS INFORMATION REQUESTS. Favour service and "
+        "offering terms that lead to an enquiry, still never questions.",
+    "Branding & Awareness": "GOAL IS BRANDING AND AWARENESS. Favour the broad "
+        "category head terms the client wants to be known for, over narrow "
+        "long-tail variants.",
+    "Website Traffic": "GOAL IS WEBSITE TRAFFIC. Favour the highest-demand "
+        "category terms the client can credibly rank for.",
+    "Event Attendance": "GOAL IS EVENT ATTENDANCE. Favour event, tickets, "
+        "schedule and things-to-do phrasing tied to the client's offering.",
+    "Job Recruitment": "GOAL IS JOB RECRUITMENT. Favour jobs/careers/hiring "
+        "phrasing for the roles this employer fills.",
+    "Mobile App Download": "GOAL IS APP DOWNLOADS. Favour app, download and "
+        "platform phrasing alongside the core category terms.",
+}
+
+
 def claude_expand_services(seeds, business_desc, site_pages, brand, domain,
-                           candidates, max_services, n_cities=1, national=False):
+                           candidates, max_services, n_cities=1, national=False,
+                           goal=""):
+    _goal_rule = _GOAL_TERM_RULE.get((goal or "").strip(),
+                                     "No campaign goal supplied \u2014 pick the "
+                                     "terms that best describe what the business "
+                                     "sells, without assuming a channel.")
     """Expand the partner's seed terms into the SERVICE list a proposal would
     target, assigning a competitiveness TIER to each service (not to each
     keyword). This mirrors how the real proposals are built: 'auto insurance' is
@@ -2044,6 +2126,7 @@ TASK: choose exactly {max_services} SERVICES this business should target, and as
 RULES:
 1. A SERVICE is a short, generic phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". {"This is a NATIONAL product brand: these terms are the final keyword list and will NOT be crossed with cities. Qualify the long-tail entries by AUDIENCE or USE CASE instead of location (e.g. \'electrolyte gummies for athletes\', \'energy gummies for teen athletes\'), never by place." if national else "It will be crossed with city names later, so do NOT include any location."}
 2. Only services this business actually offers. Exclude anything they don't do.
+2g. {_goal_rule}
 2p. NEVER include "near me", "nearby", "closest" or any other proximity phrase. Every service is
    crossed with a city later, and "mattress store near me acworth ga" is not a phrase any human
    types — "near me" IS the location. Write the bare service; the grid adds the place.
@@ -2934,7 +3017,7 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
-                   national_demand=False):
+                   national_demand=False, goal=""):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -3007,7 +3090,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
                                           cands, n_services,
                                           0 if national_demand else len(cities),
-                                          national=national_demand)
+                                          national=national_demand, goal=goal)
         if not services:
             # fall back to the partner's seeds, spread across tiers
             tiers = ["ultra", "ultra", "competitive", "long_tail"]
@@ -3177,7 +3260,27 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # collected; nothing was checking them (Ski Barn: NJ stores, priced
         # nationwide, so every term came back as national head demand).
         scope_warning = ""
-        if national_demand and (gbp_count or site_locations):
+        _gs = goal_scope(goal)
+        if goal and _gs == "local" and national_demand:
+            scope_warning = (
+                f"Goal is \u201c{goal}\u201d, which happens somewhere \u2014 but this "
+                "quote is priced on NATIONAL demand, so every keyword, volume "
+                "and ranking here describes a national campaign. Set Geo scope "
+                "to the client's region and enter their markets, or change the "
+                "goal if this really is a nationwide play.")
+        elif goal and _gs == "national" and not national_demand:
+            scope_warning = (
+                f"Goal is \u201c{goal}\u201d, which usually sells everywhere \u2014 but "
+                "this quote is priced on LOCAL demand, so the volumes are "
+                "geo-limited and will understate the opportunity. Consider "
+                "Nationwide scope or the national-demand switch.")
+        elif goal in GOAL_OFF_PATTERN:
+            scope_warning = (
+                f"Goal is \u201c{goal}\u201d. An SEO keyword campaign is a weak "
+                "instrument for this \u2014 the ladder below prices category-term "
+                "ranking work, which may not be what the client is buying. "
+                "Confirm the objective before quoting.")
+        elif national_demand and (gbp_count or site_locations):
             _bits = []
             if gbp_count:
                 _bits.append(f"{gbp_count} Google Business listing"
@@ -4471,7 +4574,8 @@ def api_refine():
     try:
         s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                             ultra, competitive, long_tail, site_terms_kw, phrase_geos,
-                            national_demand=nat_demand)
+                            national_demand=nat_demand,
+                            goal=(d.get("goal") or ""))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
         conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
@@ -4925,6 +5029,8 @@ def api_config_get():
         "default_markup_pct": CFG["default_markup_pct"],
         "ultra_bucket_size": CFG["ultra_bucket_size"],
         "grid_mode": CFG.get("grid_mode", True),
+        "goal_options": GOAL_OPTIONS,
+        "goal_scope": GOAL_SCOPE,
         "grid_target_keywords": CFG.get("grid_target_keywords", 32),
         "grid_min_services": CFG.get("grid_min_services", 4),
         "grid_max_services": CFG.get("grid_max_services", 20),
