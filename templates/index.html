@@ -432,6 +432,7 @@ async function readReport(){
         <div style="margin-top:5px"><button class="btn2" type="button" id="applyMk">Add these to Geographic targeting areas</button></div></div>`:''}
       ${(r.monthly_spend||r.monthly_revenue)?`<div style="margin-top:9px" class="nf">${r.monthly_spend?'Stated monthly spend <b>$'+Number(r.monthly_spend).toLocaleString()+'</b>. ':''}${r.monthly_revenue?'Monthly revenue <b>$'+Number(r.monthly_revenue).toLocaleString()+'</b> — revenue, not spend; the spend box below stays manual unless the report states a fee.':''}</div>`:''}
       ${r.rankings.length?`<div style="margin-top:9px" class="nf">${r.rankings.length} keyword\u00d7market positions captured \u2014 kept for reference; the tool still runs its own live rank check.</div>`:''}
+      ${r.partial?`<div style="margin-top:9px;padding:7px 9px;background:var(--warn-bg);border:1px solid #e8c98a;border-radius:7px;font-size:12px">\u26a0 <b>Partial read</b> \u2014 the reader ran out of room before finishing. The keyword and market lists came through; position detail may be incomplete.</div>`:''}
       ${r.notes.length?`<div style="margin-top:9px" class="nf">${r.notes.map(n=>'\u2022 '+escapeHtml(n)).join('<br>')}</div>`:''}
       <div class="nf" style="margin-top:9px;padding-top:7px;border-top:1px solid var(--line)">Read from a report, not verified. Check anything that looks off before building the list.</div>
     </div>`;

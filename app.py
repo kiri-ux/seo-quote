@@ -4835,14 +4835,18 @@ not show something.
 
 Return ONLY valid JSON, no prose:
 {
-  "keywords": ["exact keyword text as written, one per row of any ranking table"],
-  "markets": ["City, ST for every location column or named market"],
-  "rankings": [{"keyword": "...", "market": "...", "position": 12}],
+  "period": "the reporting period as written, e.g. July 2026",
   "monthly_spend": null,
   "monthly_revenue": null,
-  "period": "the reporting period as written, e.g. July 2026",
-  "notes": ["anything a pricing reviewer should know, one short sentence each"]
+  "markets": ["City, ST for every location column or named market"],
+  "keywords": ["exact keyword text as written, one per row of any ranking table"],
+  "notes": ["anything a pricing reviewer should know, one short sentence each"],
+  "rankings": [{"keyword": "...", "best_position": 3, "markets_top10": 4}]
 }
+
+EMIT THE FIELDS IN THAT ORDER. "rankings" is last on purpose: it is the longest
+section and the least important, so if you run out of room the loss falls there
+rather than on the keyword list.
 
 Rules:
 - Keyword tables are often SCREENSHOTS. Read them from the images.
@@ -4860,7 +4864,11 @@ Rules:
   table is a failure. If a row is genuinely illegible, say so in notes rather
   than dropping the table silently.
 - Keep placeholders exactly as printed: "bbq grills <cityname>" stays as-is.
-- A position of 100 (or 100+) usually means NOT RANKING. Record it as 100.
+- A position of 100 (or 100+) usually means NOT RANKING.
+- KEEP THE OUTPUT COMPACT. Do NOT emit one row per keyword-per-market — that is
+  hundreds of rows and the response gets cut off mid-JSON. For each keyword give
+  ONE row: its best position across the markets, and how many markets have it in
+  the top 10. Keywords and markets are the important part; positions are context.
 - monthly_spend is what the CLIENT PAYS for the campaign. Revenue, traffic value
   and ad spend are NOT campaign spend — leave it null unless the report states a fee.
 - markets: only real places used as columns or headings, not every city mentioned.
@@ -4917,32 +4925,70 @@ def api_import_report():
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
-                             "max_tokens": 4000, "temperature": 0,
+                             "max_tokens": 16000, "temperature": 0,
                              "messages": [{"role": "user", "content": content}]}),
             timeout=120)
         resp.raise_for_status()
         body = resp.json()
         txt = "".join(b.get("text", "") for b in body.get("content", [])
                       if b.get("type") == "text").strip()
+        truncated = body.get("stop_reason") == "max_tokens"
     except Exception as e:
         return jsonify({"error": f"Report read failed: {e}"}), 502
 
+    def _salvage(t):
+        """A truncated reply is cut off in the LAST array it was writing, so the
+        earlier ones are complete and worth keeping. Reading 50 keywords and
+        then discarding all of them over a missing brace is the wrong trade
+        (2026-08-06)."""
+        got = {}
+        for key in ("keywords", "markets", "notes"):
+            mm = re.search(r'"%s"\s*:\s*\[(.*?)\]' % key, t, re.S)
+            if mm:
+                got[key] = [x.strip().strip(",").strip()
+                            for x in re.findall(r'"((?:[^"\\]|\\.)*)"', mm.group(1))]
+        for key in ("period",):
+            mm = re.search(r'"%s"\s*:\s*"((?:[^"\\]|\\.)*)"' % key, t, re.S)
+            if mm:
+                got[key] = mm.group(1)
+        for key in ("monthly_spend", "monthly_revenue"):
+            mm = re.search(r'"%s"\s*:\s*([0-9.]+)' % key, t)
+            if mm:
+                try:
+                    got[key] = float(mm.group(1))
+                except Exception:
+                    pass
+        return got
+
     m = re.search(r"\{.*\}", txt, re.S)
-    if not m:
-        return jsonify({"error": "The reader did not return usable JSON.",
-                        "raw": txt[:400]}), 502
-    try:
-        out = json.loads(m.group(0))
-    except Exception as e:
-        return jsonify({"error": f"Could not parse the reader's JSON: {e}",
-                        "raw": txt[:400]}), 502
+    out, partial = None, False
+    if m:
+        try:
+            out = json.loads(m.group(0))
+        except Exception:
+            out = None
+    if out is None:
+        out = _salvage(txt)
+        partial = True
+        if not out.get("keywords") and not out.get("markets"):
+            return jsonify({"error": ("The reader's reply was cut off before "
+                                      "anything usable came back."
+                                      if truncated else
+                                      "The reader did not return usable JSON."),
+                            "raw": txt[:400]}), 502
 
     # Normalise, and cap so a 200-row report can't flood the seed field.
     kws = [str(x).strip() for x in (out.get("keywords") or []) if str(x).strip()][:120]
     mkts = [str(x).strip() for x in (out.get("markets") or []) if str(x).strip()][:40]
     ranks = [r for r in (out.get("rankings") or []) if isinstance(r, dict)][:600]
+    if partial or truncated:
+        out.setdefault("notes", []).insert(0,
+            "The reader's reply was cut off, so this is a partial read — the "
+            "keyword and market lists came through but position detail may be "
+            "incomplete. Check the list against the report before relying on it.")
     return jsonify({
         "ok": True,
+        "partial": bool(partial or truncated),
         "filename": f.filename,
         "images_read": n_sent,
         "sources_read": len(imgs),
