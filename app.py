@@ -4654,7 +4654,7 @@ def api_refine():
 # ski keywords and missed all 10 patio/BBQ ones, saying so in its own notes
 # (2026-08-05). So: TILE anything oversized instead of shrinking it, and select
 # by PIXEL AREA rather than file size, because bytes say nothing about legibility.
-_REPORT_MAX_IMAGES = 12                   # tiles count toward this
+_REPORT_MAX_IMAGES = 16                   # tiles count toward this
 _REPORT_MIN_PIXELS = 60_000               # ~250x250; below this it is an icon
 # The API downsamples any image to ~1568px on its long edge before reading it,
 # so sending a 4000px screenshot gains nothing — it is scaled to 0.38x and a
@@ -4662,7 +4662,11 @@ _REPORT_MIN_PIXELS = 60_000               # ~250x250; below this it is an icon
 # native resolution and let each tile use its own 1568px budget.
 _REPORT_TILE_EDGE = 1568
 _REPORT_TILE_OVERLAP = 0.18               # so a row on a seam survives in a neighbour
-_REPORT_TILES_PER_SOURCE = 6              # one dense slide can't eat the whole budget
+_REPORT_TILES_PER_SOURCE = 4              # one dense slide can't eat the whole budget
+# Below this width a single scaled image beats slicing: 2030 -> 1568 is 0.77x and
+# keeps every row whole, where slicing would strand the labels.
+_REPORT_STITCH_ABOVE = 2600
+_REPORT_LABEL_FRACTION = 0.28             # left share of a table that holds the keywords
 
 
 def _pptx_slide_text(zf):
@@ -4683,56 +4687,97 @@ def _pptx_slide_text(zf):
     return "\n".join(out)[:20000]
 
 
-def _encode_jpeg(im, quality=85):
+def _flatten(im):
+    """Composite onto WHITE before anything else.
+
+    Report screenshots are saved with the label column transparent — the text is
+    dark pixels over alpha. .convert("RGB") maps transparent to BLACK, so the
+    keyword column became black text on black and vanished. That is why an
+    import returned "ranking numbers without keyword labels" and dropped 10 of
+    19 keywords: the labels were always in the file, and this function was
+    erasing them (2026-08-05).
+    """
+    from PIL import Image
+    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+        im = im.convert("RGBA")
+        bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        return Image.alpha_composite(bg, im).convert("RGB")
+    return im.convert("RGB") if im.mode != "RGB" else im
+
+
+def _encode_jpeg(im, quality=88):
     import io
-    if im.mode != "RGB":
-        im = im.convert("RGB")
+    im = _flatten(im)
     buf = io.BytesIO()
     im.save(buf, format="JPEG", quality=quality, optimize=True)
     return buf.getvalue()
 
 
 def _tile_image(raw):
-    """One source image -> request-ready JPEGs at NATIVE resolution.
+    """One source image -> request-ready JPEGs.
 
-    A Ski Barn slide arrived as one 4094x3379 screenshot holding two keyword
-    tables. Sent whole it is scaled to 0.38x, and the reader could only make out
-    the bottom table — the import returned 9 of 19 keywords and said so in its
-    own notes (2026-08-05).
+    Two failures drove this shape (both Ski Barn, 2026-08-05):
 
-    Tiles overlap generously because a table row landing on a seam must still
-    appear intact somewhere, and because a horizontal split separates the keyword
-    column from its position columns: with 18% overlap the neighbouring tile
-    carries enough of both to re-associate them. The prompt tells the reader the
-    tiles overlap and to merge rather than double-count.
+    1. Sent whole, a 4094x3379 slide is downsampled by the API to 0.38x and an
+       11px table row becomes 4px. Only one of the two keyword tables was
+       readable.
+    2. Split into columns, the KEYWORD COLUMN lives only in the leftmost tile.
+       Every other tile is a field of numbers with nothing to attach them to,
+       and the reader correctly refused them: "ranking numbers without keyword
+       labels". A 2030px-wide table lost its labels on the second tile.
+
+    So: only split horizontally when the alternative is a severe downscale, and
+    when we do, STITCH the label column onto every slice so each tile is
+    self-describing. Anything moderately wide is simply scaled to fit — 2030px
+    to 1568px is 0.77x and perfectly legible, and keeps rows whole.
     """
     try:
         from PIL import Image
         import io
-        im = Image.open(io.BytesIO(raw))
-        if im.mode not in ("RGB", "L"):
-            im = im.convert("RGB")
+        im = _flatten(Image.open(io.BytesIO(raw)))
         w, h = im.size
         edge = _REPORT_TILE_EDGE
-        if w <= edge and h <= edge:
-            return [_encode_jpeg(im)]
-        step = max(1, int(edge * (1.0 - _REPORT_TILE_OVERLAP)))
-        xs = list(range(0, max(1, w - edge) + 1, step)) or [0]
-        ys = list(range(0, max(1, h - edge) + 1, step)) or [0]
-        if xs[-1] + edge < w:
-            xs.append(max(0, w - edge))
-        if ys[-1] + edge < h:
-            ys.append(max(0, h - edge))
-        out = []
-        for y in ys:
-            for x in xs:
-                out.append(_encode_jpeg(im.crop((x, y, min(w, x + edge),
-                                                 min(h, y + edge)))))
-                if len(out) >= _REPORT_TILES_PER_SOURCE:
-                    return out
-        return out
+
+        def bands(src):
+            """Full-width horizontal slices, scaled to fit. Rows stay intact."""
+            sw, sh = src.size
+            scale = min(1.0, edge / float(sw))
+            band_h = int(edge / scale) if scale < 1.0 else edge
+            if sh <= band_h:
+                return [_encode_jpeg(_fit_width(src, edge))]
+            step = max(1, int(band_h * (1.0 - _REPORT_TILE_OVERLAP)))
+            ys = list(range(0, max(1, sh - band_h) + 1, step)) or [0]
+            if ys[-1] + band_h < sh:
+                ys.append(max(0, sh - band_h))
+            return [_encode_jpeg(_fit_width(src.crop((0, y, sw, min(sh, y + band_h))), edge))
+                    for y in ys][:_REPORT_TILES_PER_SOURCE]
+
+        if w <= _REPORT_STITCH_ABOVE:
+            return bands(im)
+
+        # Very wide: slice into column groups, each carrying the label column.
+        label_w = max(1, int(w * _REPORT_LABEL_FRACTION))
+        slice_w = max(1, edge - label_w)
+        out, x = [], label_w
+        while x < w and len(out) < _REPORT_TILES_PER_SOURCE:
+            right = im.crop((x, 0, min(w, x + slice_w), h))
+            labels = im.crop((0, 0, label_w, h))
+            stitched = Image.new("RGB", (label_w + right.size[0], h), "white")
+            stitched.paste(labels, (0, 0))
+            stitched.paste(right, (label_w, 0))
+            out.extend(bands(stitched))
+            x += max(1, int(slice_w * (1.0 - _REPORT_TILE_OVERLAP)))
+        return out[:_REPORT_TILES_PER_SOURCE] or bands(im)
     except Exception:
         return [raw]
+
+
+def _fit_width(im, max_w):
+    from PIL import Image
+    if im.size[0] <= max_w:
+        return im
+    ratio = max_w / float(im.size[0])
+    return im.resize((max_w, max(1, int(im.size[1] * ratio))), Image.LANCZOS)
 
 
 def _report_images(filename, data):
@@ -4802,7 +4847,10 @@ Return ONLY valid JSON, no prose:
 Rules:
 - Keyword tables are often SCREENSHOTS. Read them from the images.
 - THERE ARE USUALLY SEVERAL TABLES, sometimes stacked in one screenshot.
-- LARGE SCREENSHOTS ARE SUPPLIED AS OVERLAPPING TILES of the same picture. Tiles
+- LARGE SCREENSHOTS ARE SUPPLIED AS OVERLAPPING TILES of the same picture. On a
+  very wide table the KEYWORD COLUMN IS COPIED ONTO THE LEFT EDGE OF EVERY TILE,
+  so a tile showing positions always carries its own labels — read them together
+  rather than reporting the table as unlabelled. Tiles
   repeat content on purpose: a row cut by one tile's edge appears whole in its
   neighbour. Read every tile, MERGE what they show, and do not count a keyword
   twice because it appeared in two tiles. If a tile shows a keyword column
@@ -4843,17 +4891,22 @@ def api_import_report():
         return jsonify({"error": f"Nothing readable in {f.filename!r}. Supported: "
                                  ".pptx, .png, .jpg, .txt, .csv."}), 400
 
-    content, n_sent = [], 0
-    for raw in imgs:
-        if n_sent >= _REPORT_MAX_IMAGES:
-            break
-        for jpg in _tile_image(raw):
+    # ROUND-ROBIN across source images. Taking them in order let the first,
+    # densest slide spend the entire budget, so the small single-table
+    # screenshots later in the deck were never sent at all.
+    per_source = [_tile_image(raw) for raw in imgs]
+    content, n_sent, depth = [], 0, 0
+    while n_sent < _REPORT_MAX_IMAGES and any(len(t) > depth for t in per_source):
+        for tiles in per_source:
             if n_sent >= _REPORT_MAX_IMAGES:
                 break
-            content.append({"type": "image",
-                            "source": {"type": "base64", "media_type": "image/jpeg",
-                                       "data": base64.b64encode(jpg).decode()}})
-            n_sent += 1
+            if len(tiles) > depth:
+                content.append({"type": "image",
+                                "source": {"type": "base64",
+                                           "media_type": "image/jpeg",
+                                           "data": base64.b64encode(tiles[depth]).decode()}})
+                n_sent += 1
+        depth += 1
     content.append({"type": "text",
                     "text": _REPORT_SCHEMA_PROMPT
                             + ("\n\nTEXT FOUND IN THE FILE:\n" + text if text.strip()

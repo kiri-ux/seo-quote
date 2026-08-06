@@ -2229,6 +2229,13 @@ let SAVE_DETAIL = '';
     const bar=$('saveStatusBar');
     if(bar && CURRENT_QUOTE_ID){
       bar.innerHTML='✓ Opened “'+escapeHtml(CURRENT_QUOTE_NAME)+'” from a shared edit link — changes auto-save, and every save keeps the prior version in History.';
+      // A /q/ link is a SHARED link too — it goes to whoever is pricing the
+      // work, and the demo rails are as much noise there as on a review copy.
+      // Only stripped when arrived at via the link, never on the operator's own
+      // session, so internal cost detail stays available where it belongs.
+      document.documentElement.classList.add('reviewmode');
+      stripDemo();
+      try{ new MutationObserver(()=>stripDemo()).observe(document.body,{childList:true,subtree:true}); }catch(e){}
     }
   }
 })();
