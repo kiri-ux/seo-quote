@@ -4636,6 +4636,201 @@ def api_refine():
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
     })
 
+# ---------------------------------------------------------------------------
+# IMPORT AN EXISTING SEO REPORT
+#
+# Why a FILE and not a paste box: the numbers that matter are pictures. A real
+# Ski Barn July report was checked (2026-08-05) — the ranking tables are
+# embedded PNGs, so text extraction returns the traffic figures and loses the
+# entire keyword list. Pasting text cannot work for this format. Reading the
+# images can, and does.
+#
+# Everything extracted is a SUGGESTION. The operator ticks what to apply; the
+# quote is never changed by an import on its own. A report is a set of claims —
+# sometimes months stale, sometimes framed to flatter the incumbent.
+_REPORT_MAX_IMAGES = 6
+_REPORT_MIN_IMAGE_BYTES = 18_000          # below this it is a logo or an icon
+_REPORT_MAX_EDGE = 1568                   # Anthropic's recommended long edge
+
+
+def _pptx_slide_text(zf):
+    """Slide text straight out of the XML. No new dependency: <a:t> holds every
+    run of visible text, which is enough for titles, labels and any figures that
+    were typed rather than screenshotted."""
+    out = []
+    for name in sorted(n for n in zf.namelist()
+                       if n.startswith("ppt/slides/slide") and n.endswith(".xml")):
+        try:
+            xml = zf.read(name).decode("utf-8", "ignore")
+        except Exception:
+            continue
+        runs = re.findall(r"<a:t>(.*?)</a:t>", xml, re.S)
+        if runs:
+            txt = " ".join(re.sub(r"\s+", " ", r).strip() for r in runs)
+            out.append(f"[{name.rsplit('/', 1)[-1]}] {txt}")
+    return "\n".join(out)[:20000]
+
+
+def _shrink_image(raw):
+    """Downscale and re-encode so a 1.2MB slide screenshot fits the request."""
+    try:
+        from PIL import Image
+        import io
+        im = Image.open(io.BytesIO(raw))
+        im = im.convert("RGB")
+        if max(im.size) > _REPORT_MAX_EDGE:
+            ratio = _REPORT_MAX_EDGE / float(max(im.size))
+            im = im.resize((max(1, int(im.size[0] * ratio)),
+                            max(1, int(im.size[1] * ratio))), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=82, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return raw, "image/png"
+
+
+def _report_images(filename, data):
+    """Candidate images from the upload, largest first. A .pptx carries its
+    screenshots in ppt/media; a bare image is itself."""
+    lower = (filename or "").lower()
+    if lower.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return [data]
+    if lower.endswith((".pptx", ".potx")):
+        import io, zipfile
+        out = []
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            media = [(n, zf.getinfo(n).file_size) for n in zf.namelist()
+                     if n.startswith("ppt/media/")
+                     and n.lower().endswith((".png", ".jpg", ".jpeg"))]
+            for n, _sz in sorted(media, key=lambda x: -x[1]):
+                if _sz < _REPORT_MIN_IMAGE_BYTES:
+                    continue
+                out.append(zf.read(n))
+                if len(out) >= _REPORT_MAX_IMAGES:
+                    break
+        return out
+    return []
+
+
+def _report_text(filename, data):
+    lower = (filename or "").lower()
+    if lower.endswith((".pptx", ".potx")):
+        import io, zipfile
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                return _pptx_slide_text(zf)
+        except Exception:
+            return ""
+    if lower.endswith((".txt", ".csv", ".md")):
+        return data.decode("utf-8", "ignore")[:20000]
+    return ""
+
+
+_REPORT_SCHEMA_PROMPT = """You are reading an SEO performance report for a client.
+Extract ONLY what is actually present. Never infer, never complete a pattern, never
+invent a plausible keyword. An empty list is the correct answer when the report does
+not show something.
+
+Return ONLY valid JSON, no prose:
+{
+  "keywords": ["exact keyword text as written, one per row of any ranking table"],
+  "markets": ["City, ST for every location column or named market"],
+  "rankings": [{"keyword": "...", "market": "...", "position": 12}],
+  "monthly_spend": null,
+  "monthly_revenue": null,
+  "period": "the reporting period as written, e.g. July 2026",
+  "notes": ["anything a pricing reviewer should know, one short sentence each"]
+}
+
+Rules:
+- Keyword tables are often SCREENSHOTS. Read them from the images.
+- Keep placeholders exactly as printed: "bbq grills <cityname>" stays as-is.
+- A position of 100 (or 100+) usually means NOT RANKING. Record it as 100.
+- monthly_spend is what the CLIENT PAYS for the campaign. Revenue, traffic value
+  and ad spend are NOT campaign spend — leave it null unless the report states a fee.
+- markets: only real places used as columns or headings, not every city mentioned.
+- If a table appears twice (start vs current), use the CURRENT/most recent one for
+  rankings and say so in notes."""
+
+
+@app.route("/api/import_report", methods=["POST"])
+@_json_error_guard
+def api_import_report():
+    """Read an existing SEO report and return what it contains as SUGGESTIONS."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY is not set on this deploy, so "
+                                 "report reading is unavailable."}), 400
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"error": "No file received."}), 400
+    data = f.read()
+    if not data:
+        return jsonify({"error": "That file is empty."}), 400
+    if len(data) > 25 * 1024 * 1024:
+        return jsonify({"error": "File is larger than 25MB — export fewer slides."}), 400
+
+    imgs = _report_images(f.filename, data)
+    text = _report_text(f.filename, data)
+    if not imgs and not text.strip():
+        return jsonify({"error": f"Nothing readable in {f.filename!r}. Supported: "
+                                 ".pptx, .png, .jpg, .txt, .csv."}), 400
+
+    content = []
+    for raw in imgs:
+        shrunk, mime = _shrink_image(raw)
+        content.append({"type": "image",
+                        "source": {"type": "base64", "media_type": mime,
+                                   "data": base64.b64encode(shrunk).decode()}})
+    content.append({"type": "text",
+                    "text": _REPORT_SCHEMA_PROMPT
+                            + ("\n\nTEXT FOUND IN THE FILE:\n" + text if text.strip()
+                               else "\n\n(No usable text layer — read the images.)")})
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                             "max_tokens": 4000, "temperature": 0,
+                             "messages": [{"role": "user", "content": content}]}),
+            timeout=120)
+        resp.raise_for_status()
+        body = resp.json()
+        txt = "".join(b.get("text", "") for b in body.get("content", [])
+                      if b.get("type") == "text").strip()
+    except Exception as e:
+        return jsonify({"error": f"Report read failed: {e}"}), 502
+
+    m = re.search(r"\{.*\}", txt, re.S)
+    if not m:
+        return jsonify({"error": "The reader did not return usable JSON.",
+                        "raw": txt[:400]}), 502
+    try:
+        out = json.loads(m.group(0))
+    except Exception as e:
+        return jsonify({"error": f"Could not parse the reader's JSON: {e}",
+                        "raw": txt[:400]}), 502
+
+    # Normalise, and cap so a 200-row report can't flood the seed field.
+    kws = [str(x).strip() for x in (out.get("keywords") or []) if str(x).strip()][:120]
+    mkts = [str(x).strip() for x in (out.get("markets") or []) if str(x).strip()][:40]
+    ranks = [r for r in (out.get("rankings") or []) if isinstance(r, dict)][:600]
+    return jsonify({
+        "ok": True,
+        "filename": f.filename,
+        "images_read": len(imgs),
+        "text_chars": len(text),
+        "keywords": kws,
+        "markets": mkts,
+        "rankings": ranks,
+        "monthly_spend": out.get("monthly_spend"),
+        "monthly_revenue": out.get("monthly_revenue"),
+        "period": (out.get("period") or "")[:120],
+        "notes": [str(n)[:300] for n in (out.get("notes") or [])][:8],
+    })
+
+
 @app.route("/api/metrics", methods=["POST"])
 @_json_error_guard
 def api_metrics():
