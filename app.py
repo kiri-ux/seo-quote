@@ -4648,9 +4648,21 @@ def api_refine():
 # Everything extracted is a SUGGESTION. The operator ticks what to apply; the
 # quote is never changed by an import on its own. A report is a set of claims —
 # sometimes months stale, sometimes framed to flatter the incumbent.
-_REPORT_MAX_IMAGES = 6
-_REPORT_MIN_IMAGE_BYTES = 18_000          # below this it is a logo or an icon
-_REPORT_MAX_EDGE = 1568                   # Anthropic's recommended long edge
+# A slide screenshot is one picture holding several tables, and table text is
+# small. Shrinking the whole thing to a 1568px long edge left ~7px glyphs and the
+# reader could only make out the bottom table — a Ski Barn import returned the 9
+# ski keywords and missed all 10 patio/BBQ ones, saying so in its own notes
+# (2026-08-05). So: TILE anything oversized instead of shrinking it, and select
+# by PIXEL AREA rather than file size, because bytes say nothing about legibility.
+_REPORT_MAX_IMAGES = 12                   # tiles count toward this
+_REPORT_MIN_PIXELS = 60_000               # ~250x250; below this it is an icon
+# The API downsamples any image to ~1568px on its long edge before reading it,
+# so sending a 4000px screenshot gains nothing — it is scaled to 0.38x and a
+# table's 11px text becomes 4px. The only way to keep text legible is to TILE at
+# native resolution and let each tile use its own 1568px budget.
+_REPORT_TILE_EDGE = 1568
+_REPORT_TILE_OVERLAP = 0.18               # so a row on a seam survives in a neighbour
+_REPORT_TILES_PER_SOURCE = 6              # one dense slide can't eat the whole budget
 
 
 def _pptx_slide_text(zf):
@@ -4671,22 +4683,56 @@ def _pptx_slide_text(zf):
     return "\n".join(out)[:20000]
 
 
-def _shrink_image(raw):
-    """Downscale and re-encode so a 1.2MB slide screenshot fits the request."""
+def _encode_jpeg(im, quality=85):
+    import io
+    if im.mode != "RGB":
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue()
+
+
+def _tile_image(raw):
+    """One source image -> request-ready JPEGs at NATIVE resolution.
+
+    A Ski Barn slide arrived as one 4094x3379 screenshot holding two keyword
+    tables. Sent whole it is scaled to 0.38x, and the reader could only make out
+    the bottom table — the import returned 9 of 19 keywords and said so in its
+    own notes (2026-08-05).
+
+    Tiles overlap generously because a table row landing on a seam must still
+    appear intact somewhere, and because a horizontal split separates the keyword
+    column from its position columns: with 18% overlap the neighbouring tile
+    carries enough of both to re-associate them. The prompt tells the reader the
+    tiles overlap and to merge rather than double-count.
+    """
     try:
         from PIL import Image
         import io
         im = Image.open(io.BytesIO(raw))
-        im = im.convert("RGB")
-        if max(im.size) > _REPORT_MAX_EDGE:
-            ratio = _REPORT_MAX_EDGE / float(max(im.size))
-            im = im.resize((max(1, int(im.size[0] * ratio)),
-                            max(1, int(im.size[1] * ratio))), Image.LANCZOS)
-        buf = io.BytesIO()
-        im.save(buf, format="JPEG", quality=82, optimize=True)
-        return buf.getvalue(), "image/jpeg"
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        w, h = im.size
+        edge = _REPORT_TILE_EDGE
+        if w <= edge and h <= edge:
+            return [_encode_jpeg(im)]
+        step = max(1, int(edge * (1.0 - _REPORT_TILE_OVERLAP)))
+        xs = list(range(0, max(1, w - edge) + 1, step)) or [0]
+        ys = list(range(0, max(1, h - edge) + 1, step)) or [0]
+        if xs[-1] + edge < w:
+            xs.append(max(0, w - edge))
+        if ys[-1] + edge < h:
+            ys.append(max(0, h - edge))
+        out = []
+        for y in ys:
+            for x in xs:
+                out.append(_encode_jpeg(im.crop((x, y, min(w, x + edge),
+                                                 min(h, y + edge)))))
+                if len(out) >= _REPORT_TILES_PER_SOURCE:
+                    return out
+        return out
     except Exception:
-        return raw, "image/png"
+        return [raw]
 
 
 def _report_images(filename, data):
@@ -4697,18 +4743,29 @@ def _report_images(filename, data):
         return [data]
     if lower.endswith((".pptx", ".potx")):
         import io, zipfile
-        out = []
+        try:
+            from PIL import Image
+        except Exception:
+            Image = None
+        scored = []
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            media = [(n, zf.getinfo(n).file_size) for n in zf.namelist()
-                     if n.startswith("ppt/media/")
-                     and n.lower().endswith((".png", ".jpg", ".jpeg"))]
-            for n, _sz in sorted(media, key=lambda x: -x[1]):
-                if _sz < _REPORT_MIN_IMAGE_BYTES:
+            for n in zf.namelist():
+                if not (n.startswith("ppt/media/")
+                        and n.lower().endswith((".png", ".jpg", ".jpeg"))):
                     continue
-                out.append(zf.read(n))
-                if len(out) >= _REPORT_MAX_IMAGES:
-                    break
-        return out
+                raw = zf.read(n)
+                px = 0
+                if Image is not None:
+                    try:
+                        px = Image.open(io.BytesIO(raw)).size[0] * \
+                             Image.open(io.BytesIO(raw)).size[1]
+                    except Exception:
+                        px = 0
+                if px and px < _REPORT_MIN_PIXELS:
+                    continue                      # icon, arrow, logo
+                scored.append((px or len(raw), raw))
+        # Biggest by pixel area first — that is where dense tables live.
+        return [raw for _px, raw in sorted(scored, key=lambda x: -x[0])]
     return []
 
 
@@ -4744,6 +4801,16 @@ Return ONLY valid JSON, no prose:
 
 Rules:
 - Keyword tables are often SCREENSHOTS. Read them from the images.
+- THERE ARE USUALLY SEVERAL TABLES, sometimes stacked in one screenshot.
+- LARGE SCREENSHOTS ARE SUPPLIED AS OVERLAPPING TILES of the same picture. Tiles
+  repeat content on purpose: a row cut by one tile's edge appears whole in its
+  neighbour. Read every tile, MERGE what they show, and do not count a keyword
+  twice because it appeared in two tiles. If a tile shows a keyword column
+  without its position columns, pair it with the overlapping tile that has them.
+- Read EVERY table in EVERY image and merge them. A retailer often has one table per product family
+  (e.g. ski gear in one, patio/BBQ in another) — returning only the clearest
+  table is a failure. If a row is genuinely illegible, say so in notes rather
+  than dropping the table silently.
 - Keep placeholders exactly as printed: "bbq grills <cityname>" stays as-is.
 - A position of 100 (or 100+) usually means NOT RANKING. Record it as 100.
 - monthly_spend is what the CLIENT PAYS for the campaign. Revenue, traffic value
@@ -4776,12 +4843,17 @@ def api_import_report():
         return jsonify({"error": f"Nothing readable in {f.filename!r}. Supported: "
                                  ".pptx, .png, .jpg, .txt, .csv."}), 400
 
-    content = []
+    content, n_sent = [], 0
     for raw in imgs:
-        shrunk, mime = _shrink_image(raw)
-        content.append({"type": "image",
-                        "source": {"type": "base64", "media_type": mime,
-                                   "data": base64.b64encode(shrunk).decode()}})
+        if n_sent >= _REPORT_MAX_IMAGES:
+            break
+        for jpg in _tile_image(raw):
+            if n_sent >= _REPORT_MAX_IMAGES:
+                break
+            content.append({"type": "image",
+                            "source": {"type": "base64", "media_type": "image/jpeg",
+                                       "data": base64.b64encode(jpg).decode()}})
+            n_sent += 1
     content.append({"type": "text",
                     "text": _REPORT_SCHEMA_PROMPT
                             + ("\n\nTEXT FOUND IN THE FILE:\n" + text if text.strip()
@@ -4819,7 +4891,8 @@ def api_import_report():
     return jsonify({
         "ok": True,
         "filename": f.filename,
-        "images_read": len(imgs),
+        "images_read": n_sent,
+        "sources_read": len(imgs),
         "text_chars": len(text),
         "keywords": kws,
         "markets": mkts,
