@@ -361,6 +361,9 @@
       <label>Past SEO details</label>
       <div class="help">What went right or wrong in their past SEO campaigns?</div>
       <textarea id="pastseo_detail"></textarea>
+      <label>Current monthly SEO spend <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <div class="help">What the client pays their incumbent today, per month. <b>Does not move the price</b> — shown to the reviewer beside the ladder so a quote can be sanity-checked against the budget the client has already proven they'll spend. Anchoring on it would quote every renewal a notch above the incumbent forever, which is a decision for pricing, not a formula.</div>
+      <input type="text" id="pastseo_spend" placeholder="e.g. 3500" style="width:140px">
     </div>
 
 
@@ -727,6 +730,7 @@ function collectInputs(){
     industries: stores.industry.slice(),
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
+    past_seo_spend: (()=>{ const v=($('pastseo_spend')&&$('pastseo_spend').value||'').replace(/[^0-9.]/g,''); const n=parseFloat(v); return (!isNaN(n)&&n>0)?Math.round(n):null; })(),
   };
 }
 
@@ -1150,8 +1154,9 @@ function step3Html(){
   const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
   try{ refreshAddonSuggestion(); }catch(e){}
   const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
+  const _sp=(ST.inputs&&ST.inputs.past_seo_spend)||null;
   const ctx=(ST.inputs&&ST.inputs.past_seo)
-    ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
+    ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}${_sp?` <b>Currently paying ${money(_sp)}/mo.</b>`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
     : '';
   return `
       <h4 class="sec">Step 3 · Rankings</h4>
@@ -1661,6 +1666,22 @@ function renderStep4(p){
     jp.onclick=(e)=>{ e.preventDefault();
       const t=$('p4'); if(t) t.scrollIntoView({behavior:'smooth', block:'start'}); };
   }
+  // Incumbent spend beside the ladder: the reviewer's fastest sanity check on
+  // whether the tier is plausible for this client.
+  try{
+    const sp=(ST.inputs&&ST.inputs.past_seo_spend)||null;
+    const host=document.getElementById('p4');
+    let n=document.getElementById('spendCompare');
+    if(sp && host){
+      if(!n){ n=document.createElement('div'); n.id='spendCompare'; n.className='calc'; host.appendChild(n); }
+      const t=p.client_tiers||{};
+      const near=Object.keys(t).reduce((a,k)=>Math.abs(t[k]-sp)<Math.abs(t[a]-sp)?k:a,'base');
+      n.innerHTML='Client currently pays <b>'+money(sp)+'/mo</b> with their incumbent — closest tier is <b>'
+        +near.charAt(0).toUpperCase()+near.slice(1)+'</b> at '+money(t[near])
+        +' <span class="nf">('+(t[near]>=sp?'+':'')+Math.round((t[near]-sp)/sp*100)+'%)</span>.'
+        +' <span class="nf">Context only — the price is unchanged by this.</span>';
+    } else if(n){ n.remove(); }
+  }catch(e){}
   ST.addonRates = {primary:(p.ai_search? p.ai_search.client_total : p.client_tiers),
                    seo:p.client_tiers, ai:(p.ai_search? p.ai_search.client_add : null),
                    each:p.client_addon_per_market, hard:p.hard_addon_per_market,
@@ -2243,6 +2264,7 @@ function reflectInputs(inp){
   try{ kwBuiltNote(); }catch(e){}
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
   if($('goal')) $('goal').value = inp.goal||'';
+  if($('pastseo_spend')) $('pastseo_spend').value = (inp.past_seo_spend!=null?inp.past_seo_spend:'');
   if($('natdemand_auto')) $('natdemand_auto').textContent = '';
   if(inp.ecommerce && !stores.industry.length){
     stores.industry.push('Retail - General / E-commerce');
