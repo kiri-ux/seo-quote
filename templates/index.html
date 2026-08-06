@@ -349,7 +349,7 @@
 
     <label title="Retail price = partner hard cost ÷ (1 − margin) — the same convention as the Reputation Mgmt tool and the SSG/Vici grid.">Retail margin % <span style="font-weight:400;color:var(--muted)">(of gross — agency’s share of retail)</span></label>
     <div class="help">Retail is built <b>from partner hard cost</b>: cost is rounded to a clean $50, then retail = cost ÷ (1 − margin), rounded up to $50. Was a markup (×1.35), which is only a 25.9% margin. Because both figures sit on $50 boundaries the realised margin lands within about a point of the target — two round numbers and an exact ratio can’t all hold at once.</div>
-    <div class="help">Internal pricing starts at partner hard cost; the client price is partner hard cost plus this markup. Defaults to 35%. Editable here and on the final quote.</div>
+    <div class="help">The agency's share of retail. Retail = partner hard cost ÷ (1 − margin) — <b>not</b> cost plus a markup; ×1.35 would be a 25.9% margin. Add-on markets are priced the same way from their own cost, so the realised margin never drops below target. Defaults to 35%. Editable here and on the final quote.</div>
     <input type="text" id="markup" placeholder="35" value="35">
 
     <button class="btn" id="step1">1 · Build keyword list</button>
