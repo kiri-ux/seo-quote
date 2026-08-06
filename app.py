@@ -4839,6 +4839,7 @@ Return ONLY valid JSON, no prose:
   "monthly_spend": null,
   "monthly_revenue": null,
   "markets": ["City, ST for every location column or named market"],
+  "state": "two-letter state the client operates in, or null if genuinely unclear",
   "keywords": ["exact keyword text as written, one per row of any ranking table"],
   "notes": ["anything a pricing reviewer should know, one short sentence each"],
   "rankings": [{"keyword": "...", "best_position": 3, "markets_top10": 4}]
@@ -4872,6 +4873,15 @@ Rules:
 - monthly_spend is what the CLIENT PAYS for the campaign. Revenue, traffic value
   and ad spend are NOT campaign spend — leave it null unless the report states a fee.
 - markets: only real places used as columns or headings, not every city mentioned.
+- ALWAYS QUALIFY A MARKET WITH ITS STATE, even when the column header does not.
+  Report columns usually read bare ("Wayne", "Paramus"), and a bare city name is
+  ambiguous — there is a Wayne in NJ, PA and MI — so the quote is built without a
+  state suffix and the rank check looks in the wrong place. Infer the state from
+  the rest of the report: the client's own name, the business description, other
+  place names, geo-qualified keywords like "ski shop paramus nj". Return
+  "Wayne, NJ", not "Wayne". Set "state" to the client's main state as well. If a
+  market is plainly in a different state from the others (e.g. New York City
+  alongside New Jersey towns), qualify it with its OWN state.
 - If a table appears twice (start vs current), use the CURRENT/most recent one for
   rankings and say so in notes."""
 
@@ -4999,6 +5009,7 @@ def api_import_report():
         "monthly_spend": out.get("monthly_spend"),
         "monthly_revenue": out.get("monthly_revenue"),
         "period": (out.get("period") or "")[:120],
+        "state": (str(out.get("state") or "").strip().upper()[:2] or None),
         "notes": [str(n)[:300] for n in (out.get("notes") or [])][:8],
     })
 

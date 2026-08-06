@@ -429,7 +429,7 @@ async function readReport(){
       ${r.keywords.length?`<div style="margin-top:7px"><b>${r.keywords.length} keywords</b> ${chips(r.keywords.slice(0,40))}${r.keywords.length>40?' <span class="nf">+'+(r.keywords.length-40)+' more</span>':''}
         <div style="margin-top:5px"><button class="btn2" type="button" id="applyKw">Add these to Product / Vertical Focus</button></div></div>`:'<div style="margin-top:7px" class="nf">No keyword table found.</div>'}
       ${r.markets.length?`<div style="margin-top:9px"><b>${r.markets.length} markets</b> ${chips(r.markets)}
-        <div style="margin-top:5px"><button class="btn2" type="button" id="applyMk">Add these to Geographic targeting areas</button></div></div>`:''}
+        <div style="margin-top:5px"><button class="btn2" type="button" id="applyMk">Add these to Geographic targeting areas${r.state?' (as ‑'+escapeHtml(r.state)+')':''}</button></div></div>`:''}
       ${(r.monthly_spend||r.monthly_revenue)?`<div style="margin-top:9px" class="nf">${r.monthly_spend?'Stated monthly spend <b>$'+Number(r.monthly_spend).toLocaleString()+'</b>. ':''}${r.monthly_revenue?'Monthly revenue <b>$'+Number(r.monthly_revenue).toLocaleString()+'</b> — revenue, not spend; the spend box below stays manual unless the report states a fee.':''}</div>`:''}
       ${r.rankings.length?`<div style="margin-top:9px" class="nf">${r.rankings.length} keyword\u00d7market positions captured \u2014 kept for reference; the tool still runs its own live rank check.</div>`:''}
       ${r.partial?`<div style="margin-top:9px;padding:7px 9px;background:var(--warn-bg);border:1px solid #e8c98a;border-radius:7px;font-size:12px">\u26a0 <b>Partial read</b> \u2014 the reader ran out of room before finishing. The keyword and market lists came through; position detail may be incomplete.</div>`:''}
@@ -448,13 +448,54 @@ async function readReport(){
     };
     const am=$('applyMk');
     if(am) am.onclick=()=>{
-      let n=0;
-      (window._report.markets||[]).forEach(k=>{
-        const v=String(k).trim();
-        if(v && !stores.geo.includes(v)){ stores.geo.push(v); n++; }
+      const rep=window._report||{};
+      const st=(rep.state||'').toUpperCase();
+      // A report column reads "Wayne", not "Wayne, NJ". Applied bare, the whole
+      // list is built with no state suffix, the rank check looks in the wrong
+      // state, everything comes back "not ranking" and the zero-ranking uplift
+      // RAISES the price. So qualify on the way in (2026-08-06).
+      const qualify=v=>{
+        v=String(v||'').trim();
+        if(!v) return '';
+        return /,\s*[A-Za-z]{2}\s*$/.test(v) ? v : (st ? v+', '+st : v);
+      };
+      let n=0, unqualified=0, replaced=0;
+      (rep.markets||[]).forEach(raw=>{
+        const v=qualify(raw);
+        if(!v) return;
+        if(!/,\s*[A-Za-z]{2}\s*$/.test(v)) unqualified++;
+        // Replace a bare duplicate rather than skipping it — a pill already
+        // sitting there as "Wayne" is the very problem being fixed, and
+        // reporting "Added 0 markets" while leaving it broken is worse.
+        const bare=v.replace(/,\s*[A-Za-z]{2}\s*$/,'').toLowerCase();
+        const i=stores.geo.findIndex(g=>String(g).replace(/,\s*[A-Za-z]{2}\s*$/,'').toLowerCase()===bare);
+        if(i>=0){ if(stores.geo[i]!==v){ stores.geo[i]=v; replaced++; } }
+        else { stores.geo.push(v); n++; }
       });
+      // Named markets and Nationwide pricing describe different campaigns. The
+      // report is evidence of a local footprint, so move the scope with it.
+      let scoped='';
+      const gs=$('geo_scope');
+      if(gs && gs.value==='nationwide' && (n+replaced+ (rep.markets||[]).length)>0){
+        gs.value = (rep.markets||[]).length<=1 ? 'single_city' : 'contiguous_region';
+        gs.dispatchEvent(new Event('change'));
+        scoped=gs.options[gs.selectedIndex].text;
+        const nd=$('natdemand');
+        if(nd && nd.checked){ nd.checked=false; nd.dispatchEvent(new Event('change')); }
+      }
       PILL_RENDER.geo(); try{scheduleAutoSave();}catch(e){}
-      am.disabled=true; am.textContent='\u2713 Added '+n+' market'+(n===1?'':'s');
+      am.disabled=true;
+      am.textContent='\u2713 '+(n?('Added '+n):'')+(replaced?((n?', ':'Qualified ')+replaced+' with state'):'')+(!n&&!replaced?'Already applied':'');
+      const host=$('reportOut');
+      if(host && (scoped||unqualified)){
+        const note=document.createElement('div');
+        note.className='nf'; note.style.marginTop='6px';
+        const parts=[];
+        if(scoped) parts.push('\u21b3 Geo scope switched to <b>'+escapeHtml(scoped)+'</b> and national demand turned off \u2014 named markets and nationwide pricing are different campaigns.');
+        if(unqualified) parts.push('\u26a0 '+unqualified+' market'+(unqualified===1?'':'s')+' had no state and the report did not say which \u2014 add the state by hand or the rank check will look in the wrong place.');
+        note.innerHTML=parts.join(' ');
+        am.parentElement.appendChild(note);
+      }
     };
   }catch(e){ out.innerHTML='<div class="err">Read failed: '+e+'</div>'; }
   finally{ const b=$('reportGo'); if(b){ b.disabled=false; b.textContent='Read report'; } }
