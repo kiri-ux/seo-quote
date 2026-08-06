@@ -741,6 +741,30 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
   if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.past_seo_detail=v; }
   try{scheduleAutoSave();}catch(e){}
 });
+// collectInputs() only runs when the list is BUILT, so a field edited afterwards
+// never reaches ST.inputs and is missing from every snapshot taken from then on.
+// past_seo and past_seo_detail already had live listeners for exactly this
+// reason; campaign goal and current spend were added later without them and so
+// silently failed to save (2026-08-06). Same pattern, both events — a <select>
+// fires change, a text box needs input too so a typed figure isn't lost when the
+// operator clicks straight into the next step.
+(function wireLiveInputs(){
+  const bind=(id, key, read)=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    const push=()=>{
+      if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs[key]=read(el); }
+      try{scheduleAutoSave();}catch(e){}
+    };
+    el.addEventListener('change',push);
+    el.addEventListener('input',push);
+  };
+  bind('goal','goal', el=>el.value||'');
+  bind('pastseo_spend','past_seo_spend', el=>{
+    const n=parseFloat(String(el.value||'').replace(/[^0-9.]/g,''));
+    return (!isNaN(n)&&n>0)?Math.round(n):null;
+  });
+})();
 
 
 // ---- stepped live flow ----
@@ -2357,6 +2381,12 @@ function reflectInputs(inp){
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
   if($('goal')) $('goal').value = inp.goal||'';
   if($('pastseo_spend')) $('pastseo_spend').value = (inp.past_seo_spend!=null?inp.past_seo_spend:'');
+  // The details block is hidden until Past SEO is on; restoring the value
+  // without unhiding it would look like the field had lost the figure.
+  const _pw=document.getElementById('pastseo_detail_wrap');
+  if(_pw) _pw.classList.toggle('hidden', !inp.past_seo);
+  const _pl=document.getElementById('pastseo_lbl');
+  if(_pl) _pl.textContent = inp.past_seo ? 'Yes' : 'No';
   if($('natdemand_auto')) $('natdemand_auto').textContent = '';
   if(inp.ecommerce && !stores.industry.length){
     stores.industry.push('Retail - General / E-commerce');
