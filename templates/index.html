@@ -1643,7 +1643,8 @@ function renderStep4(p){
   }
   ST.addonRates = {primary:(p.ai_search? p.ai_search.client_total : p.client_tiers),
                    seo:p.client_tiers, ai:(p.ai_search? p.ai_search.client_add : null),
-                   each:p.client_addon_per_market, hard:p.hard_addon_per_market};
+                   each:p.client_addon_per_market, hard:p.hard_addon_per_market,
+                   hardPrimary:p.hard_true_tiers, aiHard:(p.ai_search? p.ai_search.hard_add : null)};
   try{ wireAddonField(); }catch(e){}
   try{ refreshAddonSuggestion(); }catch(e){}
   try{ jumpToPriceIfHashed(); }catch(e){}
@@ -2593,6 +2594,10 @@ function renderAddonCost(){
     <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Client total</td>${K.map(k=>`<td style="text-align:right;border-top:1px solid var(--line)">${money(R.primary[k]+R.each[k]*n)}</td>`).join('')}</tr>
   </table>
   <div class="nf" style="font-size:11.5px;margin-top:3px">Partner hard cost per add-on — ${money(R.hard.base)} / ${money(R.hard.intermediate)} / ${money(R.hard.advanced)}.</div>
+  ${(!R.ai && R.hardPrimary)?`<div class="nf" style="font-size:11.5px;margin-top:3px">Realised margin — ${K.map((k,i)=>{
+      const tot=R.primary[k]+R.each[k]*n, hc=(R.hardPrimary[k]||0)+(R.hard[k]||0)*n;
+      return `${L[i]} <b>${tot?((tot-hc)/tot*100).toFixed(1):'0.0'}%</b>`;
+    }).join(' · ')}. Every add-on is priced from its own partner cost through the margin, so this never falls below target however many markets are added.</div>`:''}
   ${R.ai?`<div class="nf" style="font-size:11.5px;margin-top:3px">AI Search is not included in add-on pricing — the assumption is that AI Search works at brand level rather than per market. <b>Unconfirmed.</b></div>`:''}`;
 }
 

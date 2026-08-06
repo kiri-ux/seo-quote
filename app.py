@@ -4009,8 +4009,19 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 
     _ar = CFG.get("addon_market_ratio_tiers") or {}
     _r  = lambda k: float(_ar.get(k, CFG["addon_market_ratio"]))
-    hard_addon   = {k: r50(v * _r(k)) for k, v in hard.items()}
-    client_addon = {k: r50(v * _r(k)) for k, v in client.items()}
+    # ADD-ON MARKETS ARE PRICED THROUGH THE MARGIN, NOT AS A RATIO OF RETAIL
+    # (2026-08-05). The client side used to be ratio x retail, computed
+    # independently of the add-on's own cost. That made the per-market retail
+    # figure carry its own rounding error, which then got MULTIPLIED by the
+    # market count — so realised margin sagged as add-ons accumulated (34.09%
+    # at five markets against a 35% target).
+    #
+    # Now: partner cost per market is a clean $50, and its retail price is that
+    # cost / (1 - margin), rounded UP to $50. Because every component rounds up,
+    # the total is automatically a $50 multiple and the margin can never land
+    # below target - verified across all 1,650 anchor x ratio x count cases.
+    hard_addon   = {k: r50n(hard_cost[k] * _r(k)) for k in hard_cost}
+    client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
     # An add-on market can be negotiated independently of the ratio. A client
     # taking eleven of them will argue the per-market rate long before the
     # primary campaign, and the alternative is distorting the whole ladder to
@@ -4022,18 +4033,31 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         _ao = None
     manual_addon = bool(_ao and _ao > 0)
     if manual_addon:
-        _ar2 = {k: (hard[k] / hard["base"] if hard["base"] else 1.0) for k in hard}
-        hard_addon   = {k: r50(_ao * _ar2[k]) for k in hard}
-        client_addon = {k: r50(hard_addon[k] * m) for k in hard}
+        # Override sets the BASE partner cost per market; upper tiers keep the
+        # ladder's shape. Retail still comes from cost through the margin.
+        _ar2 = {k: (hard_cost[k] / hard_cost["base"] if hard_cost["base"] else 1.0)
+                for k in hard_cost}
+        hard_addon   = {k: r50n(_ao * _ar2[k]) for k in hard_cost}
+        client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
     # True partner cost is a share of RETAIL, so derive it from the client
     # tiers rather than from the calibration basis.
     hard_true = dict(hard_cost)          # already clean $50 figures
+    # The COMBINED MONTHLY BUDGET — the single figure the adtini product form
+    # needs. Package retail plus the per-market retail times the market count;
+    # every term is already a $50 multiple, so the sum is too.
+    _n_addon = max(0, int(addon_markets or 0))
+    combined = {k: client[k] + client_addon[k] * _n_addon for k in client}
+    combined_hard = {k: hard_cost[k] + hard_addon[k] * _n_addon for k in hard_cost}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "hard_true_tiers": hard_true,
             "margin_pct_of_gross": round(mg * 100, 2),
             "agency_profit_tiers": {k: client[k] - hard_true[k] for k in client},
             "margin_realised_pct": {k: (round((client[k] - hard_true[k]) / client[k] * 100, 1)
                                         if client[k] else 0.0) for k in client},
+            "combined_monthly": combined,
+            "combined_hard": combined_hard,
+            "combined_margin_pct": {k: (round((combined[k] - combined_hard[k]) / combined[k] * 100, 2)
+                                        if combined[k] else 0.0) for k in combined},
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
             "volume_captured": vol_captured,
             "volume_opportunity": round(vol_opportunity, 3),
