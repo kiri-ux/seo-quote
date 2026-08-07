@@ -1348,6 +1348,22 @@ $('step1').addEventListener('click', async()=>{
 
 // Editable keyword list: removable chips per bucket + manual add. Step 2 reads
 // from ST.kw, so edits here flow through to scoring, rankings, and the table.
+// The number beside a keyword is THIS CITY'S demand for the service. Two cases
+// are not that, and both used to render as if they were: a city with no data of
+// its own answered by its county/state/the US (Lawrenceville NJ read 8,100/mo
+// next to Paramus's 70), and a city with no figure at all. Label them.
+// (2026-08-07)
+function volTag(x){
+  const v=Number(x.vol||0);
+  if(x.vol_scope==='broader'){
+    return ` <span class="nf" style="font-style:italic" title="No search volume for this city on its own — this is the wider area's figure (county, state or national), so it is not this city's demand. Excluded from the pricing total.">(${v.toLocaleString()} wider area)</span>`;
+  }
+  if(!v){
+    return ` <span class="nf" title="No search volume reported for this city. Local geo-modified phrases very often report zero even when the market is real — it is missing data, not proof of no demand.">(no data)</span>`;
+  }
+  return ` <span class="nf">(${v.toLocaleString()})</span>`;
+}
+
 function kwBucket(title, bucketKey){
   const arr=ST.kw[bucketKey]||[];
   const items=arr.map((x,i)=>{
@@ -1356,7 +1372,7 @@ function kwBucket(title, bucketKey){
       ? `<span title="Added by AI" style="color:var(--velocity,#378ADD);font-weight:700;margin-right:3px">✦</span>`
       : '';
     return `<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
-      <span style="flex:1${added?';color:#1c5fa8':''}">${dot}${x.kw}${x.vol?` <span class="nf">(${Number(x.vol).toLocaleString()})</span>`:''}</span>
+      <span style="flex:1${added?';color:#1c5fa8':''}">${dot}${x.kw}${volTag(x)}</span>
       <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700;line-height:1.2">×</b>
     </li>`;
   }).join('');
@@ -1442,7 +1458,7 @@ function renderStep1(){
         return `<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50E} <b>Market wording checked against search volume</b><div class="nf" style="margin-top:3px">${bits.join('')}</div><div class="nf" style="margin-top:4px;font-size:11px">Each spelling was measured nationally with ${probed.length?'\u201c'+probed.map(t=>escapeHtml(t)).join('\u201d, \u201c')+'\u201d':'the client\u2019s own terms'} attached \u2014 the question is which words people type, not how much local demand there is. Per-city demand is measured separately.</div></div>`;
       })():''}
       ${kw.ecommerce_suppressed?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">🛒 <b>Storefront detected — kept local</b><br><span class="nf">${escapeHtml(kw.ecommerce_suppressed)}</span></div>`:(kw.ecommerce_detected&&kw.ecommerce_reason)?`<div style="margin-top:4px" class="nf">🛒 <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`:''}
-      ${kw.total_volume?`<div style="margin-top:4px" class="nf">${kw.national_demand?'Volume is the US national figure for each term — it drives the volume component of price.':"Volume is summed across all targeted cities — it drives the volume component of price; the number beside each keyword is that city's own volume."}</div>`:''}</details>`:''}
+      ${kw.total_volume?`<div style="margin-top:4px" class="nf">${kw.national_demand?'Volume is the US national figure for each term — it drives the volume component of price.':"Volume is summed across all targeted cities — it drives the volume component of price. The number beside each keyword is <b>that city's demand for the service</b>, not the volume of the geo-modified phrase (local phrases mostly report zero). <i>wider area</i> means the city had no figure of its own and its county, state or the US answered instead — real, but not that city's, and left out of the pricing total."}</div>`:''}</details>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">
       ${kwBucket('Ultra Competitive','ultra')}

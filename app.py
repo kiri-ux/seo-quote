@@ -1563,6 +1563,12 @@ def fetch_local_volume(terms, markets, state, national=False):
     # Google treats as one market. Stashed on the dict rather than widening the
     # signature, since three call sites unpack this tuple.
     per_city["__city_locs__"] = city_locs
+    # Which cities had NO volume of their own and were answered by a broader
+    # location. Previously only mentioned inside the prose note, so the per-row
+    # numbers showed a county/state/national figure as though it were the city's
+    # — Lawrenceville NJ read 8,100/mo for "outdoor furniture" next to Paramus's
+    # 70 (2026-08-07). Callers need this as data to mark those rows.
+    per_city["__fallback_cities__"] = sorted({c.strip() for c in fallback_cities})
     return totals, per_city, ("; ".join(notes) or None)
 
 
@@ -3987,17 +3993,29 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             which is exactly the number an operator checks the tiering against
             (2026-08-07).
             """
+            fb = {str(x).strip().lower()
+                  for x in ((per_city or {}).get("__fallback_cities__") or [])}
             for r in rows:
                 svc_l = (r.get("service") or "").lower()
                 city_l = (r.get("city") or "").lower()
-                # the row shows ITS OWN city's volume; pricing uses the summed total
+                # This city's own volume for the SERVICE. Not the volume of the
+                # geo-modified phrase — local phrases mostly report zero — and
+                # not the cross-city total, which would print the same number
+                # against every city.
                 v = per_city.get((city_l, svc_l))
-                if v is None:
-                    v = vols.get(svc_l)
-                if v is None:
-                    v = vols.get((r.get("keyword") or "").lower())
                 if v is not None:
                     r["volume"] = v
+                    # A city with no data of its own was answered by its county,
+                    # state or the whole US. That number is real but it is NOT
+                    # this city's, so say so rather than letting it read as a
+                    # small town out-searching Manhattan.
+                    if city_l in fb:
+                        r["vol_scope"] = "broader"
+                    continue
+                # No per-city figure at all: leave the row blank rather than
+                # substituting the summed total. An unknown is an unknown.
+                r["volume"] = 0
+                r["vol_scope"] = "unknown"
             return rows
 
         _apply_volumes(full)
@@ -5433,6 +5451,10 @@ def api_keywords():
     if not s1["all"]:
         return jsonify({"error": "No keywords returned — try broader seeds or check market/state."}), 400
     conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                       # "broader" = the figure is a county/state/US number
+                       # because this city had none of its own; "unknown" = no
+                       # figure at all. Neither is this city's demand.
+                       "vol_scope": r.get("vol_scope", ""),
                        "origin": r.get("origin", "")} for r in L]
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
@@ -5500,6 +5522,10 @@ def api_refine():
                         "business_desc": "",
                         "site_pages_found": 0, "refine_error": str(e)})
     conv = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                       # "broader" = the figure is a county/state/US number
+                       # because this city had none of its own; "unknown" = no
+                       # figure at all. Neither is this city's demand.
+                       "vol_scope": r.get("vol_scope", ""),
                        "origin": r.get("origin", "")} for r in L]
     return jsonify({
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
