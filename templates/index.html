@@ -413,6 +413,91 @@ const stores = {sites:[], kw:[], geo:[], spgeo:[], industry:[]};
 const PILL_RENDER = {};
 
 // ---- import an existing SEO report -------------------------------------
+// A report's keyword table carries the city INSIDE the phrase — "ski shop nj",
+// "ski shop shrewsbury", "ski shop wayne nj". This tool crosses every bare
+// term with every market itself, so importing those verbatim does two bad
+// things: the grid appends a SECOND place ("ski shop wayne nj wayne, nj"), and
+// three pills that all reduce to the same service burn three of a six-service
+// budget that should be holding real head terms. So strip the geo on the way
+// in and keep the bare term. (2026-08-06)
+const _US_STATE_NAME={al:'alabama',ak:'alaska',az:'arizona',ar:'arkansas',ca:'california',
+  co:'colorado',ct:'connecticut',de:'delaware',fl:'florida',ga:'georgia',hi:'hawaii',
+  id:'idaho',il:'illinois',ia:'iowa',ks:'kansas',ky:'kentucky',la:'louisiana',
+  me:'maine',md:'maryland',ma:'massachusetts',mi:'michigan',mn:'minnesota',
+  ms:'mississippi',mo:'missouri',mt:'montana',ne:'nebraska',nv:'nevada',
+  nh:'new hampshire',nj:'new jersey',nm:'new mexico',ny:'new york',nc:'north carolina',
+  nd:'north dakota',oh:'ohio',ok:'oklahoma',or:'oregon',pa:'pennsylvania',
+  ri:'rhode island',sc:'south carolina',sd:'south dakota',tn:'tennessee',tx:'texas',
+  ut:'utah',vt:'vermont',va:'virginia',wa:'washington',wv:'west virginia',
+  wi:'wisconsin',wy:'wyoming',dc:'district of columbia',in:'indiana'};
+
+// Only strip a bare two-letter token if it is a state THIS report actually
+// mentions. Stripping all 50 unconditionally would eat real words — "ski boots
+// me" (Maine), "grill or" (Oregon), "bbq in" (Indiana) — for clients that never
+// touch those states. Same precedent as _strip_markets() server-side.
+function _reportGeo(){
+  const rep=window._report||{}, abbrs=new Set(), cities=[];
+  const noteAbbr=a=>{ a=String(a||'').trim().toLowerCase(); if(_US_STATE_NAME[a]) abbrs.add(a); };
+  const eat=v=>{
+    v=String(v||'').trim(); if(!v) return;
+    const m=v.match(/^(.*?),\s*([A-Za-z]{2})\s*$/);
+    if(m){ cities.push(m[1].trim().toLowerCase()); noteAbbr(m[2]); }
+    else { cities.push(v.toLowerCase()); }
+  };
+  (rep.markets||[]).forEach(eat);
+  (stores.geo||[]).forEach(eat);
+  noteAbbr(rep.state);
+  const states=[];
+  abbrs.forEach(a=>{ states.push(_US_STATE_NAME[a]); states.push(a); });
+  // Longest first so "new york city" wins over "new york", and "new york" over
+  // "york".
+  const byLen=(a,b)=>b.length-a.length;
+  // A city is stripped ANYWHERE in the phrase ("outdoor furniture paramus
+  // sale"). A state is stripped only at the EDGES, because a state name in the
+  // middle is usually doing adjectival work — "new york style pizza",
+  // "california king mattress" — and a NY-market client would otherwise lose
+  // the product. Reports write the state as a suffix anyway.
+  return {vocab:cities.filter(Boolean).sort(byLen),
+          edge:states.filter(Boolean).sort(byLen), abbrs:abbrs};
+}
+
+const _PROX_RE=/\b(near me|nearby|near by|close to me|around me|in my area|near my location|closest|near you)\b/g;
+
+function bareTerm(v, geo){
+  let t=String(v||'').toLowerCase().replace(/\s+/g,' ').trim();
+  t=t.replace(_PROX_RE,' ').replace(/\s+/g,' ').trim();
+  const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  // Pass 1 — cities, anywhere in the phrase. A city name has no adjectival
+  // use to protect: "paramus ski shop" and "ski shop paramus" are both places.
+  let hadCity=false, guard=0, hit=true;
+  while(hit && guard++<8){
+    hit=false;
+    for(const g of (geo.vocab||[])){
+      const re=new RegExp('(^|\\s)'+esc(g)+'(\\s|$)');
+      if(re.test(t)){ t=t.replace(re,' ').replace(/\s+/g,' ').trim(); hit=true; hadCity=true; break; }
+    }
+  }
+  // Pass 2 — states. Suffix only, because a state in front of a noun is
+  // usually adjectival ("new york style pizza", "california king mattress")
+  // and mangling that into "style pizza" puts a nonsense keyword in front of a
+  // client. The one exception: if the phrase ALSO named a market, the state is
+  // certainly geo, so strip it wherever it sits ("ski shop paramus nj deals").
+  guard=0; hit=true;
+  while(hit && guard++<8){
+    hit=false;
+    for(const g of (geo.edge||[])){
+      const re=hadCity ? new RegExp('(^|\\s)'+esc(g)+'(\\s|$)')
+                       : new RegExp('(^|\\s)'+esc(g)+'\\s*$');
+      if(re.test(t)){ t=t.replace(re,' ').replace(/\s+/g,' ').trim(); hit=true; break; }
+    }
+  }
+  // "ski shop in" / "ski rental near" — the preposition only existed to carry
+  // the place that was just removed.
+  t=t.replace(/\s+(in|near|around|at|for)$/,'').replace(/^(in|near|around|at)\s+/,'')
+     .replace(/\s+/g,' ').trim();
+  return t;
+}
+
 async function readReport(){
   const f=$('reportFile'), out=$('reportOut');
   if(!f || !f.files || !f.files.length){ out.innerHTML='<div class="err">Choose a file first.</div>'; return; }
@@ -423,10 +508,18 @@ async function readReport(){
     const r=await (await fetch('/api/import_report',{method:'POST', body:fd})).json();
     if(r.error){ out.innerHTML='<div class="err">'+escapeHtml(r.error)+'</div>'; return; }
     window._report=r;
+    // Flag geo-carrying terms BEFORE the operator clicks, so the reduction
+    // isn't a surprise after the fact.
+    const _rgeo=_reportGeo();
+    const geoKw=(r.keywords||[]).filter(k=>{
+      const raw=String(k||'').trim();
+      return raw && bareTerm(raw,_rgeo)!==raw.toLowerCase();
+    }).length;
     const chips=a=>a.map(x=>'<span class="nf" style="display:inline-block;background:var(--info-bg);border-radius:9px;padding:1px 8px;margin:2px 3px 0 0;font-size:11.5px">'+escapeHtml(x)+'</span>').join('');
     out.innerHTML=`<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;background:#fff">
       <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Found in ${escapeHtml(r.filename||'report')}${r.period?' \u00b7 '+escapeHtml(r.period):''} <span class="nf" style="text-transform:none;letter-spacing:0;font-weight:400">(${r.images_read} image${r.images_read===1?'':'s'} read)</span></div>
       ${r.keywords.length?`<div style="margin-top:7px"><b>${r.keywords.length} keywords</b> ${chips(r.keywords.slice(0,40))}${r.keywords.length>40?' <span class="nf">+'+(r.keywords.length-40)+' more</span>':''}
+        ${geoKw?`<div class="nf" style="margin-top:5px">${geoKw} of these carry a city or state (&ldquo;ski shop wayne nj&rdquo;). They will be added <b>bare</b> &mdash; this tool crosses every term with every market on its own, so leaving the place in the phrase would build &ldquo;ski shop wayne nj wayne, nj&rdquo; and burn several term slots on what is really one term.</div>`:''}
         <div style="margin-top:5px"><button class="btn2" type="button" id="applyKw">Add these to Product / Vertical Focus</button></div></div>`:'<div style="margin-top:7px" class="nf">No keyword table found.</div>'}
       ${r.markets.length?`<div style="margin-top:9px"><b>${r.markets.length} markets</b> ${chips(r.markets)}
         <div style="margin-top:5px"><button class="btn2" type="button" id="applyMk">Add these to Geographic targeting areas${r.state?' (as ‑'+escapeHtml(r.state)+')':''}</button></div></div>`:''}
@@ -438,13 +531,33 @@ async function readReport(){
     </div>`;
     const ak=$('applyKw');
     if(ak) ak.onclick=()=>{
-      let n=0;
+      const geo=_reportGeo();
+      let n=0, stripped=0, merged=0, dupe=0;
+      const seenHere=new Set();
       (window._report.keywords||[]).forEach(k=>{
-        const v=String(k).trim();
-        if(v && !stores.kw.includes(v)){ stores.kw.push(v); n++; }
+        const raw=String(k||'').trim();
+        if(!raw) return;
+        const v=bareTerm(raw, geo);
+        if(!v) return;                                  // the phrase was only a place
+        if(v!==raw.toLowerCase()) stripped++;
+        if(seenHere.has(v)){ merged++; return; }         // two report rows, one term
+        seenHere.add(v);
+        if(stores.kw.some(x=>String(x).toLowerCase()===v)){ dupe++; return; }
+        stores.kw.push(v); n++;
       });
       PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
-      ak.disabled=true; ak.textContent='\u2713 Added '+n+' term'+(n===1?'':'s');
+      ak.disabled=true;
+      ak.textContent='\u2713 Added '+n+' term'+(n===1?'':'s');
+      const bits=[];
+      if(stripped) bits.push(stripped+' had the city or state stripped out \u2014 the tool crosses each term with every market itself, so the place belongs in Geographic targeting, not in the phrase');
+      if(merged) bits.push(merged+' collapsed into a term already in this batch');
+      if(dupe) bits.push(dupe+' already on the list');
+      if(bits.length){
+        const note=document.createElement('div');
+        note.className='nf'; note.style.marginTop='5px';
+        note.textContent='\u2022 '+bits.join('. ')+'.';
+        ak.parentNode.appendChild(note);
+      }
     };
     const am=$('applyMk');
     if(am) am.onclick=()=>{
