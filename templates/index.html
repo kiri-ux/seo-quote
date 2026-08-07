@@ -140,6 +140,11 @@
     transition:background .15s,color .15s}
   input[type=file]::file-selector-button:hover{background:var(--atlas);color:#fff}
 
+  /* Live pill count, sits at the right-hand end of the field's label. */
+  .pillcount{float:right;font-family:'Barlow',sans-serif;font-weight:600;
+    font-size:11px;letter-spacing:.02em;text-transform:none;color:var(--velocity);
+    background:var(--info-bg);border-radius:9px;padding:1px 8px;margin-left:8px}
+
   .hidden{display:none}
 
   /* ---- info tooltip (scanner tipbox treatment) ---------------- */
@@ -673,6 +678,28 @@ document.addEventListener('click', e=>{ if(e.target && e.target.id==='reportGo')
 function wirePills(key, inputId){
   const box = document.querySelector(`.pillbox[data-for="${key}"]`);
   const input = document.getElementById(inputId);
+  // Live count in the label. Once a list runs to two dozen terms the pills wrap
+  // to six rows and there is no way to know how many are in there — and the
+  // count matters, because it sets the grid size and the rank-check denominator.
+  const NOUN={kw:'term',geo:'area',sites:'site',spgeo:'geo',industry:'category'};
+  function renderCount(){
+    const lbl=box.previousElementSibling && box.previousElementSibling.classList &&
+      box.previousElementSibling.classList.contains('help')
+        ? box.previousElementSibling.previousElementSibling
+        : box.previousElementSibling;
+    // collapseHelp() moves the .help into the label, so walk back to the label.
+    let target=lbl;
+    while(target && target.tagName!=='LABEL') target=target.previousElementSibling;
+    if(!target) return;
+    let tag=target.querySelector('.pillcount');
+    if(!tag){
+      tag=document.createElement('span');
+      tag.className='pillcount';
+      target.appendChild(tag);
+    }
+    const n=stores[key].length, noun=NOUN[key]||'item';
+    tag.textContent = n ? `${n} ${noun}${n===1?'':'s'}` : '';
+  }
   function render(){
     box.querySelectorAll('.pill').forEach(p=>p.remove());
     stores[key].forEach((v,i)=>{
@@ -682,6 +709,7 @@ function wirePills(key, inputId){
       el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
       box.insertBefore(el,input);
     });
+    renderCount();
   }
   PILL_RENDER[key] = render;
   if(key === 'geo'){
@@ -1387,7 +1415,7 @@ async function runStep2(){
       // Step 2 measured competition on a different basis than Step 1 priced
       // demand on, because none of this was ever sent.
       industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:ST.inputs.geo_scope,
-      national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
+      national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||''});
     ST.adder=m.adder; ST.score=m.score; ST.cpc=m.cpc||{}; ST.kd=m.kd||{};
     ST.adder_basis=m.adder_basis; ST.cpc_used=m.cpc_used;
     // A $0 adder with no bid data behind it is missing evidence, not measured
@@ -1566,7 +1594,7 @@ async function _runStep3(retryOnlyFailed){
     ST.table = ST.table.filter(r=>!r.error);
     ST.errored = 0;
     try{
-      const sub=await postJSON('/api/rankings_submit',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), keywords:failedKws,
+      const sub=await postJSON('/api/rankings_submit',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', keywords:failedKws,
         geo_values:ST.inputs.geo_values, state:ST.inputs.state});
       const pending=(sub.tasks||[]).filter(t=>t.task_id);
       (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
@@ -1627,7 +1655,7 @@ async function _runStep3Live(todo, all, BATCH){
     let got=null;
     for(let attempt=0; attempt<2 && !got; attempt++){
       try{
-        got=await postJSON('/api/rankings',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), 
+        got=await postJSON('/api/rankings',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', 
           batch, domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
           state:ST.inputs.state, brand:ST.inputs.brand});
       }catch(e){
@@ -1704,7 +1732,7 @@ async function ensureRankLoc(){
       geo_values:ST.inputs.geo_values||[], state:ST.inputs.state||'',
       primary_market:(typeof primaryMarket==='function'?primaryMarket():''),
       industry:ST.inputs.industry||'', geo_scope:ST.inputs.geo_scope||'',
-      national_demand:!!ST.inputs.national_demand});
+      national_demand:!!ST.inputs.national_demand, goal:ST.inputs.goal||''});
     // Re-render through finishStep3 so the Retry / Price-it handlers rebind;
     // panel() alone would replace the buttons with dead copies.
     if(rl && rl.location){ ST.rankLoc=rl; if($('p3')) finishStep3(); }
@@ -2028,7 +2056,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -2041,7 +2069,7 @@ function renderStep4(p){
     if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -2193,7 +2221,7 @@ async function runStep4(){
   const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   try{
-    const p=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
@@ -2678,6 +2706,9 @@ function syncGeoReq(){
   if($('georeq_note')) $('georeq_note').textContent = nw ? '(optional for Nationwide)' : '(except Nationwide)';
 }
 $('geo_scope').addEventListener('change', syncGeoReq);
+// The scope suggestion says whether the dropdown AGREES with the markets, so it
+// has to redraw when the dropdown moves, not only when the markets do.
+$('geo_scope').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }catch(e){} });
 syncGeoReq();
 
 ['state','geo_scope','addon','markup','brand'].forEach(fid=>{
@@ -3091,7 +3122,7 @@ let _mktTimer = null;
 async function refreshMarketSummary(){
   const box = $('marketSummary'); if(!box) return;
   const mk = (stores.geo || []);
-  if(mk.length < 2){ box.innerHTML=''; return; }
+  if(!mk.length){ box.innerHTML=''; return; }
   try{
     const r = await postJSON('/api/markets',
       {geo_values: mk, state: ($('state') ? $('state').value : '')});
@@ -3105,12 +3136,65 @@ async function refreshMarketSummary(){
       ? `<div class="nf" style="margin-top:2px">Couldn\u2019t place ${r.unlocated.map(x=>escapeHtml(x)).join(', ')} \u2014 counted separately.</div>` : '';
     const same = r.cities === r.markets;
     const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Cities within <b>${r.radius} miles</b> of each other count as one market, named after the largest. This is what the geos <b>cover</b> — not the add-on count, though everything downstream counts markets rather than cities.<br><br>Straight-line distance, not drive time, so overrule it when you know better. Radius is set in Pricing config.</div></span>`;
-    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${r.cities} ${r.cities===1?'city':'cities'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`;
+    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${r.cities} ${r.cities===1?'city':'cities'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`
+      + scopeSuggestionHtml(r.scope_suggestion);
+    wireScopeSuggestion(r.scope_suggestion);
   }catch(e){ box.innerHTML=''; }
 }
 function scheduleMarketSummary(){
   clearTimeout(_mktTimer);
   _mktTimer = setTimeout(()=>{ try{ refreshMarketSummary(); }catch(e){} }, 250);
+}
+
+// ---- geo scope, read off the markets ------------------------------------
+// The band picks the pricing anchor, so a wrong pick is a wrong price — and the
+// markets already answer the question. Shown as a suggestion with its evidence,
+// never applied automatically: "Philadelphia + South Jersey" is one trade area
+// to a human and two states to a distance function. (2026-08-07)
+const SCOPE_LABEL={single_city:'Single city',contiguous_region:'Contiguous region',
+  non_contiguous_region:'Non-contiguous region',statewide:'Statewide',
+  nationwide:'Nationwide'};
+
+function scopeSuggestionHtml(sg){
+  if(!sg || !sg.reason) return '';
+  const sel=$('geo_scope');
+  const cur=sel?sel.value:'';
+  const sug=sg.suggested||'';
+  const e=sg.evidence||{};
+  const bits=[];
+  if(e.chains!=null) bits.push(e.chains===1?'one connected area':e.chains+' separate clusters');
+  if(e.span_miles!=null) bits.push(e.span_miles+' mi end to end');
+  if(e.states&&e.states.length) bits.push(e.states.length===1?e.states[0]:e.states.length+' states');
+  if((e.unlocated||[]).length) bits.push(e.unlocated.length+' unplaced');
+  const evi=bits.length?`<div class="nf" style="font-size:11px;margin-top:2px">${escapeHtml(bits.join(' · '))}</div>`:'';
+  if(!sug){
+    return `<div class="nf" style="font-size:12px;margin-top:3px">\u{1F9ED} ${escapeHtml(sg.reason)}</div>`+evi;
+  }
+  const agrees = cur===sug;
+  const head = agrees
+    ? `✓ <b>Geo scope matches the markets</b> — ${escapeHtml(SCOPE_LABEL[sug]||sug)}.`
+    : `⚠ <b>Markets suggest ${escapeHtml(SCOPE_LABEL[sug]||sug)}</b>, not ${escapeHtml(SCOPE_LABEL[cur]||cur||'—')} <button type="button" id="applyScope" class="btn2" style="padding:2px 9px;font-size:11.5px;margin-left:4px">Use ${escapeHtml(SCOPE_LABEL[sug]||sug)}</button>`;
+  const conf = sg.confidence?` <span style="opacity:.7">(${escapeHtml(sg.confidence)} confidence)</span>`:'';
+  return `<div style="margin-top:4px;font-size:12px;padding:6px 9px;border-radius:7px;`
+    + (agrees?'background:var(--info-bg);border:1px solid var(--line)'
+             :'background:#fdf1d8;border:1px solid #e8c98a')+`">`
+    + head
+    + `<div class="nf" style="margin-top:3px">${escapeHtml(sg.reason)}${conf}</div>`
+    + evi + `</div>`;
+}
+
+function wireScopeSuggestion(sg){
+  const btn=$('applyScope');
+  if(!btn || !sg || !sg.suggested) return;
+  btn.onclick=()=>{
+    const sel=$('geo_scope'); if(!sel) return;
+    // Only pick an option that actually exists — the band list can change.
+    if(![...sel.options].some(o=>o.value===sg.suggested)) return;
+    sel.value=sg.suggested;
+    sel.dispatchEvent(new Event('change'));
+    try{ scheduleMarketSummary(); }catch(e){}
+    try{ scheduleAutoSave(); }catch(e){}
+  };
 }
 
 function syncStateSummary(){
