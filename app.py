@@ -502,6 +502,14 @@ CFG = {
     # alone. Confirm before treating it as settled.
     "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
     "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
+    # Campaign goals that flip the national-demand switch. See
+    # GOAL_NATIONAL_DEMAND — editable here so the list can be widened without a
+    # deploy. Matched case-insensitively against the exact order-form option.
+    "goal_national_demand": ["Online Sales"],
+    # Two clusters count as ONE region if any city in one is within this many
+    # miles of any city in the other. Wider than market_radius_miles on purpose:
+    # 25 miles is "same market", 60 is "same trade area".
+    "scope_join_radius_miles": 60,
     "ultra_bucket_size": 3,
     "competitive_bucket_size": 6,
     "list_cap": 20,
@@ -1676,6 +1684,31 @@ GOAL_SCOPE = {
 # because the price would look like a retail campaign for work that isn't one.
 GOAL_OFF_PATTERN = {"Mobile App Download", "Job Recruitment"}
 
+# Goals that DO drive the national-demand switch (2026-08-07, operator request).
+# Distinct from GOAL_SCOPE, which only ever warns: this set actually flips the
+# volume pull. The reasoning is the same one that makes the markets veto correct
+# — inferences lose to statements. A detected shopping cart is an inference about
+# what a site can do; a goal of "Online Sales" is the client telling the order
+# form what they are buying, so it ranks with the manual switch and an explicit
+# Nationwide scope rather than with the RZ taxonomy.
+#
+# Deliberately NOT every GOAL_SCOPE "national" entry. "B2B Sales" maps national
+# but a regional IT firm selling to businesses in three counties is a local
+# campaign, and "Mobile App Download" is already flagged as off-pattern for SEO.
+# Config key so the list can be widened without a deploy.
+GOAL_NATIONAL_DEMAND = ["Online Sales"]
+
+
+def goal_forces_national(goal):
+    """Does this campaign goal itself put the quote on national demand?"""
+    g = (goal or "").strip().lower()
+    if not g:
+        return ""
+    for opt in (CFG.get("goal_national_demand") or GOAL_NATIONAL_DEMAND):
+        if g == str(opt).strip().lower():
+            return str(opt)
+    return ""
+
 
 def goal_scope(goal):
     return GOAL_SCOPE.get((goal or "").strip(), "")
@@ -2439,6 +2472,107 @@ def group_by_distance(markets, state="", radius=None):
         else:
             groups.append([m])
     return groups, list(pts), unlocated
+
+
+def suggest_geo_scope(markets, state=""):
+    """Read the geo scope OFF the entered markets instead of asking for it.
+
+    The operator picks a band from a dropdown, and the band chooses the pricing
+    anchor — so a wrong pick is a wrong price. But the markets themselves answer
+    the question: how many states, how far apart, and do the clusters touch.
+
+    Contiguity is single-link at a JOIN radius (default 60 miles) rather than
+    "is every city near every other city". Wayne and Shrewsbury are 55 miles
+    apart and Shrewsbury to Lawrenceville is 35 — nobody would call that two
+    separate regions, but a complete-link test at 25 miles calls it three. One
+    connected chain = one region; two chains that never touch = non-contiguous.
+
+    Returns a suggestion plus the evidence, never a decision. The operator keeps
+    the dropdown: "Philadelphia + South Jersey" is one trade area to a human and
+    two states to a distance function. (2026-08-07)
+    """
+    mk = [m for m in (markets or []) if str(m).strip()]
+    out = {"suggested": "", "confidence": "", "reason": "", "evidence": {}}
+    if not mk:
+        return out
+
+    pts, unlocated = {}, []
+    for m in mk:
+        c = city_coords(m, state)
+        (pts.__setitem__(m, c) if c else unlocated.append(m))
+
+    states = sorted({market_state(m, state) for m in mk if market_state(m, state)})
+    join_r = float(CFG.get("scope_join_radius_miles", 60))
+    out["evidence"] = {"cities": len(mk), "states": states,
+                       "located": len(pts), "unlocated": unlocated,
+                       "join_radius": int(join_r)}
+
+    if len(pts) < 2:
+        # Nothing to measure. One city is one city; anything else can't be read
+        # without coordinates, and guessing a band that sets the anchor is worse
+        # than saying so.
+        if len(mk) == 1:
+            out.update(suggested="single_city", confidence="high",
+                       reason="One market entered.")
+        elif unlocated:
+            out.update(reason=f"Could not place {len(unlocated)} of {len(mk)} "
+                              "markets on the map, so the scope can't be read "
+                              "from them.")
+        return out
+
+    # Single-link chain at the join radius: which clusters actually touch.
+    names = list(pts)
+    chains = []
+    for m in names:
+        joined = [c for c in chains
+                  if any(miles_between(pts[m], pts[o]) <= join_r for o in c)]
+        if not joined:
+            chains.append([m])
+        else:
+            merged = [m]
+            for c in joined:
+                merged += c
+                chains.remove(c)
+            chains.append(merged)
+
+    span = max((miles_between(pts[a], pts[b])
+                for i, a in enumerate(names) for b in names[i + 1:]), default=0.0)
+    out["evidence"].update(chains=len(chains), span_miles=round(span),
+                           chain_sizes=sorted((len(c) for c in chains), reverse=True))
+
+    if len(states) > 1:
+        # Multi-state is only non-contiguous if the clusters are also apart.
+        # Philadelphia + Cherry Hill is two states and one trade area.
+        if len(chains) == 1:
+            out.update(suggested="contiguous_region", confidence="medium",
+                       reason=f"{len(mk)} markets across {len(states)} states "
+                              f"({', '.join(states)}), but they form ONE "
+                              f"connected area — {round(span)} miles end to end, "
+                              "no gap wider than "
+                              f"{int(join_r)} miles. A state line is not a gap.")
+        else:
+            out.update(suggested="non_contiguous_region", confidence="high",
+                       reason=f"{len(chains)} separate clusters across "
+                              f"{len(states)} states, {round(span)} miles end to "
+                              "end — they do not touch.")
+        return out
+
+    if len(chains) > 1:
+        out.update(suggested="non_contiguous_region", confidence="high",
+                   reason=f"{len(chains)} separate clusters within "
+                          f"{states[0] if states else 'one state'} — "
+                          f"{round(span)} miles end to end, with gaps wider than "
+                          f"{int(join_r)} miles between them.")
+    elif span <= float(CFG.get("market_radius_miles", 25)):
+        out.update(suggested="single_city", confidence="medium",
+                   reason=f"All {len(mk)} markets sit within "
+                          f"{round(span)} miles — one metro, not a region.")
+    else:
+        out.update(suggested="contiguous_region", confidence="high",
+                   reason=f"{len(mk)} markets in one connected area, "
+                          f"{round(span)} miles end to end"
+                          + (f", all in {states[0]}" if states else "") + ".")
+    return out
 
 
 def group_by_metro(vectors, min_terms=2):
@@ -3370,7 +3504,30 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # nationwide, so every term came back as national head demand).
         scope_warning = ""
         _gs = goal_scope(goal)
-        if goal and _gs == "local" and national_demand:
+        _gforce = goal_forces_national(goal)
+        if _gforce and (markets or gbp_count or site_locations):
+            # Goal-driven national is intentional, so this is not a warning that
+            # something is wrong — it's a statement of what the goal did, and of
+            # the one thing it deliberately did NOT do.
+            _where = []
+            if markets:
+                _where.append(f"{len(markets)} market"
+                              f"{'' if len(markets) == 1 else 's'} entered")
+            if gbp_count:
+                _where.append(f"{gbp_count} Google Business listing"
+                              f"{'' if gbp_count == 1 else 's'}")
+            if site_locations:
+                _where.append(f"{len(site_locations)} location page"
+                              f"{'' if len(site_locations) == 1 else 's'}")
+            scope_warning = (
+                f"Goal is “{_gforce}”, so demand is pulled NATIONALLY "
+                "even though this client has " + " and ".join(_where) + ". That "
+                "is the goal doing its job — the client asked to be sold online "
+                "sales, so the volumes describe the whole addressable market. "
+                "Rankings are still measured in the client's own market, because "
+                "whether THIS client is visible is a local question. Change the "
+                "goal if the campaign is really about the stores.")
+        elif goal and _gs == "local" and national_demand:
             scope_warning = (
                 f"Goal is \u201c{goal}\u201d, which happens somewhere \u2014 but this "
                 "quote is priced on NATIONAL demand, so every keyword, volume "
@@ -3996,7 +4153,8 @@ def rank_location_note(markets, state, national=False):
             "note": f"Measured in {loc.replace(',United States','').replace(',', ', ')}."}
 
 
-def resolve_national_demand(industry="", band="", manual=False, markets=None):
+def resolve_national_demand(industry="", band="", manual=False, markets=None,
+                            goal=""):
     """Should this client be priced on GEO-LESS (national) search volume?
 
     Three sources, any of which is sufficient:
@@ -4030,6 +4188,16 @@ def resolve_national_demand(industry="", band="", manual=False, markets=None):
         return True, "manual override"
     if band == "nationwide":
         return True, "nationwide geo scope"
+    # The goal is the client's own statement of what they are buying, taken off
+    # the adtini order form — so it outranks the market list, which describes
+    # where they trade. "Online Sales" with four stores entered is a client
+    # asking to be sold ecommerce visibility; price the demand nationally and
+    # say so. Rankings still get measured locally when markets exist — see
+    # rank_location() — because that is a question about this client, not about
+    # the size of the market.
+    _g = goal_forces_national(goal)
+    if _g:
+        return True, f"goal: {_g}"
     ind = (industry or "").strip().lower()
     mk = [m for m in (markets or []) if str(m).strip()]
     for k, r in (CFG.get("industry_pricing") or {}).items():
@@ -4108,7 +4276,8 @@ def _volume_dollar_add(total_volume, free_below, brackets):
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
-                 national_demand=False, geo_override=None, addon_override=None):
+                 national_demand=False, geo_override=None, addon_override=None,
+                 goal=""):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # RETAIL IS CANONICAL (2026-08-05). The anchors and every hard-dollar extra
@@ -4171,7 +4340,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # /api/metrics and the rank endpoints all resolve it WITH markets, and the
     # resulting flag arrives here as `national_demand`.
     nat_demand, nat_reason = resolve_national_demand(
-        industry, band, bool(ecommerce) or bool(national_demand))
+        industry, band, bool(ecommerce) or bool(national_demand), goal=goal)
 
     # A product brand priced on national demand sits on the NATIONAL anchor
     # even when the operator picked a local/statewide scope — the client's
@@ -4554,7 +4723,8 @@ def quote():
                           ai_search=bool(d.get("ai_search")),
                           national_demand=bool(d.get("national_demand")),
                           geo_override=d.get("geo_override"),
-                          addon_override=d.get("addon_override"))
+                          addon_override=d.get("addon_override"),
+                          goal=(d.get("goal") or ""))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -4737,7 +4907,7 @@ def api_refine():
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
         manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
-        markets=markets)
+        markets=markets, goal=(d.get("goal") or ""))
     # rebuild bucket rows from what the frontend sends back (kw + vol)
     def rows(key):
         return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
@@ -5210,7 +5380,7 @@ def api_metrics():
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
         manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
-        markets=markets)
+        markets=markets, goal=(d.get("goal") or ""))
     try:
         m3 = stage3_metrics(head, markets, state, national=nat,
                             industry=(d.get("industry") or ""))
@@ -5272,7 +5442,8 @@ def api_rankings_submit():
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",
                                       bool(d.get("national_demand")),
-                                      markets=markets)
+                                      markets=markets,
+                                      goal=(d.get("goal") or ""))
     loc     = rank_location(markets, state, nat)
     payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
                 "depth": depth, "priority": 2, "tag": kw[:255]} for kw in kws]
@@ -5358,7 +5529,8 @@ def api_rank_location():
     nat, reason = resolve_national_demand(d.get("industry") or "",
                                           d.get("geo_scope") or d.get("band") or "",
                                           bool(d.get("national_demand")),
-                                          markets=markets)
+                                          markets=markets,
+                                          goal=(d.get("goal") or ""))
     out = rank_location_note(markets, state, nat)
     out["national_demand"] = nat
     out["national_demand_reason"] = reason
@@ -5403,7 +5575,8 @@ def api_rankings():
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",
                                       bool(d.get("national_demand")),
-                                      markets=markets)
+                                      markets=markets,
+                                      goal=(d.get("goal") or ""))
     loc = rank_location(markets, state, nat)
     results, paa = [], []
     hits = {}
@@ -5486,6 +5659,9 @@ def api_markets():
         "unlocated": unlocated,
         "radius": int(CFG.get("market_radius_miles", 25)),
         "located": len(located),
+        # The band the markets themselves imply. A suggestion, not an
+        # assignment: the operator's dropdown still picks the pricing anchor.
+        "scope_suggestion": suggest_geo_scope(mk, state),
     })
 
 
@@ -5541,7 +5717,8 @@ def api_price():
                      ai_search=bool(d.get("ai_search")),
                      national_demand=bool(d.get("national_demand")),
                      geo_override=d.get("geo_override"),
-                     addon_override=d.get("addon_override"))
+                     addon_override=d.get("addon_override"),
+                     goal=(d.get("goal") or ""))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "national_demand": p.get("national_demand", False),
                     "national_demand_reason": p.get("national_demand_reason", ""),
