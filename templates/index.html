@@ -474,8 +474,28 @@ function _reportGeo(){
 
 const _PROX_RE=/\b(near me|nearby|near by|close to me|around me|in my area|near my location|closest|near you)\b/g;
 
+// Agency reports print one keyword row with a token standing in for the city —
+// "bbq grill store <cityname>" covers a dozen markets in one line. Imported
+// verbatim the token becomes a literal word, nobody searches it, so it is
+// guaranteed not-ranking and drags the zero-ranking ratio (and the price) up on
+// a phantom. Ski Barn carried three of them into a rank check (2026-08-07).
+// Wrapped tokens always go; bare ones only when the word is never a real search
+// term, so "city hall furniture" and "bay area movers" survive.
+const _PH_RE=/[<\[\{\(]?\s*\b(cityname|city_name|city|citystate|location|locationname|market|marketname|statename|state|region|geo|area|town|zip|zipcode|keyword|kw|service|brand|clientname|client|xxx+|tbd)\b\s*[>\]\}\)]?/gi;
+const _PH_NEVER_REAL=new Set(['cityname','city_name','citystate','locationname',
+  'marketname','statename','clientname','zipcode','tbd']);
+
+function stripPlaceholders(v){
+  return String(v||'').replace(_PH_RE,(whole,word)=>{
+    const w=String(word||'').toLowerCase();
+    const wrapped=/^[<\[\{\(]/.test(whole)||/[>\]\}\)]$/.test(whole);
+    return (wrapped||_PH_NEVER_REAL.has(w)||w.startsWith('xxx')) ? ' ' : whole;
+  }).replace(/\s+/g,' ').trim();
+}
+
 function bareTerm(v, geo){
   let t=String(v||'').toLowerCase().replace(/\s+/g,' ').trim();
+  t=stripPlaceholders(t);
   t=t.replace(_PROX_RE,' ').replace(/\s+/g,' ').trim();
   const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   // Pass 1 — cities, anywhere in the phrase. A city name has no adjectival
@@ -1415,7 +1435,22 @@ function step3Html(){
       <div class="calc">zero-ranking
         <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
         — ${ST.ranked}/${checked} found in top 100 (${frac}%)${(()=>{const q=ST.table.filter(r=>r.queued).length;const f=ST.errored-q;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
-      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipicon">i</span><span class="help">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, or a missing state suffix.</span></span></div>`:''}
+      ${(()=>{
+        // WHERE it was measured. A 0% result is uninterpretable without this —
+        // Ski Barn read 0/20 because bare terms were being scored against the
+        // whole United States, a test no regional retailer passes (2026-08-07).
+        const rl=ST.rankLoc;
+        if(!rl) return '';
+        const nat=rl.scope==='national';
+        return `<div class="calc" style="${nat?'background:#fdf1d8;border-color:#e8c98a':''}">${nat?'⚠ ':'📍 '}<b>${nat?'Measured nationally':'Measured in '+escapeHtml(String(rl.location||'').replace(',United States','').replace(/,/g,', '))}</b><span class="nf"> — ${escapeHtml(rl.note||'')}</span></div>`;
+      })()}
+      ${(()=>{
+        // A check that answered instantly answered from cache, not from Google.
+        const c=ST.table.filter(r=>r.cached).length;
+        if(!c) return '';
+        return `<div class="nf" style="margin:6px 0;font-size:11.5px">${c} of ${ST.table.length} row${c===1?'':'s'} came from a lookup already made for this keyword, location and domain in the last 6 hours — that is why the check returned instantly. Positions are unchanged from that lookup; nothing was re-crawled.</div>`;
+      })()}
+      ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipicon">i</span><span class="help">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, a missing state suffix, or a national SERP being used to score a local business.${ST.rankLoc&&ST.rankLoc.scope==='national'?' <b>This run was measured nationally</b> — check that above first.':''}</span></span></div>`:''}
       ${(ST.errored-ST.table.filter(r=>r.queued).length)>0?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <details style="margin-top:6px"><summary style="cursor:pointer;user-select:none;font-size:12.5px;color:var(--velocity);font-weight:600">Show all ${ST.table.length} rank checks</summary>
       <table style="margin-top:6px"><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table></details>
@@ -1441,6 +1476,9 @@ async function runStep3(retryOnlyFailed){
 
 async function _runStep3(retryOnlyFailed){
   ST._gen=(ST._gen||0)+1;            // any new run supersedes background pollers
+  // The location is re-reported by every /api/rankings response. Drop the old
+  // one so a geo-scope change can't leave the previous run's banner on screen.
+  ST.rankLoc=null;
   $('step3') && ($('step3').disabled=true);
   const all=ST.kw.all.map(r=>r.kw);
   // Retry passes use smaller batches: each failed keyword shares the server's
@@ -1573,6 +1611,7 @@ async function _runStep3Live(todo, all, BATCH){
       }
     }
     if(got){
+      if(got.rank_location) ST.rankLoc=got.rank_location;
       got.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
       ST.paa.push(...(got.paa||[]));
     }else{
@@ -1626,6 +1665,27 @@ function finishStep3(){
   panel('p3b', focusHtml());
   if($('retryFailed')) $('retryFailed').onclick=()=>runStep3(true);
   if($('step4')) $('step4').onclick = ()=>runStep4();
+  // A restored quote has rows but never made the call that reports the
+  // location. Ask for it separately (no lookup is spent) and redraw, so
+  // "0/20 found" is never shown without saying where it was measured.
+  if(!ST.rankLoc && ST.inputs) ensureRankLoc();
+}
+
+let _rankLocPending=false;
+async function ensureRankLoc(){
+  if(_rankLocPending || ST.rankLoc || !ST.inputs) return;
+  _rankLocPending=true;
+  try{
+    const rl=await postJSON('/api/rank_location',{
+      geo_values:ST.inputs.geo_values||[], state:ST.inputs.state||'',
+      primary_market:(typeof primaryMarket==='function'?primaryMarket():''),
+      industry:ST.inputs.industry||'', geo_scope:ST.inputs.geo_scope||'',
+      national_demand:!!ST.inputs.national_demand});
+    // Re-render through finishStep3 so the Retry / Price-it handlers rebind;
+    // panel() alone would replace the buttons with dead copies.
+    if(rl && rl.location){ ST.rankLoc=rl; if($('p3')) finishStep3(); }
+  }catch(e){ /* the banner is a nicety; never block the quote on it */ }
+  finally{ _rankLocPending=false; }
 }
 
 // ---------- RECOMMENDED FOCUS ----------

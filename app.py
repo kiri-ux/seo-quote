@@ -1784,10 +1784,10 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     clean = []
     seen = set()
     for sd in seeds or []:
-        name = clean_kw(strip_proximity(
+        name = clean_kw(strip_placeholders(strip_proximity(
             _strip_markets((sd or "").lower(),
                            list(markets or []) + list(phrase_geos or []),
-                           state))).strip()
+                           state)))).strip()
         if name and name not in seen and len(name.split()) <= 6:
             seen.add(name)
             clean.append(name)
@@ -1937,6 +1937,43 @@ def strip_proximity(text):
     return re.sub(r"\s+", " ", _PROXIMITY_RE.sub(" ", (text or "").lower())).strip()
 
 
+# Template placeholders. Agency reports print a keyword row once with a token
+# standing in for the city — "bbq grill store <cityname>" covers a dozen
+# markets in one line. Imported verbatim, the token travels as a literal word:
+# "bbq grill store cityname" reached the rank check and the proposal for Ski
+# Barn (2026-08-07). Nobody searches it, so it is guaranteed not-ranking, which
+# drags the zero-ranking ratio — and the price — up on a phantom. Angle
+# brackets are optional because most readers strip them before we see them.
+_PLACEHOLDER_RE = re.compile(
+    r"[<\[\{\(]?\s*\b(cityname|city_name|city|citystate|location|locationname|"
+    r"market|marketname|statename|state|region|geo|area|town|zip|zipcode|"
+    r"keyword|kw|service|brand|clientname|client|xxx+|tbd)\b\s*[>\]\}\)]?",
+    re.I)
+
+
+def strip_placeholders(text):
+    """Remove template tokens like <cityname> from an imported term.
+
+    Only fires when the token is wrapped (<city>, [City], {city}) or is one of
+    the tokens that is never a real search word on its own — "cityname",
+    "clientname", "tbd". A BARE "city", "state" or "area" is left alone,
+    because "city hall furniture" and "bay area movers" are real terms; those
+    only strip inside brackets.
+    """
+    t = (text or "")
+
+    def keep_or_drop(m):
+        whole = m.group(0)
+        word = (m.group(1) or "").lower()
+        wrapped = whole[:1] in "<[{(" or whole[-1:] in ">]})"
+        never_real = word in {"cityname", "city_name", "citystate", "locationname",
+                              "marketname", "statename", "clientname", "zipcode", "tbd"} \
+                     or word.startswith("xxx")
+        return " " if (wrapped or never_real) else whole
+
+    return re.sub(r"\s+", " ", _PLACEHOLDER_RE.sub(keep_or_drop, t)).strip()
+
+
 def scrub_services(services, markets, state, phrase_geos=None):
     """Strip any market/state text out of the SERVICE names and de-duplicate.
 
@@ -1954,9 +1991,9 @@ def scrub_services(services, markets, state, phrase_geos=None):
     strip_list = list(markets or []) + [g for g in (phrase_geos or []) if g]
     out, seen = [], set()
     for svc in services or []:
-        name = clean_kw(strip_proximity(
+        name = clean_kw(strip_placeholders(strip_proximity(
             _strip_markets((svc.get("service") or "").lower(),
-                           strip_list, state))).strip()
+                           strip_list, state)))).strip()
         if not name or name in seen:
             continue                      # empty after scrubbing, or a duplicate
         seen.add(name)
@@ -1988,8 +2025,8 @@ def pin_head_services(services, cands, markets, state, brand, max_services):
                                           str(r.get("keyword") or ""))):
         if (c.get("volume") or 0) < min_vol:
             break
-        term = clean_kw(strip_proximity(
-            _strip_markets((c.get("keyword") or "").lower(), markets, state))).strip()
+        term = clean_kw(strip_placeholders(strip_proximity(
+            _strip_markets((c.get("keyword") or "").lower(), markets, state)))).strip()
         if not term or (b and b in term) or term in seen:
             continue
         # A question is never a service, so it should never be pinned. Skipping
@@ -2450,7 +2487,7 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # can't blind the ranking.
         terms = []
         for t in (probe_term if isinstance(probe_term, (list, tuple)) else [probe_term]):
-            t = clean_kw(strip_proximity((t or "").lower())).strip()
+            t = clean_kw(strip_placeholders(strip_proximity((t or "").lower()))).strip()
             if t and t not in terms:
                 terms.append(t)
         terms = terms[:4] or ["insurance"]
@@ -3845,8 +3882,44 @@ def rank_location(markets, state, national=False):
     SERP would be reporting a local result for a national term. Brendan's own
     MPG table (2026-06-10) lists one national rank per bare keyword, which is
     the format this matches. The zero-ranking uplift keys off these positions,
-    so the location has to describe the same market the keywords do."""
-    return "United States" if national else loc_string(markets, state)
+    so the location has to describe the same market the keywords do.
+
+    BUT national demand and a national SERP are two different claims, and only
+    the first one follows from a storefront. National demand says "this client
+    sells everywhere, so measure DEMAND nationally" — correct for a shop that
+    ships. A national SERP says "measure whether they OUTRANK the whole country",
+    which no regional retailer ever does: Ski Barn (4 NJ stores, skibarn.com)
+    scored 0/20 in the national top 100 on bare terms like "ski shop" and drew
+    the largest zero-ranking uplift, +14% on the hard base, off a test it could
+    not have passed (2026-08-07). Arithmetically inevitable, not a finding.
+
+    So: if the client named markets, measure in the primary market even under
+    national demand. Volume stays national; visibility is asked where their
+    customers actually search. Only a client with NO markets at all — genuine
+    pure-play ecommerce, the MPG case — gets measured nationally.
+    """
+    if national and not markets:
+        return "United States"
+    return loc_string(markets, state)
+
+
+def rank_location_note(markets, state, national=False):
+    """Human-readable 'where this was measured', for the Step 3 panel. A 0%
+    ranked result is only interpretable next to the place it was measured."""
+    loc = rank_location(markets, state, national)
+    if loc == "United States":
+        return {"location": loc, "scope": "national",
+                "note": "Measured against the whole United States — no markets are set, "
+                        "so there is nowhere local to measure."}
+    if national:
+        return {"location": loc, "scope": "local_under_national",
+                "note": f"Measured in {loc.replace(',United States','').replace(',', ', ')}. "
+                        "Demand is pulled nationally (storefront), but visibility is "
+                        "measured where the client's customers search — a regional "
+                        "retailer never ranks nationally, and scoring them that way "
+                        "would raise the price off a test they cannot pass."}
+    return {"location": loc, "scope": "local",
+            "note": f"Measured in {loc.replace(',United States','').replace(',', ', ')}."}
 
 
 def resolve_national_demand(industry="", band="", manual=False):
@@ -5108,7 +5181,8 @@ def api_rankings_submit():
         else:
             out.append({"kw": kw, "task_id": None,
                         "error": f"{t.get('status_code')}: {t.get('status_message')}"})
-    return jsonify({"tasks": out})
+    return jsonify({"tasks": out,
+                    "rank_location": rank_location_note(markets, state, nat)})
 
 
 @app.route("/api/rankings_collect", methods=["POST"])
@@ -5162,6 +5236,25 @@ def api_rankings_collect():
         else:
             pending.append(t)
     return jsonify({"done": done, "pending": pending, "paa": paa[:40]})
+
+
+@app.route("/api/rank_location", methods=["POST"])
+@_json_error_guard
+def api_rank_location():
+    """Where a rank check WOULD be measured, without spending a lookup. Lets
+    the Step 3 panel state the location even for a run served entirely from
+    cache or restored from a saved quote."""
+    d = request.get_json(force=True) or {}
+    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    state = derive_state(markets, (d.get("state") or "").strip())
+    markets = primary_first(markets, d.get("primary_market"))
+    nat, reason = resolve_national_demand(d.get("industry") or "",
+                                          d.get("geo_scope") or d.get("band") or "",
+                                          bool(d.get("national_demand")))
+    out = rank_location_note(markets, state, nat)
+    out["national_demand"] = nat
+    out["national_demand_reason"] = reason
+    return jsonify(out)
 
 
 # (kw, location, domain, top_n) -> (pos, ts). In-memory: 1 gunicorn worker,
@@ -5240,13 +5333,19 @@ def api_rankings():
             results.append({"kw": kw,
                             "pos": ("—" if err else (pos if pos is not None else "Not Found")),
                             "ranked_top": (not err and pos is not None and pos <= top_n),
-                            "error": err})
+                            "error": err,
+                            # A batch that answers instantly is a batch that
+                            # never called Google. Say so, rather than leaving
+                            # the operator to wonder whether the check ran.
+                            "cached": kw in hits})
             paa.extend(qs)
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}."}), 502
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
-    return jsonify({"results": results, "paa": list(dict.fromkeys(paa))})
+    return jsonify({"results": results, "paa": list(dict.fromkeys(paa)),
+                    "n_cached": len(hits), "n_fetched": len(to_fetch),
+                    "rank_location": rank_location_note(markets, state, nat)})
 
 @app.route("/api/markets", methods=["POST"])
 @_json_error_guard
@@ -5871,7 +5970,7 @@ Return ONLY a JSON object mapping every input label to its search phrase or null
                     out[k] = None
                     continue
                 # Strip proximity here too. The prompt asks; this guarantees.
-                t = clean_kw(strip_proximity(v.strip().lower())).strip()
+                t = clean_kw(strip_placeholders(strip_proximity(v.strip().lower()))).strip()
                 out[k] = t or None
             return out
     except Exception:
