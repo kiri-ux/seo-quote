@@ -3340,64 +3340,83 @@ def geo_form_candidates(market, state):
     return forms
 
 
-def pick_geo_forms(markets, state, service_term):
+def pick_geo_forms(markets, state, service_terms):
     """Choose each market's grid form by MEASURED search volume.
 
-    One search_volume call covers every market's every candidate, crossed with
-    the client's own lead service — the same benchmark validate_region_names()
-    uses, and for the same reason: a form is only right if people search it WITH
-    a service attached. "new york city" has volume as a navigational query no
-    matter what.
+    Two things had to change after the first attempt reported nothing at all
+    (2026-08-07):
 
-    Returns (forms, report) where forms maps market -> chosen form string and
-    report explains each pick. Falls back to the default suffix rule on any
-    failure, so a dead API can never block a build.
+    1. PROBE WITH GENERIC TERMS. It used the grid's lead service, which was
+       "alpine ski shop" — "alpine ski shop nyc" has no measurable volume in any
+       wording, so all five candidates tied at zero and the default won by
+       default. Now it probes with the SHORTEST few client terms, because short
+       means generic means measurable, and sums across them.
+
+    2. MEASURE NATIONALLY. The probe was localised to the primary market, so
+       "ski shop nyc" was being counted only among searchers in Wayne, New
+       Jersey. The question here is not "how much demand is there" — it is
+       "which spelling do people type", and that is a national property of the
+       language. Absolute demand is measured elsewhere, per city, as before.
+
+    Returns (forms, report). `forms` maps market -> chosen form. `report` has one
+    entry per market ALWAYS, with a status, so a run that changed nothing is
+    visibly different from a run that could not measure.
     """
-    svc = clean_kw((service_term or "").lower()).strip()
+    terms = [clean_kw(str(t).lower()).strip() for t in (service_terms or [])]
+    terms = [t for t in terms if t]
+    # Shortest first: the most generic phrasing carries the volume that makes a
+    # comparison possible. Cap at 3 to keep one API call small.
+    terms = sorted(dict.fromkeys(terms), key=lambda t: (len(t.split()), len(t)))[:3]
     mk = [m for m in (markets or []) if m and str(m).strip()]
-    if not svc or not mk:
+    if not terms or not mk:
         return {}, []
+
     cand = {m: geo_form_candidates(m, state) for m in mk}
-    probes, back = [], {}
+    probes = []
     for m, forms in cand.items():
         for f in forms:
-            kw = clean_kw(f"{svc} {f}")
-            if kw:
-                probes.append(kw)
-                back.setdefault(kw, (m, f))
+            for t in terms:
+                kw = clean_kw(f"{t} {f}")
+                if kw:
+                    probes.append(kw)
     probes = dfs_kw_list(probes)
     if not probes:
         return {}, []
+
     vols = {}
     try:
-        # Cap at the API's practical batch size; markets x forms stays small.
         payload = [{"keywords": probes[:700],
-                    "location_name": loc_string(mk, state) or "United States",
+                    # NATIONAL on purpose — see the docstring. This is a question
+                    # about wording, not about local demand.
+                    "location_name": "United States",
                     "language_code": "en"}]
         data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
         for it in (data["tasks"][0]["result"] or []):
             vols[str(it.get("keyword", "")).lower()] = it.get("search_volume") or 0
-    except Exception:
-        return {}, []
+    except Exception as e:
+        return {}, [{"market": m, "status": "error", "detail": str(e)[:120]} for m in mk]
 
     forms_out, report = {}, []
     for m, flist in cand.items():
         scored = []
         for f in flist:
-            kw = clean_kw(f"{svc} {f}").lower()
-            scored.append((f, vols.get(kw, 0)))
-        best = max(scored, key=lambda t: t[1]) if scored else None
-        if not best or best[1] <= 0:
-            # Nothing measurable — keep the suffix rule rather than guessing.
-            continue
+            total = sum(vols.get(clean_kw(f"{t} {f}").lower(), 0) for t in terms)
+            scored.append((f, total))
         default = flist[0] if flist else ""
-        if best[0] != default:
-            forms_out[m] = best[0]
-            report.append({"market": m, "chose": best[0], "instead_of": default,
-                           "volume": best[1],
-                           "default_volume": dict(scored).get(default, 0)})
-        else:
-            forms_out[m] = default
+        best = max(scored, key=lambda x: x[1]) if scored else None
+        table = [{"form": f, "volume": v} for f, v in
+                 sorted(scored, key=lambda x: -x[1])]
+        if not best or best[1] <= 0:
+            report.append({"market": m, "status": "no data", "kept": default,
+                           "tested": table, "probed_with": terms})
+            continue
+        forms_out[m] = best[0]
+        report.append({"market": m,
+                       "status": "changed" if best[0] != default else "confirmed",
+                       "chose": best[0], "instead_of": default,
+                       "volume": best[1],
+                       "default_volume": dict(scored).get(default, 0),
+                       "tested": table, "probed_with": terms})
     return forms_out, report
 
 
@@ -3882,11 +3901,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                   if any((x.get("service") or "") == t for x in services)]
         # Which WORDING of each market to cross with. Measured, not assumed —
         # "new york city ny" is nobody's search (2026-08-07).
-        svc_lead = next((x.get("service") for x in services if x.get("service")), "")
+        # Probe with the client's own SHORTEST terms, not the grid's lead
+        # service: "alpine ski shop nyc" is unmeasurable in every spelling, so a
+        # narrow probe makes every candidate tie at zero (2026-08-07).
+        probe_terms = list(seeds) + [x.get("service") for x in services if x.get("service")]
         geo_forms, geo_form_report = ({}, [])
         if grid_cities and not national_demand:
             try:
-                geo_forms, geo_form_report = pick_geo_forms(grid_cities, state, svc_lead)
+                geo_forms, geo_form_report = pick_geo_forms(grid_cities, state,
+                                                           probe_terms)
             except Exception:
                 geo_forms, geo_form_report = {}, []
         g = build_grid(services, grid_cities, state, prepicked=True,
