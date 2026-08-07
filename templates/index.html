@@ -253,20 +253,31 @@
       <span id="pastseo_lbl" style="cursor:pointer" onclick="var p=document.getElementById('pastseo');p.checked=!p.checked;p.dispatchEvent(new Event('change'));">No</span>
     </div>
     <div id="pastseo_detail_wrap" class="hidden">
-      <label>Past SEO details</label>
-      <div class="help">What went right or wrong in their past SEO campaigns?</div>
-      <textarea id="pastseo_detail"></textarea>
-      <label>Import their current SEO report <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-      <div class="help">The incumbent report is the client's real campaign — the actual keyword list, the actual markets, the actual current positions. Reads <b>.pptx, .png, .jpg, .txt, .csv</b>. Ranking tables in these reports are usually <b>screenshots</b>, so the images are read, not just the text. Everything it finds is a <b>suggestion</b> you apply on purpose; nothing changes the quote by itself.</div>
-      <div class="row" style="align-items:center;gap:8px;margin:2px 0 0">
-        <input type="file" id="reportFile" accept=".pptx,.potx,.png,.jpg,.jpeg,.webp,.txt,.csv" style="font-size:12.5px">
-        <button class="btn2" type="button" id="reportGo">Read report</button>
+      <!-- Report import and current spend sit ABOVE the notes box: the report
+           is the thing that actually informs the quote, the textarea is
+           context for a human reviewer. The two controls share one row so
+           turning this toggle on costs ~90px of page instead of ~300px.
+           (2026-08-06) -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px 20px;align-items:flex-start;margin-top:10px">
+        <div style="flex:1 1 250px;min-width:250px">
+          <label style="margin:0 0 6px">Import current SEO report <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <div class="help">The incumbent report is the client's real campaign — the actual keyword list, the actual markets, the actual current positions. Reads <b>.pptx, .png, .jpg, .txt, .csv</b>. Ranking tables in these reports are usually <b>screenshots</b>, so the images are read, not just the text. Everything it finds is a <b>suggestion</b> you apply on purpose; nothing changes the quote by itself.</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 0">
+            <input type="file" id="reportFile" accept=".pptx,.potx,.png,.jpg,.jpeg,.webp,.txt,.csv" style="width:auto;font-size:12.5px">
+            <button class="btn2" type="button" id="reportGo">Read report</button>
+          </div>
+        </div>
+        <div style="flex:0 0 auto">
+          <label style="margin:0 0 6px;white-space:nowrap">Current spend <span style="font-weight:400;color:var(--muted)">/ mo</span></label>
+          <div class="help">What the client pays their incumbent today, per month — optional. <b>Does not move the price</b> — shown to the reviewer beside the ladder so a quote can be sanity-checked against the budget the client has already proven they'll spend. Anchoring on it would quote every renewal a notch above the incumbent forever, which is a decision for pricing, not a formula.</div>
+          <input type="text" id="pastseo_spend" placeholder="e.g. 3500" style="width:120px">
+        </div>
       </div>
       <div id="reportOut" style="margin-top:8px"></div>
 
-      <label>Current monthly SEO spend <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-      <div class="help">What the client pays their incumbent today, per month. <b>Does not move the price</b> — shown to the reviewer beside the ladder so a quote can be sanity-checked against the budget the client has already proven they'll spend. Anchoring on it would quote every renewal a notch above the incumbent forever, which is a decision for pricing, not a formula.</div>
-      <input type="text" id="pastseo_spend" placeholder="e.g. 3500" style="width:140px">
+      <label style="margin-top:12px">Past SEO details <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <div class="help">What went right or wrong in their past SEO campaigns? Free text for the reviewer — the report above is what feeds the quote.</div>
+      <textarea id="pastseo_detail" rows="2" style="min-height:42px"></textarea>
     </div>
 
     <label>Product / Vertical Focus<span class="req">*</span></label>
