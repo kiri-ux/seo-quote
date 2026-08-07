@@ -510,9 +510,32 @@ CFG = {
     # miles of any city in the other. Wider than market_radius_miles on purpose:
     # 25 miles is "same market", 60 is "same trade area".
     "scope_join_radius_miles": 60,
-    "ultra_bucket_size": 3,
-    "competitive_bucket_size": 6,
-    "list_cap": 20,
+    # TIER MIX, measured off eight real BE proposals (303 terms, 2026-08-07)
+    # rather than assumed. His splits are PROPORTIONAL, not fixed counts, and
+    # they move with the client:
+    #
+    #   Rockingham Insurance   99 terms   39/40/20   ->  39% / 40% / 20%
+    #   Keller Builds          64         16/24/24   ->  25% / 38% / 38%
+    #   Waytek                 30          5/12/13   ->  17% / 40% / 43%
+    #   Red Shoes              30          7/ 2/21   ->  23% /  7% / 70%
+    #   PA Dental Excellence   20          6/10/ 4   ->  30% / 50% / 20%
+    #   Nob Hill Dental        20          6/10/ 4   ->  30% / 50% / 20%
+    #   Visit Central PA       20          5/ 9/ 6   ->  25% / 45% / 30%
+    #   Media Venue            20          6/ 7/ 7   ->  30% / 35% / 35%
+    #   -------------------------------------------------------------
+    #   TOTAL                 303         90/114/99  ->  30% / 38% / 33%
+    #
+    # The old fixed "3 ultra / 6 competitive / rest is long tail" produced
+    # 15% / 30% / 55% on a 20-term list — ultra half what BE writes, long tail
+    # nearly double. Proportions travel across list sizes; counts do not.
+    "tier_mix": {"ultra": 0.30, "competitive": 0.38, "long_tail": 0.32},
+    # Hard counts kept as an escape hatch. Null -> derive from tier_mix; an
+    # integer pins that bucket regardless of list length.
+    "ultra_bucket_size": None,
+    "competitive_bucket_size": None,
+    # BE's lists run 20-99 terms (median 25). A flat cap of 20 was his FLOOR
+    # applied as a ceiling — it would have truncated Rockingham by 79 terms.
+    "list_cap": 60,
     "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
     # Long-tail sourcing
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
@@ -1908,6 +1931,226 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     return out[:max_services], used
 
 
+# Words that describe the SHAPE of a retail term rather than its subject. They
+# appear across every topic a client sells, so clustering on them would merge
+# "ski shop" with "bbq grill store" and report one topic where there are two.
+_TOPIC_STOP = set("""shop shops store stores storefront outlet outlets retailer retailers
+service services repair rental rentals sales sale supplier suppliers supply
+best top cheap affordable local near me nearby quality premium discount
+buy buying sell selling new used online cheapest price prices cost
+and or the of for in on to with a an my your our
+company companies co inc llc dealer dealers center centre centers
+""".split())
+
+
+def _topic_stem(t):
+    """Crude stem, enough to make two spellings of one subject match.
+
+    Plural AND gerund, because retail seed lists mix them freely: "skis" with
+    "ski", "grills" with "grill", and — the one that split Ski Barn's snowboard
+    topic in two — "snowboarding" with "snowboard".
+    """
+    t = (t or "").strip()
+    if len(t) > 5 and t.endswith("ing"):
+        stem = t[:-3]
+        # "snowboarding" -> "snowboard"; "shopping" -> "shop" (doubled letter)
+        if len(stem) > 3 and stem[-1] == stem[-2]:
+            stem = stem[:-1]
+        if len(stem) > 3:
+            return stem
+    if len(t) > 3 and t.endswith("es") and t[-3] in "sxzh":
+        return t[:-2]
+    if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
+        return t[:-1]
+    return t
+
+
+def _topic_tokens(text):
+    """Subject words in a term, stemmed, with retail-shape words removed."""
+    out = set()
+    for w in re.split(r"[^a-z0-9]+", (text or "").lower()):
+        if not w or w in _TOPIC_STOP:
+            continue
+        s = _topic_stem(w)
+        if s and s not in _TOPIC_STOP and len(s) > 2:
+            out.add(s)
+    return out
+
+
+def topic_clusters(seeds):
+    """Group the operator's seed terms into TOPICS the client actually sells.
+
+    Ski Barn entered 25 terms covering two businesses — ski/snowboard gear and
+    BBQ/patio furniture — and got a 7-service grid that was entirely ski, so half
+    the company was missing from its own proposal (2026-08-07). The service
+    selector ranks by volume, and ski volume dwarfs patio volume, so the smaller
+    topic loses every time no matter how many terms the operator types for it.
+
+    Deliberately NOT an AI call. Topic coverage is a correctness guarantee, and a
+    guarantee that depends on a non-deterministic call is not one — the same
+    reasoning that put pin_head_services and enforce_seed_services in code. AI
+    still gets to NAME the topics for display; this decides membership.
+
+    Single-link on shared subject words after dropping retail-shape words.
+    Returns [{"label":..., "seeds":[...], "tokens":set()}] biggest topic first.
+    """
+    def toks(s):
+        return _topic_tokens(s)
+
+    items = [(s, toks(s)) for s in (seeds or []) if str(s).strip()]
+    items = [(s, t) for s, t in items if t]
+    groups = []                       # [ {seeds:[], tokens:set()} ]
+    for s, t in items:
+        hits = [g for g in groups if g["tokens"] & t]
+        if not hits:
+            groups.append({"seeds": [s], "tokens": set(t)})
+            continue
+        keep = hits[0]
+        keep["seeds"].append(s)
+        keep["tokens"] |= t
+        for g in hits[1:]:            # this seed bridges two groups — merge them
+            keep["seeds"] += g["seeds"]
+            keep["tokens"] |= g["tokens"]
+            groups.remove(g)
+
+    # Label each topic with its most frequent subject word.
+    out = []
+    for g in groups:
+        counts = {}
+        for s in g["seeds"]:
+            for t in toks(s):
+                counts[t] = counts.get(t, 0) + 1
+        label = max(sorted(counts), key=lambda t: (counts[t], len(t))) if counts else ""
+        out.append({"label": label, "seeds": g["seeds"], "tokens": g["tokens"],
+                    "size": len(g["seeds"])})
+    out.sort(key=lambda g: (-g["size"], g["label"]))
+    return out
+
+
+def service_topic(service, topics):
+    """Which topic a chosen service belongs to, or '' if none claim it."""
+    stems = _topic_tokens(service)
+    best, best_n = "", 0
+    for t in topics:
+        n = len(stems & t["tokens"])
+        if n > best_n:
+            best, best_n = t["label"], n
+    return best
+
+
+def enforce_topic_coverage(services, seeds, max_services, cands=None):
+    """Every topic the operator typed must appear in the service list.
+
+    Proportional to how much of the input each topic represents: a client whose
+    seeds are 19 ski terms and 6 patio terms should not get 7 ski services and
+    zero patio ones. Under-represented topics take slots from over-represented
+    ones, cheapest slot first (the last service in the biggest topic).
+
+    Returns (services, report) where report lists what was added and why, so the
+    operator can see it happened rather than wondering why the list changed.
+    """
+    topics = topic_clusters(seeds)
+    if len(topics) < 2 or not services:
+        return services, []
+
+    n_slots = min(int(max_services or len(services)), len(services)) or len(services)
+    total_seeds = sum(t["size"] for t in topics) or 1
+
+    # A topic only earns a guaranteed slot if the operator's input actually
+    # weights it that far. One seed out of 29 is 3% of the input; handing it one
+    # of 7 services would be 14% — over-rewarding a stray term at the expense of
+    # the business. Topics below the threshold can still be picked on merit,
+    # they just aren't protected.
+    min_share = 1.0 / max(n_slots, 1)
+    topics = [t for t in topics if t["size"] / total_seeds >= min_share * 0.75]
+    if len(topics) < 2:
+        return services, []
+
+    quota = {}
+    for t in topics:
+        quota[t["label"]] = max(1, round(n_slots * t["size"] / total_seeds))
+    # Trim quotas back to the slots available, smallest topics protected.
+    while sum(quota.values()) > n_slots:
+        big = max(quota, key=lambda k: quota[k])
+        if quota[big] <= 1:
+            break
+        quota[big] -= 1
+
+    out = [dict(x) for x in services]
+    for x in out:
+        x["_topic"] = service_topic(x.get("service", ""), topics)
+
+    vol = {str(r.get("keyword", "")).lower(): (r.get("volume") or 0)
+           for r in (cands or [])}
+    report = []
+    for t in topics:
+        lab = t["label"]
+        have = [x for x in out if x.get("_topic") == lab]
+        need = quota.get(lab, 1) - len(have)
+        if need <= 0:
+            continue
+        # Best unused seed from this topic, by measured volume then by order.
+        used = {str(x.get("service", "")).lower() for x in out}
+        pool = [s for s in t["seeds"] if str(s).lower() not in used]
+        pool.sort(key=lambda s: (-vol.get(str(s).lower(), 0), t["seeds"].index(s)))
+        for s in pool[:need]:
+            donor_lab = max(quota, key=lambda k: len([x for x in out if x.get("_topic") == k])
+                            - quota.get(k, 1))
+            donors = [x for x in out if x.get("_topic") == donor_lab]
+            if len(donors) <= quota.get(donor_lab, 1) or len(donors) <= 1:
+                break
+            drop = donors[-1]
+            out.remove(drop)
+            out.append({"service": str(s).strip().lower(), "tier": drop.get("tier", "competitive"),
+                        "_topic": lab})
+            report.append({"added": str(s).strip().lower(), "topic": lab,
+                           "replaced": drop.get("service", ""),
+                           "from_topic": donor_lab})
+    for x in out:
+        x.pop("_topic", None)
+    return out, report
+
+
+def tier_split(n_terms):
+    """How many terms belong in each tier for a list of this length.
+
+    Proportional, from CFG["tier_mix"] — measured off BE's own proposals, whose
+    splits scale with list size rather than sitting at fixed counts. Returns
+    (n_ultra, n_competitive, n_long_tail) summing exactly to n_terms, with at
+    least one in each tier once there are three terms to spread (the proposal
+    renders three columns and an empty one reads as an incomplete strategy).
+    """
+    n = max(int(n_terms or 0), 0)
+    if n <= 0:
+        return (0, 0, 0)
+    mix = CFG.get("tier_mix") or {"ultra": 0.30, "competitive": 0.38, "long_tail": 0.32}
+    order = ("ultra", "competitive", "long_tail")
+
+    hard = {"ultra": CFG.get("ultra_bucket_size"),
+            "competitive": CFG.get("competitive_bucket_size")}
+    if hard["ultra"] is not None or hard["competitive"] is not None:
+        u = int(hard["ultra"]) if hard["ultra"] is not None else round(n * mix["ultra"])
+        c = int(hard["competitive"]) if hard["competitive"] is not None else round(n * mix["competitive"])
+        u, c = max(0, min(u, n)), max(0, min(c, n - min(u, n)))
+        return (u, c, max(0, n - u - c))
+
+    # Largest-remainder so the three always sum to n exactly.
+    raw = {t: n * float(mix.get(t, 0)) for t in order}
+    base = {t: int(raw[t]) for t in order}
+    left = n - sum(base.values())
+    for t in sorted(order, key=lambda x: -(raw[x] - base[x]))[:max(0, left)]:
+        base[t] += 1
+    if n >= 3:
+        # Top up any empty tier from the largest one.
+        for t in order:
+            if base[t] == 0:
+                donor = max(order, key=lambda x: base[x])
+                if base[donor] > 1:
+                    base[donor] -= 1
+                    base[t] += 1
+    return (base["ultra"], base["competitive"], base["long_tail"])
+
+
 def rebalance_tiers(services):
     """Guarantee all three tiers are represented.
 
@@ -2548,8 +2791,7 @@ def suggest_geo_scope(markets, state=""):
                        reason=f"{len(mk)} markets across {len(states)} states "
                               f"({', '.join(states)}), but they form ONE "
                               f"connected area — {round(span)} miles end to end, "
-                              "no gap wider than "
-                              f"{int(join_r)} miles. A state line is not a gap.")
+                              f"no gap wider than {int(join_r)} miles.")
         else:
             out.update(suggested="non_contiguous_region", confidence="high",
                        reason=f"{len(chains)} separate clusters across "
@@ -3130,7 +3372,10 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     kept.sort(key=lambda r: (-(r["volume"] or 0), r["keyword"]))
     with_vol = [r for r in kept if r["volume"] > 0]
 
-    u, c = CFG["ultra_bucket_size"], CFG["competitive_bucket_size"]
+    # Bucket sizes come from the measured tier mix, not fixed counts — see
+    # CFG["tier_mix"] for the eight-proposal sample behind the proportions.
+    _target = min(int(CFG.get("list_cap", 60) or 60), max(len(kept), 20))
+    u, c, _lt = tier_split(_target)
     n_head = u + c
 
     if markets:
@@ -3361,6 +3606,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services, ungrounded, blocked_pins = drop_ungrounded_services(
             services, seeds, biz, [p.get("title", "") if isinstance(p, dict) else str(p)
                                    for p in (site_pages or [])], brand, domain)
+        # LAST, after every filter has had its say: make sure each topic the
+        # operator typed is still represented. Everything above ranks by volume,
+        # and the biggest topic wins every one of those contests — Ski Barn's
+        # patio/BBQ half was eliminated seven times over by ski volume before
+        # anyone saw the list (2026-08-07). Runs before rebalance_tiers so a
+        # swapped-in service can still have its tier corrected.
+        topics = topic_clusters(seeds)
+        services, topic_fixes = enforce_topic_coverage(services, seeds,
+                                                       n_services, cands)
         services = rebalance_tiers(services)
         if geo_dropped is None and geo_dropped2 is None:
             geo_dropped = None
@@ -3614,6 +3868,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                          for c in cities),
             "grid_cities": [] if national_demand else cities,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
+            # Topic coverage: what the operator's terms are ABOUT, how many
+            # services each topic got, and any swap made to keep a topic alive.
+            "topics": [{"label": t["label"], "seeds": t["size"],
+                        "share": round(t["size"] / max(len(seeds), 1) * 100),
+                        "services": len([x for x in services
+                                         if service_topic(x.get("service", ""),
+                                                          topics) == t["label"]])}
+                       for t in topics],
+            "topic_fixes": topic_fixes,
         }
 
     refined = claude_refine_keywords(seeds, markets, brand, domain,
@@ -4978,6 +5241,8 @@ def api_refine():
         "ecommerce_detected": bool(s1.get("ecommerce_detected")),
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
         "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
+        "topics": s1.get("topics") or [],
+        "topic_fixes": s1.get("topic_fixes") or [],
     })
 
 # ---------------------------------------------------------------------------

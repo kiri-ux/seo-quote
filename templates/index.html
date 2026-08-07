@@ -419,9 +419,11 @@
 
 
 
-    <label title="Retail price = partner hard cost ÷ (1 − margin) — the same convention as the Reputation Mgmt tool and the SSG/Vici grid.">Retail margin % <span style="font-weight:400;color:var(--muted)">(of gross — agency’s share of retail)</span></label>
-    <div class="help">The agency's share of retail. Retail = partner hard cost ÷ (1 − margin) — <b>not</b> cost plus a markup; ×1.35 would be a 25.9% margin. Add-on markets are priced the same way from their own cost, so the realised margin never drops below target. Defaults to 35%. Editable here and on the final quote.</div>
-    <input type="text" id="markup" placeholder="35" value="35">
+    <!-- Retail margin moved out of the form (2026-08-07): the same control lives
+         on the quote itself as "Client price · markup", where the number it
+         changes is visible. Kept as a hidden input so collectInputs(),
+         restoreQuote() and the Pricing-config sync keep reading one field. -->
+    <input type="hidden" id="markup" value="35">
 
     <button class="btn" id="step1">1 · Build keyword list</button>
     <div class="toggle-row" id="lockrow" style="margin-top:10px">
@@ -1271,6 +1273,7 @@ function renderStep1(){
       ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:''}
       ${(kw.tier_moves&&kw.tier_moves.length)?`<div style="margin-top:4px" class="nf">\u2195 <b>${kw.tier_moves.length} term${kw.tier_moves.length>1?'s':''} re-tiered by measured demand</b> — ${kw.tier_moves.map(t=>`${escapeHtml(t.service)} ${t.from}\u2192${t.to} <span style="color:var(--muted)">(${Number(t.volume||0).toLocaleString()}/mo)</span>`).join(' \u00b7 ')}. The AI assigns tiers before volumes are known; these were reordered so the columns run high-to-low on demand. Tier counts are unchanged.</div>`:''}
       ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. High volume alone doesn't make a term the client's — the pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to <b>Product / Vertical Focus</b> and rebuild — seeds are never blocked.</div>`:''}
+      ${(kw.topics&&kw.topics.length>1)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> \u2014 ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% of what you typed \u2192 ${t.services} service${t.services===1?'':'s'})</span>`).join(' \u00b7 ')}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:4px">Swapped in ${kw.topic_fixes.map(f=>`<b>${escapeHtml(f.added)}</b> for ${escapeHtml(f.replaced)}`).join(', ')} \u2014 services are picked by search volume, and the biggest topic wins every one of those contests, so a smaller part of the business can be eliminated before you ever see the list. Each topic now gets services in proportion to how much of your input it is.</div>`:''}</div>`:''}
       ${kw.ecommerce_suppressed?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">🛒 <b>Storefront detected — kept local</b><br><span class="nf">${escapeHtml(kw.ecommerce_suppressed)}</span></div>`:(kw.ecommerce_detected&&kw.ecommerce_reason)?`<div style="margin-top:4px" class="nf">🛒 <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`:''}
       ${kw.total_volume?`<div style="margin-top:4px" class="nf">${kw.national_demand?'Volume is the US national figure for each term — it drives the volume component of price.':"Volume is summed across all targeted cities — it drives the volume component of price; the number beside each keyword is that city's own volume."}</div>`:''}</details>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
@@ -1478,7 +1481,7 @@ function step3Html(){
   const rows=ST.table.map(r=>`<tr><td>${r.kw}</td><td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
   const _sp=(ST.inputs&&ST.inputs.past_seo_spend)||null;
   const ctx=(ST.inputs&&ST.inputs.past_seo)
-    ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}${_sp?` <b>Currently paying ${money(_sp)}/mo.</b>`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
+    ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
     : '';
   return `
       <h4 class="sec">Step 3 · Rankings</h4>
@@ -1829,12 +1832,15 @@ function focusHtml(){
       <td style="padding:4px 10px 4px 0">${s.tag}</td>
       <td style="padding:4px 0" class="nf">${bits.join(' · ')||'—'}${s.cpc?` · CPC ~$${s.cpc.toFixed(0)}`:''}</td></tr>`;
   }).join('');
-  return `<div style="border:2px solid var(--gold);background:#fffaf0;border-radius:10px;padding:11px 13px;margin:12px 0">
-  <div style="font-size:11px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Internal read — not used in proposals</div>
-  <h4 class="sec" style="margin-top:2px">Recommended focus <span class="nf">(demand × rank opportunity × click value)</span></h4>
+  return `<details style="border:2px solid var(--gold);background:#fffaf0;border-radius:10px;padding:11px 13px;margin:12px 0">
+  <summary style="cursor:pointer;user-select:none;list-style:none">
+    <span style="font-size:11px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.5px">Internal read — not used in proposals</span>
+    <span class="nf" style="font-size:11.5px"> · ${top.length} service${top.length===1?'':'s'} ranked</span>
+    <h4 class="sec" style="margin:2px 0 0;display:inline-block">Recommended focus <span class="nf">(demand × rank opportunity × click value)</span></h4>
+  </summary>
   <div class="why">Positions 4–20 are where SEO pays back fastest — real demand, already on Google's radar, one push from page 1. Terms already at #1–3 need defending, not budget; "not found" terms are the long build. Sanity-check against what work the client actually <i>wants</i> more of — the formula can't know that.</div>
   <table style="font-size:12.5px;border-collapse:collapse">${li}</table>
-  </div>`;
+  </details>`;
 }
 
 // ---------- STEP 4 ----------
@@ -1981,7 +1987,6 @@ function renderStep4(p){
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span>
       <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
-    <div class="help" style="margin:2px 0 6px">Markets run as their own campaign, counted <i>beyond</i> the first. 2–3 related nearby markets normally stay under one campaign. Use add-ons when the markets are many, far apart, or competitively different.</div>
     <div style="display:flex;align-items:center;gap:8px">
       <button type="button" id="addonDown" style="width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:17px;line-height:1;cursor:pointer;color:var(--atlas)">&minus;</button>
       <input type="text" id="addon" value="${(ST.inputs&&ST.inputs.addon_markets)||0}" style="width:64px;text-align:center">
@@ -1991,7 +1996,7 @@ function renderStep4(p){
     <div id="addonCost" style="margin-top:8px"></div>
     </div>
     <div id="addonSuggest" style="margin-top:10px"></div>
-    <details style="margin-top:18px"><summary style="cursor:pointer;user-select:none"><span class="sec" style="display:inline;margin:0">Keyword table</span> <span class="nf" style="font-size:12px">— ${exp.length} terms, click to open</span></summary>
+    <details style="margin-top:18px"><summary style="cursor:pointer;user-select:none;display:list-item"><span class="sec" style="display:inline;margin:0">Keyword table</span> <span class="nf" style="font-size:12px">— ${exp.length} terms, click to open</span><button id="csvbtn" type="button" style="float:right;margin:-3px 0 0;background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer">⬇ CSV</button></summary>
     <table style="font-size:12.5px;margin-top:6px">
       <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
       <tbody>${exp.map(r=>`<tr>
@@ -2001,7 +2006,6 @@ function renderStep4(p){
         <td>${r.cpc?('$'+Number(r.cpc).toFixed(2)):'<span class="nf">—</span>'}</td>
       </tr>`).join('')}</tbody>
     </table></details>
-    <button id="csvbtn" style="margin-top:12px;background:var(--atlas);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⬇ Download keyword CSV</button>
 
     <h4 class="sec" style="margin-top:20px">SERP screenshot <span class="nf">(for the proposal)</span></h4>
     <div class="why">Captures a live Google results page for a head term — ideal for showing a prospect they're absent from page 1 while competitors rank. The recommended term is a "Not Found", high-competition, local keyword; change it if you like, then generate.</div>
@@ -2035,7 +2039,14 @@ function renderStep4(p){
     const host=document.getElementById('p4');
     let n=document.getElementById('spendCompare');
     if(sp && host){
-      if(!n){ n=document.createElement('div'); n.id='spendCompare'; n.className='calc'; host.appendChild(n); }
+      if(!n){ n=document.createElement('div'); n.id='spendCompare'; n.className='calc'; }
+      // Directly below add-on markets rather than at the very bottom of the
+      // step: it is a sanity check against the ladder, so it belongs beside the
+      // ladder and not under the save controls (2026-08-07).
+      const anchor=document.getElementById('addonSuggest')||document.getElementById('addonCost');
+      if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(n, anchor.nextSibling);
+      else host.appendChild(n);
+      n.style.margin='10px 0 0';
       const t=p.client_tiers||{};
       const near=Object.keys(t).reduce((a,k)=>Math.abs(t[k]-sp)<Math.abs(t[a]-sp)?k:a,'base');
       n.innerHTML='Client currently pays <b>'+money(sp)+'/mo</b> with their incumbent — closest tier is <b>'
@@ -2110,7 +2121,10 @@ function renderStep4(p){
     if(ovrToggle) ovrToggle.checked=false;
     applyBase('','');
   };
-  $('csvbtn').onclick=async()=>{
+  $('csvbtn').onclick=async(ev)=>{
+    // The button lives inside the <summary>, so a click would otherwise toggle
+    // the keyword table open/closed as a side effect of downloading.
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); }
     const res=await fetch('/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({rows:window._exportRows, client:window._exportClient})});
     const blob=await res.blob(); const url=URL.createObjectURL(blob);
@@ -3061,7 +3075,7 @@ function renderAddonCost(){
     if(pe) pe.textContent = money(R.primary[k] + R.each[k]*n);
     if(ae) ae.textContent = n ? `${money(R.primary[k])} + ${n} add-on${n===1?'':'s'}` : '';
   });
-  if(!n){ box.innerHTML='<span class="nf" style="font-size:12px">No add-on markets — the price above is the whole quote.</span>'; return; }
+  if(!n){ box.innerHTML=''; return; }
   const K=['base','intermediate','advanced'], L=['Base','Intermediate','Advanced'];
   box.innerHTML=`<table style="width:100%;font-size:12.5px;border-collapse:collapse">
     <tr><td></td>${L.map(l=>`<td style="text-align:right;font-weight:600">${l}</td>`).join('')}</tr>
@@ -3166,9 +3180,12 @@ function scopeSuggestionHtml(sg){
   if(e.span_miles!=null) bits.push(e.span_miles+' mi end to end');
   if(e.states&&e.states.length) bits.push(e.states.length===1?e.states[0]:e.states.length+' states');
   if((e.unlocated||[]).length) bits.push(e.unlocated.length+' unplaced');
-  const evi=bits.length?`<div class="nf" style="font-size:11px;margin-top:2px">${escapeHtml(bits.join(' · '))}</div>`:'';
+  // Evidence chips removed on request (2026-08-07) — the reason sentence already
+  // carries the numbers and repeating them read as clutter. `bits` stays because
+  // it is what the reason is asserted against in tests.
+  void bits;
   if(!sug){
-    return `<div class="nf" style="font-size:12px;margin-top:3px">\u{1F9ED} ${escapeHtml(sg.reason)}</div>`+evi;
+    return `<div class="nf" style="font-size:12px;margin-top:3px">\u{1F9ED} ${escapeHtml(sg.reason)}</div>`;
   }
   const agrees = cur===sug;
   const head = agrees
@@ -3180,7 +3197,7 @@ function scopeSuggestionHtml(sg){
              :'background:#fdf1d8;border:1px solid #e8c98a')+`">`
     + head
     + `<div class="nf" style="margin-top:3px">${escapeHtml(sg.reason)}${conf}</div>`
-    + evi + `</div>`;
+    + `</div>`;
 }
 
 function wireScopeSuggestion(sg){
