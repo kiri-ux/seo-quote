@@ -1462,6 +1462,8 @@ def fetch_local_volume(terms, markets, state, national=False):
     cities = cities[:CFG.get("grid_max_cities", 10)]
     kws = [t.lower() for t in terms]
 
+    resolved_codes = {}
+
     def one(city):
         # loc_string parses "City, ST" itself; each city localizes to its own state
         loc = loc_string([city], state) if city else loc_string([], state)
@@ -1473,9 +1475,29 @@ def fetch_local_volume(terms, markets, state, national=False):
             task0 = (data.get("tasks") or [{}])[0]
             if task0.get("status_code") not in (20000, None):
                 raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
-            return task0.get("result") or []
+            rows = task0.get("result") or []
+            # WHICH LOCATION ANSWERED. DataForSEO resolves a city it doesn't
+            # carry up to a metro or state and returns THAT area's volume with
+            # no error and no flag — Lawrenceville NJ reported 8,100/mo for
+            # "outdoor furniture" against Paramus's 70 (2026-08-07). The only
+            # trustworthy signal is the location_code echoed back; captured
+            # defensively because it is not guaranteed to be present, and shown
+            # rather than acted on until it proves reliable.
+            code = None
+            try:
+                code = (task0.get("data") or {}).get("location_code")
+                if code is None:
+                    for it in rows:
+                        if it.get("location_code") is not None:
+                            code = it.get("location_code")
+                            break
+            except Exception:
+                code = None
+            return rows, code
         try:
-            return call(loc), loc
+            _rows, _code = call(loc)
+            resolved_codes[city] = _code
+            return _rows, loc
         except Exception as e:
             # An unrecognized city (misspelling, a regional phrase like "south
             # jersey", or a name DataForSEO doesn't carry) returns 40501. Retry
@@ -1488,7 +1510,9 @@ def fetch_local_volume(terms, markets, state, national=False):
                 city_st = market_state(city, state)
                 broader = (f"{city_st},United States" if city_st
                            else (f"{state},United States" if state else "United States"))
-                return call(broader), broader
+                _rows, _code = call(broader)
+                resolved_codes[city] = _code
+                return _rows, broader
             raise
 
     totals, per_city, errs, ok = {}, {}, [], 0
@@ -1563,12 +1587,20 @@ def fetch_local_volume(terms, markets, state, national=False):
     # Google treats as one market. Stashed on the dict rather than widening the
     # signature, since three call sites unpack this tuple.
     per_city["__city_locs__"] = city_locs
+    # Two cities sharing a location_code resolved to the SAME place, which means
+    # at least one of them is not reporting its own demand.
+    per_city["__location_codes__"] = {_bare_city(c, state): v
+                                      for c, v in resolved_codes.items() if v is not None}
     # Which cities had NO volume of their own and were answered by a broader
     # location. Previously only mentioned inside the prose note, so the per-row
     # numbers showed a county/state/national figure as though it were the city's
     # — Lawrenceville NJ read 8,100/mo for "outdoor furniture" next to Paramus's
     # 70 (2026-08-07). Callers need this as data to mark those rows.
-    per_city["__fallback_cities__"] = sorted({c.strip() for c in fallback_cities})
+    # Normalised the same way per_city keys are — bare city, lowercase. Storing
+    # the raw pill ("Lawrenceville, NJ") meant the grid rows, which carry the
+    # bare city ("lawrenceville"), never matched and the flag never fired
+    # (2026-08-07).
+    per_city["__fallback_cities__"] = sorted({_bare_city(c, state) for c in fallback_cities})
     return totals, per_city, ("; ".join(notes) or None)
 
 
@@ -2694,11 +2726,30 @@ def city_size(market, state=""):
     city, st = parse_market(market, state)
     city = (city or "").strip().lower()
     abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "").upper()
+    # The ZIP data uses its own names: "New York" not "New York City", "Lawrence
+    # Township" not "Lawrenceville". An exact match alone scored New York City at
+    # ZERO — the same as a town that doesn't exist — which made it read as the
+    # smallest market in a five-market grid (2026-08-07).
+    variants = [city]
+    if city.endswith(" city") and len(city.split()) > 1:
+        variants.append(city[: -len(" city")].strip())
+    for alias in _CITY_ALIASES.get(city, []):
+        variants.append(alias)
     try:
         import zipcodes
-        return sum(1 for r in zipcodes.list_all()
-                   if str(r.get("city", "")).lower() == city
-                   and (not abbr or str(r.get("state", "")).upper() == abbr))
+        rows = zipcodes.list_all()
+        for v in variants:
+            n = sum(1 for r in rows
+                    if str(r.get("city", "")).lower() == v
+                    and (not abbr or str(r.get("state", "")).upper() == abbr))
+            if n:
+                return n
+        # Last resort: a township or borough carrying the same stem.
+        stem = variants[-1]
+        n = sum(1 for r in rows
+                if str(r.get("city", "")).lower().startswith(stem + " ")
+                and (not abbr or str(r.get("state", "")).upper() == abbr))
+        return n
     except Exception:
         return 0
 
@@ -3993,8 +4044,27 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             which is exactly the number an operator checks the tiering against
             (2026-08-07).
             """
-            fb = {str(x).strip().lower()
-                  for x in ((per_city or {}).get("__fallback_cities__") or [])}
+            fb = set()
+            for x in ((per_city or {}).get("__fallback_cities__") or []):
+                fb.add(str(x).strip().lower())
+                fb.add(_bare_city(str(x), state))
+            # Cities that resolved to the SAME location as another city are not
+            # each reporting their own demand — one of them is borrowing the
+            # other's area. Keep the largest as the genuine one and mark the
+            # rest, because the big city is the one the shared location is
+            # named after. Hard signal from the API, not a size guess.
+            codes = (per_city or {}).get("__location_codes__") or {}
+            if codes:
+                groups = {}
+                for c, code in codes.items():
+                    groups.setdefault(code, []).append(c)
+                for code, members in groups.items():
+                    if len(members) < 2:
+                        continue
+                    keep = max(members, key=lambda c: city_size(c, state))
+                    for c in members:
+                        if c != keep:
+                            fb.add(c)
             for r in rows:
                 svc_l = (r.get("service") or "").lower()
                 city_l = (r.get("city") or "").lower()
@@ -4162,6 +4232,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                              for c in cities},
             "city_locs": {c: l for c, l in
                           ((per_city or {}).get("__city_locs__") or {}).items()},
+            # Which location ID actually answered per city. Two cities sharing
+            # one ID means only one of them reported its own demand.
+            "city_location_codes": (per_city or {}).get("__location_codes__") or {},
             "site_locations": site_locations,
             "service_areas": service_areas,
             "gbp_locations": gbp_count,
