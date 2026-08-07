@@ -2065,7 +2065,7 @@ def service_topic(service, topics):
     return best
 
 
-def enforce_topic_coverage(services, seeds, max_services, cands=None):
+def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=None):
     """Every topic the operator typed must appear in the service list.
 
     Proportional to how much of the input each topic represents: a client whose
@@ -2076,7 +2076,7 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None):
     Returns (services, report) where report lists what was added and why, so the
     operator can see it happened rather than wondering why the list changed.
     """
-    topics = topic_clusters(seeds)
+    topics = topics if topics else topic_clusters(seeds)
     if len(topics) < 2 or not services:
         return services, []
 
@@ -3141,6 +3141,101 @@ Return ONLY a JSON object, no prose, no markdown:
         return []
 
 
+def claude_topics(seeds, business_desc="", brand=""):
+    """Ask which PRODUCT LINES the operator's terms cover, and assign each term.
+
+    Token clustering gets the big split right and the granularity wrong. Ski
+    Barn's terms are three lines — ski/snowboard gear, BBQ and grills, and patio
+    furniture — but "outdoor grill" shares a word with "outdoor furniture", so
+    single-link merged all three into one topic labelled "furniture", under which
+    the tool chose two grill services and no furniture at all (2026-08-07). A
+    human reads those as obviously different aisles of the store.
+
+    So the MODEL partitions and names; the CODE still enforces the quota, so the
+    guarantee never depends on a non-deterministic call. Returns [] on any
+    failure and topic_clusters() takes over.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    sd = [s for s in (seeds or []) if s and str(s).strip()]
+    if not api_key or len(sd) < 4:
+        return []
+    listing = "\n".join("- " + str(s) for s in sd[:120])
+    prompt = f"""Group these search terms into the PRODUCT LINES a customer would shop separately.
+
+TERMS ({len(sd)}):
+{listing}
+
+BUSINESS: {(business_desc or '').strip()[:400] or 'not given'}
+BRAND: {brand or 'not given'}
+
+Rules:
+1. A topic is an AISLE OF THE STORE — something a customer shops on its own trip. A retailer selling
+   ski gear, barbecues and patio furniture has THREE topics, not one "outdoor" topic: nobody shopping
+   for a grill is also shopping for skis, and grills and patio furniture are browsed separately.
+2. Do NOT group by a shared adjective. "outdoor grill" and "outdoor furniture" are DIFFERENT topics
+   even though both say "outdoor". Group by the THING BEING BOUGHT.
+3. Do NOT split one thing into synonyms. "ski shop", "ski store", "ski outfitters", "ski gear" and
+   "snowboard shop" are ONE topic. Words like shop/store/stores/service/rental/best/near me describe
+   the shape of a search, not a different product.
+4. Label each topic in 1-3 plain words, the way a person says it: "ski & snowboard gear",
+   "bbq & grills", "patio furniture", "auto insurance", "dental implants".
+5. Assign EVERY term to exactly one topic. Do not invent terms and do not drop any.
+6. Most businesses have ONE topic. One topic covering everything is a correct answer — only split
+   when the lines really are shopped separately.
+
+Return ONLY JSON, no prose, no markdown:
+{{"topics": [{{"label": "ski & snowboard gear", "terms": ["ski shop", "snowboard rentals"]}}]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 2000, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        raw = json.loads(text).get("topics") or []
+    except Exception:
+        app.logger.exception("claude_topics failed")
+        return []
+
+    # Map back onto the ACTUAL seeds. The model can reword a term, so only exact
+    # (case-insensitive) matches count, and anything it dropped joins the biggest
+    # topic rather than silently losing its claim on a slot.
+    by_lower = {str(s).strip().lower(): s for s in sd}
+    out, claimed = [], set()
+    for t in raw:
+        label = " ".join(str(t.get("label") or "").strip().lower().split())[:40]
+        terms = []
+        for term in (t.get("terms") or []):
+            k = str(term).strip().lower()
+            if k in by_lower and k not in claimed:
+                claimed.add(k)
+                terms.append(by_lower[k])
+        if label and terms:
+            toks = set()
+            for x in terms:
+                toks |= _topic_tokens(x)
+            out.append({"label": label, "seeds": terms, "tokens": toks,
+                        "size": len(terms), "source": "ai"})
+    if not out:
+        return []
+    leftover = [by_lower[k] for k in by_lower if k not in claimed]
+    if leftover:
+        big = max(out, key=lambda g: g["size"])
+        big["seeds"] += leftover
+        big["size"] = len(big["seeds"])
+        for x in leftover:
+            big["tokens"] |= _topic_tokens(x)
+    out.sort(key=lambda g: (-g["size"], g["label"]))
+    return out
+
+
 def validate_region_names(candidates, service_term, markets, state):
     """Keep only region names with REAL search demand for this client's service.
 
@@ -3190,7 +3285,123 @@ def validate_region_names(candidates, service_term, markets, state):
     return kept, rejected
 
 
-def build_grid(services, markets, state, prepicked=False):
+# Aliases people actually type instead of the full city name. Only entries that
+# are genuinely more common in search than the formal name — this is not a list
+# of every nickname a city has.
+_CITY_ALIASES = {
+    "new york city": ["nyc", "new york"],
+    "new york": ["nyc"],
+    "los angeles": ["la"],
+    "san francisco": ["sf"],
+    "philadelphia": ["philly"],
+    "washington": ["dc", "washington dc"],
+    "las vegas": ["vegas"],
+    "atlanta": ["atl"],
+    "new orleans": ["nola"],
+    "saint louis": ["st louis"],
+    "saint petersburg": ["st pete", "st petersburg"],
+    "fort lauderdale": ["ft lauderdale"],
+    "minneapolis": ["twin cities"],
+}
+
+
+def geo_form_candidates(market, state):
+    """The ways a searcher might write this market, most formal first.
+
+    "new york city ny" is what the grid produced for Ski Barn and nobody types
+    it — the state is redundant on a city that famous, and "nyc" outsearches the
+    full name several times over (2026-08-07). So generate the plausible forms
+    and let measured volume choose, rather than guessing from a suffix rule.
+    """
+    city, st = parse_market(market, state)
+    c = (city or "").strip().lower()
+    if not c:
+        return []
+    ab = (STATE_ABBREV.get((st or "").strip().lower(), "") or "").lower()
+    forms = []
+
+    def add(f):
+        f = clean_kw(re.sub(r"\s+", " ", (f or "")).strip().lower())
+        if f and f not in forms:
+            forms.append(f)
+
+    if ab:
+        add(f"{c} {ab}")          # the current default
+    add(c)                        # bare city
+    for a in _CITY_ALIASES.get(c, []):
+        add(a)
+        if ab and " " not in a and len(a) > 3:
+            add(f"{a} {ab}")
+    # "new york city" -> "new york": a trailing "city" is usually dropped.
+    if c.endswith(" city") and len(c.split()) > 2:
+        add(c[: -len(" city")].strip())
+        if ab:
+            add(f"{c[: -len(' city')].strip()} {ab}")
+    return forms
+
+
+def pick_geo_forms(markets, state, service_term):
+    """Choose each market's grid form by MEASURED search volume.
+
+    One search_volume call covers every market's every candidate, crossed with
+    the client's own lead service — the same benchmark validate_region_names()
+    uses, and for the same reason: a form is only right if people search it WITH
+    a service attached. "new york city" has volume as a navigational query no
+    matter what.
+
+    Returns (forms, report) where forms maps market -> chosen form string and
+    report explains each pick. Falls back to the default suffix rule on any
+    failure, so a dead API can never block a build.
+    """
+    svc = clean_kw((service_term or "").lower()).strip()
+    mk = [m for m in (markets or []) if m and str(m).strip()]
+    if not svc or not mk:
+        return {}, []
+    cand = {m: geo_form_candidates(m, state) for m in mk}
+    probes, back = [], {}
+    for m, forms in cand.items():
+        for f in forms:
+            kw = clean_kw(f"{svc} {f}")
+            if kw:
+                probes.append(kw)
+                back.setdefault(kw, (m, f))
+    probes = dfs_kw_list(probes)
+    if not probes:
+        return {}, []
+    vols = {}
+    try:
+        # Cap at the API's practical batch size; markets x forms stays small.
+        payload = [{"keywords": probes[:700],
+                    "location_name": loc_string(mk, state) or "United States",
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        for it in (data["tasks"][0]["result"] or []):
+            vols[str(it.get("keyword", "")).lower()] = it.get("search_volume") or 0
+    except Exception:
+        return {}, []
+
+    forms_out, report = {}, []
+    for m, flist in cand.items():
+        scored = []
+        for f in flist:
+            kw = clean_kw(f"{svc} {f}").lower()
+            scored.append((f, vols.get(kw, 0)))
+        best = max(scored, key=lambda t: t[1]) if scored else None
+        if not best or best[1] <= 0:
+            # Nothing measurable — keep the suffix rule rather than guessing.
+            continue
+        default = flist[0] if flist else ""
+        if best[0] != default:
+            forms_out[m] = best[0]
+            report.append({"market": m, "chose": best[0], "instead_of": default,
+                           "volume": best[1],
+                           "default_volume": dict(scored).get(default, 0)})
+        else:
+            forms_out[m] = default
+    return forms_out, report
+
+
+def build_grid(services, markets, state, prepicked=False, geo_forms=None):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
     city inherits it. Returns {ultra:[], competitive:[], long_tail:[]}."""
@@ -3238,9 +3449,14 @@ def build_grid(services, markets, state, prepicked=False):
             if already:
                 kw = svc
             else:
-                # don't append the state if the "city" IS the state
-                sfx = "" if (c_state and c == c_state.strip().lower()) else city_suffix(c, c_state)
-                kw = clean_kw(f"{svc} {c}{sfx}")
+                # A measured form wins over the suffix rule — see pick_geo_forms.
+                chosen = (geo_forms or {}).get(city) or (geo_forms or {}).get(c)
+                if chosen:
+                    kw = clean_kw(f"{svc} {chosen}")
+                else:
+                    # don't append the state if the "city" IS the state
+                    sfx = "" if (c_state and c == c_state.strip().lower()) else city_suffix(c, c_state)
+                    kw = clean_kw(f"{svc} {c}{sfx}")
             if any(r["keyword"] == kw for r in buckets[tier]):
                 continue                      # same term from two crossings
             buckets[tier].append({"keyword": kw,
@@ -3647,9 +3863,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # patio/BBQ half was eliminated seven times over by ski volume before
         # anyone saw the list (2026-08-07). Runs before rebalance_tiers so a
         # swapped-in service can still have its tier corrected.
-        topics = topic_clusters(seeds)
+        # The model partitions and names; token clustering is the fallback so a
+        # dead API can't remove the guarantee, only its granularity.
+        topics = claude_topics(seeds, biz, brand) or topic_clusters(seeds)
+        topic_source = ("ai" if topics and topics[0].get("source") == "ai"
+                        else "words")
         services, topic_fixes = enforce_topic_coverage(services, seeds,
-                                                       n_services, cands)
+                                                      n_services, cands,
+                                                      topics=topics)
         services = rebalance_tiers(services)
         if geo_dropped is None and geo_dropped2 is None:
             geo_dropped = None
@@ -3659,7 +3880,17 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                            if not (d[0] in seen_d or seen_d.add(d[0]))]
         pinned = [t for t in pinned
                   if any((x.get("service") or "") == t for x in services)]
-        g = build_grid(services, grid_cities, state, prepicked=True)
+        # Which WORDING of each market to cross with. Measured, not assumed —
+        # "new york city ny" is nobody's search (2026-08-07).
+        svc_lead = next((x.get("service") for x in services if x.get("service")), "")
+        geo_forms, geo_form_report = ({}, [])
+        if grid_cities and not national_demand:
+            try:
+                geo_forms, geo_form_report = pick_geo_forms(grid_cities, state, svc_lead)
+            except Exception:
+                geo_forms, geo_form_report = {}, []
+        g = build_grid(services, grid_cities, state, prepicked=True,
+                       geo_forms=geo_forms)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Volume: look up the BARE service term AT THE CLIENT'S MARKET (the
         # geo-modified forms report ~0). The same figure is shown on each city
@@ -3775,7 +4006,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                             _svc["tier"] = t
                         _i += 1
                 if tier_moves:
-                    g = build_grid(services, grid_cities, state, prepicked=True)
+                    g = build_grid(services, grid_cities, state, prepicked=True,
+                                   geo_forms=geo_forms)
                     full = g["ultra"] + g["competitive"] + g["long_tail"]
                     for r in full:
                         _v = service_volume.get(r["keyword"])
@@ -3905,6 +4137,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "total_volume": sum(service_volume.values()),   # unique, not per-row
             # Topic coverage: what the operator's terms are ABOUT, how many
             # services each topic got, and any swap made to keep a topic alive.
+            "topic_source": topic_source,
             "topics": [{"label": t["label"], "seeds": t["size"],
                         "share": round(t["size"] / max(len(seeds), 1) * 100),
                         "services": len([x for x in services
@@ -3912,6 +4145,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                                           topics) == t["label"]])}
                        for t in topics],
             "topic_fixes": topic_fixes,
+            "geo_forms": geo_form_report,
         }
 
     refined = claude_refine_keywords(seeds, markets, brand, domain,
@@ -5277,7 +5511,9 @@ def api_refine():
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
         "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
         "topics": s1.get("topics") or [],
+        "topic_source": s1.get("topic_source") or "",
         "topic_fixes": s1.get("topic_fixes") or [],
+        "geo_forms": s1.get("geo_forms") or [],
     })
 
 # ---------------------------------------------------------------------------
