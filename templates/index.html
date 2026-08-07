@@ -116,6 +116,30 @@
     border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Barlow',sans-serif}
   .btn:hover:not(:disabled){background:#005696}
   .btn:disabled{background:#9DB6CB;cursor:wait}
+
+  /* Secondary button. .btn2 was used in five places with NO rule behind it, so
+     "Read report" and the two report-apply buttons rendered as raw browser
+     chrome next to a styled page (2026-08-07). Matches the outline treatment
+     #siteSvcBtn was carrying inline. */
+  .btn2{background:#fff;color:var(--atlas);border:1px solid var(--atlas);
+    padding:6px 13px;border-radius:7px;font:600 12.5px 'Barlow',sans-serif;
+    cursor:pointer;transition:background .15s,color .15s}
+  .btn2:hover:not(:disabled){background:var(--atlas);color:#fff}
+  .btn2:disabled{border-color:var(--line);color:var(--muted);background:#F7F8F9;cursor:default}
+
+  /* File picker. The native control is the one widget browsers refuse to
+     inherit anything from, so restyle its two halves explicitly: the wrapper
+     reads as an input, the button as a .btn2. */
+  input[type=file]{width:auto;max-width:100%;padding:5px 9px 5px 5px;
+    border:1px solid var(--line);border-radius:8px;background:#FCFCFB;
+    font:12.5px 'Barlow',sans-serif;color:var(--ink);cursor:pointer}
+  input[type=file]:focus{outline:2px solid var(--velocity);outline-offset:1px}
+  input[type=file]::file-selector-button{background:#fff;color:var(--atlas);
+    border:1px solid var(--atlas);padding:5px 11px;border-radius:6px;
+    font:600 12px 'Barlow',sans-serif;cursor:pointer;margin-right:9px;
+    transition:background .15s,color .15s}
+  input[type=file]::file-selector-button:hover{background:var(--atlas);color:#fff}
+
   .hidden{display:none}
 
   /* ---- info tooltip (scanner tipbox treatment) ---------------- */
@@ -263,7 +287,7 @@
           <label style="margin:0 0 6px">Import current SEO report <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
           <div class="help">The incumbent report is the client's real campaign — the actual keyword list, the actual markets, the actual current positions. Reads <b>.pptx, .png, .jpg, .txt, .csv</b>. Ranking tables in these reports are usually <b>screenshots</b>, so the images are read, not just the text. Everything it finds is a <b>suggestion</b> you apply on purpose; nothing changes the quote by itself.</div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 0">
-            <input type="file" id="reportFile" accept=".pptx,.potx,.png,.jpg,.jpeg,.webp,.txt,.csv" style="width:auto;font-size:12.5px">
+            <input type="file" id="reportFile" accept=".pptx,.potx,.png,.jpg,.jpeg,.webp,.txt,.csv">
             <button class="btn2" type="button" id="reportGo">Read report</button>
           </div>
         </div>
@@ -1219,7 +1243,7 @@ function renderStep1(){
       ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:''}
       ${(kw.tier_moves&&kw.tier_moves.length)?`<div style="margin-top:4px" class="nf">\u2195 <b>${kw.tier_moves.length} term${kw.tier_moves.length>1?'s':''} re-tiered by measured demand</b> — ${kw.tier_moves.map(t=>`${escapeHtml(t.service)} ${t.from}\u2192${t.to} <span style="color:var(--muted)">(${Number(t.volume||0).toLocaleString()}/mo)</span>`).join(' \u00b7 ')}. The AI assigns tiers before volumes are known; these were reordered so the columns run high-to-low on demand. Tier counts are unchanged.</div>`:''}
       ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. High volume alone doesn't make a term the client's — the pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to <b>Product / Vertical Focus</b> and rebuild — seeds are never blocked.</div>`:''}
-      ${(kw.ecommerce_detected&&kw.ecommerce_reason)?`<div style="margin-top:4px" class="nf">🛒 <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`:''}
+      ${kw.ecommerce_suppressed?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">🛒 <b>Storefront detected — kept local</b><br><span class="nf">${escapeHtml(kw.ecommerce_suppressed)}</span></div>`:(kw.ecommerce_detected&&kw.ecommerce_reason)?`<div style="margin-top:4px" class="nf">🛒 <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`:''}
       ${kw.total_volume?`<div style="margin-top:4px" class="nf">${kw.national_demand?'Volume is the US national figure for each term — it drives the volume component of price.':"Volume is summed across all targeted cities — it drives the volume component of price; the number beside each keyword is that city's own volume."}</div>`:''}</details>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">
@@ -2948,11 +2972,43 @@ $('spgeo_suggest').addEventListener('click', async()=>{
 // Steps 2 and 3 localise to one market. Step 1 already worked out which one
 // carries the most demand for this client's service, so use that answer
 // instead of whatever was typed first.
+// The state most of the entered markets sit in — the one the client actually
+// operates in. Mirrors home_state() server-side.
+function homeStateAbbr(){
+  const g=(ST.inputs&&ST.inputs.geo_values)||[];
+  const counts={}, order=[];
+  g.forEach(m=>{
+    const mm=String(m||'').match(/,\s*([A-Za-z]{2})\s*$/);
+    if(!mm) return;
+    const st=mm[1].toUpperCase();
+    if(!(st in counts)){ counts[st]=0; order.push(st); }
+    counts[st]++;
+  });
+  if(!order.length) return '';
+  const top=Math.max(...order.map(s=>counts[s]));
+  // Majority only: an even two-state split keeps the demand ordering.
+  if(top*2<=g.length) return '';
+  return order.find(s=>counts[s]===top)||'';
+}
+
 function primaryMarket(){
   const cs = ST.kw && ST.kw.city_selection;
-  if(cs && cs.kept && cs.kept.length && cs.method && cs.method!=='input order') return cs.kept[0][0];
+  const hs = homeStateAbbr();
+  const inHome=m=>{ if(!hs) return true;
+    const mm=String(m||'').match(/,\s*([A-Za-z]{2})\s*$/);
+    return !mm || mm[1].toUpperCase()===hs; };
+  if(cs && cs.kept && cs.kept.length && cs.method && cs.method!=='input order'){
+    // Demand-ranked — but skip markets outside the home state. New York City
+    // outranks every New Jersey town Ski Barn trades in, and anchoring the rank
+    // check and CPC lookup there asked whether a NJ ski shop outranks Manhattan
+    // (2026-08-07). Highest demand WHERE THE CLIENT IS, not highest demand.
+    const hit=cs.kept.find(k=>inHome(k[0]));
+    if(hit) return hit[0];
+    return cs.kept[0][0];
+  }
   const g = (ST.inputs && ST.inputs.geo_values) || [];
-  return g.length ? g[0] : '';
+  const first=g.find(inHome);
+  return first || (g.length ? g[0] : '');
 }
 
 // Step 4 is re-rendered wholesale, so the add-on input is a new element every

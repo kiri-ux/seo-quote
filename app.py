@@ -852,6 +852,55 @@ def primary_first(markets, primary):
     return [p] + rest
 
 
+def home_state(markets, state=""):
+    """The state the client actually operates in — the one most of their
+    markets sit in. Not the same question as "which market has most demand"."""
+    counts = {}
+    for m in (markets or []):
+        st = market_state(m, state)
+        if st:
+            counts[st] = counts.get(st, 0) + 1
+    if not counts:
+        return (state or "").strip()
+    top = max(counts.values())
+    # Ties break on input order: the partner types the client's own town first.
+    for m in (markets or []):
+        st = market_state(m, state)
+        if st and counts.get(st) == top:
+            return st
+    return ""
+
+
+def measure_first(markets, state="", primary=""):
+    """Order markets for LOCALISED MEASUREMENT — rank checks and bid lookups.
+
+    primary_first() answers "where is the most demand", which is the right
+    question for scoping a campaign and the wrong one for measuring a client.
+    Ski Barn's markets were Wayne / Paramus / Shrewsbury / Lawrenceville NJ plus
+    New York City: NYC carries an order of magnitude more demand, so it became
+    the primary and the rank check asked whether a New Jersey ski shop outranks
+    Manhattan. It does not, and cannot — 0/20, largest zero-ranking uplift
+    (2026-08-07). Their own agency's report says as much: "NYC is a tracked
+    market but the client's locations are all in NJ."
+
+    So measurement stays inside the HOME state — the state most of the markets
+    sit in — and picks the highest-demand market there. A genuinely multi-state
+    client (no state holds a majority) falls back to primary_first unchanged.
+    """
+    mk = primary_first(markets, primary)
+    hs = home_state(mk, state)
+    if not hs:
+        return mk
+    inside = [m for m in mk if market_state(m, state) == hs]
+    if not inside or len(inside) == len(mk):
+        return mk
+    # Majority test: one outlier market must not be able to move the anchor,
+    # but a real 50/50 two-state footprint keeps the demand ordering.
+    if len(inside) * 2 <= len(mk):
+        return mk
+    return inside + [m for m in mk if m not in inside]
+
+
 def loc_string(markets, state):
     if markets:
         city, st = parse_market(markets[0], state)
@@ -3054,7 +3103,7 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
-                   national_demand=False, goal=""):
+                   national_demand=False, goal="", band=""):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -3063,16 +3112,39 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     _site_urls = []
     site_pages = fetch_site_pages(domain, collect_urls=_site_urls)
     site_locations = location_pages_from_urls(_site_urls)
-    # A storefront on the client's own site is national demand, whatever the
-    # RZ tag says. This has to happen HERE — before the volume pull below — or
-    # the flip would only take effect on a second run, and the quote in front
+    # A storefront on the client's own site used to flip national demand on
+    # unconditionally. This has to happen HERE — before the volume pull below —
+    # or the flip would only take effect on a second run, and the quote in front
     # of the operator would still be priced on per-city volume.
+    #
+    # But the flip itself was too eager. BE on the Ski Barn quote: "They have
+    # specific locations, the quote didn't consider the local impact, it just
+    # treated them as an ecommerce/nationwide option." Almost every retailer
+    # sells online now, so "has a cart" stopped being evidence of a national
+    # campaign — and the consequences all point the same way: national volume,
+    # geo-less keywords, and a rank check the client cannot pass.
+    #
+    # Named markets outrank a detected cart, because the operator typed them on
+    # purpose. So the flip only fires when there is nothing local to price
+    # against — no markets, or an explicitly nationwide scope. Otherwise the
+    # storefront is REPORTED and the pull stays local: geo-qualified terms,
+    # per-city volume, rankings in the client's own market. (2026-08-07)
     ecom_found, ecom_reason = detect_ecommerce(_site_urls)
+    ecom_suppressed = ""
+    national_demand_reason = ""
     if ecom_found and not national_demand:
-        national_demand = True
-        national_demand_reason = f"storefront detected — {ecom_reason}"
-    else:
-        national_demand_reason = ""
+        if markets and (band or "") != "nationwide":
+            ecom_suppressed = (
+                f"Storefront detected ({ecom_reason}) — but this client has "
+                f"{len(markets)} market{'' if len(markets) == 1 else 's'} entered"
+                + (f" and a {band.replace('_', ' ')} geo scope" if band else "")
+                + ", so demand is still being pulled LOCALLY. A store that also "
+                  "ships is not a national campaign. Turn on Price on national "
+                  "demand only if this really is a product brand selling "
+                  "everywhere with no local trade to win.")
+        else:
+            national_demand = True
+            national_demand_reason = f"storefront detected — {ecom_reason}"
     # A Google Business listing is stronger evidence of operating in a market
     # than a page on the website, and it is the only one that works when the
     # site uses a store-locator widget. Merge, don't replace — a client can
@@ -3378,6 +3450,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "national_demand_reason": national_demand_reason,
             "ecommerce_detected": bool(ecom_found),
             "ecommerce_reason": ecom_reason,
+            "ecommerce_suppressed": ecom_suppressed,
             "state_missing": bool(cities) and not state
                              and not any(market_state(c)
                                          or c.strip().lower() in STATE_ABBREV
@@ -3426,6 +3499,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         "national_demand_reason": national_demand_reason,
         "ecommerce_detected": bool(ecom_found),
         "ecommerce_reason": ecom_reason,
+        "ecommerce_suppressed": ecom_suppressed,
     }
 
 # ---------------------------------------------------------------------------
@@ -3922,7 +3996,7 @@ def rank_location_note(markets, state, national=False):
             "note": f"Measured in {loc.replace(',United States','').replace(',', ', ')}."}
 
 
-def resolve_national_demand(industry="", band="", manual=False):
+def resolve_national_demand(industry="", band="", manual=False, markets=None):
     """Should this client be priced on GEO-LESS (national) search volume?
 
     Three sources, any of which is sufficient:
@@ -3937,6 +4011,19 @@ def resolve_national_demand(industry="", band="", manual=False):
     is applied inside stage1b_refine, because it is only knowable once the
     sitemap has been read. See detect_ecommerce().
 
+    MARKETS VETO THE INDUSTRY TAG (2026-08-07). BE on the Ski Barn quote: "They
+    have specific locations, the quote didn't consider the local impact, it just
+    treated them as an ecommerce/nationwide option." An RZ tag of "Retail -
+    General / E-commerce" describes what the client SELLS; the market list
+    describes where they TRADE, and the operator typed it deliberately. With both
+    present and the scope not nationwide, the market list wins — a store with
+    four premises is a local campaign that also ships, and pricing it on national
+    demand quotes a different campaign: geo-less terms, national volume, and a
+    rank check against the whole country.
+
+    The manual switch and an explicit nationwide scope still force national.
+    Both are direct statements of intent rather than inferences from a taxonomy.
+
     Returns (bool, reason_string) so the UI can show WHY it flipped.
     """
     if manual:
@@ -3944,8 +4031,15 @@ def resolve_national_demand(industry="", band="", manual=False):
     if band == "nationwide":
         return True, "nationwide geo scope"
     ind = (industry or "").strip().lower()
+    mk = [m for m in (markets or []) if str(m).strip()]
     for k, r in (CFG.get("industry_pricing") or {}).items():
         if k in ind and r.get("national_demand"):
+            if mk:
+                return False, (f"industry “{k}” suggests national demand, but "
+                               f"{len(mk)} market{'' if len(mk) == 1 else 's'} "
+                               "are entered — priced on LOCAL demand. Set Geo "
+                               "scope to Nationwide, or tick Price on national "
+                               "demand, if this client sells everywhere.")
             return True, f"industry: {k}"
     return False, ""
 
@@ -4072,6 +4166,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         rule_key, rule = max(_matches, key=lambda kr: int(kr[1].get("anchor_add", 0)))
     # The legacy ecommerce checkbox no longer maps to a pricing rule (it has
     # no anchor_add as of 2026-07-25) — it is a national-demand signal only.
+    # No markets= here: stage4_price never receives the market list, so passing
+    # one would be a NameError. The veto is applied upstream — /api/refine,
+    # /api/metrics and the rank endpoints all resolve it WITH markets, and the
+    # resulting flag arrives here as `national_demand`.
     nat_demand, nat_reason = resolve_national_demand(
         industry, band, bool(ecommerce) or bool(national_demand))
 
@@ -4638,7 +4736,8 @@ def api_refine():
     nat_demand, nat_reason = resolve_national_demand(
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
-        manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")))
+        manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
+        markets=markets)
     # rebuild bucket rows from what the frontend sends back (kw + vol)
     def rows(key):
         return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
@@ -4648,7 +4747,8 @@ def api_refine():
         s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                             ultra, competitive, long_tail, site_terms_kw, phrase_geos,
                             national_demand=nat_demand,
-                            goal=(d.get("goal") or ""))
+                            goal=(d.get("goal") or ""),
+                            band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
         conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
@@ -4707,6 +4807,7 @@ def api_refine():
         "national_demand_reason": s1.get("national_demand_reason") or nat_reason,
         "ecommerce_detected": bool(s1.get("ecommerce_detected")),
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
+        "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
     })
 
 # ---------------------------------------------------------------------------
@@ -5096,7 +5197,11 @@ def api_metrics():
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     # phrase geos must be strippable so bare-term metrics resolve for
     # "managed it services south jersey" -> "managed it services"
-    markets = primary_first(markets, d.get("primary_market"))
+    # measure_first, not primary_first: the CPC adder is a localised lookup, so
+    # it belongs in the client's home state rather than in whichever market
+    # happens to carry the most demand (2026-08-07).
+    markets = measure_first(markets, (d.get("state") or "").strip(),
+                            d.get("primary_market"))
     markets = markets + [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
     # Same national-demand basis Step 1 used, resolved the same way rather than
@@ -5104,7 +5209,8 @@ def api_metrics():
     nat, _nr = resolve_national_demand(
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
-        manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")))
+        manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
+        markets=markets)
     try:
         m3 = stage3_metrics(head, markets, state, national=nat,
                             industry=(d.get("industry") or ""))
@@ -5160,12 +5266,13 @@ def api_rankings_submit():
     kws     = [k for k in d.get("keywords", []) if k]
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
-    markets = primary_first(markets, d.get("primary_market"))
+    markets = measure_first(markets, state, d.get("primary_market"))
     top_n   = CFG["zero_ranking_top_n"]
     depth   = max(top_n, 10)
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",
-                                      bool(d.get("national_demand")))
+                                      bool(d.get("national_demand")),
+                                      markets=markets)
     loc     = rank_location(markets, state, nat)
     payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
                 "depth": depth, "priority": 2, "tag": kw[:255]} for kw in kws]
@@ -5247,10 +5354,11 @@ def api_rank_location():
     d = request.get_json(force=True) or {}
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state = derive_state(markets, (d.get("state") or "").strip())
-    markets = primary_first(markets, d.get("primary_market"))
+    markets = measure_first(markets, state, d.get("primary_market"))
     nat, reason = resolve_national_demand(d.get("industry") or "",
                                           d.get("geo_scope") or d.get("band") or "",
-                                          bool(d.get("national_demand")))
+                                          bool(d.get("national_demand")),
+                                          markets=markets)
     out = rank_location_note(markets, state, nat)
     out["national_demand"] = nat
     out["national_demand_reason"] = reason
@@ -5290,11 +5398,12 @@ def api_rankings():
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
-    markets = primary_first(markets, d.get("primary_market"))
+    markets = measure_first(markets, state, d.get("primary_market"))
     top_n = CFG["zero_ranking_top_n"]
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",
-                                      bool(d.get("national_demand")))
+                                      bool(d.get("national_demand")),
+                                      markets=markets)
     loc = rank_location(markets, state, nat)
     results, paa = [], []
     hits = {}
