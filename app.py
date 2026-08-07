@@ -1529,7 +1529,7 @@ def fetch_local_volume(terms, markets, state, national=False):
                                                  else loc_string([], state)))
                     if was_fallback:
                         fallback_cities.append(city)
-                    results.append((city, rows, used_loc))
+                    results.append((city, rows, used_loc, was_fallback))
                     ok += 1
                 except Exception as e:
                     errs.append(str(e))
@@ -1537,15 +1537,29 @@ def fetch_local_volume(terms, markets, state, national=False):
         return {}, {}, str(e)
     if not ok:
         return {}, {}, (errs[0] if errs else "no volume rows returned")
-    # Aggregate in two phases so the rules are deterministic:
+    # Aggregate deterministically:
     #   1. each effective location counts into the TOTAL exactly once;
-    #   2. a "United States" fallback never counts when any regional location
-    #      returned data — national volume inside a city-summed regional total
-    #      is a category error (it's what doubled the Waytek quote). It only
-    #      counts when it's the sole data source (true-nationwide runs).
-    non_us = [r for r in results if r[2] != "United States"]
+    #   2. a location that is NOT the city's own never counts while any city did
+    #      return its own figure. Previously only a "United States" fallback was
+    #      excluded, so a STATEWIDE one was counted in full: Ski Barn's
+    #      "outdoor furniture" total of 20,350/mo was New York statewide (12,100)
+    #      plus New Jersey statewide (8,100) plus three real towns (150), for a
+    #      five-town New Jersey retailer — and that total drives the volume
+    #      component of price and promoted the term to Ultra Competitive
+    #      (2026-08-07). A town Google cannot locate must not contribute its
+    #      whole state's demand.
+    #   3. if NO city returned its own figure, broader locations count once each
+    #      rather than pricing the client at zero demand — reported either way.
+    own_data = [r for r in results if not r[3]]
     us_skipped = False
-    for city, rows, used_loc in sorted(results, key=lambda r: r[2] == "United States"):
+    broader_skipped = []
+    if own_data:
+        # Own-location results first so they claim their location before any
+        # fallback that resolved to the same place.
+        ordered = sorted(results, key=lambda r: (r[3], r[2] == "United States"))
+    else:
+        ordered = sorted(results, key=lambda r: r[2] == "United States")
+    for city, rows, used_loc, was_fb in ordered:
         # DataForSEO tells us which location it ACTUALLY used for each city —
         # that is exact market identity, not an inference. Two cities resolving
         # to the same effective location are the same market, which is the
@@ -1555,7 +1569,11 @@ def fetch_local_volume(terms, markets, state, national=False):
         # matters most (2026-08-03).
         city_locs[city] = used_loc
         count_it = used_loc not in counted_locs
-        if used_loc == "United States" and non_us:
+        if was_fb and own_data:
+            # Not this city's location, and someone else's figures are real.
+            count_it = False
+            broader_skipped.append(city)
+        if used_loc == "United States" and [r for r in results if r[2] != "United States"]:
             count_it = False
             us_skipped = True
         counted_locs.add(used_loc)
@@ -1573,6 +1591,18 @@ def fetch_local_volume(terms, markets, state, national=False):
                 # had nothing to compare (2026-08-03).
                 per_city[(_bare_city(city, state), k)] = v
     notes = []
+    if broader_skipped:
+        notes.append(
+            "no city-level volume for " + ", ".join(sorted(set(
+                c.strip() for c in broader_skipped)))
+            + " — Google doesn't hold those as targetable locations, so a wider "
+              "area answered. Shown per keyword but EXCLUDED from the pricing "
+              "total, because a town's whole state is not that town's demand")
+    if not own_data and fallback_cities:
+        notes.append(
+            "NO market returned volume of its own — every figure below is a "
+            "wider area's, counted once each so the quote isn't priced at zero "
+            "demand. Treat the volume component as an estimate")
     if us_skipped:
         notes.append("some geos had no local volume data and fell back to "
                      "national numbers — shown per keyword but EXCLUDED from "
@@ -4053,6 +4083,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # other's area. Keep the largest as the genuine one and mark the
             # rest, because the big city is the one the shared location is
             # named after. Hard signal from the API, not a size guess.
+            # Which location actually answered, per city, in friendly form.
+            # "wider area" told the operator a number was wrong without saying
+            # what it was — "New York statewide" is actionable (2026-08-07).
+            loc_by_city = {}
+            for c, l in ((per_city or {}).get("__city_locs__") or {}).items():
+                bare = _bare_city(c, state)
+                txt = str(l or "").replace(",United States", "").strip()
+                if not txt or txt.lower() == "united states":
+                    loc_by_city[bare] = "nationwide"
+                elif "," in txt:
+                    loc_by_city[bare] = txt.split(",")[0].strip()
+                elif txt.lower() in STATE_ABBREV:
+                    loc_by_city[bare] = f"{txt} statewide"
+                else:
+                    loc_by_city[bare] = txt
+            # city_size needs the market WITH its own state. Passing the bare
+            # name plus the fallback state looked up "new york, NJ" and scored
+            # New York City at zero, so the smaller town was kept as the genuine
+            # figure and the big one got flagged instead.
+            market_of = {_bare_city(m, state): m for m in (cities or [])}
             codes = (per_city or {}).get("__location_codes__") or {}
             if codes:
                 groups = {}
@@ -4061,7 +4111,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 for code, members in groups.items():
                     if len(members) < 2:
                         continue
-                    keep = max(members, key=lambda c: city_size(c, state))
+                    keep = max(members,
+                               key=lambda c: city_size(market_of.get(c, c), state))
                     for c in members:
                         if c != keep:
                             fb.add(c)
@@ -4081,6 +4132,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     # small town out-searching Manhattan.
                     if city_l in fb:
                         r["vol_scope"] = "broader"
+                        r["vol_area"] = loc_by_city.get(city_l, "")
                     continue
                 # No per-city figure at all: leave the row blank rather than
                 # substituting the summed total. An unknown is an unknown.
@@ -5528,6 +5580,7 @@ def api_keywords():
                        # because this city had none of its own; "unknown" = no
                        # figure at all. Neither is this city's demand.
                        "vol_scope": r.get("vol_scope", ""),
+                       "vol_area": r.get("vol_area", ""),
                        "origin": r.get("origin", "")} for r in L]
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
@@ -5599,6 +5652,7 @@ def api_refine():
                        # because this city had none of its own; "unknown" = no
                        # figure at all. Neither is this city's demand.
                        "vol_scope": r.get("vol_scope", ""),
+                       "vol_area": r.get("vol_area", ""),
                        "origin": r.get("origin", "")} for r in L]
     return jsonify({
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
