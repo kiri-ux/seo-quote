@@ -3976,15 +3976,31 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 city_pick["grouped_by"] = "identical per-market search volume"
             elif not city_pick.get("metro_groups"):
                 city_pick["metro_groups"] = []
-        for r in full:
-            svc_l = (r.get("service") or "").lower()
-            city_l = (r.get("city") or "").lower()
-            # the row shows ITS OWN city's volume; pricing uses the summed total
-            v = per_city.get((city_l, svc_l))
-            if v is None:
-                v = vols.get(svc_l)
-            if v is not None:
-                r["volume"] = v
+        def _apply_volumes(rows):
+            """Give every crossed row its own city's measured volume.
+
+            Extracted because the tier-reconciliation pass REBUILDS the grid,
+            and the rebuilt rows were left at volume 0 — the old code re-looked
+            them up by r["keyword"] ("outdoor furniture nyc") against a map keyed
+            by SERVICE ("outdoor furniture"), which never matches. Result: any
+            quote whose tiers moved displayed no volume against any keyword,
+            which is exactly the number an operator checks the tiering against
+            (2026-08-07).
+            """
+            for r in rows:
+                svc_l = (r.get("service") or "").lower()
+                city_l = (r.get("city") or "").lower()
+                # the row shows ITS OWN city's volume; pricing uses the summed total
+                v = per_city.get((city_l, svc_l))
+                if v is None:
+                    v = vols.get(svc_l)
+                if v is None:
+                    v = vols.get((r.get("keyword") or "").lower())
+                if v is not None:
+                    r["volume"] = v
+            return rows
+
+        _apply_volumes(full)
         service_volume = {s: vols.get(s.lower(), 0) for s in svc_names}
 
         # TIERS RECONCILED AGAINST MEASURED DEMAND (2026-08-05).
@@ -4032,12 +4048,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     g = build_grid(services, grid_cities, state, prepicked=True,
                                    geo_forms=geo_forms)
                     full = g["ultra"] + g["competitive"] + g["long_tail"]
-                    for r in full:
-                        _v = service_volume.get(r["keyword"])
-                        if _v is None:
-                            _v = vols.get((r.get("keyword") or "").lower())
-                        if _v is not None:
-                            r["volume"] = _v
+                    # Same assignment as the first pass — by service AND city.
+                    _apply_volumes(full)
         except Exception:
             app.logger.exception("tier reconciliation failed")
             tier_moves = []
