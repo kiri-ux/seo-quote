@@ -1940,7 +1940,34 @@ best top cheap affordable local near me nearby quality premium discount
 buy buying sell selling new used online cheapest price prices cost
 and or the of for in on to with a an my your our
 company companies co inc llc dealer dealers center centre centers
+cityname city_name citystate locationname marketname statename clientname tbd
 """.split())
+
+
+def clean_seeds(seeds):
+    """Normalise the operator's seed terms once, at the door.
+
+    Seeds arrive from three places — typed, imported from a report, restored
+    from a saved quote — and only the report path was being scrubbed. A saved
+    Ski Barn quote still carried "bbq grill store <cityname>", so the
+    placeholder became a TOPIC ("cityname — 24% of what you typed") and was
+    handed its own services (2026-08-07). Cleaning here means every consumer
+    downstream is clean: topic clustering, seed enforcement, grounding, grid.
+
+    Order is preserved deliberately — the seed list is a priority list and
+    enforce_seed_services fills the grid from the front.
+    """
+    out, seen = [], set()
+    for s in (seeds or []):
+        t = re.sub(r"\s+", " ", strip_placeholders(str(s or "").strip())).strip()
+        if not t:
+            continue
+        k = t.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(t)
+    return out
 
 
 def _topic_stem(t):
@@ -2100,10 +2127,18 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None):
             if len(donors) <= quota.get(donor_lab, 1) or len(donors) <= 1:
                 break
             drop = donors[-1]
+            # Scrub on the way in. This function runs AFTER the last
+            # scrub_services pass, so a seed added here is the only service that
+            # never gets cleaned — which is exactly how "bbq grill store
+            # cityname new york city ny" reached a grid on a build that already
+            # stripped placeholders everywhere else (2026-08-07).
+            name = clean_kw(strip_placeholders(strip_proximity(str(s)))).strip()
+            if not name or name in {str(x.get("service", "")).lower() for x in out}:
+                continue
             out.remove(drop)
-            out.append({"service": str(s).strip().lower(), "tier": drop.get("tier", "competitive"),
+            out.append({"service": name, "tier": drop.get("tier", "competitive"),
                         "_topic": lab})
-            report.append({"added": str(s).strip().lower(), "topic": lab,
+            report.append({"added": name, "topic": lab,
                            "replaced": drop.get("service", ""),
                            "from_topic": donor_lab})
     for x in out:
@@ -4957,7 +4992,7 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
 @app.route("/quote", methods=["POST"])
 def quote():
     d = request.get_json(force=True)
-    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    seeds   = clean_seeds(d.get("keywords", []))
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state   = (d.get("state") or "").strip()
     domain  = (d.get("domain") or "").strip()
@@ -5080,7 +5115,7 @@ def api_suggest_regions():
     d = request.get_json(force=True) or {}
     markets = [m for m in (d.get("geo_values") or []) if m and m.strip()]
     state = (d.get("state") or "").strip()
-    seeds = [k for k in (d.get("keywords") or []) if k and k.strip()]
+    seeds = clean_seeds(d.get("keywords") or [])
     if not markets:
         return jsonify({"regions": [], "rejected": [],
                         "note": "Add at least one geographic targeting area first."})
@@ -5112,7 +5147,7 @@ def api_suggest_regions():
 def api_keywords():
     """Step 1 — build + bucket the keyword list. One ideas call + parallel suggestions."""
     d = request.get_json(force=True)
-    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    seeds   = clean_seeds(d.get("keywords", []))
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
@@ -5155,7 +5190,7 @@ def api_refine():
     list. Non-fatal: on any failure, returns the input list unchanged so the flow
     continues with the rules-based buckets."""
     d = request.get_json(force=True)
-    seeds   = [s.strip() for s in d.get("keywords", []) if s.strip()]
+    seeds   = clean_seeds(d.get("keywords", []))
     markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
@@ -5609,6 +5644,9 @@ def api_import_report():
         "ok": True,
         "partial": bool(partial or truncated),
         "filename": f.filename,
+        # Size travels with the extraction so a quote can say WHICH file it read
+        # without storing the file (see rememberReport in the template).
+        "size": len(data),
         "images_read": n_sent,
         "sources_read": len(imgs),
         "text_chars": len(text),
@@ -5893,6 +5931,82 @@ def api_rankings():
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa)),
                     "n_cached": len(hits), "n_fetched": len(to_fetch),
                     "rank_location": rank_location_note(markets, state, nat)})
+
+@app.route("/api/qualify_markets", methods=["POST"])
+@_json_error_guard
+def api_qualify_markets():
+    """Attach the right state to each bare market name.
+
+    A report's column headers read "Wayne", "Paramus", "New York City" with no
+    states. The importer used to append the report's own state to all of them,
+    which produced "New York City, NJ" — a market that does not exist, pointing
+    the rank check and the CPC lookup at nothing (2026-08-07).
+
+    The ZIP index already knows. Precedence:
+      1. the market already carries a state -> leave it alone
+      2. the city name resolves to exactly ONE state -> use it, whatever the
+         report said (this is what fixes New York City)
+      3. several candidates and the report's state is one of them -> report's
+      4. several candidates, report's state is NOT one -> report's, flagged
+      5. no candidates at all -> report's if given, else flagged as unresolved
+
+    No external calls; runs off bundled ZIP data.
+    """
+    d = request.get_json(force=True) or {}
+    fallback = (d.get("state") or "").strip()
+    fb_abbr = (STATE_ABBREV.get(fallback.lower(), "") or
+               (fallback if len(fallback) == 2 else "")).upper()
+    idx = _zip_index()
+    by_city = {}
+    for (city, st) in idx:
+        by_city.setdefault(city, set()).add(st)
+
+    out = []
+    for raw in (d.get("markets") or []):
+        m = str(raw or "").strip()
+        if not m:
+            continue
+        already = re.search(r",\s*([A-Za-z]{2})\s*$", m)
+        if already:
+            out.append({"input": m, "qualified": m,
+                        "abbr": already.group(1).upper(),
+                        "source": "given", "certain": True})
+            continue
+        city = m.lower()
+        # CITY_STATE is the curated metro map and outranks the ZIP scan.
+        curated = CITY_STATE.get(city, "")
+        cands = sorted(by_city.get(city, set()))
+        if curated:
+            # STATE_ABBREV stores lowercase; a pill reads "Philadelphia, PA".
+            ab = (STATE_ABBREV.get(curated.lower(), "") or "").upper()
+            out.append({"input": m, "qualified": f"{m}, {ab}" if ab else m,
+                        "abbr": ab, "source": "known metro", "certain": True})
+        elif len(cands) == 1:
+            out.append({"input": m, "qualified": f"{m}, {cands[0]}",
+                        "abbr": cands[0], "source": "only one state has it",
+                        "certain": True})
+        elif cands and fb_abbr in cands:
+            out.append({"input": m, "qualified": f"{m}, {fb_abbr}",
+                        "abbr": fb_abbr, "source": "report's state",
+                        "certain": True})
+        elif cands and fb_abbr:
+            out.append({"input": m, "qualified": f"{m}, {fb_abbr}",
+                        "abbr": fb_abbr, "source": "report's state",
+                        "certain": False,
+                        "note": f"{m} exists in {', '.join(cands[:6])} but not "
+                                f"{fb_abbr} — check this one."})
+        elif fb_abbr:
+            out.append({"input": m, "qualified": f"{m}, {fb_abbr}",
+                        "abbr": fb_abbr, "source": "report's state",
+                        "certain": False,
+                        "note": f"{m} isn't in the city database — using the "
+                                f"report's state, {fb_abbr}."})
+        else:
+            out.append({"input": m, "qualified": m, "abbr": "",
+                        "source": "", "certain": False,
+                        "note": f"No state for {m}, and the report didn't say."})
+    return jsonify({"markets": out})
+
 
 @app.route("/api/markets", methods=["POST"])
 @_json_error_guard

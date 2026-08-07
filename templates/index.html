@@ -303,6 +303,7 @@
         </div>
       </div>
       <div id="reportOut" style="margin-top:8px"></div>
+      <div id="savedReports"></div>
 
       <label style="margin-top:12px">Past SEO details <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
       <div class="help">What went right or wrong in their past SEO campaigns? Free text for the reviewer — the report above is what feeds the quote.</div>
@@ -560,6 +561,210 @@ function bareTerm(v, geo){
   return t;
 }
 
+// Imported reports live on ST so they ride along in the saved payload. The
+// EXTRACTION is stored, not the file: a .pptx runs to megabytes and would be
+// re-downloaded on every quote load, while the extraction is a few KB and is
+// the part anyone actually re-reads. Filename, period and size are kept so you
+// can tell which file produced it. (2026-08-07)
+function rememberReport(r){
+  if(!r) return;
+  ST.reports = (ST.reports||[]).filter(x => !(x && x.filename===r.filename && x.period===r.period));
+  ST.reports.push({
+    filename:r.filename||'report', period:r.period||'', size:r.size||0,
+    images_read:r.images_read||0, read_at:new Date().toISOString(),
+    keywords:(r.keywords||[]).slice(0,300), markets:(r.markets||[]).slice(0,50),
+    state:r.state||null, monthly_spend:r.monthly_spend||null,
+    monthly_revenue:r.monthly_revenue||null,
+    // Positions are the bulky part; 400 rows is ~20 keywords x 20 markets,
+    // beyond any real report, and keeps a quote payload in the tens of KB.
+    rankings:(r.rankings||[]).slice(0,400),
+    notes:(r.notes||[]).slice(0,25), partial:!!r.partial
+  });
+  if(ST.reports.length>4) ST.reports=ST.reports.slice(-4);   // keep the last four
+  try{ scheduleAutoSave(); }catch(e){}
+}
+
+// The incumbent's own position data, browsable. Saved with the quote, so a
+// reviewer opening it next week sees what the quote was built against without
+// needing the original deck. Collapsed by default — it is reference, not a
+// finding. (2026-08-07)
+function reportPositionsHtml(r){
+  const rows=(r.rankings||[]).filter(x=>x && x.keyword);
+  if(!rows.length) return '';
+  // The reader emits one row per keyword: best position across markets, plus how
+  // many markets have it in the top 10. Bucket by what a position MEANS for a
+  // campaign rather than by raw number.
+  const band=p=>{
+    const n=Number(p);
+    if(!n || n>=100) return {label:'not ranking', col:'var(--muted)'};
+    if(n<=3)  return {label:'top 3', col:'#1a7f4b'};
+    if(n<=10) return {label:'page 1', col:'#1a7f4b'};
+    if(n<=20) return {label:'striking distance', col:'#8a5a10'};
+    if(n<=50) return {label:'pages 3-5', col:'var(--muted)'};
+    return {label:'pages 6-10', col:'var(--muted)'};
+  };
+  const tally={};
+  rows.forEach(x=>{ const b=band(x.best_position); tally[b.label]=(tally[b.label]||0)+1; });
+  const order=['top 3','page 1','striking distance','pages 3-5','pages 6-10','not ranking'];
+  const summary=order.filter(k=>tally[k]).map(k=>'<b>'+tally[k]+'</b> '+escapeHtml(k)).join(' \u00b7 ');
+  // Worst first: the point of reading an incumbent's report is finding the gaps.
+  const sorted=rows.slice().sort((a,b)=>{
+    const av=Number(a.best_position)||999, bv=Number(b.best_position)||999;
+    return bv-av || String(a.keyword).localeCompare(String(b.keyword));
+  });
+  const body=sorted.map(x=>{
+    const b=band(x.best_position);
+    const n=Number(x.best_position);
+    const pos=(!n||n>=100)?'Not ranking':('#'+n);
+    const mk=(x.markets_top10!=null && x.markets_top10!=='')
+      ? Number(x.markets_top10)+' market'+(Number(x.markets_top10)===1?'':'s')+' in top 10' : '';
+    return '<tr><td style="padding:3px 10px 3px 0">'+escapeHtml(String(x.keyword))+'</td>'
+      +'<td style="padding:3px 10px 3px 0;white-space:nowrap;color:'+b.col+';font-weight:600">'+pos+'</td>'
+      +'<td style="padding:3px 0" class="nf">'+escapeHtml(b.label)+(mk?' \u00b7 '+escapeHtml(mk):'')+'</td></tr>';
+  }).join('');
+  return '<details style="margin-top:9px">'
+    +'<summary style="cursor:pointer;user-select:none;font-size:12.5px;color:var(--velocity);font-weight:600">'
+    +'Their current positions \u2014 '+rows.length+' keyword'+(rows.length===1?'':'s')+'</summary>'
+    +'<div class="nf" style="margin-top:4px;font-size:11.5px">'+summary+'</div>'
+    +'<table style="font-size:12px;border-collapse:collapse;margin-top:5px"><thead><tr>'
+    +'<th style="text-align:left;padding:0 10px 3px 0">Keyword</th>'
+    +'<th style="text-align:left;padding:0 10px 3px 0">Best position</th>'
+    +'<th style="text-align:left;padding:0 0 3px 0">Reading</th>'
+    +'</tr></thead><tbody>'+body+'</tbody></table>'
+    +'<div class="nf" style="margin-top:5px;font-size:11px">From the incumbent\u2019s report, worst first. '
+    +'Not verified \u2014 the tool runs its own live rank check in Step 3, and only that one feeds the price.</div>'
+    +'</details>';
+}
+
+// Render the report panel and wire its Apply buttons. Split out of readReport
+// so a report restored from a saved quote gets the identical panel and the
+// identical buttons — a saved report you cannot act on is just a receipt.
+function showReport(r, opts){
+  opts = opts || {};
+  const out = $('reportOut');
+  if(!out || !r) return;
+  window._report = r;
+  // Flag geo-carrying terms BEFORE the operator clicks, so the reduction
+  // isn't a surprise after the fact.
+  const _rgeo=_reportGeo();
+  const geoKw=(r.keywords||[]).filter(k=>{
+    const raw=String(k||'').trim();
+    return raw && bareTerm(raw,_rgeo)!==raw.toLowerCase();
+  }).length;
+  const chips=a=>a.map(x=>'<span class="nf" style="display:inline-block;background:var(--info-bg);border-radius:9px;padding:1px 8px;margin:2px 3px 0 0;font-size:11.5px">'+escapeHtml(x)+'</span>').join('');
+  out.innerHTML=`<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;background:#fff">
+    <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Found in ${escapeHtml(r.filename||'report')}${r.period?' \u00b7 '+escapeHtml(r.period):''} <span class="nf" style="text-transform:none;letter-spacing:0;font-weight:400">(${r.images_read} image${r.images_read===1?'':'s'} read)${opts.restored?' \u00b7 saved with this quote'+(r.read_at?', read '+escapeHtml(String(r.read_at).slice(0,10)):''):''}</span></div>
+    ${r.keywords.length?`<div style="margin-top:7px"><b>${r.keywords.length} keywords</b> ${chips(r.keywords.slice(0,40))}${r.keywords.length>40?' <span class="nf">+'+(r.keywords.length-40)+' more</span>':''}
+      ${geoKw?`<div class="nf" style="margin-top:5px">${geoKw} of these carry a city or state (&ldquo;ski shop wayne nj&rdquo;). They will be added <b>bare</b> &mdash; this tool crosses every term with every market on its own, so leaving the place in the phrase would build &ldquo;ski shop wayne nj wayne, nj&rdquo; and burn several term slots on what is really one term.</div>`:''}
+      <div style="margin-top:5px"><button class="btn2" type="button" id="applyKw">Add these to Product / Vertical Focus</button></div></div>`:'<div style="margin-top:7px" class="nf">No keyword table found.</div>'}
+    ${r.markets.length?`<div style="margin-top:9px"><b>${r.markets.length} markets</b> ${chips(r.markets)}
+      <div style="margin-top:5px"><button class="btn2" type="button" id="applyMk">Add these to Geographic targeting areas${r.state?' (as ‑'+escapeHtml(r.state)+')':''}</button></div></div>`:''}
+    ${(r.monthly_spend||r.monthly_revenue)?`<div style="margin-top:9px" class="nf">${r.monthly_spend?'Stated monthly spend <b>$'+Number(r.monthly_spend).toLocaleString()+'</b>. ':''}${r.monthly_revenue?'Monthly revenue <b>$'+Number(r.monthly_revenue).toLocaleString()+'</b> — revenue, not spend; the spend box below stays manual unless the report states a fee.':''}</div>`:''}
+    ${r.rankings.length?reportPositionsHtml(r):''}
+    ${r.partial?`<div style="margin-top:9px;padding:7px 9px;background:var(--warn-bg);border:1px solid #e8c98a;border-radius:7px;font-size:12px">\u26a0 <b>Partial read</b> \u2014 the reader ran out of room before finishing. The keyword and market lists came through; position detail may be incomplete.</div>`:''}
+    ${r.notes.length?`<div style="margin-top:9px" class="nf">${r.notes.map(n=>'\u2022 '+escapeHtml(n)).join('<br>')}</div>`:''}
+    <div class="nf" style="margin-top:9px;padding-top:7px;border-top:1px solid var(--line)">Read from a report, not verified. Check anything that looks off before building the list.</div>
+  </div>`;
+  const ak=$('applyKw');
+  if(ak) ak.onclick=()=>{
+    const geo=_reportGeo();
+    let n=0, stripped=0, merged=0, dupe=0;
+    const seenHere=new Set();
+    (window._report.keywords||[]).forEach(k=>{
+      const raw=String(k||'').trim();
+      if(!raw) return;
+      const v=bareTerm(raw, geo);
+      if(!v) return;                                  // the phrase was only a place
+      if(v!==raw.toLowerCase()) stripped++;
+      if(seenHere.has(v)){ merged++; return; }         // two report rows, one term
+      seenHere.add(v);
+      if(stores.kw.some(x=>String(x).toLowerCase()===v)){ dupe++; return; }
+      stores.kw.push(v); n++;
+    });
+    PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
+    ak.disabled=true;
+    ak.textContent='\u2713 Added '+n+' term'+(n===1?'':'s');
+    const bits=[];
+    if(stripped) bits.push(stripped+' had the city or state stripped out \u2014 the tool crosses each term with every market itself, so the place belongs in Geographic targeting, not in the phrase');
+    if(merged) bits.push(merged+' collapsed into a term already in this batch');
+    if(dupe) bits.push(dupe+' already on the list');
+    if(bits.length){
+      const note=document.createElement('div');
+      note.className='nf'; note.style.marginTop='5px';
+      note.textContent='\u2022 '+bits.join('. ')+'.';
+      ak.parentNode.appendChild(note);
+    }
+  };
+  const am=$('applyMk');
+  if(am) am.onclick=async()=>{
+    const rep=window._report||{};
+    const st=(rep.state||'').toUpperCase();
+    // A report column reads "Wayne", not "Wayne, NJ". Applied bare, the whole
+    // list is built with no state suffix, the rank check looks in the wrong
+    // state, everything comes back "not ranking" and the zero-ranking uplift
+    // RAISES the price. So qualify on the way in (2026-08-06).
+    // Ask the server which state each bare market is actually in rather than
+    // stamping the report's state on all of them. "New York City" got ", NJ"
+    // from a New Jersey report — a market that does not exist, so the rank check
+    // and the CPC lookup both pointed at nothing (2026-08-07). The ZIP index
+    // knows; blindly appending does not.
+    let resolved=null, uncertain=[];
+    try{
+      const q=await postJSON('/api/qualify_markets',{markets:rep.markets||[], state:st});
+      if(q && q.markets){
+        resolved={};
+        q.markets.forEach(m=>{ resolved[m.input]=m;
+          if(!m.certain && m.note) uncertain.push(m.note); });
+      }
+    }catch(e){ /* fall through to the report's state */ }
+    const qualify=v=>{
+      v=String(v||'').trim();
+      if(!v) return '';
+      if(/,\s*[A-Za-z]{2}\s*$/.test(v)) return v;
+      if(resolved && resolved[v] && resolved[v].qualified) return resolved[v].qualified;
+      return st ? v+', '+st : v;
+    };
+    let n=0, unqualified=0, replaced=0;
+    (rep.markets||[]).forEach(raw=>{
+      const v=qualify(raw);
+      if(!v) return;
+      if(!/,\s*[A-Za-z]{2}\s*$/.test(v)) unqualified++;
+      // Replace a bare duplicate rather than skipping it — a pill already
+      // sitting there as "Wayne" is the very problem being fixed, and
+      // reporting "Added 0 markets" while leaving it broken is worse.
+      const bare=v.replace(/,\s*[A-Za-z]{2}\s*$/,'').toLowerCase();
+      const i=stores.geo.findIndex(g=>String(g).replace(/,\s*[A-Za-z]{2}\s*$/,'').toLowerCase()===bare);
+      if(i>=0){ if(stores.geo[i]!==v){ stores.geo[i]=v; replaced++; } }
+      else { stores.geo.push(v); n++; }
+    });
+    // Named markets and Nationwide pricing describe different campaigns. The
+    // report is evidence of a local footprint, so move the scope with it.
+    let scoped='';
+    const gs=$('geo_scope');
+    if(gs && gs.value==='nationwide' && (n+replaced+ (rep.markets||[]).length)>0){
+      gs.value = (rep.markets||[]).length<=1 ? 'single_city' : 'contiguous_region';
+      gs.dispatchEvent(new Event('change'));
+      scoped=gs.options[gs.selectedIndex].text;
+      const nd=$('natdemand');
+      if(nd && nd.checked){ nd.checked=false; nd.dispatchEvent(new Event('change')); }
+    }
+    PILL_RENDER.geo(); try{scheduleAutoSave();}catch(e){}
+    am.disabled=true;
+    am.textContent='\u2713 '+(n?('Added '+n):'')+(replaced?((n?', ':'Qualified ')+replaced+' with state'):'')+(!n&&!replaced?'Already applied':'');
+    const host=$('reportOut');
+    if(host && (scoped||unqualified)){
+      const note=document.createElement('div');
+      note.className='nf'; note.style.marginTop='6px';
+      const parts=[];
+      if(scoped) parts.push('\u21b3 Geo scope switched to <b>'+escapeHtml(scoped)+'</b> and national demand turned off \u2014 named markets and nationwide pricing are different campaigns.');
+      if(unqualified) parts.push('\u26a0 '+unqualified+' market'+(unqualified===1?'':'s')+' had no state and the report did not say which \u2014 add the state by hand or the rank check will look in the wrong place.');
+      if(uncertain.length) parts.push('\u26a0 '+uncertain.map(x=>escapeHtml(x)).join(' '));
+      note.innerHTML=parts.join(' ');
+      am.parentElement.appendChild(note);
+    }
+  };
+}
+
 async function readReport(){
   const f=$('reportFile'), out=$('reportOut');
   if(!f || !f.files || !f.files.length){ out.innerHTML='<div class="err">Choose a file first.</div>'; return; }
@@ -570,112 +775,50 @@ async function readReport(){
     const r=await (await fetch('/api/import_report',{method:'POST', body:fd})).json();
     if(r.error){ out.innerHTML='<div class="err">'+escapeHtml(r.error)+'</div>'; return; }
     window._report=r;
-    // Flag geo-carrying terms BEFORE the operator clicks, so the reduction
-    // isn't a surprise after the fact.
-    const _rgeo=_reportGeo();
-    const geoKw=(r.keywords||[]).filter(k=>{
-      const raw=String(k||'').trim();
-      return raw && bareTerm(raw,_rgeo)!==raw.toLowerCase();
-    }).length;
-    const chips=a=>a.map(x=>'<span class="nf" style="display:inline-block;background:var(--info-bg);border-radius:9px;padding:1px 8px;margin:2px 3px 0 0;font-size:11.5px">'+escapeHtml(x)+'</span>').join('');
-    out.innerHTML=`<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;background:#fff">
-      <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px">Found in ${escapeHtml(r.filename||'report')}${r.period?' \u00b7 '+escapeHtml(r.period):''} <span class="nf" style="text-transform:none;letter-spacing:0;font-weight:400">(${r.images_read} image${r.images_read===1?'':'s'} read)</span></div>
-      ${r.keywords.length?`<div style="margin-top:7px"><b>${r.keywords.length} keywords</b> ${chips(r.keywords.slice(0,40))}${r.keywords.length>40?' <span class="nf">+'+(r.keywords.length-40)+' more</span>':''}
-        ${geoKw?`<div class="nf" style="margin-top:5px">${geoKw} of these carry a city or state (&ldquo;ski shop wayne nj&rdquo;). They will be added <b>bare</b> &mdash; this tool crosses every term with every market on its own, so leaving the place in the phrase would build &ldquo;ski shop wayne nj wayne, nj&rdquo; and burn several term slots on what is really one term.</div>`:''}
-        <div style="margin-top:5px"><button class="btn2" type="button" id="applyKw">Add these to Product / Vertical Focus</button></div></div>`:'<div style="margin-top:7px" class="nf">No keyword table found.</div>'}
-      ${r.markets.length?`<div style="margin-top:9px"><b>${r.markets.length} markets</b> ${chips(r.markets)}
-        <div style="margin-top:5px"><button class="btn2" type="button" id="applyMk">Add these to Geographic targeting areas${r.state?' (as ‑'+escapeHtml(r.state)+')':''}</button></div></div>`:''}
-      ${(r.monthly_spend||r.monthly_revenue)?`<div style="margin-top:9px" class="nf">${r.monthly_spend?'Stated monthly spend <b>$'+Number(r.monthly_spend).toLocaleString()+'</b>. ':''}${r.monthly_revenue?'Monthly revenue <b>$'+Number(r.monthly_revenue).toLocaleString()+'</b> — revenue, not spend; the spend box below stays manual unless the report states a fee.':''}</div>`:''}
-      ${r.rankings.length?`<div style="margin-top:9px" class="nf">${r.rankings.length} keyword\u00d7market positions captured \u2014 kept for reference; the tool still runs its own live rank check.</div>`:''}
-      ${r.partial?`<div style="margin-top:9px;padding:7px 9px;background:var(--warn-bg);border:1px solid #e8c98a;border-radius:7px;font-size:12px">\u26a0 <b>Partial read</b> \u2014 the reader ran out of room before finishing. The keyword and market lists came through; position detail may be incomplete.</div>`:''}
-      ${r.notes.length?`<div style="margin-top:9px" class="nf">${r.notes.map(n=>'\u2022 '+escapeHtml(n)).join('<br>')}</div>`:''}
-      <div class="nf" style="margin-top:9px;padding-top:7px;border-top:1px solid var(--line)">Read from a report, not verified. Check anything that looks off before building the list.</div>
-    </div>`;
-    const ak=$('applyKw');
-    if(ak) ak.onclick=()=>{
-      const geo=_reportGeo();
-      let n=0, stripped=0, merged=0, dupe=0;
-      const seenHere=new Set();
-      (window._report.keywords||[]).forEach(k=>{
-        const raw=String(k||'').trim();
-        if(!raw) return;
-        const v=bareTerm(raw, geo);
-        if(!v) return;                                  // the phrase was only a place
-        if(v!==raw.toLowerCase()) stripped++;
-        if(seenHere.has(v)){ merged++; return; }         // two report rows, one term
-        seenHere.add(v);
-        if(stores.kw.some(x=>String(x).toLowerCase()===v)){ dupe++; return; }
-        stores.kw.push(v); n++;
-      });
-      PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
-      ak.disabled=true;
-      ak.textContent='\u2713 Added '+n+' term'+(n===1?'':'s');
-      const bits=[];
-      if(stripped) bits.push(stripped+' had the city or state stripped out \u2014 the tool crosses each term with every market itself, so the place belongs in Geographic targeting, not in the phrase');
-      if(merged) bits.push(merged+' collapsed into a term already in this batch');
-      if(dupe) bits.push(dupe+' already on the list');
-      if(bits.length){
-        const note=document.createElement('div');
-        note.className='nf'; note.style.marginTop='5px';
-        note.textContent='\u2022 '+bits.join('. ')+'.';
-        ak.parentNode.appendChild(note);
-      }
-    };
-    const am=$('applyMk');
-    if(am) am.onclick=()=>{
-      const rep=window._report||{};
-      const st=(rep.state||'').toUpperCase();
-      // A report column reads "Wayne", not "Wayne, NJ". Applied bare, the whole
-      // list is built with no state suffix, the rank check looks in the wrong
-      // state, everything comes back "not ranking" and the zero-ranking uplift
-      // RAISES the price. So qualify on the way in (2026-08-06).
-      const qualify=v=>{
-        v=String(v||'').trim();
-        if(!v) return '';
-        return /,\s*[A-Za-z]{2}\s*$/.test(v) ? v : (st ? v+', '+st : v);
-      };
-      let n=0, unqualified=0, replaced=0;
-      (rep.markets||[]).forEach(raw=>{
-        const v=qualify(raw);
-        if(!v) return;
-        if(!/,\s*[A-Za-z]{2}\s*$/.test(v)) unqualified++;
-        // Replace a bare duplicate rather than skipping it — a pill already
-        // sitting there as "Wayne" is the very problem being fixed, and
-        // reporting "Added 0 markets" while leaving it broken is worse.
-        const bare=v.replace(/,\s*[A-Za-z]{2}\s*$/,'').toLowerCase();
-        const i=stores.geo.findIndex(g=>String(g).replace(/,\s*[A-Za-z]{2}\s*$/,'').toLowerCase()===bare);
-        if(i>=0){ if(stores.geo[i]!==v){ stores.geo[i]=v; replaced++; } }
-        else { stores.geo.push(v); n++; }
-      });
-      // Named markets and Nationwide pricing describe different campaigns. The
-      // report is evidence of a local footprint, so move the scope with it.
-      let scoped='';
-      const gs=$('geo_scope');
-      if(gs && gs.value==='nationwide' && (n+replaced+ (rep.markets||[]).length)>0){
-        gs.value = (rep.markets||[]).length<=1 ? 'single_city' : 'contiguous_region';
-        gs.dispatchEvent(new Event('change'));
-        scoped=gs.options[gs.selectedIndex].text;
-        const nd=$('natdemand');
-        if(nd && nd.checked){ nd.checked=false; nd.dispatchEvent(new Event('change')); }
-      }
-      PILL_RENDER.geo(); try{scheduleAutoSave();}catch(e){}
-      am.disabled=true;
-      am.textContent='\u2713 '+(n?('Added '+n):'')+(replaced?((n?', ':'Qualified ')+replaced+' with state'):'')+(!n&&!replaced?'Already applied':'');
-      const host=$('reportOut');
-      if(host && (scoped||unqualified)){
-        const note=document.createElement('div');
-        note.className='nf'; note.style.marginTop='6px';
-        const parts=[];
-        if(scoped) parts.push('\u21b3 Geo scope switched to <b>'+escapeHtml(scoped)+'</b> and national demand turned off \u2014 named markets and nationwide pricing are different campaigns.');
-        if(unqualified) parts.push('\u26a0 '+unqualified+' market'+(unqualified===1?'':'s')+' had no state and the report did not say which \u2014 add the state by hand or the rank check will look in the wrong place.');
-        note.innerHTML=parts.join(' ');
-        am.parentElement.appendChild(note);
-      }
-    };
+    rememberReport(r);
+    showReport(r);
+    try{ renderSavedReports(); }catch(e){}
   }catch(e){ out.innerHTML='<div class="err">Read failed: '+e+'</div>'; }
   finally{ const b=$('reportGo'); if(b){ b.disabled=false; b.textContent='Read report'; } }
 }
 document.addEventListener('click', e=>{ if(e.target && e.target.id==='reportGo') readReport(); });
+
+// ---- reports saved with the quote --------------------------------------
+// A quote reloaded a week later should still show what it was built from, and
+// still let you act on it. The Apply buttons are the same ones the fresh import
+// renders — they read window._report, so selecting a saved report just points
+// that at the chosen extraction. (2026-08-07)
+function renderSavedReports(){
+  const host=$('savedReports');
+  if(!host) return;
+  const R=ST.reports||[];
+  if(!R.length){ host.innerHTML=''; return; }
+  const rows=R.map((r,i)=>{
+    const when=r.read_at?String(r.read_at).slice(0,10):'';
+    const bits=[];
+    if(r.keywords&&r.keywords.length) bits.push(r.keywords.length+' keywords');
+    if(r.markets&&r.markets.length) bits.push(r.markets.length+' markets');
+    if(r.rankings&&r.rankings.length) bits.push(r.rankings.length+' positions');
+    if(r.monthly_spend) bits.push('spend $'+Number(r.monthly_spend).toLocaleString());
+    return `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:4px 0${i?';border-top:1px solid var(--line)':''}">
+      <b style="font-size:12px">${escapeHtml(r.filename||'report')}</b>
+      ${r.period?`<span class="nf" style="font-size:11.5px">${escapeHtml(r.period)}</span>`:''}
+      <span class="nf" style="font-size:11.5px">${escapeHtml(bits.join(' \u00b7 '))}${when?' \u00b7 read '+when:''}</span>
+      <button class="btn2" type="button" data-report="${i}" style="padding:2px 9px;font-size:11.5px;margin-left:auto">Open</button>
+    </div>`;
+  }).join('');
+  host.innerHTML=`<div style="margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:#fff">
+    <div style="font-weight:700;color:var(--atlas);text-transform:uppercase;letter-spacing:.5px;font-size:10.5px;margin-bottom:2px">Reports saved with this quote</div>
+    ${rows}
+    <div class="nf" style="font-size:11px;margin-top:5px">The reader's findings are stored, not the file itself. Open one to re-apply its keywords or markets.</div>
+  </div>`;
+  host.querySelectorAll('button[data-report]').forEach(btn=>{
+    btn.onclick=()=>{
+      const r=(ST.reports||[])[parseInt(btn.getAttribute('data-report'),10)];
+      if(r) showReport(r, {restored:true});
+    };
+  });
+}
 
 function wirePills(key, inputId){
   const box = document.querySelector(`.pillbox[data-for="${key}"]`);
@@ -735,6 +878,9 @@ function wirePills(key, inputId){
       parts=merged;
     }
     if(parts.length){ try{scheduleAutoSave();}catch(e){} }
+    // "bbq grill store <cityname>" is a report template, not a search term.
+    // Strip it here so a pasted or restored list can't seed a phantom topic.
+    if(key==='kw'){ parts=parts.map(x=>stripPlaceholders(x)).filter(Boolean); }
     parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
     input.value=''; render();
   }
@@ -1021,7 +1167,9 @@ function moneyExact(n){
 function renderErr(msg){$('out').innerHTML=`<div class="err">${msg}</div>`;}
 
 const ST = {inputs:null, kw:null, adder:null, score:null,
-            table:[], paa:[], ranked:0, total:0, zero:null, longtail:null, actual:{}};
+            table:[], paa:[], ranked:0, total:0, zero:null, longtail:null, actual:{},
+            // Imported incumbent reports, saved with the quote (extraction only).
+            reports:[]};
 
 function collectInputs(){
   ['sites_in','kw_in','geo_in'].forEach(id=>$(id).dispatchEvent(new Event('blur')));
@@ -2600,7 +2748,9 @@ function snapshotQuote(){
     geoOverride: ST.geoOverride||'',
     addonOverride: ST.addonOverride||'',
     addonPicked: (ST.inputs&&ST.inputs.addon_picked)||[],
-    actual: ST.actual||null
+    actual: ST.actual||null,
+    // Imported incumbent reports (extraction only — see rememberReport).
+    reports: ST.reports||[]
   };
 }
 
@@ -2621,7 +2771,12 @@ function restoreQuote(p){
   ST.addonOverride=p.addonOverride||'';
   if(ST.inputs) ST.inputs.addon_picked=p.addonPicked||[];
   ST.actual=p.actual||{};
+  ST.reports=p.reports||[];
+  // Rehydrate the most recent report so its Apply buttons work on a reloaded
+  // quote — the point of saving it is being able to act on it later.
+  if(ST.reports.length){ window._report=ST.reports[ST.reports.length-1]; }
   if(p.inputs){ try{ reflectInputs(p.inputs); }catch(e){} }
+  try{ renderSavedReports(); }catch(e){}
   // Step 1 — keyword list
   if(ST.kw){ try{ renderStep1(); }catch(e){} }
   // Step 2 — competition summary (rebuild from saved metrics)
@@ -2644,7 +2799,16 @@ function restoreQuote(p){
 function reflectInputs(inp){
   if(!inp) return;
   // repopulate the pill stores, then REDRAW them (the stores alone don't render)
-  const fill=(key, arr)=>{ stores[key].length=0; (arr||[]).forEach(v=>stores[key].push(v)); };
+  const fill=(key, arr)=>{
+    stores[key].length=0;
+    // A quote saved before the placeholder fix still carries "bbq grill store
+    // <cityname>". Clean on the way back in so an old quote self-corrects
+    // rather than re-seeding a phantom "cityname" topic (2026-08-07).
+    (arr||[]).forEach(v=>{
+      const t = key==='kw' ? stripPlaceholders(v) : v;
+      if(t) stores[key].push(t);
+    });
+  };
   fill('sites', inp.sites && inp.sites.length ? inp.sites : (inp.domain?[inp.domain]:[]));
   fill('kw',    inp.keywords);
   fill('geo',   inp.geo_values);
