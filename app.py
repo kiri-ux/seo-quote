@@ -1438,6 +1438,80 @@ def _bare_city(m, state=""):
         return (m or "").strip().lower()
 
 
+# Cache for canonical_city_name — the nearest-point scan walks 42k ZIP rows, and
+# loc_string is called on every lookup.
+_CANON_CITY = {}
+
+
+def canonical_city_name(city, st=""):
+    """A DIFFERENT name for the same place, for when Google rejects the first.
+
+    Google Ads has no location called "New York City" — its canonical name is
+    "New York". None called "Lawrenceville, NJ" either; it is "Lawrence
+    Township". So the name is wrong, not the place, and the old ladder jumped
+    straight from a rejected city to its whole STATE — which is how a five-town
+    New Jersey retailer ended up priced on New York statewide demand
+    (2026-08-07).
+
+    Order: drop a trailing "city", then a known alias, then the nearest name in
+    the ZIP data at that exact point (both real cases resolve at 0.0 miles, so
+    this is the same place relabelled rather than a neighbour).
+
+    Returns "" when there is no alternative worth trying.
+    """
+    c = (city or "").strip().lower()
+    key = (c, (st or "").strip().lower())
+    if key in _CANON_CITY:
+        return _CANON_CITY[key]
+
+    cands = []
+    if c.endswith(" city") and len(c.split()) > 1:
+        cands.append(c[: -len(" city")].strip())
+    for a in _CITY_ALIASES.get(c, []):
+        if " " in a or len(a) > 3:          # skip 2-3 letter shorthand
+            cands.append(a)
+
+    out = ""
+    abbr = (STATE_ABBREV.get((st or "").strip().lower(), "") or "").upper()
+    idx = _zip_index()
+    for cand in cands:
+        if cand and cand != c and (not abbr or (cand, abbr) in idx):
+            out = cand
+            break
+    if not out:
+        # Nearest ZIP-data name at the same coordinates.
+        pt = idx.get((c, abbr)) if abbr else None
+        if pt is None:
+            hits = [v for (cc, _s), v in idx.items() if cc == c]
+            pt = hits[0] if len(hits) == 1 else None
+        if pt:
+            best = None
+            for (cc, ss), p in idx.items():
+                if abbr and ss != abbr:
+                    continue
+                if cc == c:
+                    continue
+                d = miles_between(pt, p)
+                if best is None or d < best[0]:
+                    best = (d, cc)
+            # Reject an abbreviation of the name we already have. The ZIP data
+            # carries "Phila" alongside "Philadelphia"; offering it to Google as
+            # an alternative name is worse than the name that already works.
+            if best and best[0] <= 2.0:
+                cand = best[1]
+                # Strict prefix test, no length tolerance. "Phila" is an
+                # abbreviation of Philadelphia and "Los Angeles AFB" is a base
+                # inside Los Angeles — neither is the city under another name.
+                # This only gates the nearest-point scan; the explicit candidate
+                # list above (drop trailing "city", alias map) is what carries
+                # New York City -> New York, so that case is unaffected.
+                prefix_of_each_other = c.startswith(cand) or cand.startswith(c)
+                if not prefix_of_each_other:
+                    out = cand
+    _CANON_CITY[key] = out
+    return out
+
+
 def fetch_local_volume(terms, markets, state, national=False):
     """Search volume for bare service terms across THE CITIES BEING TARGETED.
 
@@ -1463,6 +1537,7 @@ def fetch_local_volume(terms, markets, state, national=False):
     kws = [t.lower() for t in terms]
 
     resolved_codes = {}
+    renamed = {}
 
     def one(city):
         # loc_string parses "City, ST" itself; each city localizes to its own state
@@ -1508,6 +1583,23 @@ def fetch_local_volume(terms, markets, state, national=False):
             # searches three times and wildly inflate the volume add.
             if "40501" in str(e) or "not found" in str(e).lower():
                 city_st = market_state(city, state)
+                # FIRST try the same place under the name Google actually uses.
+                # Jumping straight to the state throws away the city entirely,
+                # and for New York City that meant pricing on New York STATE.
+                alt = canonical_city_name(market_city(city, state), city_st or state)
+                if alt:
+                    alt_loc = (f"{alt},{city_st},United States" if city_st
+                               else (f"{alt},{state},United States" if state
+                                     else f"{alt},United States"))
+                    try:
+                        _rows, _code = call(alt_loc)
+                        resolved_codes[city] = _code
+                        renamed[city] = alt
+                        # Its own place, just spelled Google's way — so this is
+                        # NOT a broader-area fallback and it counts in the total.
+                        return _rows, loc
+                    except Exception:
+                        pass
                 broader = (f"{city_st},United States" if city_st
                            else (f"{state},United States" if state else "United States"))
                 _rows, _code = call(broader)
@@ -1633,6 +1725,9 @@ def fetch_local_volume(terms, markets, state, national=False):
     per_city["__fallback_cities__"] = sorted({_bare_city(c, state) for c in fallback_cities})
     # The original pill text too, so a suggestion can be built from it.
     per_city["__fallback_markets__"] = sorted({str(c).strip() for c in fallback_cities})
+    # Markets Google accepted only under a different name. Worth showing: the
+    # figure is genuinely the city's, and the operator may want the pill to match.
+    per_city["__renamed__"] = dict(renamed)
     return totals, per_city, ("; ".join(notes) or None)
 
 
@@ -4332,6 +4427,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # Markets that contributed NO volume of their own, with the name
             # Google would probably accept. Surfaced per MARKET because reading
             # it off twenty tagged keyword rows is work the tool should do.
+            "market_renames": [{"market": k, "used": v}
+                               for k, v in ((per_city or {}).get("__renamed__") or {}).items()],
             "market_volume_gaps": [
                 {"market": m,
                  "suggestion": suggest_market_name(m, state)}
@@ -5748,6 +5845,7 @@ def api_refine():
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
         "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
         "market_volume_gaps": s1.get("market_volume_gaps") or [],
+        "market_renames": s1.get("market_renames") or [],
         "topics": s1.get("topics") or [],
         "topic_source": s1.get("topic_source") or "",
         "topic_fixes": s1.get("topic_fixes") or [],
