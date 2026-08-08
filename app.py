@@ -510,6 +510,15 @@ CFG = {
     # miles of any city in the other. Wider than market_radius_miles on purpose:
     # 25 miles is "same market", 60 is "same trade area".
     "scope_join_radius_miles": 60,
+    # A service name below this many monthly searches (summed across the
+    # client's markets) is treated as a phrase nobody types, and is replaced by a
+    # higher-volume term from the operator's own list in the same topic. Set to 0
+    # to switch the check off.
+    "service_min_volume": 30,
+    "service_max_swaps": 3,
+    # How many unused seed terms to measure as replacement candidates. Each one
+    # adds a keyword to the existing per-city volume calls.
+    "service_candidate_cap": 14,
     # TIER MIX, measured off eight real BE proposals (303 terms, 2026-08-07)
     # rather than assumed. His splits are PROPORTIONAL, not fixed counts, and
     # they move with the client:
@@ -3644,6 +3653,76 @@ def suggest_market_name(market, state=""):
     return f"{name}, {abbr}" if abbr else name
 
 
+def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
+                            max_swaps=None):
+    """Replace service names nobody searches with ones the client's own list has.
+
+    The geo WORDING is measured against search volume; the SERVICE NAMES were
+    not. Ski Barn's grid spent three of seven slots on "nearest snowboard shop"
+    (10/mo total, four of five markets no-data), "best snowboard store" (20) and
+    "bbq grill store" (50), while the operator's own seeds held "ski shop",
+    "ski store", "snowboard shop" and "ski equipment" — all unused and all much
+    larger. Nobody types "nearest snowboard shop" (2026-08-08).
+
+    A dead service slot costs twice: it fills the proposal with terms the client
+    cannot win traffic on, and it drags the volume total that drives price.
+
+    Swaps stay INSIDE the topic, so topic coverage survives — a patio-furniture
+    slot is replaced by a better patio-furniture term, never by a ski term. The
+    tier is inherited from the service being replaced.
+
+    Returns (services, report).
+    """
+    floor = int(CFG.get("service_min_volume", 30) if min_volume is None else min_volume)
+    cap = int(CFG.get("service_max_swaps", 3) if max_swaps is None else max_swaps)
+    if not services or not vols:
+        return services, []
+
+    def vol_of(name):
+        return int(vols.get(str(name).lower(), 0) or 0)
+
+    out = [dict(x) for x in services]
+    used = {str(x.get("service", "")).lower() for x in out}
+    report = []
+    # Weakest slots first, so a limited number of swaps is spent where it counts.
+    order = sorted(range(len(out)), key=lambda i: vol_of(out[i].get("service")))
+    for i in order:
+        if len(report) >= cap:
+            break
+        cur = out[i].get("service", "")
+        cur_v = vol_of(cur)
+        if cur_v >= floor:
+            continue
+        topic = service_topic(cur, topics) if topics else ""
+        # Candidates: unused seeds from the SAME topic, best measured first.
+        pool = []
+        for t in (topics or []):
+            if topic and t.get("label") != topic:
+                continue
+            pool += list(t.get("seeds") or [])
+        if not topic or not pool:
+            pool = list(seeds or [])
+        cands = []
+        for sd in pool:
+            k = str(sd).strip().lower()
+            if not k or k in used:
+                continue
+            v = vol_of(k)
+            if v > max(cur_v, floor - 1):
+                cands.append((v, k))
+        if not cands:
+            continue
+        cands.sort(reverse=True)
+        best_v, best = cands[0]
+        report.append({"out": cur, "out_volume": cur_v,
+                       "in": best, "in_volume": best_v,
+                       "topic": topic, "tier": out[i].get("tier", "")})
+        used.discard(str(cur).lower())
+        used.add(best)
+        out[i] = {"service": best, "tier": out[i].get("tier", "competitive")}
+    return out, report
+
+
 def build_grid(services, markets, state, prepicked=False, geo_forms=None):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
@@ -4144,8 +4223,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # row for that service, so pricing must count it ONCE PER SERVICE — not
         # once per row — or a 10-city grid would inflate volume 10x.
         svc_names = list(dict.fromkeys([s["service"] for s in services]))
+        # Measure the UNUSED seeds alongside the chosen services, in the same
+        # call, so a dead service name can be swapped for one the client's own
+        # list already has. Costs extra keywords, not extra requests.
+        _chosen = {x.lower() for x in svc_names}
+        _alts = [sd for sd in (seeds or [])
+                 if str(sd).strip() and str(sd).strip().lower() not in _chosen]
+        _alts = list(dict.fromkeys(str(x).strip().lower() for x in _alts))
+        _alts = _alts[:int(CFG.get("service_candidate_cap", 14))]
         vols, per_city, vol_err = fetch_local_volume(
-            svc_names, [] if national_demand else cities, state,
+            svc_names + _alts, [] if national_demand else cities, state,
             national=national_demand)
         # LAST RESORT for a national quote: Labs carries per-term volume and is
         # a different service, so a Google Ads outage doesn't take it down too.
@@ -4279,6 +4366,29 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
 
         _apply_volumes(full)
         service_volume = {s: vols.get(s.lower(), 0) for s in svc_names}
+
+        # SERVICE NAMES RECONCILED AGAINST MEASURED DEMAND (2026-08-08).
+        # A slot holding a phrase nobody searches is worth less than the client's
+        # own unused term. Runs before the tier pass so the tiers are assigned to
+        # the final set.
+        service_swaps = []
+        if not national_demand and int(CFG.get("service_min_volume", 0) or 0) > 0:
+            try:
+                services, service_swaps = swap_low_volume_services(
+                    services, vols, seeds, topics)
+                if service_swaps:
+                    svc_names = list(dict.fromkeys([x["service"] for x in services]))
+                    g = build_grid(services, grid_cities, state, prepicked=True,
+                                   geo_forms=geo_forms)
+                    full = g["ultra"] + g["competitive"] + g["long_tail"]
+                    _apply_volumes(full)
+                    # service_volume was keyed by the OLD names; the tier pass
+                    # below looks services up in it, so a stale map would make
+                    # every swapped-in service read as unmeasured.
+                    service_volume = {x: vols.get(x.lower(), 0) for x in svc_names}
+            except Exception:
+                app.logger.exception("swap_low_volume_services failed")
+                service_swaps = []
 
         # TIERS RECONCILED AGAINST MEASURED DEMAND (2026-08-05).
         # Tiers are assigned by the model on judgement, BEFORE any volume is
@@ -4427,6 +4537,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # Markets that contributed NO volume of their own, with the name
             # Google would probably accept. Surfaced per MARKET because reading
             # it off twenty tagged keyword rows is work the tool should do.
+            "service_swaps": service_swaps,
             "market_renames": [{"market": k, "used": v}
                                for k, v in ((per_city or {}).get("__renamed__") or {}).items()],
             "market_volume_gaps": [
@@ -5846,6 +5957,7 @@ def api_refine():
         "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
         "market_volume_gaps": s1.get("market_volume_gaps") or [],
         "market_renames": s1.get("market_renames") or [],
+        "service_swaps": s1.get("service_swaps") or [],
         "topics": s1.get("topics") or [],
         "topic_source": s1.get("topic_source") or "",
         "topic_fixes": s1.get("topic_fixes") or [],
