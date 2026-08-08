@@ -1631,6 +1631,8 @@ def fetch_local_volume(terms, markets, state, national=False):
     # bare city ("lawrenceville"), never matched and the flag never fired
     # (2026-08-07).
     per_city["__fallback_cities__"] = sorted({_bare_city(c, state) for c in fallback_cities})
+    # The original pill text too, so a suggestion can be built from it.
+    per_city["__fallback_markets__"] = sorted({str(c).strip() for c in fallback_cities})
     return totals, per_city, ("; ".join(notes) or None)
 
 
@@ -3507,6 +3509,46 @@ def pick_geo_forms(markets, state, service_terms):
     return forms_out, report
 
 
+def suggest_market_name(market, state=""):
+    """The name Google is likely to recognise for a market it rejected.
+
+    "New York City" and "Lawrenceville" are not Google Ads locations — it holds
+    "New York" and "Lawrence Township". The ZIP index knows both, and the market
+    already resolves to coordinates, so the nearest ZIP-data city name at that
+    exact point IS the recognised name. Both resolve at 0.0 miles, which is the
+    same place under a different label rather than a guess (2026-08-07).
+
+    Returns "City, ST" or "" when nothing better than the input can be found.
+    """
+    coords = city_coords(market, state)
+    if not coords:
+        return ""
+    city, st = parse_market(market, state)
+    have = (city or "").strip().lower()
+    try:
+        import zipcodes
+        rows = zipcodes.list_all()
+    except Exception:
+        return ""
+    best = None
+    for r in rows:
+        try:
+            pt = (float(r["lat"]), float(r["long"]))
+        except Exception:
+            continue
+        d = miles_between(coords, pt)
+        if best is None or d < best[0]:
+            best = (d, str(r.get("city") or ""), str(r.get("state") or ""))
+    # Only worth suggesting if it is the SAME place under another name and the
+    # name actually differs from what the operator typed.
+    if not best or best[0] > 2.0:
+        return ""
+    name, abbr = best[1], best[2]
+    if not name or name.strip().lower() == have:
+        return ""
+    return f"{name}, {abbr}" if abbr else name
+
+
 def build_grid(services, markets, state, prepicked=False, geo_forms=None):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
@@ -4287,6 +4329,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # Which location ID actually answered per city. Two cities sharing
             # one ID means only one of them reported its own demand.
             "city_location_codes": (per_city or {}).get("__location_codes__") or {},
+            # Markets that contributed NO volume of their own, with the name
+            # Google would probably accept. Surfaced per MARKET because reading
+            # it off twenty tagged keyword rows is work the tool should do.
+            "market_volume_gaps": [
+                {"market": m,
+                 "suggestion": suggest_market_name(m, state)}
+                for m in ((per_city or {}).get("__fallback_markets__") or [])],
             "site_locations": site_locations,
             "service_areas": service_areas,
             "gbp_locations": gbp_count,
@@ -5698,6 +5747,7 @@ def api_refine():
         "ecommerce_detected": bool(s1.get("ecommerce_detected")),
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
         "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
+        "market_volume_gaps": s1.get("market_volume_gaps") or [],
         "topics": s1.get("topics") or [],
         "topic_source": s1.get("topic_source") or "",
         "topic_fixes": s1.get("topic_fixes") or [],
