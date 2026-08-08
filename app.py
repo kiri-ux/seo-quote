@@ -516,6 +516,12 @@ CFG = {
     # to switch the check off.
     "service_min_volume": 30,
     "service_max_swaps": 3,
+    # UPGRADE pass. A service that clears the floor is still replaced when an
+    # unused term from the operator's own list, in the SAME topic, measures at
+    # least this many times more. 10x is deliberately steep: it only fires when
+    # the alternative is in a different league, never on a close call, so a
+    # deliberate service choice isn't second-guessed over noise. 0 turns it off.
+    "service_upgrade_ratio": 10,
     # How many unused seed terms to measure as replacement candidates. Each one
     # adds a keyword to the existing per-city volume calls.
     "service_candidate_cap": 14,
@@ -3654,7 +3660,7 @@ def suggest_market_name(market, state=""):
 
 
 def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
-                            max_swaps=None):
+                            max_swaps=None, upgrade_ratio=None):
     """Replace service names nobody searches with ones the client's own list has.
 
     The geo WORDING is measured against search volume; the SERVICE NAMES were
@@ -3675,6 +3681,8 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
     """
     floor = int(CFG.get("service_min_volume", 30) if min_volume is None else min_volume)
     cap = int(CFG.get("service_max_swaps", 3) if max_swaps is None else max_swaps)
+    ratio = float(CFG.get("service_upgrade_ratio", 0)
+                  if upgrade_ratio is None else upgrade_ratio)
     if not services or not vols:
         return services, []
 
@@ -3715,11 +3723,52 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
         cands.sort(reverse=True)
         best_v, best = cands[0]
         report.append({"out": cur, "out_volume": cur_v,
-                       "in": best, "in_volume": best_v,
+                       "in": best, "in_volume": best_v, "kind": "dead",
                        "topic": topic, "tier": out[i].get("tier", "")})
         used.discard(str(cur).lower())
         used.add(best)
         out[i] = {"service": best, "tier": out[i].get("tier", "competitive")}
+
+    # UPGRADE PASS. The rule above only rescues DEAD slots, so a service that
+    # scrapes past the floor keeps its place even when the operator's own list
+    # holds something in a different league — Ski Barn kept "alpine ski shop"
+    # (110/mo) while "ski store" (880) and "snowboard shop" (720) sat unused
+    # (2026-08-08). Same-topic only, so coverage survives.
+    if ratio > 0:
+        order2 = sorted(range(len(out)), key=lambda i: vol_of(out[i].get("service")))
+        for i in order2:
+            if len(report) >= cap:
+                break
+            cur = out[i].get("service", "")
+            cur_v = vol_of(cur)
+            if cur_v <= 0:
+                continue                      # handled by the floor pass
+            topic = service_topic(cur, topics) if topics else ""
+            pool = []
+            for t in (topics or []):
+                if topic and t.get("label") != topic:
+                    continue
+                pool += list(t.get("seeds") or [])
+            if not topic or not pool:
+                pool = list(seeds or [])
+            cands = []
+            for sd in pool:
+                k = str(sd).strip().lower()
+                if not k or k in used:
+                    continue
+                v = vol_of(k)
+                if v >= cur_v * ratio:
+                    cands.append((v, k))
+            if not cands:
+                continue
+            cands.sort(reverse=True)
+            best_v, best = cands[0]
+            report.append({"out": cur, "out_volume": cur_v,
+                           "in": best, "in_volume": best_v, "kind": "upgrade",
+                           "topic": topic, "tier": out[i].get("tier", "")})
+            used.discard(str(cur).lower())
+            used.add(best)
+            out[i] = {"service": best, "tier": out[i].get("tier", "competitive")}
     return out, report
 
 
@@ -4372,7 +4421,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # own unused term. Runs before the tier pass so the tiers are assigned to
         # the final set.
         service_swaps = []
-        if not national_demand and int(CFG.get("service_min_volume", 0) or 0) > 0:
+        _svc_check_on = (int(CFG.get("service_min_volume", 0) or 0) > 0
+                         or float(CFG.get("service_upgrade_ratio", 0) or 0) > 0)
+        if not national_demand and _svc_check_on:
             try:
                 services, service_swaps = swap_low_volume_services(
                     services, vols, seeds, topics)
@@ -4538,6 +4589,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # Google would probably accept. Surfaced per MARKET because reading
             # it off twenty tagged keyword rows is work the tool should do.
             "service_swaps": service_swaps,
+            "service_upgrade_ratio": CFG.get("service_upgrade_ratio", 0),
             "market_renames": [{"market": k, "used": v}
                                for k, v in ((per_city or {}).get("__renamed__") or {}).items()],
             "market_volume_gaps": [
@@ -5958,6 +6010,7 @@ def api_refine():
         "market_volume_gaps": s1.get("market_volume_gaps") or [],
         "market_renames": s1.get("market_renames") or [],
         "service_swaps": s1.get("service_swaps") or [],
+        "service_upgrade_ratio": s1.get("service_upgrade_ratio", 0),
         "topics": s1.get("topics") or [],
         "topic_source": s1.get("topic_source") or "",
         "topic_fixes": s1.get("topic_fixes") or [],
@@ -6857,6 +6910,9 @@ def api_config_get():
         "grid_mode": CFG.get("grid_mode", True),
         "goal_options": GOAL_OPTIONS,
         "goal_scope": GOAL_SCOPE,
+        "service_min_volume": CFG.get("service_min_volume", 0),
+        "service_upgrade_ratio": CFG.get("service_upgrade_ratio", 0),
+        "service_max_swaps": CFG.get("service_max_swaps", 3),
         "grid_target_keywords": CFG.get("grid_target_keywords", 32),
         "grid_min_services": CFG.get("grid_min_services", 4),
         "grid_max_services": CFG.get("grid_max_services", 20),
@@ -6925,7 +6981,9 @@ def api_config_set():
                             ("grid_max_services", int), ("grid_max_cities", int)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
-        for key, caster in [("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
+        for key, caster in [("service_min_volume", int), ("service_max_swaps", int),
+                            ("service_upgrade_ratio", float),
+                            ("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),
                             ("client_floor", int), ("addon_market_ratio", float),
                             ("default_markup_pct", float), ("ultra_bucket_size", int),
