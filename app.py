@@ -522,6 +522,11 @@ CFG = {
     # the alternative is in a different league, never on a close call, so a
     # deliberate service choice isn't second-guessed over noise. 0 turns it off.
     "service_upgrade_ratio": 10,
+    # How much a STORE-INTENT term ("ski shop") outweighs a product term
+    # ("outdoor furniture") of the same size when ordering the tier columns. A
+    # multiplier, not a veto: 3 means a product term must carry 3x the demand to
+    # take a slot ahead of a shop term. 1 = order on raw volume only.
+    "store_intent_tier_boost": 3.0,
     # How many unused seed terms to measure as replacement candidates. Each one
     # adds a keyword to the existing per-city volume calls. Spread round-robin
     # across topics, shortest term first, so every product line gets measured.
@@ -4544,15 +4549,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             _measured = [x for x in services
                          if (service_volume.get(x["service"]) or 0) > 0]
             if len(_measured) >= 3 and sum(_counts.values()) == len(services):
-                # Store-intent terms rank ahead of product terms of the same
-                # size, so a shop term keeps the Ultra slot it earns. Without
-                # this the proposal headlined "weber grill nyc" for a ski
-                # retailer whose goal is in-store sales (2026-08-08). Volume
-                # still decides within each group.
-                _ranked = sorted(
-                    _measured,
-                    key=lambda x: (0 if is_store_intent(x["service"]) else 1,
-                                   -(service_volume.get(x["service"]) or 0)))
+                # Store intent gets a THUMB ON THE SCALE, not a veto. Absolute
+                # precedence pushed "outdoor furniture" (4,580/mo, the largest
+                # line in the quote) into Long Tail beneath terms at 80/mo,
+                # because it isn't a shop phrase — and the columns stopped
+                # running high-to-low, which is the one thing this pass exists
+                # to guarantee (2026-08-09). A multiplier keeps a shop term
+                # ahead of a comparable product term while letting a term with
+                # several times the demand take the slot it has earned.
+                _boost = float(CFG.get("store_intent_tier_boost", 3.0) or 1.0)
+                def _rank_key(x):
+                    v = service_volume.get(x["service"]) or 0
+                    return -(v * (_boost if is_store_intent(x["service"]) else 1.0))
+                _ranked = sorted(_measured, key=_rank_key)
                 # Walk the ranked list, filling ultra first, then competitive.
                 # Unmeasured terms keep whatever tier they already had, so the
                 # per-tier capacity has to account for them.
@@ -7003,6 +7012,7 @@ def api_config_get():
         "service_min_volume": CFG.get("service_min_volume", 0),
         "service_upgrade_ratio": CFG.get("service_upgrade_ratio", 0),
         "service_max_swaps": CFG.get("service_max_swaps", 3),
+        "store_intent_tier_boost": CFG.get("store_intent_tier_boost", 3.0),
         "grid_target_keywords": CFG.get("grid_target_keywords", 32),
         "grid_min_services": CFG.get("grid_min_services", 4),
         "grid_max_services": CFG.get("grid_max_services", 20),
@@ -7073,6 +7083,7 @@ def api_config_set():
                 CFG[key] = caster(d[key])
         for key, caster in [("service_min_volume", int), ("service_max_swaps", int),
                             ("service_upgrade_ratio", float),
+                            ("store_intent_tier_boost", float),
                             ("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),
                             ("client_floor", int), ("addon_market_ratio", float),

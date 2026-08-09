@@ -2554,7 +2554,8 @@ async function loadConfig(){
       cfgRow('State suffix (1/0)','cf_gsfx',c.grid_state_suffix?1:0,'1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"')+
       cfgRow('Service min volume','cf_svcmin',c.service_min_volume,'a service under this many searches/mo is replaced by a stronger term from the operator\u2019s own list, same topic; 0 = off')+
       cfgRow('Service upgrade ratio','cf_svcratio',c.service_upgrade_ratio,'replace a service when an unused term in the same topic measures at least this many \u00d7 more; 0 = off, 10 = only when it\u2019s in a different league')+
-      cfgRow('Max service swaps','cf_svcmax',c.service_max_swaps,'ceiling across both checks'),
+      cfgRow('Max service swaps','cf_svcmax',c.service_max_swaps,'ceiling across both checks')+
+      cfgRow('Store-intent tier boost','cf_svcboost',c.store_intent_tier_boost,'how much a shop term (\u201cski shop\u201d) outweighs a product term (\u201coutdoor furniture\u201d) of the same size when ordering columns; 1 = raw volume only'),
       'mechanical','LIST SHAPE — NOT A PRICING DECISION') +
     cfgGroup('Step 2 · competition (partner hard cost)',
       `<div class="tierhelp">The competitive adder scales with median CPC (top-of-page bid) — high-CPC verticals like insurance mean ranking replaces big ad spend, so they price higher. adder = median CPC × multiplier, capped. When there's no bid data, the flat score buckets below are used instead.</div>`+
@@ -2640,6 +2641,7 @@ $('cfgApply').addEventListener('click', async()=>{
     service_min_volume:v('cf_svcmin'),
     service_upgrade_ratio:v('cf_svcratio'),
     service_max_swaps:v('cf_svcmax'),
+    store_intent_tier_boost:v('cf_svcboost'),
     nationwide_service_extras:v('cf_nwx'),
     vol_add_ramp:[v('cf_ramp_lo'), v('cf_ramp_hi')],
     geo_pct_tiers:readTierRows('cf_geot'),
