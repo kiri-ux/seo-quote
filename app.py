@@ -3660,6 +3660,33 @@ def suggest_market_name(market, state=""):
     return f"{name}, {abbr}" if abbr else name
 
 
+# Words that make a search a SHOP search rather than a product search. A local
+# retailer ranks and converts on these; "ski jackets" is a product query owned by
+# Amazon, REI and the manufacturers, and "weber grill" is the maker's own name.
+_STORE_INTENT = set("""shop shops store stores storefront outlet outlets dealer dealers
+retailer retailers rental rentals service services repair shopping showroom
+supplier suppliers supply center centre""".split())
+
+# Manufacturer / product brands a retailer resells. They are legitimate keywords
+# (the client stocks them) but they are not the client's own storefront demand.
+_RESELLER_BRANDS = set("""weber traeger bigreenegg kamado napoleon blackstone
+rossignol salomon atomic burton dakine k2 volkl nordica head fischer elan
+patagonia northface columbia arcteryx oakley smith giro
+trane carrier lennox rheem andersen pella marvin kohler moen""".split())
+
+
+def is_store_intent(term):
+    """Does this phrase describe a PLACE TO BUY rather than a thing to buy?"""
+    words = set(re.split(r"[^a-z0-9]+", (term or "").lower()))
+    return bool(words & _STORE_INTENT)
+
+
+def is_reseller_brand(term):
+    """Does this phrase lead with a manufacturer's name?"""
+    words = set(re.split(r"[^a-z0-9]+", (term or "").lower()))
+    return bool(words & _RESELLER_BRANDS)
+
+
 def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
                             max_swaps=None, upgrade_ratio=None):
     """Replace service names nobody searches with ones the client's own list has.
@@ -3690,6 +3717,26 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
     def vol_of(name):
         return int(vols.get(str(name).lower(), 0) or 0)
 
+    def _intent_ok(current, candidate):
+        """A replacement may not be weaker in INTENT than what it replaces.
+
+        Volume alone picked "weber grill" (4,560) over "bbq grill store" (50) and
+        "ski jackets" (2,440) over a shop term, so the proposal led with a
+        manufacturer's name and a product query for a client whose campaign is
+        in-store sales (2026-08-08). Those searches are owned by Amazon, REI and
+        the makers; a five-store New Jersey retailer neither ranks for nor
+        converts on them.
+
+        So: a store term can be replaced only by another store term, and a
+        manufacturer's brand can never be swapped IN. A product term may still
+        replace a product term on volume.
+        """
+        if is_reseller_brand(candidate):
+            return False
+        if is_store_intent(current) and not is_store_intent(candidate):
+            return False
+        return True
+
     out = [dict(x) for x in services]
     used = {str(x.get("service", "")).lower() for x in out}
     report = []
@@ -3717,8 +3764,11 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
             if not k or k in used:
                 continue
             v = vol_of(k)
-            if v > max(cur_v, floor - 1):
-                cands.append((v, k))
+            if v <= max(cur_v, floor - 1):
+                continue
+            if not _intent_ok(cur, k):
+                continue
+            cands.append((v, k))
         if not cands:
             continue
         cands.sort(reverse=True)
@@ -3758,8 +3808,11 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
                 if not k or k in used:
                     continue
                 v = vol_of(k)
-                if v >= cur_v * ratio:
-                    cands.append((v, k))
+                if v < cur_v * ratio:
+                    continue
+                if not _intent_ok(cur, k):
+                    continue
+                cands.append((v, k))
             if not cands:
                 continue
             cands.sort(reverse=True)
@@ -4491,8 +4544,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             _measured = [x for x in services
                          if (service_volume.get(x["service"]) or 0) > 0]
             if len(_measured) >= 3 and sum(_counts.values()) == len(services):
-                _ranked = sorted(_measured,
-                                 key=lambda x: -(service_volume.get(x["service"]) or 0))
+                # Store-intent terms rank ahead of product terms of the same
+                # size, so a shop term keeps the Ultra slot it earns. Without
+                # this the proposal headlined "weber grill nyc" for a ski
+                # retailer whose goal is in-store sales (2026-08-08). Volume
+                # still decides within each group.
+                _ranked = sorted(
+                    _measured,
+                    key=lambda x: (0 if is_store_intent(x["service"]) else 1,
+                                   -(service_volume.get(x["service"]) or 0)))
                 # Walk the ranked list, filling ultra first, then competitive.
                 # Unmeasured terms keep whatever tier they already had, so the
                 # per-tier capacity has to account for them.
