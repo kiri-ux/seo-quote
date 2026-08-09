@@ -331,21 +331,26 @@
     </div>
 
     <label>Campaign goal</label>
-    <div class="help">Arrives with the order in adtini — this selector is the demo stand-in. It shapes <b>keyword intent</b> (a ski shop chasing footfall wants “ski rental near me”; the same shop chasing ecommerce wants “buy ski jackets online”) and it cross-checks your geo scope: a goal that happens in a place, priced on national demand, is flagged. It does <b>not</b> move the price — there’s no calibration tying goals to dollars.</div>
-    <select id="goal">
-      <option value="">— not supplied —</option>
-      <option value="In-Store Sales">In-Store Sales</option>
-      <option value="B2B Sales">B2B Sales</option>
-      <option value="Information Requests">Information Requests</option>
-      <option value="Branding &amp; Awareness">Branding &amp; Awareness</option>
-      <option value="Mobile App Download">Mobile App Download</option>
-      <option value="Website Traffic">Website Traffic</option>
-      <option value="Leads/Form Fillouts">Leads/Form Fillouts</option>
-      <option value="Online Sales">Online Sales</option>
-      <option value="Phone Calls">Phone Calls</option>
-      <option value="Job Recruitment">Job Recruitment</option>
-      <option value="Event Attendance">Event Attendance</option>
-    </select>
+    <div class="help">Arrives with the order in adtini — these chips are the demo stand-in. <b>Pick as many as apply</b>; an order can carry more than one objective. Where they disagree, LOCAL wins — a client who picked In-Store Sales as well as Online Sales has premises, so demand stays local. It shapes <b>keyword intent</b> (a ski shop chasing footfall wants “ski rental near me”; the same shop chasing ecommerce wants “buy ski jackets online”) and it cross-checks your geo scope: a goal that happens in a place, priced on national demand, is flagged. It does <b>not</b> move the price — there’s no calibration tying goals to dollars.</div>
+    <!-- Multi-select: an order can carry more than one objective, and picking
+         one used to mean discarding the rest. Same chip treatment as Strategy;
+         a hidden <select id="goal"> is kept in sync so every existing reader
+         (collectInputs, restoreQuote, the six API payloads) keeps working off
+         one field. (2026-08-09) -->
+    <div id="goals">
+      <label class="strat"><input type="checkbox" name="goal" value="In-Store Sales"> In-Store Sales</label>
+      <label class="strat"><input type="checkbox" name="goal" value="B2B Sales"> B2B Sales</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Information Requests"> Information Requests</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Branding &amp; Awareness"> Branding &amp; Awareness</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Mobile App Download"> Mobile App Download</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Website Traffic"> Website Traffic</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Leads/Form Fillouts"> Leads/Form Fillouts</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Online Sales"> Online Sales</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Phone Calls"> Phone Calls</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Job Recruitment"> Job Recruitment</label>
+      <label class="strat"><input type="checkbox" name="goal" value="Event Attendance"> Event Attendance</label>
+    </div>
+    <input type="hidden" id="goal" value="">
 
     <label>Industry <span class="req">*</span></label>
     <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries the big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
@@ -1146,6 +1151,31 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
     el.addEventListener('input',push);
   };
   bind('goal','goal', el=>el.value||'');
+
+  // Goal chips -> hidden #goal, joined the same way Industry joins its pills.
+  // Everything downstream (collectInputs, the API payloads, restoreQuote) keeps
+  // reading one string, so multi-select needed no changes anywhere else.
+  (function wireGoalChips(){
+    const box=document.getElementById('goals'), hidden=document.getElementById('goal');
+    if(!box||!hidden) return;
+    const boxes=()=>[...box.querySelectorAll('input[name="goal"]')];
+    window.syncGoals=function(){
+      const picked=boxes().filter(b=>b.checked).map(b=>b.value);
+      hidden.value=picked.join(' | ');
+      hidden.dispatchEvent(new Event('change'));
+      if(typeof ST!=='undefined'&&ST.inputs){
+        ST.inputs.goal=hidden.value;
+        ST.inputs.goals=picked;
+      }
+      try{scheduleAutoSave();}catch(e){}
+    };
+    // Restoring a saved quote sets #goal.value directly; reflect it on the chips.
+    window.reflectGoals=function(){
+      const want=new Set(String(hidden.value||'').split('|').map(x=>x.trim()).filter(Boolean));
+      boxes().forEach(b=>{ b.checked=want.has(b.value); });
+    };
+    box.addEventListener('change', e=>{ if(e.target&&e.target.name==='goal') syncGoals(); });
+  })();
   bind('pastseo_spend','past_seo_spend', el=>{
     const n=parseFloat(String(el.value||'').replace(/[^0-9.]/g,''));
     return (!isNaN(n)&&n>0)?Math.round(n):null;
@@ -2887,7 +2917,7 @@ function reflectInputs(inp){
   if($('kwlock')) $('kwlock').checked = !!inp.kw_locked;
   try{ kwBuiltNote(); }catch(e){}
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
-  if($('goal')) $('goal').value = inp.goal||'';
+  if($('goal')){ $('goal').value = inp.goal||''; try{ reflectGoals(); }catch(e){} }
   if($('pastseo_spend')) $('pastseo_spend').value = (inp.past_seo_spend!=null?inp.past_seo_spend:'');
   // The details block is hidden until Past SEO is on; restoring the value
   // without unhiding it would look like the field had lost the figure.

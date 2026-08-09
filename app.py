@@ -1909,18 +1909,46 @@ GOAL_NATIONAL_DEMAND = ["Online Sales"]
 
 
 def goal_forces_national(goal):
-    """Does this campaign goal itself put the quote on national demand?"""
-    g = (goal or "").strip().lower()
-    if not g:
+    """Do the selected goals put the quote on national demand?
+
+    Only when NOTHING selected is local. "Online Sales" alone is a national
+    campaign; "In-Store Sales + Online Sales" is a shop that also ships, and the
+    markets-veto reasoning applies — a client with premises is priced locally
+    unless they say so outright (2026-08-09).
+    """
+    goals = goal_list(goal)
+    if not goals:
         return ""
-    for opt in (CFG.get("goal_national_demand") or GOAL_NATIONAL_DEMAND):
-        if g == str(opt).strip().lower():
-            return str(opt)
-    return ""
+    want = {str(o).strip().lower()
+            for o in (CFG.get("goal_national_demand") or GOAL_NATIONAL_DEMAND)}
+    hits = [g for g in goals if g.strip().lower() in want]
+    if not hits:
+        return ""
+    if any(GOAL_SCOPE.get(g, "") == "local" for g in goals):
+        return ""            # a local goal is present — not a national campaign
+    return " + ".join(hits)
+
+
+def goal_list(goal):
+    """Goals arrive as one string, now possibly several joined with ' | '."""
+    raw = str(goal or "")
+    parts = [p.strip() for p in raw.split("|")] if "|" in raw else [raw.strip()]
+    return [p for p in parts if p]
 
 
 def goal_scope(goal):
-    return GOAL_SCOPE.get((goal or "").strip(), "")
+    """What the selected goals say about WHERE demand lives.
+
+    With several goals, LOCAL wins: a client who picked "In-Store Sales" as well
+    as "Online Sales" has premises, and pricing them on national demand quotes a
+    campaign they didn't ask for. Only an all-national selection reads national.
+    """
+    scopes = {GOAL_SCOPE.get(g, "") for g in goal_list(goal)}
+    if "local" in scopes:
+        return "local"
+    if "national" in scopes:
+        return "national"
+    return ""
 
 
 _GROUNDING_STOP = set("""a an and or the of for in on to with your our best top near me
@@ -4596,6 +4624,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # collected; nothing was checking them (Ski Barn: NJ stores, priced
         # nationwide, so every term came back as national head demand).
         scope_warning = ""
+        goals_all = goal_list(goal)
         _gs = goal_scope(goal)
         _gforce = goal_forces_national(goal)
         if _gforce and (markets or gbp_count or site_locations):
@@ -4633,9 +4662,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 "this quote is priced on LOCAL demand, so the volumes are "
                 "geo-limited and will understate the opportunity. Consider "
                 "Nationwide scope or the national-demand switch.")
-        elif goal in GOAL_OFF_PATTERN:
+        elif goals_all and all(g in GOAL_OFF_PATTERN for g in goals_all):
             scope_warning = (
-                f"Goal is \u201c{goal}\u201d. An SEO keyword campaign is a weak "
+                f"Goal is \u201c{' + '.join(goals_all)}\u201d. An SEO keyword campaign is a weak "
                 "instrument for this \u2014 the ladder below prices category-term "
                 "ranking work, which may not be what the client is buying. "
                 "Confirm the objective before quoting.")
