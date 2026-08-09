@@ -523,8 +523,9 @@ CFG = {
     # deliberate service choice isn't second-guessed over noise. 0 turns it off.
     "service_upgrade_ratio": 10,
     # How many unused seed terms to measure as replacement candidates. Each one
-    # adds a keyword to the existing per-city volume calls.
-    "service_candidate_cap": 14,
+    # adds a keyword to the existing per-city volume calls. Spread round-robin
+    # across topics, shortest term first, so every product line gets measured.
+    "service_candidate_cap": 21,
     # TIER MIX, measured off eight real BE proposals (303 terms, 2026-08-07)
     # rather than assumed. His splits are PROPORTIONAL, not fixed counts, and
     # they move with the client:
@@ -4276,10 +4277,39 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # call, so a dead service name can be swapped for one the client's own
         # list already has. Costs extra keywords, not extra requests.
         _chosen = {x.lower() for x in svc_names}
-        _alts = [sd for sd in (seeds or [])
+        _pool = [str(sd).strip().lower() for sd in (seeds or [])
                  if str(sd).strip() and str(sd).strip().lower() not in _chosen]
-        _alts = list(dict.fromkeys(str(x).strip().lower() for x in _alts))
-        _alts = _alts[:int(CFG.get("service_candidate_cap", 14))]
+        _pool = list(dict.fromkeys(_pool))
+        _cand_cap = int(CFG.get("service_candidate_cap", 14))
+        # ROUND-ROBIN ACROSS TOPICS, not the first N in input order. The pill
+        # list arrives alphabetically, so a flat slice took "ski a-s" and cut off
+        # every bbq and patio candidate before it was measured — which made an
+        # upgrade impossible for any topic that sorts late, silently
+        # (2026-08-08).
+        if topics and len(topics) > 1:
+            by_topic = {}
+            for sd in _pool:
+                by_topic.setdefault(service_topic(sd, topics) or "", []).append(sd)
+            # SHORTEST FIRST inside each topic. The budget can't cover 30 ski
+            # terms, and alphabetical order is meaningless — but short means
+            # generic means high volume, the same proxy the geo-wording probe
+            # uses. Alphabetical would have spent the ski budget on "ski apparel"
+            # ... "ski gear stores" and never measured "ski shop" or "ski store".
+            for lab in by_topic:
+                by_topic[lab].sort(key=lambda t: (len(t.split()), len(t)))
+            _alts, _i = [], 0
+            while len(_alts) < _cand_cap:
+                took = False
+                for lab in list(by_topic):
+                    bucket = by_topic.get(lab) or []
+                    if _i < len(bucket) and len(_alts) < _cand_cap:
+                        _alts.append(bucket[_i])
+                        took = True
+                if not took:
+                    break
+                _i += 1
+        else:
+            _alts = _pool[:_cand_cap]
         vols, per_city, vol_err = fetch_local_volume(
             svc_names + _alts, [] if national_demand else cities, state,
             national=national_demand)
