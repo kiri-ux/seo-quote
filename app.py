@@ -6178,6 +6178,99 @@ _REPORT_STITCH_ABOVE = 2600
 _REPORT_LABEL_FRACTION = 0.28             # left share of a table that holds the keywords
 
 
+def _emf_text(data, row_tol=None):
+    """Read the text out of a Windows METAFILE (.emf / .wmf) table.
+
+    A ranking table pasted from Excel into PowerPoint on Windows arrives as an
+    EMF, not a PNG. Pillow cannot open one — "cannot find loader for this WMF
+    file" — so _report_images skipped it and the reader was handed a deck with
+    no ranking tables in it at all. Junk Bee Gone's slides 2, 3 and 4 were three
+    EMFs holding 2,061 text runs between them, and the import returned "no
+    keyword table found" (2026-08-09).
+
+    Rendering an EMF needs LibreOffice, which is not on the deploy. But an EMF is
+    a list of drawing records and the text is stored as EMR_EXTTEXTOUTW (type
+    84) with its own coordinates — so the table can be read directly, and the
+    x/y positions rebuild the rows and columns. Text beats a screenshot anyway:
+    no tiling, no resolution limit, no OCR.
+
+    Returns tab-separated rows, top-to-bottom then left-to-right.
+    """
+    import struct
+    runs, off, n = [], 0, len(data or b"")
+    guard = 0
+    while off < n - 8 and guard < 200000:
+        guard += 1
+        try:
+            rtype, size = struct.unpack_from("<II", data, off)
+        except Exception:
+            break
+        if size < 8 or off + size > n:
+            break
+        if rtype in (83, 84):                     # EXTTEXTOUTA / EXTTEXTOUTW
+            try:
+                x, y = struct.unpack_from("<ii", data, off + 36)
+                nchars, offstr = struct.unpack_from("<II", data, off + 44)
+                if 0 < nchars < 4096 and 8 <= offstr < size:
+                    raw = data[off + offstr: off + offstr + nchars * (2 if rtype == 84 else 1)]
+                    txt = (raw.decode("utf-16-le", "ignore") if rtype == 84
+                           else raw.decode("latin-1", "ignore"))
+                    txt = txt.replace("\x00", "").strip()
+                    if txt:
+                        runs.append((y, x, txt))
+            except Exception:
+                pass
+        off += size
+    if not runs:
+        return ""
+    # Row height comes from the FILE, not a guess. A fixed tolerance of 40 was
+    # double the real row gap here (median 20), so it merged pairs of rows and
+    # the keyword column came out concatenated. Half the median gap between
+    # distinct y values splits rows without splitting a single row's runs.
+    if row_tol is None:
+        ys = sorted({r[0] for r in runs})
+        gaps = sorted(b - a for a, b in zip(ys, ys[1:]) if b > a)
+        row_tol = max(2, (gaps[len(gaps) // 2] // 2) if gaps else 8)
+    # Rebuild rows: same y (within tolerance) is one row, x orders the columns.
+    runs.sort(key=lambda r: (r[0], r[1]))
+    lines, cur, last_y = [], [], None
+    for y, x, txt in runs:
+        if last_y is not None and abs(y - last_y) > row_tol:
+            if cur:
+                lines.append("\t".join(t for _, t in sorted(cur)))
+            cur = []
+        cur.append((x, txt))
+        last_y = y
+    if cur:
+        lines.append("\t".join(t for _, t in sorted(cur)))
+    return "\n".join(lines)
+
+
+def _pptx_metafile_text(zf):
+    """Every EMF/WMF in the deck, read as text and labelled by slide."""
+    rel_by_slide = {}
+    for name in zf.namelist():
+        m = re.match(r"ppt/slides/_rels/(slide\d+)\.xml\.rels$", name)
+        if not m:
+            continue
+        try:
+            xml = zf.read(name).decode("utf-8", "ignore")
+        except Exception:
+            continue
+        for media in re.findall(r"\.\./media/([^\"']+\.(?:emf|wmf))", xml, re.I):
+            rel_by_slide.setdefault(m.group(1), []).append(media)
+    out = []
+    for slide in sorted(rel_by_slide, key=lambda s: int(re.sub(r"\D", "", s) or 0)):
+        for media in rel_by_slide[slide]:
+            try:
+                txt = _emf_text(zf.read("ppt/media/" + media))
+            except Exception:
+                txt = ""
+            if txt.strip():
+                out.append(f"[{slide}.xml · {media} — table read from metafile]\n{txt}")
+    return "\n".join(out)
+
+
 def _pptx_slide_text(zf):
     """Slide text straight out of the XML. No new dependency: <a:t> holds every
     run of visible text, which is enough for titles, labels and any figures that
@@ -6329,7 +6422,18 @@ def _report_text(filename, data):
         import io, zipfile
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                return _pptx_slide_text(zf)
+                # Slide text first, then any table that arrived as a metafile.
+                # The metafile text is the ranking table itself on Windows decks,
+                # so it must not be truncated away by the slide-text cap.
+                parts = [_pptx_slide_text(zf)]
+                try:
+                    mf = _pptx_metafile_text(zf)
+                except Exception:
+                    app.logger.exception("_pptx_metafile_text failed")
+                    mf = ""
+                if mf:
+                    parts.append(mf)
+                return "\n".join(x for x in parts if x)
         except Exception:
             return ""
     if lower.endswith((".txt", ".csv", ".md")):
@@ -6360,6 +6464,10 @@ rather than on the keyword list.
 
 Rules:
 - Keyword tables are often SCREENSHOTS. Read them from the images.
+- A block headed "table read from metafile" is a ranking table that was pasted from
+  Excel and has been decoded to TEXT for you. It is tab-separated: the first column is
+  the keyword, the remaining columns are that keyword's position in each market, in the
+  order the header row lists them. Trust it over any image — it is exact, not OCR.
 - THERE ARE USUALLY SEVERAL TABLES, sometimes stacked in one screenshot.
 - LARGE SCREENSHOTS ARE SUPPLIED AS OVERLAPPING TILES of the same picture. On a
   very wide table the KEYWORD COLUMN IS COPIED ONTO THE LEFT EDGE OF EVERY TILE,
