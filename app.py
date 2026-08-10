@@ -4986,6 +4986,29 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     f"only {nat_tot:,}/mo between them. Geography was not the "
                     "problem — the wording is. These read like descriptions of "
                     "the client rather than phrases anyone types into Google.")
+            elif not vol_err and cities:
+                # CONFIRM the national choice rather than only questioning it.
+                # The scope check reads a footprint off the site's structure and
+                # says "maybe this should be local"; measuring the same terms
+                # with a city attached answers that outright. NASSCO's site
+                # showed 49 Google Business listings — its member directory, not
+                # its offices — and the operator got two panels disagreeing with
+                # each other while the demand data had already settled it.
+                # (2026-08-10)
+                try:
+                    _loc, _pc2, _le = fetch_local_volume(svc_names, cities, state,
+                                                         national=False)
+                    loc_tot = sum(int(v or 0) for v in (_loc or {}).values())
+                    frame["local_total"] = loc_tot
+                    if not _le and loc_tot * 10 <= nat_tot:
+                        frame["verdict"] = "national_ok"
+                        frame["reason"] = (
+                            f"{nat_tot:,}/mo bare against {loc_tot:,}/mo with a "
+                            "city attached — national is the right basis, and a "
+                            "footprint read off the site's page structure does "
+                            "not change that.")
+                except Exception:
+                    pass
         if not national_demand and svc_names:
             try:
                 _nat, _pc, _ne = fetch_local_volume(svc_names, [], state,
@@ -5286,7 +5309,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 "instrument for this \u2014 the ladder below prices category-term "
                 "ranking work, which may not be what the client is buying. "
                 "Confirm the objective before quoting.")
-        elif national_demand and (gbp_count or site_locations):
+        elif (national_demand and (gbp_count or site_locations)
+                and (frame or {}).get("verdict") != "national_ok"):
             _bits = []
             if gbp_count:
                 _bits.append(f"{gbp_count} Google Business listing"
