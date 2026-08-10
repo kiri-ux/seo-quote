@@ -5610,14 +5610,19 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
 # ---------------------------------------------------------------------------
-def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None):
+def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
+              loc_override=""):
     """One keyword's SERP call. Returns (position_or_None, [paa questions]).
     Depth tracks top_n (<=100 is one DataForSEO unit either way). Works within a shared batch DEADLINE: the
     platform kills any request near ~30s, so retrying past the budget doesn't
     save this keyword — it kills the WHOLE batch, failing keywords that had
     already finished. Better to fail one fast and let the retry pass get it."""
     depth = max(top_n, 10)
-    payload = [{"keyword": kw, "location_name": loc_string(markets, state),
+    payload = [{"keyword": kw,
+                # loc_override is an already-built DataForSEO location string —
+                # step 3 measures each grid row in the market it names, so the
+                # caller resolves the location per keyword rather than per batch.
+                "location_name": loc_override or loc_string(markets, state),
                 "language_code": "en", "depth": depth}]
     last_err = None
     for attempt in range(2):
@@ -6482,6 +6487,10 @@ def api_keywords():
                        # figure at all. Neither is this city's demand.
                        "vol_scope": r.get("vol_scope", ""),
                        "vol_area": r.get("vol_area", ""),
+                       # WHICH market this row names. Step 3 measures the rank
+                       # in that market rather than in the primary one for every
+                       # row — see api_rankings. (2026-08-10)
+                       "city": r.get("city", ""),
                        "origin": r.get("origin", "")} for r in L]
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
@@ -6554,6 +6563,10 @@ def api_refine():
                        # figure at all. Neither is this city's demand.
                        "vol_scope": r.get("vol_scope", ""),
                        "vol_area": r.get("vol_area", ""),
+                       # WHICH market this row names. Step 3 measures the rank
+                       # in that market rather than in the primary one for every
+                       # row — see api_rankings. (2026-08-10)
+                       "city": r.get("city", ""),
                        "origin": r.get("origin", "")} for r in L]
     return jsonify({
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
@@ -7185,7 +7198,22 @@ def api_rankings_submit():
                                       markets=markets,
                                       goal=(d.get("goal") or ""))
     loc     = rank_location(markets, state, nat)
-    payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
+    # Same per-market rule as the live path: a row naming Morristown is measured
+    # in Morristown. Task mode is what the retry button uses, so leaving it on a
+    # single location would silently mix two measurement bases in one table.
+    cities  = {str(k.get("kw") or ""): str(k.get("city") or "")
+               for k in (d.get("rows") or []) if isinstance(k, dict)}
+
+    def _loc_for(kw):
+        city = cities.get(kw, "")
+        if not city or nat:
+            return loc
+        named = next((m for m in markets
+                      if parse_market(m, state)[0].strip().lower() == city.lower()),
+                     city)
+        return rank_location([named], state, False)
+
+    payload = [{"keyword": kw, "location_name": _loc_for(kw), "language_code": "en",
                 "depth": depth, "priority": 2, "tag": kw[:255]} for kw in kws]
     try:
         data = dfs_post("/serp/google/organic/task_post", payload, timeout=25)
@@ -7318,12 +7346,43 @@ def api_rankings():
                                       markets=markets,
                                       goal=(d.get("goal") or ""))
     loc = rank_location(markets, state, nat)
+    # MEASURE EACH KEYWORD IN THE MARKET IT NAMES.
+    #
+    # Every row used to be checked from the primary market, so Knoxville's SERP
+    # answered for "junk removal morristown tn" and "junk removal sevierville tn"
+    # too. That produced 32/32 ranked and, through recommend_addons, "0 add-on
+    # markets recommended" — a claim that the client already has a presence in
+    # all six markets, from a test that only ever looked at one of them. The
+    # cheap version of the question is the wrong question. Same API cost either
+    # way: one call per keyword, just pointed at the right place. (2026-08-10)
+    #
+    # `batch` accepts plain strings (older clients) or {kw, city} objects.
+    per_kw_loc, order = {}, []
+    for item in batch:
+        if isinstance(item, dict):
+            kw = str(item.get("kw") or "").strip()
+            city = str(item.get("city") or "").strip()
+        else:
+            kw, city = str(item or "").strip(), ""
+        if not kw:
+            continue
+        order.append(kw)
+        # A national row, a site term or a long-tail top-up carries no city;
+        # those stay on the primary market, which is what they are asking about.
+        if city and not nat:
+            mk_named = next((m for m in markets
+                             if parse_market(m, state)[0].strip().lower() == city.lower()),
+                            city)
+            per_kw_loc[kw] = rank_location([mk_named], state, False)
+        else:
+            per_kw_loc[kw] = loc
+    batch = order
     results, paa = [], []
     hits = {}
     to_fetch = []
     err_msgs = []
     for kw in batch:
-        c = _rank_cache_get(kw, loc, dom, top_n)
+        c = _rank_cache_get(kw, per_kw_loc.get(kw, loc), dom, top_n)
         if c != "MISS":
             hits[kw] = c
         else:
@@ -7333,7 +7392,8 @@ def api_rankings():
             _budget = int(CFG.get("rank_batch_budget_s") or 0) or max(20, REQUEST_BUDGET_S - 15)
             batch_deadline = time.time() + _budget
             futs = {ex.submit(_serp_one, kw, dom, markets, state, brand, top_n,
-                              batch_deadline): kw for kw in to_fetch}
+                              batch_deadline,
+                              per_kw_loc.get(kw, loc)): kw for kw in to_fetch}
             done = {}
             for fut in futs:
                 kw = futs[fut]
@@ -7351,7 +7411,7 @@ def api_rankings():
                     err_msgs.append(str(e)[:160])
                 done[kw] = (pos, qs, err)
                 if not err:
-                    _rank_cache_put(kw, loc, dom, top_n, pos)
+                    _rank_cache_put(kw, per_kw_loc.get(kw, loc), dom, top_n, pos)
         for kw in batch:
             if kw in hits:
                 pos, qs, err = hits[kw], [], False
@@ -7377,10 +7437,26 @@ def api_rankings():
     top_err = ""
     if err_msgs:
         top_err = max(set(err_msgs), key=err_msgs.count)
+    note = rank_location_note(markets, state, nat)
+    # Say which markets were actually measured. "Measured in Knoxville" while
+    # half the rows were checked in Morristown and Sevierville would be worse
+    # than saying nothing.
+    locs = sorted({v for v in per_kw_loc.values()})
+    if len(locs) > 1:
+        pretty = [l.replace(",United States", "").replace(",", ", ") for l in locs]
+        note = {"location": ", ".join(pretty), "scope": "per_market",
+                "note": "Each keyword was measured in the market it names — "
+                        + ", ".join(pretty)
+                        + ". Checking every row from one city answers a different "
+                          "question, and the add-on recommendation reads presence "
+                          "per market off this table."}
+    for r in results:
+        r["loc"] = (per_kw_loc.get(r["kw"], loc)
+                    .replace(",United States", "").replace(",", ", "))
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa)),
                     "n_cached": len(hits), "n_fetched": len(to_fetch),
                     "n_errors": len(err_msgs), "error_reason": top_err,
-                    "rank_location": rank_location_note(markets, state, nat)})
+                    "rank_location": note})
 
 @app.route("/api/qualify_markets", methods=["POST"])
 @_json_error_guard
