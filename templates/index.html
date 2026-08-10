@@ -1483,13 +1483,13 @@ function renderStep1(){
       informational or off-topic terms. Rebuild once the cause is fixed, or edit the terms by hand.</span>
     </div>` : '';
   panel('p1', refineErr + `
-    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
+    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}${aiProvenance(kw)}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
       ${removedAcronymHtml()}
     ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
-      <summary style="cursor:pointer;user-select:none">${warnBadge(gridWarnings(kw))}<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.services.length} services${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}${tipOf(kw.national_demand?'The US national figure for each term, summed. Drives the volume component of price.':'Summed across all targeted cities. The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total.')}`:''} <span class="nf">— click for ${kw.national_demand?'the notes':'the service list'}</span>${kw.total_volume?'':(kw.volume_error
+      <summary style="cursor:pointer;user-select:none">${warnBadge(gridWarnings(kw))}<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.national_demand?kw.all.length:kw.services.length} ${kw.national_demand?'terms':'services'}${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}${tipOf(kw.national_demand?'The US national figure for each term, summed. Drives the volume component of price.':'Summed across all targeted cities. The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total.')}`:''} <span class="nf">— click for ${kw.national_demand?'the notes':'the service list'}</span>${kw.total_volume?'':(kw.volume_error
         ? `<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data — ${escapeHtml(kw.volume_error)}. The volume part of pricing will be $0. <b>Re-run step 1</b> before quoting — a timeout here is usually transient.</span></div>`
         // A SUCCESSFUL lookup that returns zero everywhere is a different
         // finding, and telling the operator to re-run it is the wrong advice:
@@ -1512,7 +1512,7 @@ function renderStep1(){
         if(kw.national_demand){
           const n=((ST.inputs&&ST.inputs.geo_values)||[]).length;
           if(!n) return '';
-          return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Rankings will be measured locally, not nationally</b> — the keywords are bare, but step 3 measures in one of your <b>${n} entered market${n===1?'':'s'}</b>. For a client selling everywhere that understates visibility. <b>Clear the geos</b> to measure against the whole US.${tipOf('Under national demand the geos no longer enter the keyword text or the volume lookup — they stay on the order as the targeting area. Rankings are a different question: with markets present the tool measures in the primary one, which is right for a regional retailer priced on national demand and wrong for a national body.')}</div>`;
+          return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Rankings will be measured locally, not nationally</b> — the keywords are bare, but step 3 measures in one of your <b>${n} entered market${n===1?'':'s'}</b>. For a client selling everywhere that understates visibility. <button type="button" id="clearGeos" class="btn2" style="padding:2px 10px;font-size:12px">Clear the geos and measure nationally</button>${tipOf('Under national demand the geos no longer enter the keyword text or the volume lookup — they stay on the order as the targeting area. Rankings are a different question: with markets present the tool measures in the primary one, which is right for a regional retailer priced on national demand and wrong for a national body.')}</div>`;
         }
         const money0=n=>Number(n).toLocaleString();
         if(cs.method==='all') return `<div style="margin-top:6px" class="nf">🗺 <b>All ${cs.kept.length} market${cs.kept.length===1?'':'s'} used</b> — under the ${cs.limit}-city cap, so nothing was dropped.</div>`;
@@ -1565,7 +1565,7 @@ function renderStep1(){
       ${(kw.dropped_out_of_area&&kw.dropped_out_of_area.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_out_of_area.length} out-of-area term${kw.dropped_out_of_area.length>1?'s':''} removed</b> — ${kw.dropped_out_of_area.map(t=>escapeHtml(t)).join(', ')}. These name a state the client doesn't serve; the idea list is ranked by national volume so it fills with them. If one is actually a style or product name rather than a place (e.g. "new york style pizza"), add it back with <b>add term…</b>.</div>`:''}
       ${(kw.pinned_head_terms&&kw.pinned_head_terms.length)?`<div style="margin-top:4px" class="nf">📌 <b>${kw.pinned_head_terms.length} head term${kw.pinned_head_terms.length>1?'s':''} pinned</b> — ${kw.pinned_head_terms.map(t=>escapeHtml(t)).join(', ')}. These carry the most search volume in the data, so they're forced into the list rather than left to the AI pass; volume is a pricing input and shouldn't move between runs.</div>`:''}
       ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:(kw.scope_note?`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>National set deliberately</b>${tipOf(escapeHtml(kw.scope_note))}</div>`:'')}
-      ${(kw.tier_moves&&kw.tier_moves.length)?`<div style="margin-top:4px" class="nf">\u{1F500} <b>${kw.tier_moves.length} term${kw.tier_moves.length>1?'s':''} re-tiered by measured demand</b>${tipOf(kw.tier_moves.map(t=>`${escapeHtml(t.service)} ${tierName(t.from)}\u2192${tierName(t.to)} (${Number(t.volume||0).toLocaleString()}/mo)`).join('<br>')+'<br><br>Tiers are assigned before volumes are known; these were reordered so the columns run high-to-low on demand. Tier counts are unchanged.')}</div>`:''}
+      
       ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. ${tipOf("High volume alone does not make a term the client's. The pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild — seeds are never blocked.")}</div>`:''}
       ${(kw.topics&&kw.topics.length>1)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> \u2014 ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% of what you typed \u2192 ${t.services} service${t.services===1?'':'s'})</span>`).join(' \u00b7 ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words \u2014 the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px"><b style="color:var(--ink)">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears:</b>${kw.topic_fixes.map(f=>`<div style="margin-top:2px">\u2192 <b>${escapeHtml(f.added)}</b> <span style="opacity:.8">in, ${escapeHtml(f.replaced)} out</span></div>`).join('')}<div style="margin-top:3px">Services are chosen by search volume, so without this every slot would have gone to <b>${escapeHtml((kw.topics[0]||{}).label||'the biggest topic')}</b>.</div></div>`:''}</div>`:''}
       ${(kw.service_swaps&&kw.service_swaps.length)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50D} <b>${kw.service_swaps.length} service${kw.service_swaps.length===1?'':'s'} replaced by measured demand</b><div class="nf" style="margin-top:3px">${kw.service_swaps.map(x=>`<div>\u2192 <b>${escapeHtml(x['in'])}</b> <span style="opacity:.75">(${Number(x.in_volume||0).toLocaleString()}/mo)</span> replaced ${escapeHtml(x.out)} <span style="opacity:.75">(${Number(x.out_volume||0).toLocaleString()}/mo${x.kind==='upgrade'?', '+Math.round((x.in_volume||0)/Math.max(x.out_volume||1,1))+'\u00d7 lower':' \u2014 nobody searches it'})</span></div>`).join('')}</div><div class="nf" style="margin-top:3px">Replacements come from your own <b>Product / Vertical Focus</b> list and stay inside the same topic, so a patio-furniture slot is never filled by a ski term. A dead slot can't win traffic and drags the volume total that sets the price; an upgrade only fires when the alternative is at least ${kw.service_upgrade_ratio||10}\u00d7 bigger, never on a close call. A shop term is only ever replaced by another shop term, and a manufacturer&rsquo;s brand is never swapped in \u2014 &ldquo;weber grill&rdquo; and &ldquo;ski jackets&rdquo; outsearch &ldquo;ski shop&rdquo; but belong to Amazon and the makers, not to a five-store retailer.</div></div>`:''}
@@ -1627,6 +1627,7 @@ function renderStep1(){
   });
   $('step2').onclick = ()=>runStep2();
   try{ wireAcronymSerps(); }catch(e){}
+  try{ wireClearGeos(); }catch(e){}
 }
 
 // ---------- STEP 2 ----------
@@ -3713,7 +3714,12 @@ async function showSourceFiles(){
 function gridWarnings(kw){
   const w=[];
   const ac=(kw.acronym_collisions&&kw.acronym_collisions.items)||[];
-  if(ac.length) w.push(`${ac.length} acronym${ac.length===1?'':'s'} may not be this client's (${kw.acronym_collisions.share}% of the volume)`);
+  const sp=ST.acrSerp||{};
+  const unresolved=ac.filter(x=>{
+    const v=acronymVerdict(x, sp[x.acronym]);
+    return v.label!=='KEEP';                 // cleared rows are not warnings
+  });
+  if(unresolved.length) w.push(`${unresolved.length} acronym${unresolved.length===1?'':'s'} may not be this client's (${kw.acronym_collisions.share}% of the volume)`);
   const f=kw.demand_frame||{};
   if(f.verdict==='national') w.push('the demand looks national, not local');
   // 'national_ok' is a confirmation, not a warning — it must not badge.
@@ -3734,6 +3740,18 @@ function warnBadge(list){
 // "long_tail" is the internal bucket key, not a name to show anyone. It leaked
 // into the re-tier line while every other place humanised it. (2026-08-10)
 function tierName(t){ return String(t||'').replace(/_/g,' '); }
+
+// PROVENANCE, NOT A DECISION. The re-tier list had its own line on the panel,
+// but the columns already show where every term landed and the from->to is the
+// AI's discarded first guess — nothing the operator can act on. It still has to
+// be auditable, so it lives on the AI-refined badge, which is where "what did
+// the AI do to my list" belongs. (2026-08-10)
+function aiProvenance(kw){
+  const mv=kw.tier_moves||[];
+  if(!mv.length) return '';
+  return tipOf(`<b>${mv.length} term${mv.length>1?'s':''} re-tiered by measured demand.</b> Tiers are assigned before volumes are known, so the columns were reordered to run high-to-low on demand. Bucket sizes are unchanged.<br><br>`
+    + mv.map(t=>`${escapeHtml(t.service)} ${tierName(t.from)}\u2192${tierName(t.to)} (${Number(t.volume||0).toLocaleString()}/mo)`).join('<br>'));
+}
 
 function tipOf(html){
   return ` <span class="tipwrap"><i class="tipicon">i</i><div class="help">${html}</div></span>`;
@@ -3769,6 +3787,13 @@ function acronymPanelHtml(ac){
   }).join('');
   const nRemove=items.filter(x=>{const sp=serps[x.acronym]; return sp&&!sp.error&&sp.client_pos==null;}).length;
   const nUn=items.filter(x=>x.untestable).length;
+  // EVERY ROW CLEARED means there is nothing to warn about. The ratio raised a
+  // suspicion, the SERP answered it, and leaving a red badge over a table of
+  // green ticks trains the operator to ignore the badge. (2026-08-10)
+  const verdicts=items.map(x=>acronymVerdict(x, serps[x.acronym]));
+  if(verdicts.length && verdicts.every(v=>v.label==='KEEP')){
+    return `<div class="nf" style="margin-top:4px">\u2713 <b>${items.length} acronym${items.length===1?'':'s'} checked and cleared</b> \u2014 ${items.map(x=>escapeHtml(x.acronym.toUpperCase())).join(', ')} ${items.length===1?'is':'are'} this client's; the SERP confirms it${tipOf('The volume gap flagged '+(items.length===1?'it':'them')+' as a suspect, then the result page settled it: the client ranks for the bare term, so the traffic is theirs and the volume counts.<br><br>'+items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo, gap ${x.ratio==null?'n/a':x.ratio+'\u00d7'} \u2014 ${escapeHtml(((serps[x.acronym]||{}).domains||[]).slice(0,3).join(', '))}`).join('<br>'))}</div>`;
+  }
   return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${ac.share}% of the list's volume${nUn?` <span class="nf">(${nUn} with no qualified form to compare, so the SERP is the only evidence)</span>`:''}${tip}
     <table style="border-collapse:collapse;font-size:12px;margin-top:4px">
       <thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">
@@ -3918,6 +3943,10 @@ async function runAcronymSerps(terms){
     ST.acrSerp=ST.acrSerp||{};
     ST.acrClientDomain=r.client_domain||'';
     (r.results||[]).forEach(x=>{ ST.acrSerp[x.term]=x; });
+    // Reset before the re-render, not instead of it: if the panel is replaced by
+    // a different shape (all-cleared, or the row removed) the old button is gone
+    // and the label would otherwise stay "Checking…" forever. (2026-08-10)
+    if(btn){ btn.disabled=false; btn.textContent='\u{1F50D} Check SERPs'; }
     renderStep1();
   }catch(e){
     if(btn){ btn.disabled=false; btn.textContent='\u{1F50D} Check SERPs'; }
@@ -3925,6 +3954,26 @@ async function runAcronymSerps(terms){
     if(box) box.insertAdjacentHTML('afterbegin',
       `<div class="err" style="font-size:12px">SERP check failed: ${escapeHtml(e.message)}</div>`);
   }
+}
+
+// Advice with a button beats advice with an instruction — the operator would
+// otherwise scroll up and delete seven pills by hand. Same pattern as "Use
+// Nationwide" and "Remove all". (2026-08-10)
+function wireClearGeos(){
+  const b=$('clearGeos'); if(!b || b.dataset.wired) return;
+  b.dataset.wired='1';
+  b.onclick=()=>{
+    const n=(stores.geo||[]).length;
+    stores.geo=[]; PILL_RENDER.geo();
+    if(ST.inputs) ST.inputs.geo_values=[];
+    // The band follows: with no markets, a regional scope describes nothing and
+    // it is the scope that picks the pricing anchor.
+    const gs=$('geo_scope');
+    if(gs && gs.value!=='nationwide'){ gs.value='nationwide'; gs.dispatchEvent(new Event('change')); }
+    b.outerHTML=`<span class="nf">\u2713 cleared ${n} geo${n===1?'':'s'}, band set to Nationwide \u2014 now <b>rebuild step 1</b></span>`;
+    try{ scheduleMarketSummary(); }catch(e){}
+    try{ scheduleAutoSave(); }catch(e){}
+  };
 }
 
 function wireAcronymSerps(){
