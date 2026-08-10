@@ -624,6 +624,12 @@ CFG = {
     "grid_target_keywords": 32,
     "grid_min_services": 7,
     "grid_max_services": 20,
+    # AXIS CHOICE (2026-08-10). A market must clear this monthly figure for the
+    # crossing to be worth a term slot; 20 sits just above Google's 10/mo floor
+    # for thin terms, which is what an empty market reports. Below that the
+    # budget is better spent on service breadth — see choose_grid_axis.
+    "axis_city_volume_floor": 20,
+    "axis_min_seeds_for_services": 8,
     "grid_max_cities": 5,             # cities crossed against each service
     # When a city needs no ", ST" in the keyword. Brendan writes "adhd treatment
     # san diego" but "auto insurance alexandria va" — the test is whether the
@@ -2947,6 +2953,64 @@ Return ONLY valid JSON, no prose:
         return None
 
 
+def choose_grid_axis(city_scores, n_seeds, forced=""):
+    """Spend the term budget on SERVICES or on GEOGRAPHY.
+
+    A 32-term list is a fixed budget and there are two ways to spend it: a few
+    services across many cities, or many services in one city. The tool always
+    chose geography. Brendan chooses whichever axis the opportunity is on, and
+    the two Junk Bee Gone lists show it plainly (2026-08-10):
+
+      tool  7 services x 5 cities  — junk removal / roll off dumpster / junk /
+            remove junk / rent a dumpster ... x Knoxville, Morristown, Oak Ridge,
+            Sevierville, Tellico Village
+      BE    ~17 services x 1 city — junk removal, hauling, commercial,
+            residential, hoarding cleanup, construction debris, dumpster rental,
+            roll off, furniture, appliance, pickup, same-day, house cleanout,
+            estate cleanout, demolition, shed demolition, paper shredding
+
+    BE covered demolition, hoarding cleanup and paper shredding — three service
+    lines the client sells and the tool's list never mentioned — precisely
+    because he was not paying for four extra cities. And the cities he skipped
+    had nothing to buy: Knoxville measured 170/mo for the lead service while
+    every other market sat at Google's 10/mo floor.
+
+    That is the test. Geography only earns the budget when more than one market
+    has measurable demand. Otherwise the crossing buys near-duplicates of one
+    city and the service breadth is what is missing.
+
+    On NASSCO he did the reverse — many jurisdictions, few services — because
+    there the ordinance towns WERE the opportunity. Same rule, opposite answer.
+
+    Returns (axis, reason, evidence).
+    """
+    floor = int(CFG.get("axis_city_volume_floor", 20))
+    min_seeds = int(CFG.get("axis_min_seeds_for_services", 8))
+    scored = [(c, int(v or 0)) for c, v in (city_scores or [])]
+    real = [c for c, v in scored if v >= floor]
+    ev = {"cities_with_demand": len(real), "cities_scored": len(scored),
+          "floor": floor, "seeds": int(n_seeds or 0),
+          "top": scored[:5]}
+    if forced in ("services", "geography"):
+        return forced, f"set by hand ({forced})", ev
+    if len(scored) <= 1:
+        return "services", "only one market, so the budget can only buy services", ev
+    if len(real) <= 1 and (n_seeds or 0) >= min_seeds:
+        return ("services",
+                (f"only {len(real)} of {len(scored)} markets carry demand above "
+                 f"{floor}/mo, and you supplied {n_seeds} focus terms — the budget "
+                 "buys more by covering services in the market that has demand "
+                 "than by copying it across markets that have none"), ev)
+    if len(real) <= 1:
+        return ("geography",
+                (f"only {len(real)} of {len(scored)} markets carry measurable "
+                 f"demand, but there are too few focus terms ({n_seeds}) to fill a "
+                 "service-led list — add more services to switch axis"), ev)
+    return ("geography",
+            f"{len(real)} of {len(scored)} markets carry demand above {floor}/mo, "
+            "so crossing them is buying real reach", ev)
+
+
 def services_needed(n_cities):
     """How many services to generate so services x cities lands near the target
     keyword count. Few cities -> many services (a one-metro client needs service
@@ -4788,7 +4852,7 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
                    national_demand=False, goal="", band="",
-                   national_reason=""):
+                   national_reason="", grid_axis=""):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -4868,6 +4932,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
         # regional phrasing without the invalid-location fallout.
+        # ---- WHICH AXIS GETS THE TERM BUDGET --------------------------------
+        # pick_grid_cities has already measured per-market demand for this
+        # client's own service, so the evidence is in hand: if only one market
+        # has anything to buy, crossing the others spends slots on near-
+        # duplicates instead of on the services the client actually sells.
+        # (2026-08-10)
+        axis, axis_reason, axis_ev = choose_grid_axis(
+            city_pick.get("kept") or [], len(seeds or []),
+            forced=(grid_axis or ""))
+        if axis == "services" and cities:
+            axis_ev["dropped_cities"] = [c for c in cities[1:]]
+            cities = cities[:1]
+            city_pick["axis_trimmed"] = True
         phrases = [p.strip() for p in (phrase_geos or []) if p and p.strip()]
         seen_c = {c.strip().lower() for c in cities}
         grid_cities = cities + [p for p in phrases if p.lower() not in seen_c]
@@ -5454,6 +5531,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "demand_frame": frame,
+            "grid_axis": {"axis": axis, "reason": axis_reason, "evidence": axis_ev},
             "acronym_collisions": acronym_collisions(full),
             "volume_location": "United States" if national_demand else loc_string(markets, state),
             "volume_source": volume_source,
@@ -6865,6 +6943,7 @@ def api_refine():
                             ultra, competitive, long_tail, site_terms_kw, phrase_geos,
                             national_demand=nat_demand,
                             national_reason=nat_reason,
+                            grid_axis=(d.get("grid_axis") or ""),
                             goal=(d.get("goal") or ""),
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
@@ -6925,6 +7004,7 @@ def api_refine():
         "total_volume": s1.get("total_volume", None),
         "volume_error": s1.get("volume_error"),
         "demand_frame": s1.get("demand_frame") or {},
+        "grid_axis": s1.get("grid_axis") or {},
         "acronym_collisions": s1.get("acronym_collisions") or {},
         "volume_location": s1.get("volume_location"),
         "volume_source": s1.get("volume_source") or "google_ads",

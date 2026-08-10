@@ -1396,8 +1396,12 @@ $('step1').addEventListener('click', async()=>{
           domain:inp.domain, business_desc:inp.business_desc,
           industry:inp.industry||'', geo_scope:inp.geo_scope, goal:inp.goal||'',
           national_demand:!!inp.national_demand,
+          // Manual axis override, cleared after one build so the measured
+          // decision resumes on the next one.
+          grid_axis:(ST.gridAxis||''),
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
           site_terms:kw.site_terms||[]});
+        ST.gridAxis='';
         if(ref && ref.all){
           ref.built_at = new Date().toISOString();
           ST.kw=ref;
@@ -1500,6 +1504,19 @@ function renderStep1(){
         // on the geo band. (2026-08-10)
         : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — volume contributes <b>$0</b>, so the price rests on the geo band alone. Try <b>Price on national demand</b>.${tipOf('The lookup worked, so re-running will not help. Nobody searches these phrases with a city attached, which usually means the client sells nationally and the city grid is the wrong frame. Either switch the basis and rebuild, or confirm the local framing is deliberate.')}</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">📊 Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}</summary>
       ${kw.national_demand?'':`<div style="margin-top:6px">${kw.services.map(s=>`${s.pinned?'<b title="Pinned — highest-volume term from the search data">📌 </b>':''}${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}</div>`}
+      ${(()=>{
+        // WHERE THE TERM BUDGET WENT. A 32-term list buys either service breadth
+        // or geographic reach, and which one is right depends on whether the
+        // other markets have anything to buy. Shown with the evidence and a
+        // switch, because it changes the shape of the proposal. (2026-08-10)
+        const ga=kw.grid_axis||{};
+        if(!ga.axis) return '';
+        const ev=ga.evidence||{};
+        const svc = ga.axis==='services';
+        const other = svc?'geography':'services';
+        return `<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> \u2014 ${escapeHtml(ga.reason||'')}${(ev.dropped_cities&&ev.dropped_cities.length)?` <span class="nf">Not crossed: ${ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')}.</span>`:''}
+          <button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Use ${other} instead</button>${tipOf('A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+(ev.floor||20)+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.')}</div>`;
+      })()}
       ${(()=>{const cs=kw.city_selection; if(!cs||!cs.method) return '';
         // On a national build the keywords are bare — no city is crossed with
         // anything — so reporting "5 of 7 markets used · In the grid: mill valley
@@ -1628,6 +1645,13 @@ function renderStep1(){
   $('step2').onclick = ()=>runStep2();
   try{ wireAcronymSerps(); }catch(e){}
   try{ wireClearGeos(); }catch(e){}
+  (function(){
+    const b=$('axisFlip'); if(!b || b.dataset.wired) return;
+    b.dataset.wired='1';
+    b.onclick=()=>{ ST.gridAxis=b.getAttribute('data-axis');
+      b.disabled=true; b.textContent='Rebuilding\u2026';
+      const s1=$('step1'); if(s1) s1.click(); };
+  })();
 }
 
 // ---------- STEP 2 ----------
