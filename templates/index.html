@@ -1487,6 +1487,7 @@ function renderStep1(){
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
+      ${removedAcronymHtml()}
     ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
       <summary style="cursor:pointer;user-select:none">${warnBadge(gridWarnings(kw))}<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.services.length} services${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}`:''} <span class="nf">— click for ${kw.national_demand?'the notes':'the service list'}</span>${kw.total_volume?'':(kw.volume_error
         ? `<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data — ${escapeHtml(kw.volume_error)}. The volume part of pricing will be $0. <b>Re-run step 1</b> before quoting — a timeout here is usually transient.</span></div>`
@@ -3749,19 +3750,52 @@ function acronymPanelHtml(ac){
 // means the next rebuild puts it straight back.
 function dropAcronym(acr){
   const a=String(acr||'').toLowerCase();
+  // Is the qualified form already carrying this service? Usually yes — the
+  // acronym miner seeds both "lacp" and "lacp certification" — in which case
+  // nothing needs replacing and the list is one term shorter on purpose.
+  const kept=(ST.kw.all||[]).filter(r=>{
+    const k=String(r.kw||'').toLowerCase();
+    return k!==a && k.startsWith(a+' ');
+  }).map(r=>({kw:r.kw, vol:r.vol}));
   ['ultra','competitive','long_tail','all','head'].forEach(b=>{
     if(Array.isArray(ST.kw[b])) ST.kw[b]=ST.kw[b].filter(r=>String(r.kw||'').toLowerCase()!==a);
   });
   const before=stores.kw.length;
   stores.kw=stores.kw.filter(k=>String(k).toLowerCase()!==a);
-  if(stores.kw.length!==before){ PILL_RENDER.kw(); }
+  const wasSeed = stores.kw.length!==before;
+  if(wasSeed){ PILL_RENDER.kw(); }
+  // The service list drives the header count, so it has to lose the term too —
+  // otherwise the header read "18 TERMS" beside "19 services". (2026-08-10)
+  if(Array.isArray(ST.kw.services))
+    ST.kw.services=ST.kw.services.filter(x=>String(x.service||'').toLowerCase()!==a);
   if(ST.kw.acronym_collisions){
     ST.kw.acronym_collisions.items=(ST.kw.acronym_collisions.items||[])
       .filter(x=>x.acronym!==a);
   }
   ST.kw.total_volume=(ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
+  // SAY WHAT HAPPENED AND WHAT IS NEXT. A term vanishing with no acknowledgement
+  // left the operator unsure whether it had come out of the keyword list, out of
+  // the focus terms, or both — and whether the list now needed rebuilding.
+  // (2026-08-10)
+  ST.acrRemoved=(ST.acrRemoved||[]).filter(x=>x.term!==a);
+  ST.acrRemoved.push({term:a, wasSeed:wasSeed, kept:kept});
   renderStep1();
   try{ scheduleAutoSave(); }catch(e){}
+}
+
+function removedAcronymHtml(){
+  const list=ST.acrRemoved||[];
+  if(!list.length) return '';
+  const needFill=list.filter(x=>!x.kept.length);
+  const rows=list.map(x=>{
+    const where=x.wasSeed?'the keyword list and your Product / Vertical Focus terms':'the keyword list';
+    return x.kept.length
+      ? `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo) stays \u2014 that is the wording buyers use, so nothing needs to replace it.`
+      : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. Nothing covers that service now \u2014 add a replacement term above, or rebuild to let the tool fill the slot.`;
+  }).join('<br>');
+  return `<div class="calc" style="background:#eef7ef;border-color:#9ccfa8">\u2713 <b>${list.length} removed</b><br>${rows}
+    <div style="margin-top:5px"><button type="button" id="acrRebuild" class="btn2" style="padding:3px 11px;font-size:12px">\u21bb Rebuild list</button>
+    <span class="nf" style="font-size:11px">${needFill.length?'refills the empty slot and re-tiers on the new totals':'optional \u2014 re-tiers and refills from your remaining terms'}</span></div></div>`;
 }
 
 async function runAcronymSerps(terms){
@@ -3820,6 +3854,12 @@ function wireAcronymSerps(){
     if(b.dataset.wired) return; b.dataset.wired='1';
     b.onclick=()=>dropAcronym(b.getAttribute('data-acr'));
   });
+  const rb=$('acrRebuild');
+  if(rb && !rb.dataset.wired){
+    rb.dataset.wired='1';
+    rb.onclick=()=>{ ST.acrRemoved=[]; ST.acrSerp=null; ST._acrAuto=null;
+                     const b=$('step1'); if(b) b.click(); };
+  }
   const all=$('acrDropAll');
   if(all && !all.dataset.wired){
     all.dataset.wired='1';
