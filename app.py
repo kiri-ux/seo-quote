@@ -6063,19 +6063,25 @@ def rank_location_note(markets, state, national=False):
     """Human-readable 'where this was measured', for the Step 3 panel. A 0%
     ranked result is only interpretable next to the place it was measured."""
     loc = rank_location(markets, state, national)
+    # The panel renders "<b>Measured in X</b> — {note}", so the note must NOT
+    # open by repeating the location: it printed "Measured in mill valley,
+    # California — Measured in mill valley, California. Demand is pulled…".
+    # And "a regional retailer" was Ski Barn's wording leaking onto every client;
+    # NASSCO is a standards body and the sentence read as nonsense. (2026-08-10)
     if loc == "United States":
         return {"location": loc, "scope": "national",
-                "note": "Measured against the whole United States — no markets are set, "
-                        "so there is nowhere local to measure."}
+                "note": "No markets are set, so there is nowhere local to measure "
+                        "— this is the whole-country result."}
     if national:
         return {"location": loc, "scope": "local_under_national",
-                "note": f"Measured in {loc.replace(',United States','').replace(',', ', ')}. "
-                        "Demand is pulled nationally (storefront), but visibility is "
-                        "measured where the client's customers search — a regional "
-                        "retailer never ranks nationally, and scoring them that way "
-                        "would raise the price off a test they cannot pass."}
+                "note": "Demand is pulled nationally, but visibility is measured "
+                        "where this client's customers search. A business with a "
+                        "real local footprint never outranks the whole country, "
+                        "and scoring it that way would raise the price off a test "
+                        "it cannot pass. If the client has no local footprint, "
+                        "clear the markets and this measures nationally instead."}
     return {"location": loc, "scope": "local",
-            "note": f"Measured in {loc.replace(',United States','').replace(',', ', ')}."}
+            "note": "The client's primary market."}
 
 
 def resolve_national_demand(industry="", band="", manual=False, markets=None,
