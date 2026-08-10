@@ -1488,7 +1488,7 @@ function renderStep1(){
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
     ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
-      <summary style="cursor:pointer;user-select:none"><b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.services.length} services${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}`:''} <span class="nf">— click for the service list</span>${kw.total_volume?'':(kw.volume_error
+      <summary style="cursor:pointer;user-select:none">${warnBadge(gridWarnings(kw))}<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.services.length} services${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}`:''} <span class="nf">— click for the service list</span>${kw.total_volume?'':(kw.volume_error
         ? `<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data — ${escapeHtml(kw.volume_error)}. The volume part of pricing will be $0. <b>Re-run step 1</b> before quoting — a timeout here is usually transient.</span></div>`
         // A SUCCESSFUL lookup that returns zero everywhere is a different
         // finding, and telling the operator to re-run it is the wrong advice:
@@ -3674,6 +3674,29 @@ async function showSourceFiles(){
 // Fold rationale into the existing tooltip instead of printing it. The
 // reasoning is why this tool is trusted, so it is kept — just not shouted.
 // (2026-08-10)
+// What is hidden inside the collapsed block that the operator should see. The
+// acronym-collision warning changes the price and lived behind a closed
+// <details>, so it could be missed entirely. Counted on the summary with the
+// reasons named, so the badge says WHY to expand rather than just "look in
+// here". (2026-08-10)
+function gridWarnings(kw){
+  const w=[];
+  const ac=(kw.acronym_collisions&&kw.acronym_collisions.items)||[];
+  if(ac.length) w.push(`${ac.length} acronym${ac.length===1?'':'s'} may not be this client's (${kw.acronym_collisions.share}% of the volume)`);
+  const f=kw.demand_frame||{};
+  if(f.verdict==='national') w.push('the demand looks national, not local');
+  if(f.verdict==='no_demand') w.push('these terms have no measurable demand');
+  if(!kw.total_volume) w.push(kw.volume_error?('volume lookup failed — '+kw.volume_error):'every term returned zero volume');
+  if(kw.scope_warning) w.push('scope check');
+  if(kw.geo_filter_off) w.push('out-of-area filter is off');
+  return w;
+}
+
+function warnBadge(list){
+  if(!list.length) return '';
+  return ` <span class="tipwrap" style="cursor:help"><span style="display:inline-block;background:#b3261e;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;font-weight:700;vertical-align:1px">\u26a0 ${list.length}</span><div class="help"><b>Expand to see:</b><br>${list.map(x=>'\u2022 '+escapeHtml(x)).join('<br>')}</div></span>&nbsp;`;
+}
+
 function tipOf(html){
   return ` <span class="tipwrap"><i class="tipicon">i</i><div class="help">${html}</div></span>`;
 }
