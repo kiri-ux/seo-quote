@@ -940,6 +940,14 @@ def measure_first(markets, state="", primary=""):
     client (no state holds a majority) falls back to primary_first unchanged.
     """
     mk = primary_first(markets, primary)
+    # Measure in a TOWN, not a county. Both are valid Google locations, but a
+    # county SERP is a wider net than the client competes in, and the entered
+    # list often leads with counties simply because that is the order someone
+    # types a service area. Junk Bee Gone's first ten entries were counties, so
+    # rankings were measured county-wide. (2026-08-10)
+    if any(county_key(m, state) for m in mk) and any(not county_key(m, state) for m in mk):
+        mk = ([m for m in mk if not county_key(m, state)]
+              + [m for m in mk if county_key(m, state)])
     hs = home_state(mk, state)
     if not hs:
         return mk
@@ -953,9 +961,60 @@ def measure_first(markets, state="", primary=""):
     return inside + [m for m in mk if m not in inside]
 
 
+# Strings that arrive in the markets list but are not places. They come from
+# imported reports: a ranking table's market column carries "near me" rows
+# because the agency tracked "junk removal near me" as its own row, and the
+# importer added it as a market like any other.
+#
+# One of these reaching the front of the list is not cosmetic. loc_string takes
+# markets[0], so "near me, TN" became the location_name on every SERP and
+# volume call — a location Google has never heard of. Junk Bee Gone was measured
+# "in near me, Tennessee", scored 0/35, and drew the largest zero-ranking uplift
+# in the table. (2026-08-10)
+_NON_PLACE_GEOS = {
+    "near me", "nearme", "near by", "nearby", "close to me", "around me",
+    "local", "locally", "local area", "my area", "your area", "the area",
+    "area", "areas", "surrounding", "surrounding area", "surrounding areas",
+    "nationwide", "national", "nation", "usa", "u.s.", "u.s.a.", "us",
+    "united states", "america", "statewide", "state", "everywhere", "anywhere",
+    "n/a", "na", "none", "no", "tbd", "tba", "various", "multiple", "all",
+    "other", "others", "unknown", "blank", "total", "totals", "average",
+    "overall", "keyword", "keywords", "market", "markets", "city", "cities",
+    "<cityname>", "cityname", "city name", "xxx", "test",
+}
+
+
+def is_non_place_geo(m):
+    """True if this entered geo is not a place at all.
+
+    Tested on the bare name with any state suffix removed, because the importer
+    qualifies everything: the pill reads "near me, TN".
+    """
+    s = re.sub(r"[‘’“”]", "", str(m or "")).strip().lower()
+    s = re.sub(r"\s+", " ", s.strip(" .-—–\t"))
+    if not s:
+        return True
+    if "," in s:
+        head, tail = [p.strip() for p in s.rsplit(",", 1)]
+        if tail in _abbrev_to_state() or tail in STATE_ABBREV:
+            s = head
+    return s in _NON_PLACE_GEOS
+
+
+def usable_markets(markets):
+    """The entered markets minus anything that isn't a place.
+
+    Used wherever a market has to survive contact with a search API. Kept
+    separate from the pill list on purpose — dropping the operator's own entry
+    behind their back is worse than showing it and refusing to measure in it.
+    """
+    return [str(m).strip() for m in (markets or [])
+            if str(m).strip() and not is_non_place_geo(m)]
+
+
 def loc_string(markets, state):
-    if markets:
-        city, st = parse_market(markets[0], state)
+    for m in usable_markets(markets) or []:
+        city, st = parse_market(m, state)
         if city and st:
             return f"{city},{st},United States"
         if city:                      # city without state — still localizes
@@ -2892,6 +2951,111 @@ def _zip_index():
     return idx
 
 
+# ---- counties -------------------------------------------------------------
+# A county is a legitimate thing to type: it is how a service business describes
+# its footprint ("we cover Knox, Anderson and Blount"), it is a real DataForSEO
+# location, and "bucks county roofing" is real search phrasing. But the ZIP
+# index is keyed by CITY, so every county came back unplaceable — and
+# api_markets counts each unplaceable entry as its own market.
+#
+# Junk Bee Gone: ten counties plus thirteen towns inside those same counties.
+# The towns clustered correctly into four markets; the ten counties were counted
+# separately on top, so 23 entries covering about six trade areas were reported
+# as 16 markets. Everything downstream — grid shape, coverage percentages,
+# add-on recommendation — is built on that number. (2026-08-10)
+_COUNTY_INDEX = None
+_CITY_COUNTY = None
+_COUNTY_SUFFIX = re.compile(
+    r"\s+(county|counties|parish|borough|census area|municipality)$")
+
+
+def _county_indexes():
+    """Build (county -> coords/zips/cities, city -> county) from the ZIP data."""
+    global _COUNTY_INDEX, _CITY_COUNTY
+    if _COUNTY_INDEX is not None:
+        return _COUNTY_INDEX, _CITY_COUNTY
+    cidx, ccidx = {}, {}
+    try:
+        import zipcodes
+        acc = {}
+        for r in zipcodes.list_all():
+            if r.get("country") != "US":
+                continue
+            co = str(r.get("county") or "").strip().lower()
+            st = str(r.get("state") or "").upper()
+            if not co or not st:
+                continue
+            city = str(r.get("city") or "").strip().lower()
+            e = acc.setdefault((co, st), {"pts": [], "cities": {}})
+            e["cities"][city] = e["cities"].get(city, 0) + 1
+            try:
+                la, lo = float(r.get("lat") or 0), float(r.get("long") or 0)
+            except (TypeError, ValueError):
+                la = lo = 0
+            if la and lo:
+                e["pts"].append((la, lo))
+            # Alternate ZIP names live in the same county as their host.
+            for alt in (r.get("acceptable_cities") or []):
+                a = str(alt).strip().lower()
+                if a:
+                    ccidx.setdefault((a, st), co)
+            if city:
+                ccidx[(city, st)] = co
+
+        def _med(xs):
+            xs = sorted(xs)
+            n_ = len(xs)
+            return xs[n_ // 2] if n_ % 2 else (xs[n_ // 2 - 1] + xs[n_ // 2]) / 2
+
+        for k, e in acc.items():
+            pts = e["pts"]
+            cities = e["cities"]
+            cidx[k] = {
+                "coords": ((_med([a for a, _ in pts]), _med([b for _, b in pts]))
+                           if pts else None),
+                "zips": sum(cities.values()),
+                "cities": cities,
+                # The county's recognisable centre, for naming and for the one
+                # case where a county has to stand in for a city.
+                "principal": (max(cities, key=lambda c: (cities[c], -len(c)))
+                              if cities else ""),
+            }
+    except Exception:
+        app.logger.warning("zipcodes not available — county grouping is off")
+    _COUNTY_INDEX, _CITY_COUNTY = cidx, ccidx
+    return cidx, ccidx
+
+
+def county_key(market, state=""):
+    """('knox county', 'TN') for a market that names a county, else None."""
+    city, st = parse_market(market, state)
+    name = (city or "").strip().lower()
+    if not _COUNTY_SUFFIX.search(name):
+        return None
+    name = _COUNTY_SUFFIX.sub(" county", name)
+    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    cidx, _cc = _county_indexes()
+    if abbr and (name, abbr) in cidx:
+        return (name, abbr)
+    # No state given: accept a unique national match, never a guess. There are
+    # Jefferson Counties in twenty-five states.
+    hits = [k for k in cidx if k[0] == name]
+    return hits[0] if len(hits) == 1 else None
+
+
+def county_of(market, state=""):
+    """The county a city sits in, as ('knox county','TN'), or None."""
+    city, st = parse_market(market, state)
+    c = (city or "").strip().lower()
+    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    _ci, ccidx = _county_indexes()
+    if abbr:
+        co = ccidx.get((c, abbr))
+        return (co, abbr) if co else None
+    hits = [(co, s) for (cc, s), co in ccidx.items() if cc == c]
+    return hits[0] if len(hits) == 1 else None
+
+
 def city_size(market, state=""):
     """Rough size proxy — how many ZIP codes a city has.
 
@@ -2902,6 +3066,14 @@ def city_size(market, state=""):
     city, st = parse_market(market, state)
     city = (city or "").strip().lower()
     abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "").upper()
+    # A county's size is its ZIP count, but it must never out-rank its own seat
+    # when a group is being named: "Knoxville +4" is the market, "Knox County +4"
+    # is a filing cabinet. Knox County has 35 ZIPs to Knoxville's 31, so scored
+    # honestly the county would win. Halve it — enough to lose to its principal
+    # city, enough to still beat a hamlet.
+    ck = county_key(market, state)
+    if ck:
+        return (_county_indexes()[0].get(ck) or {}).get("zips", 0) // 2
     # The ZIP data uses its own names: "New York" not "New York City", "Lawrence
     # Township" not "Lawrenceville". An exact match alone scored New York City at
     # ZERO — the same as a town that doesn't exist — which made it read as the
@@ -2936,6 +3108,13 @@ def city_coords(market, state=""):
     city = (city or "").strip().lower()
     if not city:
         return None
+    # A county has coordinates too — the median of its ZIPs. Without this every
+    # county entered was "couldn't place" and counted as a market of its own.
+    ck = county_key(market, state)
+    if ck:
+        e = _county_indexes()[0].get(ck) or {}
+        if e.get("coords"):
+            return e["coords"]
     abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "")
     idx = _zip_index()
     if abbr:
@@ -2956,6 +3135,68 @@ def miles_between(a, b):
     return 2 * 3958.8 * asin(sqrt(h))
 
 
+def geo_overlaps(markets, state=""):
+    """Which entered geos are already covered by another entered geo.
+
+    Distance clustering answers "are these the same market". It does not answer
+    "is this one INSIDE that one", and those are different questions with
+    different consequences. Knox County and Knoxville are one footprint however
+    far apart their centroids happen to compute; so are New York City and New
+    York. Counting both is counting the same ground twice, and the market count
+    is what the grid, the coverage percentages and the add-on recommendation are
+    all built on.
+
+    Three kinds, all read off bundled data rather than guessed:
+      county    — an entered county contains an entered city
+      duplicate — two entries name the same place ("nyc" / "new york city")
+      non_place — not a place at all ("near me"), so it covers nothing
+
+    Returns a list of {kind, container, contained[]} plus the non-place list.
+    Detection only: nothing is removed from the operator's pills here.
+    """
+    mk = [m for m in (markets or []) if str(m).strip()]
+    junk = [m for m in mk if is_non_place_geo(m)]
+    real = [m for m in mk if m not in junk]
+
+    # --- counties containing entered cities
+    out = []
+    counties = [(m, county_key(m, state)) for m in real]
+    counties = [(m, k) for m, k in counties if k]
+    have_county = {m for m, _k in counties}
+    for m, key in counties:
+        inside = [c for c in real
+                  if c not in have_county and county_of(c, state) == key]
+        if inside:
+            out.append({"kind": "county", "container": m, "contained": inside})
+
+    # --- same place entered twice under two names
+    seen = {}
+    for m in real:
+        if m in have_county:
+            continue
+        city, st = parse_market(m, state)
+        cl = (city or "").strip().lower()
+        abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+        # Canonicalise through the same alias ladder the volume lookup uses, so
+        # "New York City, NY" and "New York, NY" land on one key.
+        canon = canonical_city_name(cl, st or state) or cl
+        k = (canon, abbr)
+        if k in seen:
+            hit = next((o for o in out
+                        if o["kind"] == "duplicate" and o["container"] == seen[k]), None)
+            if hit:
+                hit["contained"].append(m)
+            else:
+                out.append({"kind": "duplicate", "container": seen[k],
+                            "contained": [m]})
+        else:
+            seen[k] = m
+
+    if junk:
+        out.append({"kind": "non_place", "container": "", "contained": junk})
+    return out
+
+
 def group_by_distance(markets, state="", radius=None):
     """Cluster markets that sit within `radius` miles of each other.
 
@@ -2966,8 +3207,21 @@ def group_by_distance(markets, state="", radius=None):
     Returns (groups, located, unlocated).
     """
     r = float(radius if radius is not None else CFG.get("market_radius_miles", 25))
+    mk = [m for m in (markets or []) if str(m).strip()]
+
+    # Counties are CONTAINERS, not peers, and they must not cluster like towns.
+    # Clustered as ordinary points they act as bridges: Sevier County's ZIP
+    # median lands near Knoxville, so letting it chain pulled Sevierville and
+    # Pigeon Forge — 30 miles out and plainly their own market — into metro
+    # Knoxville and collapsed 22 entries to 3. Hold them back, cluster the towns
+    # with the diameter guarantee intact, then place each county by what it
+    # actually contains. (2026-08-10)
+    county_of_entry = {m: county_key(m, state) for m in mk}
+    counties = [m for m in mk if county_of_entry[m]]
+    towns = [m for m in mk if not county_of_entry[m]]
+
     pts, unlocated = {}, []
-    for m in (markets or []):
+    for m in towns:
         c = city_coords(m, state)
         (pts.__setitem__(m, c) if c else unlocated.append(m))
     # Complete-link: a city joins only if it is within the radius of EVERY
@@ -2982,6 +3236,51 @@ def group_by_distance(markets, state="", radius=None):
                 break
         else:
             groups.append([m])
+
+    # Now the counties. A county holding an entered town is redundant coverage —
+    # it joins that town's cluster and adds no market. It joins ONE cluster even
+    # if it spans several, so it can never merge two markets that the distance
+    # test kept apart.
+    for m in counties:
+        key = county_of_entry[m]
+        best, best_n = None, 0
+        for g in groups:
+            n = sum(1 for t in g if county_of(t, state) == key)
+            if n > best_n:
+                best, best_n = g, n
+        if best is not None:
+            best.append(m)
+            pts.setdefault(m, city_coords(m, state) or (0.0, 0.0))
+            continue
+        # A county with no entered town inside it IS a market of its own —
+        # Roane County here. Place it at its ZIP median and let it join a
+        # neighbouring cluster only if it passes the same diameter test.
+        c = city_coords(m, state)
+        if not c:
+            unlocated.append(m)
+            continue
+        for g in groups:
+            if all(miles_between(c, pts[o]) <= r for o in g if o in pts):
+                g.append(m)
+                pts[m] = c
+                break
+        else:
+            groups.append([m])
+            pts[m] = c
+
+    # Same place under two names — "New York City, NY" and "New York, NY" — is
+    # one market however the clustering fell out.
+    for ov in geo_overlaps(towns, state):
+        if ov["kind"] != "duplicate":
+            continue
+        fam = [ov["container"]] + list(ov["contained"])
+        idxs = sorted({i for i, g in enumerate(groups) if any(m in g for m in fam)})
+        if len(idxs) < 2:
+            continue
+        keep = groups[idxs[0]]
+        for i in reversed(idxs[1:]):
+            keep.extend(groups[i])
+            del groups[i]
     return groups, list(pts), unlocated
 
 
@@ -3027,7 +3326,7 @@ def suggest_geo_scope(markets, state=""):
                        reason="One market entered.")
         elif unlocated:
             out.update(reason=f"Could not place {len(unlocated)} of {len(mk)} "
-                              "markets on the map, so the scope can't be read "
+                              "areas on the map, so the scope can't be read "
                               "from them.")
         return out
 
@@ -3056,7 +3355,7 @@ def suggest_geo_scope(markets, state=""):
         # Philadelphia + Cherry Hill is two states and one trade area.
         if len(chains) == 1:
             out.update(suggested="contiguous_region", confidence="medium",
-                       reason=f"{len(mk)} markets across {len(states)} states "
+                       reason=f"{len(mk)} entered areas across {len(states)} states "
                               f"({', '.join(states)}), but they form ONE "
                               f"connected area — {round(span)} miles end to end, "
                               f"no gap wider than {int(join_r)} miles.")
@@ -3075,11 +3374,11 @@ def suggest_geo_scope(markets, state=""):
                           f"{int(join_r)} miles between them.")
     elif span <= float(CFG.get("market_radius_miles", 25)):
         out.update(suggested="single_city", confidence="medium",
-                   reason=f"All {len(mk)} markets sit within "
+                   reason=f"All {len(mk)} entered areas sit within "
                           f"{round(span)} miles — one metro, not a region.")
     else:
         out.update(suggested="contiguous_region", confidence="high",
-                   reason=f"{len(mk)} markets in one connected area, "
+                   reason=f"{len(mk)} entered areas form one connected region, "
                           f"{round(span)} miles end to end"
                           + (f", all in {states[0]}" if states else "") + ".")
     return out
@@ -5198,7 +5497,20 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None):
                 time.sleep(1)
     else:
         raise last_err
-    res = (data["tasks"][0]["result"] or [{}])[0]
+    # DataForSEO answers HTTP 200 and reports per-TASK problems in status_code.
+    # Every other caller in this module checks it; _serp_one did not — the one
+    # whose result sets the price. An unresolvable location_name ("near me,
+    # Tennessee") returns 40501 with result=None, which fell straight through to
+    # items=[] -> pos=None -> "Not Found" for EVERY keyword in the batch. 0/35
+    # ranked then drew the largest zero-ranking uplift off a lookup that never
+    # ran, and the result was cached for six hours, so the re-check returned
+    # instantly and agreed with itself. Raise instead: the caller already renders
+    # a failed lookup as "—", keeps it out of the ranked fraction, and does not
+    # cache it. (2026-08-10)
+    task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+    if task0.get("status_code") not in (20000, None):
+        raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+    res = (task0.get("result") or [{}])[0] or {}
     items = res.get("items", []) or []
     pos, paa = None, []
     for it in items:
@@ -5227,20 +5539,30 @@ def stage3_rankcheck(all_kws, domain, markets, state, brand):
         for fut in futs:
             i = futs[fut]
             try:
-                results[i] = fut.result()
+                results[i] = fut.result() + (False,)
             except Exception:
-                results[i] = (None, [])   # one bad keyword shouldn't sink the quote
+                # One bad keyword shouldn't sink the quote — but it must not be
+                # counted as "not ranking" either. A failed lookup measured
+                # nothing, and folding it into the denominator inflates the
+                # zero-ranking percentage and therefore the price. Same rule the
+                # batched /api/rankings path already follows. (2026-08-10)
+                results[i] = (None, [], True)
 
-    table, paa, ranked = [], [], 0
-    for kw, (pos, qs) in zip(kws, results):
-        table.append({"keyword": kw, "position": pos})
+    table, paa, ranked, errors = [], [], 0, 0
+    for kw, (pos, qs, err) in zip(kws, results):
+        table.append({"keyword": kw, "position": pos, "error": err})
         paa.extend(qs)
+        if err:
+            errors += 1
+            continue
         if pos is not None and pos <= top_n:
             ranked += 1
-    n = len(kws) or 1
-    frac = ranked / n
+    checked = max(len(kws) - errors, 0)
+    frac = (ranked / checked) if checked else 0.0
     return {"table": table, "ranked": ranked, "frac": frac,
-            "zero_ranking": frac < CFG["zero_ranking_frac"],
+            "checked": checked, "errors": errors,
+            # Nothing was measured, so there is no evidence of zero ranking.
+            "zero_ranking": bool(checked) and frac < CFG["zero_ranking_frac"],
             "paa_pool": list(dict.fromkeys(paa))}
 
 # ---------------------------------------------------------------------------
@@ -5842,7 +6164,7 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
 def quote():
     d = request.get_json(force=True)
     seeds   = clean_seeds(d.get("keywords", []))
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state   = (d.get("state") or "").strip()
     domain  = (d.get("domain") or "").strip()
     brand   = (d.get("brand") or "").strip()
@@ -5962,7 +6284,7 @@ def api_suggest_regions():
     """Propose vernacular region names for the entered markets, then keep only
     the ones with real search demand for the client's own service."""
     d = request.get_json(force=True) or {}
-    markets = [m for m in (d.get("geo_values") or []) if m and m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state = (d.get("state") or "").strip()
     seeds = clean_seeds(d.get("keywords") or [])
     if not markets:
@@ -5997,7 +6319,7 @@ def api_keywords():
     """Step 1 — build + bucket the keyword list. One ideas call + parallel suggestions."""
     d = request.get_json(force=True)
     seeds   = clean_seeds(d.get("keywords", []))
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
     domain  = (d.get("domain") or "").strip()
@@ -6045,7 +6367,7 @@ def api_refine():
     continues with the rules-based buckets."""
     d = request.get_json(force=True)
     seeds   = clean_seeds(d.get("keywords", []))
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
     domain  = (d.get("domain") or "").strip()
@@ -6640,7 +6962,7 @@ def api_metrics():
     """Step 2 — competitive adder from head-term bids. One search_volume call."""
     d = request.get_json(force=True)
     head    = [{"keyword": k} for k in d.get("head", [])]
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     # phrase geos must be strippable so bare-term metrics resolve for
     # "managed it services south jersey" -> "managed it services"
     # measure_first, not primary_first: the CPC adder is a localised lookup, so
@@ -6710,7 +7032,7 @@ def api_rankings_submit():
     and the frontend polls /api/rankings_collect until they land."""
     d = request.get_json(force=True)
     kws     = [k for k in d.get("keywords", []) if k]
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state   = derive_state(markets, (d.get("state") or "").strip())
     markets = measure_first(markets, state, d.get("primary_market"))
     top_n   = CFG["zero_ranking_top_n"]
@@ -6799,7 +7121,7 @@ def api_rank_location():
     the Step 3 panel state the location even for a run served entirely from
     cache or restored from a saved quote."""
     d = request.get_json(force=True) or {}
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state = derive_state(markets, (d.get("state") or "").strip())
     markets = measure_first(markets, state, d.get("primary_market"))
     nat, reason = resolve_national_demand(d.get("industry") or "",
@@ -6842,7 +7164,7 @@ def api_rankings():
     d = request.get_json(force=True)
     batch   = d.get("batch", [])
     domain  = (d.get("domain") or "").strip()
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state   = derive_state(markets, (d.get("state") or "").strip())
     brand   = (d.get("brand") or "").strip()
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
@@ -6857,6 +7179,7 @@ def api_rankings():
     results, paa = [], []
     hits = {}
     to_fetch = []
+    err_msgs = []
     for kw in batch:
         c = _rank_cache_get(kw, loc, dom, top_n)
         if c != "MISS":
@@ -6875,11 +7198,15 @@ def api_rankings():
                 try:
                     pos, qs = fut.result()
                     err = False
-                except Exception:
+                except Exception as e:
                     # lookup FAILED — record it as unknown, NOT as "Not Found".
                     # Counting a failed call as not-ranking would inflate the
                     # zero-ranking percentage and therefore the price.
                     pos, qs, err = None, [], True
+                    # Keep WHY. "40501 location_name not found" and "read
+                    # timeout" both show as "check failed", and they call for
+                    # opposite responses: fix the geo, or press retry.
+                    err_msgs.append(str(e)[:160])
                 done[kw] = (pos, qs, err)
                 if not err:
                     _rank_cache_put(kw, loc, dom, top_n, pos)
@@ -6901,8 +7228,16 @@ def api_rankings():
         return jsonify({"error": f"DataForSEO error: {e}."}), 502
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
+    # The most common failure reason, verbatim. A batch of "40501 Invalid Field:
+    # 'location_name'" means the geo is wrong and retrying will fail identically;
+    # a batch of timeouts means press retry. Same "check failed" row either way,
+    # so the message has to reach the panel.
+    top_err = ""
+    if err_msgs:
+        top_err = max(set(err_msgs), key=err_msgs.count)
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa)),
                     "n_cached": len(hits), "n_fetched": len(to_fetch),
+                    "n_errors": len(err_msgs), "error_reason": top_err,
                     "rank_location": rank_location_note(markets, state, nat)})
 
 @app.route("/api/qualify_markets", methods=["POST"])
@@ -6935,9 +7270,17 @@ def api_qualify_markets():
         by_city.setdefault(city, set()).add(st)
 
     out = []
+    dropped = []
     for raw in (d.get("markets") or []):
         m = str(raw or "").strip()
         if not m:
+            continue
+        # A ranking table's market column carries "near me" rows, because the
+        # agency tracked "junk removal near me" as its own line. Qualifying it
+        # produced "near me, TN" — which then became markets[0] and therefore
+        # the location_name on every SERP call. Never offer it. (2026-08-10)
+        if is_non_place_geo(m):
+            dropped.append(m)
             continue
         already = re.search(r",\s*([A-Za-z]{2})\s*$", m)
         if already:
@@ -6978,7 +7321,7 @@ def api_qualify_markets():
             out.append({"input": m, "qualified": m, "abbr": "",
                         "source": "", "certain": False,
                         "note": f"No state for {m}, and the report didn't say."})
-    return jsonify({"markets": out})
+    return jsonify({"markets": out, "dropped": dropped})
 
 
 @app.route("/api/markets", methods=["POST"])
@@ -6993,22 +7336,44 @@ def api_markets():
     the moment the geos are typed rather than after a full build.
     """
     d = request.get_json(force=True) or {}
-    mk = [m for m in (d.get("geo_values") or []) if m and m.strip()]
+    entered = [m for m in (d.get("geo_values") or []) if m and m.strip()]
     state = (d.get("state") or "").strip()
-    if not mk:
+    if not entered:
         return jsonify({"cities": 0, "markets": 0, "groups": [], "unlocated": []})
+    # Non-places cover nothing, so they cannot be markets. Reported back so the
+    # operator can see WHY the count moved rather than watching a pill silently
+    # stop mattering.
+    non_place = [m for m in entered if is_non_place_geo(m)]
+    mk = [m for m in entered if m not in non_place]
+    overlaps = geo_overlaps(entered, state)
+    covered = sorted({c for o in overlaps if o["kind"] in ("county", "duplicate")
+                      for c in o["contained"]})
+    if not mk:
+        return jsonify({"cities": len(entered), "markets": 0, "groups": [],
+                        "unlocated": [], "non_place": non_place,
+                        "overlaps": overlaps, "covered": covered,
+                        "radius": int(CFG.get("market_radius_miles", 25)),
+                        "located": 0, "scope_suggestion": {}})
     groups, located, unlocated = group_by_distance(mk, state)
     named = []
     for g in sorted(groups, key=len, reverse=True):
-        anchor = max(g, key=lambda m: city_size(m, state)) if len(g) > 1 else g[0]
+        # Prefer a real town over a county as the market's name: the anchor is
+        # what the keyword grid and the rank check are built on, and nobody
+        # searches "junk removal knox county tn".
+        towns = [m for m in g if not county_key(m, state)] or g
+        anchor = max(towns, key=lambda m: city_size(m, state)) if len(towns) > 1 else towns[0]
         named.append({"anchor": anchor,
                       "members": [anchor] + [m for m in g if m != anchor],
                       "size": len(g)})
     return jsonify({
         "cities": len(mk),
+        "entered": len(entered),
         "markets": len(groups) + len(unlocated),
         "groups": named,
         "unlocated": unlocated,
+        "non_place": non_place,
+        "overlaps": overlaps,
+        "covered": covered,
         "radius": int(CFG.get("market_radius_miles", 25)),
         "located": len(located),
         # The band the markets themselves imply. A suggestion, not an
@@ -7027,7 +7392,7 @@ def api_addon_suggestion():
     arithmetic on data the quote already holds.
     """
     d = request.get_json(force=True) or {}
-    markets = [m.strip() for m in d.get("geo_values", []) if m and m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state = derive_state(markets, (d.get("state") or "").strip())
     out = recommend_addons(markets, state, d.get("table") or [],
                            site_locations=d.get("site_locations") or [],
@@ -7258,7 +7623,7 @@ def api_serp_recommend():
     d = request.get_json(force=True)
     head = d.get("head", [])          # [{"kw":..., "comp":"Ultra"/"Competitive"}]
     ranks = d.get("ranks", {})        # {kw: "Not Found" | position}
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     def is_geo(kw):
         return any(m.lower() in kw.lower() for m in markets)
     def not_found(kw):
@@ -7283,7 +7648,7 @@ def api_serp_queue():
     Short request (no waiting). The frontend then polls /api/serp_fetch."""
     d = request.get_json(force=True)
     keyword = (d.get("keyword") or "").strip()
-    markets = [m.strip() for m in d.get("geo_values", []) if m.strip()]
+    markets = usable_markets(d.get("geo_values") or [])
     state   = derive_state(markets, (d.get("state") or "").strip())
     device  = d.get("device", "desktop")
     if not keyword:
@@ -7556,7 +7921,7 @@ def validate_cities(cities, state):
 @_json_error_guard
 def api_validate_geo():
     d = request.get_json(force=True)
-    cities = [c.strip() for c in d.get("geo_values", []) if c.strip()]
+    cities = usable_markets(d.get("geo_values") or [])
     state  = (d.get("state") or "").strip()
     if not cities:
         return jsonify({"error": "No cities to check."}), 400

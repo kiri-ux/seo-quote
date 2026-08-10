@@ -713,7 +713,7 @@ function showReport(r, opts){
     // from a New Jersey report — a market that does not exist, so the rank check
     // and the CPC lookup both pointed at nothing (2026-08-07). The ZIP index
     // knows; blindly appending does not.
-    let resolved=null, uncertain=[];
+    let resolved=null, uncertain=[], dropped={};
     try{
       const q=await postJSON('/api/qualify_markets',{markets:rep.markets||[], state:st});
       if(q && q.markets){
@@ -721,10 +721,18 @@ function showReport(r, opts){
         q.markets.forEach(m=>{ resolved[m.input]=m;
           if(!m.certain && m.note) uncertain.push(m.note); });
       }
+      // Entries the backend refused as non-places. A ranking table's market
+      // column carries a "near me" row because the agency tracked "junk removal
+      // near me" as its own line — qualified to "near me, TN" it became
+      // markets[0], and therefore the location_name on every SERP and volume
+      // call. Junk Bee Gone was measured "in near me, Tennessee" and scored
+      // 0/35. Skip them here rather than letting the fallback re-attach a state
+      // to something that isn't a place. (2026-08-10)
+      (q && q.dropped || []).forEach(x=>{ dropped[String(x)]=true; });
     }catch(e){ /* fall through to the report's state */ }
     const qualify=v=>{
       v=String(v||'').trim();
-      if(!v) return '';
+      if(!v || dropped[v]) return '';
       if(/,\s*[A-Za-z]{2}\s*$/.test(v)) return v;
       if(resolved && resolved[v] && resolved[v].qualified) return resolved[v].qualified;
       return st ? v+', '+st : v;
@@ -755,15 +763,17 @@ function showReport(r, opts){
     }
     PILL_RENDER.geo(); try{scheduleAutoSave();}catch(e){}
     am.disabled=true;
-    am.textContent='\u2713 '+(n?('Added '+n):'')+(replaced?((n?', ':'Qualified ')+replaced+' with state'):'')+(!n&&!replaced?'Already applied':'');
+    const nSkipped=Object.keys(dropped).length;
+    am.textContent='\u2713 '+(n?('Added '+n):'')+(replaced?((n?', ':'Qualified ')+replaced+' with state'):'')+(!n&&!replaced?'Already applied':'')+(nSkipped?', skipped '+nSkipped:'');
     const host=$('reportOut');
-    if(host && (scoped||unqualified)){
+    if(host && (scoped||unqualified||nSkipped)){
       const note=document.createElement('div');
       note.className='nf'; note.style.marginTop='6px';
       const parts=[];
       if(scoped) parts.push('\u21b3 Geo scope switched to <b>'+escapeHtml(scoped)+'</b> and national demand turned off \u2014 named markets and nationwide pricing are different campaigns.');
       if(unqualified) parts.push('\u26a0 '+unqualified+' market'+(unqualified===1?'':'s')+' had no state and the report did not say which \u2014 add the state by hand or the rank check will look in the wrong place.');
       if(uncertain.length) parts.push('\u26a0 '+uncertain.map(x=>escapeHtml(x)).join(' '));
+      if(nSkipped) parts.push('\u26a0 Skipped <b>'+Object.keys(dropped).map(x=>escapeHtml(x)).join(', ')+'</b> \u2014 not a place. The report tracked it as a market row because the keyword itself says it, but it cannot be targeted, and as the first market it would have become the location every rank check and volume pull was measured in.');
       note.innerHTML=parts.join(' ');
       am.parentElement.appendChild(note);
     }
@@ -1728,6 +1738,18 @@ function step3Html(){
         return `<div class="nf" style="margin:6px 0;font-size:11.5px">${c} of ${ST.table.length} row${c===1?'':'s'} came from a lookup already made for this keyword, location and domain in the last 6 hours — that is why the check returned instantly. Positions are unchanged from that lookup; nothing was re-crawled.</div>`;
       })()}
       ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipicon">i</span><span class="help">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, a missing state suffix, or a national SERP being used to score a local business.${ST.rankLoc&&ST.rankLoc.scope==='national'?' <b>This run was measured nationally</b> — check that above first.':''}</span></span></div>`:''}
+      ${(()=>{
+        // A failed lookup and a genuine "Not Found" look identical on the row.
+        // The reason separates them, and the commonest reason by far is a
+        // location Google cannot resolve — which is a geo to fix, not a call to
+        // retry. (2026-08-10)
+        const q=ST.table.filter(r=>r.queued).length, f=ST.errored-q;
+        if(f<=0 || !ST.rankErr) return '';
+        const bad=/location/i.test(ST.rankErr) && /40501|not found|invalid/i.test(ST.rankErr);
+        return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${f} lookup${f>1?'s':''} failed</b> — <span class="nf">${escapeHtml(ST.rankErr)}</span>`
+          + (bad?` <br><b>Google could not resolve the location this was measured in.</b> Nothing was measured, so no zero-ranking uplift was applied. Fix the geo in Geographic targeting, then re-check — retrying will fail identically.`:'')
+          + `</div>`;
+      })()}
       ${(ST.errored-ST.table.filter(r=>r.queued).length)>0?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored} failed lookup${ST.errored>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <details style="margin-top:6px"><summary style="cursor:pointer;user-select:none;font-size:12.5px;color:var(--velocity);font-weight:600">Show all ${ST.table.length} rank checks</summary>
       <table style="margin-top:6px"><thead><tr><th>Keyword</th><th>Current Google Rank</th></tr></thead><tbody>${rows}</tbody></table></details>
@@ -1756,6 +1778,7 @@ async function _runStep3(retryOnlyFailed){
   // The location is re-reported by every /api/rankings response. Drop the old
   // one so a geo-scope change can't leave the previous run's banner on screen.
   ST.rankLoc=null;
+  ST.rankErr='';
   $('step3') && ($('step3').disabled=true);
   const all=ST.kw.all.map(r=>r.kw);
   // Retry passes use smaller batches: each failed keyword shares the server's
@@ -1889,6 +1912,9 @@ async function _runStep3Live(todo, all, BATCH){
     }
     if(got){
       if(got.rank_location) ST.rankLoc=got.rank_location;
+      // Keep WHY lookups failed. A 40501 on location_name is a wrong geo, not a
+      // flaky call, and retrying it fails the same way every time.
+      if(got.error_reason) ST.rankErr=got.error_reason;
       got.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
       ST.paa.push(...(got.paa||[]));
     }else{
@@ -3394,13 +3420,80 @@ async function refreshMarketSummary(){
     });
     const un = (r.unlocated||[]).length
       ? `<div class="nf" style="margin-top:2px">Couldn\u2019t place ${r.unlocated.map(x=>escapeHtml(x)).join(', ')} \u2014 counted separately.</div>` : '';
-    const same = r.cities === r.markets;
-    const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Cities within <b>${r.radius} miles</b> of each other count as one market, named after the largest. This is what the geos <b>cover</b> — not the add-on count, though everything downstream counts markets rather than cities.<br><br>Straight-line distance, not drive time, so overrule it when you know better. Radius is set in Pricing config.</div></span>`;
-    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${r.cities} ${r.cities===1?'city':'cities'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`
+    const entered = (r.entered!=null ? r.entered : r.cities);
+    const same = entered === r.markets;
+    const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Areas within <b>${r.radius} miles</b> of each other count as one market, named after the largest town. A <b>county</b> is a container, not a peer: it never merges two markets, and if a town you entered sits inside it, it adds no market of its own.<br><br>This is what the geos <b>cover</b> — not the add-on count, though everything downstream counts markets rather than entries.<br><br>Straight-line distance, not drive time, so overrule it when you know better. Radius is set in Pricing config.</div></span>`;
+    box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${entered} ${entered===1?'area':'areas'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`
+      + overlapHtml(r)
       + scopeSuggestionHtml(r.scope_suggestion);
+    wireOverlap(r);
     wireScopeSuggestion(r.scope_suggestion);
   }catch(e){ box.innerHTML=''; }
 }
+// ---- overlapping geos ----------------------------------------------------
+// Distance clustering answers "are these the same market". It does not answer
+// "is this one INSIDE that one" — and someone who types their ten counties AND
+// then imports the thirteen towns from the client's report has entered the same
+// ground twice. Every unplaceable entry used to count as its own market, so Junk
+// Bee Gone's 23 entries covering six trade areas were reported as 16 markets,
+// and the grid, the coverage percentages and the add-on recommendation were all
+// built on that number. (2026-08-10)
+//
+// Shown with the containment spelled out and a one-click cleanup, never applied
+// silently: the operator typed those counties on purpose, and "we cover Knox,
+// Anderson and Blount" is how the client describes itself even when the towns
+// make the counties redundant for targeting.
+function overlapHtml(r){
+  const ovs = (r.overlaps||[]);
+  const np  = (r.non_place||[]);
+  const bits = [];
+  if(np.length){
+    bits.push(`<div class="nf" style="font-size:12px;margin-top:3px">\u26a0 <b>${np.map(x=>escapeHtml(x)).join(', ')}</b> ${np.length===1?'is not a place':'are not places'} \u2014 not counted as ${np.length===1?'a market':'markets'}, and never used to measure rankings or pull volume. `
+      + `<button type="button" id="dropNonPlace" class="btn2" style="padding:1px 8px;font-size:11px">Remove</button></div>`);
+  }
+  // Only a county that actually holds an entered town is redundant. A county
+  // with no town inside it is a real market and must survive the cleanup.
+  const red = ovs.filter(o=>o.kind==='county'||o.kind==='duplicate');
+  if(red.length){
+    const lines = red.slice(0,6).map(o=>{
+      const c = escapeHtml(String(o.container));
+      const inn = o.contained.map(x=>escapeHtml(String(x).split(',')[0])).join(', ');
+      return o.kind==='county' ? `<b>${c}</b> already covers ${inn}`
+                               : `<b>${c}</b> is the same place as ${inn}`;
+    });
+    const more = red.length>6 ? ` <span class="nf">+${red.length-6} more</span>` : '';
+    // The button removes ENTRIES, not overlap groups — one per redundant county,
+    // but every later name of a duplicated place.
+    const kills = red.reduce((n,o)=> n + (o.kind==='county' ? 1 : o.contained.length), 0);
+    bits.push(`<div class="nf" style="font-size:12px;margin-top:3px">\u25f1 <b>${red.length} ${red.length===1?'entry overlaps':'entries overlap'} another</b> \u2014 counted once, not twice: `
+      + lines.join(' \u00b7 ') + more
+      + ` <button type="button" id="dropCovered" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Remove the ${kills} redundant</button></div>`);
+  }
+  return bits.join('');
+}
+
+function wireOverlap(r){
+  const drop = list => {
+    const kill = new Set(list.map(x=>String(x)));
+    stores.geo = (stores.geo||[]).filter(g=>!kill.has(String(g)));
+    PILL_RENDER.geo();
+    if(ST.inputs) ST.inputs.geo_values = stores.geo.slice();
+    try{ scheduleMarketSummary(); }catch(e){}
+    try{ scheduleAutoSave(); }catch(e){}
+  };
+  const a = $('dropNonPlace');
+  if(a) a.onclick = ()=> drop(r.non_place||[]);
+  const b = $('dropCovered');
+  // A redundant COUNTY is the container — its towns are the useful entries,
+  // because they are what people actually search and what the grid is built
+  // from. A redundant DUPLICATE is the later entry: keep the name the operator
+  // typed first.
+  if(b) b.onclick = ()=> drop((r.overlaps||[]).flatMap(o =>
+      o.kind==='county' ? [o.container]
+    : o.kind==='duplicate' ? o.contained
+    : []));
+}
+
 function scheduleMarketSummary(){
   clearTimeout(_mktTimer);
   _mktTimer = setTimeout(()=>{ try{ refreshMarketSummary(); }catch(e){} }, 250);
