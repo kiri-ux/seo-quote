@@ -1058,6 +1058,21 @@ function renderSvcChips(data, out){
       return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
     }).join('');
   out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.from_headings?'Nav menu was generic (Work/About/Contact), so these came from the page\'s <b>service headings</b> instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
+  // ---- the client's own SHORT names, with volume attached -----------------
+  // The chips above are the menu converted to prose, which is how NASSCO ended
+  // up with sixteen seeds carrying 10/mo between them. These are the acronyms
+  // off the same page, each priced, so the ones worth seeding are obvious.
+  const acr=(data.acronyms||[]).filter(a=>a && a.acronym);
+  if(acr.length){
+    const good=acr.filter(a=>a.worth_it), thin=acr.filter(a=>!a.worth_it);
+    const chip=a=>`<span class="svc-chip" data-label="${String(a.term||a.acronym).toLowerCase().replace(/"/g,'&quot;')}" title="${(a.expansion?a.expansion.replace(/"/g,'&quot;')+' — ':'')}${String(a.source||'').replace(/"/g,'&quot;')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(String(a.term||a.acronym))} <span class="nf" style="font-size:10.5px">(${Number(a.volume||0).toLocaleString()}/mo)</span></span>`;
+    out.insertAdjacentHTML('beforeend',
+      `<div style="margin-top:9px;border-top:1px solid var(--line);padding-top:7px">
+        <div class="nf" style="font-size:11.5px;margin-bottom:4px">\u{1F524} <b>Short names found on the site</b>, each priced against US national demand \u2014 an industry acronym is usually what buyers type, and the menu converter only ever makes labels longer. Click to add as a seed.</div>
+        ${good.length?good.map(chip).join(''):'<div class="nf" style="font-size:12px">None of them carry real search volume \u2014 so they are internal codes, not keywords.</div>'}
+        ${thin.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below the ${'20'}/mo floor, not offered: ${thin.map(a=>escapeHtml(a.acronym)+' ('+Number(a.volume||0).toLocaleString()+')').join(' \u00b7 ')}</div>`:''}
+      </div>`);
+  }
   const bd=document.getElementById('business_desc');
   if(data.site_description && bd && !bd.value.trim()){
     out.insertAdjacentHTML('beforeend',

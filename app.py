@@ -631,6 +631,9 @@ CFG = {
     # will say "this looks national". Below it, zero local volume is just a thin
     # vertical and says nothing about the frame.
     "frame_national_min": 200,
+    # Monthly national searches an acronym must clear to be offered as a seed.
+    # Below it, it is an internal code rather than something buyers type.
+    "acronym_min_volume": 20,
     "metro_no_suffix_zips": 25,
     "metro_no_suffix_share": 0.6,
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
@@ -8468,6 +8471,95 @@ _SERVICE_PATH_HINT = re.compile(
     r"capabilit(?:y|ies)|specialt(?:y|ies)|divisions?|expertise|solutions?)"
     r"[a-z0-9-]*(?:/|$)", re.I)
 
+_ACRONYM_STOP = {
+    "USA", "US", "FAQ", "FAQS", "PDF", "HTML", "HTTP", "HTTPS", "WWW", "URL",
+    "CEO", "CFO", "COO", "CTO", "HR", "IT", "PR", "AI", "SEO", "PPC", "ROI",
+    "AM", "PM", "EST", "CST", "PST", "EDT", "CDT", "PDT", "MST", "UTC",
+    "JAN", "FEB", "MAR", "APR", "JUN", "JUL", "AUG", "SEP", "SEPT", "OCT",
+    "NOV", "DEC", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN",
+    "AND", "THE", "FOR", "ALL", "NEW", "TOP", "OUR", "YOU", "NOW", "MORE",
+    "LOGIN", "SIGN", "JOIN", "HOME", "ABOUT", "BLOG", "NEWS", "SHOP", "CART",
+    "MENU", "NEXT", "PREV", "BACK", "SEND", "OPEN", "CLOSE", "VIEW", "READ",
+    "COVID", "ADA", "GDPR", "CCPA", "TM", "LLC", "INC", "LTD", "CO",
+}
+
+
+def mine_acronyms(html, brand="", limit=14):
+    """Find the SHORT branded names a client's buyers actually search.
+
+    NASSCO's seeds read "bsdi pipeline inspection certification" and
+    "underground infrastructure industry association" — descriptions of the
+    organisation, produced by expanding nav labels into prose. Total measured
+    demand across sixteen of them: 10/mo. What a contractor types is "PACP",
+    "MACP", "ITCP", "CIPP". The acronyms were on the client's own site the whole
+    time and nothing looked for them, because the menu converter only ever made
+    labels LONGER. (2026-08-10)
+
+    Three sources, most reliable first:
+      1. "Pipeline Assessment Certification Program (PACP)" — the expansion is
+         right there in the parentheses, so the meaning is certain.
+      2. PACP(tm) / MACP(R) — a trademark marker means the client owns the term.
+      3. A bare ALL-CAPS token that recurs, which is how a program gets
+         referred to once the page has introduced it.
+
+    Returns [{"acronym", "expansion", "hits", "source"}], commonest first.
+    Measurement happens in the caller — an acronym with no search volume is a
+    filing code, not a keyword.
+    """
+    txt = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html or "")
+    txt = re.sub(r"(?s)<[^>]+>", " ", txt)
+    txt = (txt.replace("&amp;", "&").replace("&nbsp;", " ")
+              .replace("&#8482;", "\u2122").replace("&trade;", "\u2122")
+              .replace("&reg;", "\u00ae"))
+    txt = re.sub(r"\s+", " ", txt)
+
+    brand_up = re.sub(r"[^A-Z]", "", (brand or "").upper())
+    found = {}
+
+    def add(ac, expansion, source):
+        ac = ac.strip().upper()
+        if (len(ac) < 3 or len(ac) > 6 or ac in _ACRONYM_STOP
+                or not ac.isalpha() or (brand_up and ac == brand_up)):
+            return
+        e = found.setdefault(ac, {"acronym": ac, "expansion": "", "hits": 0,
+                                  "source": source})
+        if expansion and not e["expansion"]:
+            # The regex greedily walks back over capitalised words, so it picks
+            # up the sentence lead-in ("NASSCO The Pipeline Assessment...").
+            # Trim the brand and any leading article — this is a tooltip.
+            ex = expansion.strip()
+            if brand_up:
+                ex = re.sub(r"^\s*" + re.escape(brand or "") + r"\b", "", ex,
+                            flags=re.I).strip()
+            ex = re.sub(r"^(?:the|our|a|an|and|its|their)\s+", "", ex, flags=re.I)
+            e["expansion"] = ex.strip()[:70]
+            e["source"] = source
+
+    # 1. Expansion followed by the abbreviation in brackets.
+    for m in re.finditer(r"((?:[A-Z][A-Za-z-]+\s+){1,6})\(\s*([A-Z]{3,6})\s*[\u2122\u00ae]?\s*\)", txt):
+        add(m.group(2), m.group(1), "expansion in brackets")
+    # 2. Trademark marker.
+    for m in re.finditer(r"\b([A-Z]{3,6})\s*[\u2122\u00ae]", txt):
+        add(m.group(1), "", "trademarked by the client")
+    # 3. Recurring bare capitals.
+    for m in re.finditer(r"(?<![A-Za-z])([A-Z]{3,6})(?![A-Za-z])", txt):
+        ac = m.group(1).upper()
+        if len(ac) < 3 or ac in _ACRONYM_STOP:
+            continue
+        if ac in found:
+            found[ac]["hits"] += 1
+        else:
+            add(ac, "", "repeated on the page")
+            if ac in found:
+                found[ac]["hits"] = 1
+
+    out = [v for v in found.values()
+           if v["hits"] >= 2 or v["source"] != "repeated on the page"]
+    out.sort(key=lambda v: (v["source"] == "repeated on the page", -v["hits"],
+                            v["acronym"]))
+    return out[:limit]
+
+
 @app.route("/api/site_services", methods=["POST"])
 @_json_error_guard
 def api_site_services():
@@ -8688,10 +8780,41 @@ def api_site_services():
         for s in out:
             s["term"] = s["label"].lower()
 
+    # ---- the SHORT names, measured -----------------------------------------
+    # The menu converter only makes labels longer, which is how a set of seeds
+    # with 10/mo between them got built. Mine the client's own acronyms and
+    # price each one, so what comes back is not "here are some capitals we saw"
+    # but "these are searched, these are not". One volume call. (2026-08-10)
+    acronyms = []
+    try:
+        mined = mine_acronyms(html, d.get("brand") or "")
+        if mined:
+            probes, seen_p = [], set()
+            for a in mined:
+                for form in (a["acronym"].lower(),
+                             f"{a['acronym'].lower()} certification"):
+                    if form not in seen_p:
+                        seen_p.add(form)
+                        probes.append(form)
+            vols, _pc, verr = fetch_local_volume(probes, [], "", national=True)
+            floor = int(CFG.get("acronym_min_volume", 20))
+            for a in mined:
+                lo = a["acronym"].lower()
+                forms = {f: int((vols or {}).get(f, 0) or 0)
+                         for f in (lo, f"{lo} certification")}
+                best = max(forms, key=lambda f: forms[f])
+                a["volume"] = forms[best]
+                a["term"] = best
+                a["forms"] = forms
+                a["worth_it"] = (not verr) and forms[best] >= floor
+            acronyms = mined
+    except Exception as _ae:
+        acronyms = [{"error": str(_ae)[:120]}]
     return jsonify({"domain": dom, "services": out,
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,
                     "from_headings": used_headings,
                     "site_description": site_desc,
+                    "acronyms": acronyms,
                     "n_nav_links": len(p.nav_links), "diag": diag})
 
 
