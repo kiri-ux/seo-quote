@@ -7578,11 +7578,23 @@ def serp_top_domains(kw, loc, client_dom="", top_n=5, deadline=None):
     depth = max(int(CFG.get("zero_ranking_top_n", 100)), 10)
     payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
                 "depth": depth}]
-    remaining = (deadline - time.time()) if deadline else 20
-    if remaining < 4:
-        raise TimeoutError("acronym SERP budget exhausted")
-    data = dfs_post("/serp/google/organic/live/regular", payload,
-                    timeout=min(14, remaining))
+    # Retry once. A single 14s read timeout left LACP — the biggest number in the
+    # list and the whole reason the check exists — as "lookup failed", with the
+    # operator's most important question unanswered. (2026-08-10)
+    last = None
+    for attempt in range(2):
+        remaining = (deadline - time.time()) if deadline else 20
+        if remaining < 5:
+            raise last or TimeoutError("acronym SERP budget exhausted")
+        try:
+            data = dfs_post("/serp/google/organic/live/regular", payload,
+                            timeout=min(14 if attempt == 0 else remaining - 1,
+                                        remaining, 20))
+            break
+        except Exception as e:
+            last = e
+    else:
+        raise last
     task0 = ((data or {}).get("tasks") or [{}])[0] or {}
     if task0.get("status_code") not in (20000, None):
         raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")

@@ -3682,7 +3682,7 @@ async function runAcronymSerps(terms){
   if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
   out.innerHTML='<span class="nf" style="font-size:12px">asking Google…</span>';
   try{
-    const r=await postJSON('/api/acronym_serp',{terms,
+    let r=await postJSON('/api/acronym_serp',{terms,
       domain:(ST.inputs&&ST.inputs.domain)||'',
       geo_values:(ST.inputs&&ST.inputs.geo_values)||[],
       state:(ST.inputs&&ST.inputs.state)||'',
@@ -3690,6 +3690,10 @@ async function runAcronymSerps(terms){
       geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
       national_demand:!!(ST.inputs&&ST.inputs.national_demand),
       goal:(ST.inputs&&ST.inputs.goal)||''});
+    // Merge anything a previous pass already answered.
+    const keep=(ST._acrKeep||[]); ST._acrKeep=null;
+    const merged=keep.concat((r.results||[]).filter(x=>!keep.some(k=>k.term===x.term)));
+    r=Object.assign({}, r, {results:merged});
     const rows=(r.results||[]).map(x=>{
       if(x.error) return `<tr><td style="padding:2px 10px 2px 0;vertical-align:top"><b>${escapeHtml(x.term.toUpperCase())}</b></td><td class="nf" style="padding:2px 0">lookup failed — ${escapeHtml(x.error)}</td></tr>`;
       // The client appearing on page one is the strongest evidence the term is
@@ -3701,8 +3705,18 @@ async function runAcronymSerps(terms){
       return `<tr><td style="padding:2px 10px 2px 0;vertical-align:top;white-space:nowrap"><b>${escapeHtml(x.term.toUpperCase())}</b></td>
         <td style="padding:2px 0"><span class="nf">${(x.domains||[]).map(d=>escapeHtml(d)).join(' · ')||'no organic results'}</span><br>${verdict}</td></tr>`;
     }).join('');
+    // A timed-out row leaves the operator's actual question unanswered, so it
+    // gets its own retry rather than making them re-run the clean ones too.
+    const failed=(r.results||[]).filter(x=>x.error).map(x=>x.term);
     out.innerHTML=`<table style="border-collapse:collapse;font-size:12px">${rows}</table>
+      ${failed.length?`<div style="margin-top:4px"><button type="button" id="acrSerpRetry" class="btn2" style="padding:2px 9px;font-size:11.5px">↻ Retry ${failed.length} failed</button> <span class="nf" style="font-size:11px">only the ones that timed out — the answered rows are kept</span></div>`:''}
       <div class="nf" style="font-size:11px;margin-top:3px">Measured against the whole United States — who owns a word is a national question, not a local one.</div>`;
+    const rb=$('acrSerpRetry');
+    if(rb) rb.onclick=()=>{
+      // Keep what landed: re-render the good rows, then append the retried ones.
+      ST._acrKeep=(r.results||[]).filter(x=>!x.error);
+      runAcronymSerps(failed);
+    };
   }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
   finally{ if(btn){ btn.disabled=false; btn.textContent='🔍 Check who owns these SERPs'; } }
 }
