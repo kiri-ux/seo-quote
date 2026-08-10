@@ -97,6 +97,34 @@ def _source_fingerprint():
 SOURCE_FP = _source_fingerprint()
 
 
+def source_file_hashes():
+    """Per-file hash for every fingerprinted file.
+
+    The combined `src` hash answers "is this the build I was given" and nothing
+    else. When it disagrees it cannot say WHICH file failed to land, so a handover
+    turns into re-uploading everything and hoping — twice, on 2026-08-10, on a
+    one-file change that was correct in the zip and never reached the app.
+    Six hashes make the stale file obvious at a glance.
+    """
+    import hashlib
+    here = os.path.dirname(os.path.abspath(__file__))
+    out = []
+    for rel in FINGERPRINT_FILES:
+        path = os.path.join(here, rel)
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read().replace(b"\r\n", b"\n")
+            out.append({"file": rel,
+                        "sha": hashlib.sha256(data).hexdigest()[:6],
+                        "bytes": len(data),
+                        "mtime": _dt.datetime.utcfromtimestamp(
+                            os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M:%SZ")})
+        except Exception as e:
+            out.append({"file": rel, "sha": "MISSING", "bytes": 0,
+                        "mtime": "", "error": str(e)[:80]})
+    return out
+
+
 def model_is_snapshot(model_id):
     """Is this model ID a FIXED snapshot, or an alias that can move under us?
 
@@ -7596,6 +7624,13 @@ def api_qualify_markets():
                         "source": "", "certain": False,
                         "note": f"No state for {m}, and the report didn't say."})
     return jsonify({"markets": out, "dropped": dropped})
+
+
+@app.route("/api/build")
+def api_build():
+    """What is actually on disk, file by file. Read by the header's src chip."""
+    return jsonify({"build": BUILD_STR, "source_fingerprint": SOURCE_FP,
+                    "files": source_file_hashes()})
 
 
 @app.route("/api/markets", methods=["POST"])

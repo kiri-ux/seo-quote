@@ -220,7 +220,8 @@
 <body>
 <header>
   <div class="hrow">
-    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— {{ build }}</span></h1>
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— {{ build }} <button type="button" id="srcChk" title="Show the hash of every file on the server, so a file that didn’t land is obvious" style="background:none;border:none;color:inherit;opacity:.75;cursor:pointer;font:inherit;text-decoration:underline dotted">files</button></span></h1>
+    <div id="srcFiles" class="hidden" style="font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f6f7f9;border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 8px;white-space:pre"></div>
     <span style="display:flex;gap:8px;flex:none">
     <button id="cfgBtn" title="Pricing config — internal, not partner-facing" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
     <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
@@ -1755,6 +1756,7 @@ function step3Html(){
         // location Google cannot resolve — which is a geo to fix, not a call to
         // retry. (2026-08-10)
         const q=ST.table.filter(r=>r.queued).length, f=ST.errored-q;
+        if(ST.rankCodeErr) return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">\u26a0 <b>The rank check hit a bug in this tool, not an API failure</b> \u2014 <span class="nf">${escapeHtml(ST.rankCodeErr)}</span>. Rankings below are incomplete and the price should not be trusted until it is fixed.</div>`;
         if(f<=0 || !ST.rankErr) return '';
         const bad=/location/i.test(ST.rankErr) && /40501|not found|invalid/i.test(ST.rankErr);
         return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${f} lookup${f>1?'s':''} failed</b> — <span class="nf">${escapeHtml(ST.rankErr)}</span>`
@@ -1790,11 +1792,9 @@ async function _runStep3(retryOnlyFailed){
   // one so a geo-scope change can't leave the previous run's banner on screen.
   ST.rankLoc=null;
   ST.rankErr='';
+  ST.rankCodeErr='';
   $('step3') && ($('step3').disabled=true);
   const all=ST.kw.all.map(r=>r.kw);
-  // Which market each row names, so step 3 can measure it THERE rather than
-  // asking Knoxville's SERP about "junk removal morristown tn". (2026-08-10)
-  const cityOf={}; (ST.kw.all||[]).forEach(r=>{ if(r && r.kw && r.city) cityOf[r.kw]=r.city; });
   // Retry passes use smaller batches: each failed keyword shares the server's
   // 24s budget with fewer neighbors, so a slow lookup has more room to finish.
   // Main pass: 5-keyword batches × 4 concurrent requests = 20 lookups in
@@ -1856,7 +1856,7 @@ async function _runStep3(retryOnlyFailed){
     ST.table = ST.table.filter(r=>!r.error);
     ST.errored = 0;
     try{
-      const sub=await postJSON('/api/rankings_submit',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', keywords:failedKws, rows:failedKws.map(k=>({kw:k, city:cityOf[k]||''})),
+      const sub=await postJSON('/api/rankings_submit',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', keywords:failedKws, rows:failedKws.map(k=>({kw:k, city:cityForKw(k)})),
         geo_values:ST.inputs.geo_values, state:ST.inputs.state});
       const pending=(sub.tasks||[]).filter(t=>t.task_id);
       (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
@@ -1908,6 +1908,17 @@ async function _bgQueuePoll(pending, gen){
   }
 }
 
+// Which market each keyword row names, so step 3 can measure it THERE rather
+// than asking Knoxville's SERP about "junk removal morristown tn". Top-level on
+// purpose: it was a const inside _runStep3 while the fetch that uses it lives in
+// _runStep3Live, so every live batch threw ReferenceError into an empty catch,
+// was recorded as an API failure, and fell through to the slow queue path. The
+// whole fast path was dead and it looked like a DataForSEO problem. (2026-08-10)
+function cityForKw(kw){
+  const r=(ST.kw && ST.kw.all || []).find(x=>x && x.kw===kw);
+  return (r && r.city) || '';
+}
+
 async function _runStep3Live(todo, all, BATCH){
   // Four batch requests in flight at once (server: 1 gunicorn worker × 8
   // gthread threads — render.yaml — leaving headroom for other traffic).
@@ -1919,10 +1930,17 @@ async function _runStep3Live(todo, all, BATCH){
     for(let attempt=0; attempt<2 && !got; attempt++){
       try{
         got=await postJSON('/api/rankings',{primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'', geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', 
-          batch: batch.map(k=>({kw:k, city:cityOf[k]||''})),
+          batch: batch.map(k=>({kw:k, city:cityForKw(k)})),
           domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
           state:ST.inputs.state, brand:ST.inputs.brand});
       }catch(e){
+        // A ReferenceError/TypeError here is OUR bug, not Google's, and swallowing
+        // it silently is how the live path stayed dead for two builds. Surface it.
+        if(e instanceof TypeError || e instanceof ReferenceError){
+          ST.rankCodeErr = String(e && e.message || e);
+          console.error('rank-check code error:', e);
+          break;
+        }
         if(attempt===0){ await new Promise(r=>setTimeout(r,1500)); }   // one retry
       }
     }
@@ -3523,6 +3541,22 @@ function wireOverlap(r){
     : []));
 }
 
+// The combined src hash says "this is not the build I gave you" and stops there.
+// Two re-uploads of a correct one-file change went nowhere on 2026-08-10 because
+// nothing on screen could say WHICH file was stale. This prints all six.
+async function showSourceFiles(){
+  const box=$('srcFiles'); if(!box) return;
+  if(!box.classList.contains('hidden')){ box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  box.textContent='reading…';
+  try{
+    const r=await fetch('/api/build').then(x=>x.json());
+    box.textContent = (r.files||[]).map(f=>
+      `${(f.sha||'').padEnd(8)} ${String(f.bytes).padStart(7)} B  ${f.mtime||''}  ${f.file}`
+    ).join('\n') + `\n\ncombined  src ${r.source_fingerprint}`;
+  }catch(e){ box.textContent='could not read /api/build — '+e.message; }
+}
+
 function scheduleMarketSummary(){
   clearTimeout(_mktTimer);
   _mktTimer = setTimeout(()=>{ try{ refreshMarketSummary(); }catch(e){} }, 250);
@@ -3598,6 +3632,8 @@ if($('state')){
 }
 try{ syncStateSummary(); }catch(e){}
 document.addEventListener('DOMContentLoaded', ()=>{ try{ syncStateSummary(); }catch(e){} });
+(function(){ const b=document.getElementById('srcChk');
+  if(b) b.onclick=()=>{ try{ showSourceFiles(); }catch(e){} }; })();
 window.addEventListener('load', ()=>{ try{ syncStateSummary(); }catch(e){} });
 
 // Suggest an add-on count once step 3 has produced a rank table. Advisory
