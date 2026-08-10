@@ -5610,6 +5610,45 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
 # ---------------------------------------------------------------------------
 # STAGE 3b — rank check -> table + zero-ranking + PAA
 # ---------------------------------------------------------------------------
+def market_for_keyword(kw, markets, state=""):
+    """Which entered market a keyword names, read off the keyword itself.
+
+    The grid tags every row with its city, but a keyword list restored from a
+    saved quote carries only the text — and that is the common case, because an
+    operator re-checks rankings without rebuilding step 1. Depending on the tag
+    meant the per-market rank check silently did nothing on every existing quote
+    (2026-08-10).
+
+    The keyword ends with the market: "junk removal morristown tn". Match on the
+    END, longest first, so "oak ridge" wins over a market called "ridge" and
+    "kansas city ks" is never mistaken for "kansas".
+    """
+    k = " " + re.sub(r"\s+", " ", clean_kw((kw or "").lower())).strip()
+    if not k.strip():
+        return ""
+    cands = []
+    for m in (markets or []):
+        city, st = parse_market(m, state)
+        c = clean_kw((city or "").lower()).strip()
+        if not c:
+            continue
+        ab = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").lower()
+        forms = [f"{c} {ab}", c] if ab else [c]
+        # A county reads either way round: "roane county tn" / "roane tn".
+        ck = county_key(m, state)
+        if ck:
+            bare = _COUNTY_SUFFIX.sub("", c).strip()
+            if bare and ab:
+                forms.append(f"{bare} {ab}")
+        for f in forms:
+            if f:
+                cands.append((len(f), f, m))
+    for _n, form, m in sorted(cands, reverse=True):
+        if k.endswith(" " + form):
+            return m
+    return ""
+
+
 def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
               loc_override=""):
     """One keyword's SERP call. Returns (position_or_None, [paa questions]).
@@ -7205,13 +7244,13 @@ def api_rankings_submit():
                for k in (d.get("rows") or []) if isinstance(k, dict)}
 
     def _loc_for(kw):
-        city = cities.get(kw, "")
-        if not city or nat:
+        if nat:
             return loc
-        named = next((m for m in markets
-                      if parse_market(m, state)[0].strip().lower() == city.lower()),
-                     city)
-        return rank_location([named], state, False)
+        city = cities.get(kw, "")
+        named = (next((m for m in markets
+                       if parse_market(m, state)[0].strip().lower() == city.lower()),
+                      city) if city else market_for_keyword(kw, markets, state))
+        return rank_location([named], state, False) if named else loc
 
     payload = [{"keyword": kw, "location_name": _loc_for(kw), "language_code": "en",
                 "depth": depth, "priority": 2, "tag": kw[:255]} for kw in kws]
@@ -7367,15 +7406,19 @@ def api_rankings():
         if not kw:
             continue
         order.append(kw)
-        # A national row, a site term or a long-tail top-up carries no city;
-        # those stay on the primary market, which is what they are asking about.
-        if city and not nat:
-            mk_named = next((m for m in markets
-                             if parse_market(m, state)[0].strip().lower() == city.lower()),
-                            city)
-            per_kw_loc[kw] = rank_location([mk_named], state, False)
-        else:
-            per_kw_loc[kw] = loc
+        # A national row, a site term or a long-tail top-up carries no market;
+        # those stay on the primary one, which is what they are asking about.
+        mk_named = ""
+        if not nat:
+            if city:
+                mk_named = next((m for m in markets
+                                 if parse_market(m, state)[0].strip().lower()
+                                 == city.lower()), city)
+            else:
+                # No tag on the row — read the market off the keyword text.
+                mk_named = market_for_keyword(kw, markets, state)
+        per_kw_loc[kw] = (rank_location([mk_named], state, False)
+                          if mk_named else loc)
     batch = order
     results, paa = [], []
     hits = {}
