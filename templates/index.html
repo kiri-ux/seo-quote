@@ -1538,6 +1538,18 @@ function renderStep1(){
         if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'The terms have no demand':'No demand either way'}</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span><br>Volume contributes <b>$0</b>. Replace the Product / Vertical Focus terms with the phrases the client's buyers actually type — short and specific beats descriptive — and rebuild step 1.</div>`;
         return `<div class="nf" style="margin-top:4px">🧭 <b>Local frame confirmed</b> — ${escapeHtml(f.reason||'')}</div>`;
       })()}
+      ${(()=>{
+        // A short acronym is rarely owned by one industry, and Google Ads sums
+        // every meaning. This is the loudest thing that can be wrong with an
+        // acronym-seeded list, because the volume it invents goes straight into
+        // the tier mix and the price. (2026-08-10)
+        const ac=kw.acronym_collisions||{};
+        const items=ac.items||[];
+        if(!items.length) return '';
+        const rows=items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo vs <span class="nf">“${escapeHtml(x.qualified)}” ${Number(x.qualified_volume).toLocaleString()}/mo</span> — <b>${x.ratio==null?'∞':x.ratio+'×'}</b>`).join('<br>');
+        return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${items.length} acronym${items.length===1?'':'s'} may be measuring a different industry</b> — ${ac.share}% of this list's volume.<br>${rows}<br>
+          <span class="nf">A short acronym usually belongs to several fields and the keyword tool reports the total across all of them. Where the client genuinely owns the term, the bare form and the qualified form track each other closely. A bare form running many times ahead of its own “… certification” means most of that traffic wants something else. Search one in Google: if the results are not this client's field, delete the bare term and keep the qualified one — the volume is inflating the tier mix and the price.</span></div>`;
+      })()}
       ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b> — those are treated as the client's own service list and fill the grid before anything the AI proposes.</div>`:''}
       ${(kw.geo_filter_off)?`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`:''}
       ${(kw.grounding_stood_down)?`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on. Check the list by eye for competitor names in the meantime.</div>`:''}

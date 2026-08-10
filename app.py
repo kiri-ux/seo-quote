@@ -634,6 +634,13 @@ CFG = {
     # Monthly national searches an acronym must clear to be offered as a seed.
     # Below it, it is an internal code rather than something buyers type.
     "acronym_min_volume": 20,
+    # A bare acronym carrying this many times its qualified sibling's volume is
+    # probably being searched for a different meaning. 8x is well clear of the
+    # 1.5x a genuinely owned term shows and well under the 72x/147x of a
+    # collision. Only applied to acronyms above acronym_collision_min_volume,
+    # since a small number proves nothing either way.
+    "acronym_collision_ratio": 8.0,
+    "acronym_collision_min_volume": 100,
     "metro_no_suffix_zips": 25,
     "metro_no_suffix_share": 0.6,
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
@@ -3281,6 +3288,58 @@ def is_state_geo(m):
     return t in STATE_ABBREV or t in _abbrev_to_state()
 
 
+def acronym_collisions(rows, min_ratio=None, min_volume=None):
+    """Which bare acronyms in the list are probably measuring someone else.
+
+    A short acronym rarely belongs to one industry, and Google Ads volume is the
+    SUM ACROSS EVERY MEANING. NASSCO's list came back with LACP at 4,400/mo and
+    MACP at 2,900 — against PACP, its flagship and by far its best-known
+    programme, at 480. LACP is also the Link Aggregation Control Protocol and
+    MACP a Master of Arts in Counselling Psychology, and between them those two
+    rows were 87% of the volume setting the price.
+
+    The test needs no extra call, because the list already carries both forms.
+    Compare the bare acronym with its qualified sibling ("lacp" vs "lacp
+    certification"). Where the client genuinely owns the term the two track each
+    other — PACP 480 against 320, a ratio of 1.5. Where the bare form is
+    dwarfing its qualified form by two orders of magnitude, the traffic is
+    arriving for a different meaning: 147x for LACP, 72x for MACP.
+
+    Reported, not removed. An acronym can legitimately outrun its qualified form,
+    and only a human looking at the SERP can settle it. (2026-08-10)
+    """
+    ratio_cap = float(min_ratio if min_ratio is not None
+                      else CFG.get("acronym_collision_ratio", 8.0))
+    vol_floor = int(min_volume if min_volume is not None
+                    else CFG.get("acronym_collision_min_volume", 100))
+    vols = {}
+    for r in (rows or []):
+        kw = str((r or {}).get("keyword") or (r or {}).get("kw") or "").strip().lower()
+        if kw:
+            vols[kw] = int((r or {}).get("volume") or (r or {}).get("vol") or 0)
+    out = []
+    for kw, v in vols.items():
+        if " " in kw or not kw.isalpha() or not (3 <= len(kw) <= 6):
+            continue
+        if v < vol_floor:
+            continue
+        # Every longer phrase in the list that starts with this acronym.
+        quals = {k: n for k, n in vols.items() if k.startswith(kw + " ")}
+        if not quals:
+            continue
+        best_q = max(quals.values())
+        ratio = (v / best_q) if best_q else float("inf")
+        if ratio >= ratio_cap:
+            out.append({"acronym": kw, "volume": v, "qualified_volume": best_q,
+                        "qualified": max(quals, key=lambda k: quals[k]),
+                        "ratio": (round(ratio, 1) if best_q else None)})
+    out.sort(key=lambda x: -x["volume"])
+    total = sum(vols.values()) or 1
+    flagged = sum(x["volume"] for x in out)
+    return {"items": out, "flagged_volume": flagged, "total_volume": total,
+            "share": round(flagged / total * 100)}
+
+
 def geo_overlaps(markets, state=""):
     """Which entered geos are already covered by another entered geo.
 
@@ -5304,6 +5363,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "demand_frame": frame,
+            "acronym_collisions": acronym_collisions(full),
             "volume_location": "United States" if national_demand else loc_string(markets, state),
             "volume_source": volume_source,
             "national_demand": bool(national_demand),
@@ -6766,6 +6826,7 @@ def api_refine():
         "total_volume": s1.get("total_volume", None),
         "volume_error": s1.get("volume_error"),
         "demand_frame": s1.get("demand_frame") or {},
+        "acronym_collisions": s1.get("acronym_collisions") or {},
         "volume_location": s1.get("volume_location"),
         "volume_source": s1.get("volume_source") or "google_ads",
         "state_missing": s1.get("state_missing", False),
