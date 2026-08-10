@@ -3990,7 +3990,11 @@ Return ONLY JSON, no prose, no markdown:
     by_lower = {str(s).strip().lower(): s for s in sd}
     out, claimed = [], set()
     for t in raw:
-        label = " ".join(str(t.get("label") or "").strip().lower().split())[:40]
+        label = " ".join(str(t.get("label") or "").strip().lower().split())
+        if len(label) > 60:
+            # Trim on a word boundary. A hard [:40] produced "pipeline
+            # inspection certification traini". (2026-08-10)
+            label = label[:60].rsplit(" ", 1)[0]
         terms = []
         for term in (t.get("terms") or []):
             k = str(term).strip().lower()
@@ -4745,12 +4749,14 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
-                   national_demand=False, goal="", band=""):
+                   national_demand=False, goal="", band="",
+                   national_reason=""):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
     the list build."""
     site_terms = [{"keyword": k} for k in (site_terms_kw or [])]
+    scope_note = ""
     _site_urls = []
     site_pages = fetch_site_pages(domain, collect_urls=_site_urls)
     site_locations = location_pages_from_urls(_site_urls)
@@ -5309,6 +5315,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 "instrument for this \u2014 the ladder below prices category-term "
                 "ranking work, which may not be what the client is buying. "
                 "Confirm the objective before quoting.")
+        # A DELIBERATE choice does not need a warning on every rebuild. The scope
+        # check exists to catch national demand INFERRED from an industry tag or
+        # a storefront; when the operator ticked the switch themselves it fires
+        # forever on a decision already made, and NASSCO's count is its member
+        # directory rather than its offices anyway. Suppressed for a manual
+        # override and for a frame the demand data has confirmed — the reasoning
+        # is kept as a quiet note either way. (2026-08-10)
+        _explicit = ("manual" in (national_reason or "").lower()
+                     or (frame or {}).get("verdict") == "national_ok")
+        if national_demand and (gbp_count or site_locations) and _explicit:
+            scope_note = (
+                f"National demand is set deliberately"
+                + (" and confirmed by the volume data"
+                   if (frame or {}).get("verdict") == "national_ok" else "")
+                + f". The site shows {gbp_count} Google Business listing"
+                + ("" if gbp_count == 1 else "s")
+                + f" and {len(site_locations)} location page"
+                + ("" if len(site_locations) == 1 else "s")
+                + " — member, chapter or directory pages if the client is an "
+                  "association, their own premises if not.")
         elif (national_demand and (gbp_count or site_locations)
                 and (frame or {}).get("verdict") != "national_ok"):
             _bits = []
@@ -5378,6 +5404,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "gbp_locations": gbp_count,
             "tier_moves": tier_moves,
             "scope_warning": scope_warning,
+            "scope_note": scope_note,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
@@ -6791,6 +6818,7 @@ def api_refine():
         s1 = stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                             ultra, competitive, long_tail, site_terms_kw, phrase_geos,
                             national_demand=nat_demand,
+                            national_reason=nat_reason,
                             goal=(d.get("goal") or ""),
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
@@ -6832,6 +6860,7 @@ def api_refine():
         "site_locations": s1.get("site_locations") or [],
         "tier_moves": s1.get("tier_moves") or [],
         "scope_warning": s1.get("scope_warning") or "",
+        "scope_note": s1.get("scope_note") or "",
         "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],

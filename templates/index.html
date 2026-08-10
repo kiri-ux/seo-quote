@@ -1554,7 +1554,7 @@ function renderStep1(){
       ${(kw.dropped_ungrounded&&kw.dropped_ungrounded.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. ${tipOf("Wording found nowhere in the client's seeds, description or site. Usually a competitor riding high in the keyword data, sometimes an unrelated product sharing a word. If one is real, add it to Product / Vertical Focus and rebuild.")}</div>`:''}
       ${(kw.dropped_out_of_area&&kw.dropped_out_of_area.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_out_of_area.length} out-of-area term${kw.dropped_out_of_area.length>1?'s':''} removed</b> — ${kw.dropped_out_of_area.map(t=>escapeHtml(t)).join(', ')}. These name a state the client doesn't serve; the idea list is ranked by national volume so it fills with them. If one is actually a style or product name rather than a place (e.g. "new york style pizza"), add it back with <b>add term…</b>.</div>`:''}
       ${(kw.pinned_head_terms&&kw.pinned_head_terms.length)?`<div style="margin-top:4px" class="nf">📌 <b>${kw.pinned_head_terms.length} head term${kw.pinned_head_terms.length>1?'s':''} pinned</b> — ${kw.pinned_head_terms.map(t=>escapeHtml(t)).join(', ')}. These carry the most search volume in the data, so they're forced into the list rather than left to the AI pass; volume is a pricing input and shouldn't move between runs.</div>`:''}
-      ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:''}
+      ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:(kw.scope_note?`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>National set deliberately</b>${tipOf(escapeHtml(kw.scope_note))}</div>`:'')}
       ${(kw.tier_moves&&kw.tier_moves.length)?`<div style="margin-top:4px" class="nf">\u2195 <b>${kw.tier_moves.length} term${kw.tier_moves.length>1?'s':''} re-tiered by measured demand</b> — ${kw.tier_moves.map(t=>`${escapeHtml(t.service)} ${tierName(t.from)}\u2192${tierName(t.to)} <span style="color:var(--muted)">(${Number(t.volume||0).toLocaleString()}/mo)</span>`).join(' \u00b7 ')}. ${tipOf('Tiers are assigned before volumes are known; these were reordered so the columns run high-to-low on demand. Tier counts are unchanged.')}</div>`:''}
       ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. ${tipOf("High volume alone does not make a term the client's. The pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild — seeds are never blocked.")}</div>`:''}
       ${(kw.topics&&kw.topics.length>1)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> \u2014 ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% of what you typed \u2192 ${t.services} service${t.services===1?'':'s'})</span>`).join(' \u00b7 ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words \u2014 the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px"><b style="color:var(--ink)">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears:</b>${kw.topic_fixes.map(f=>`<div style="margin-top:2px">\u2192 <b>${escapeHtml(f.added)}</b> <span style="opacity:.8">in, ${escapeHtml(f.replaced)} out</span></div>`).join('')}<div style="margin-top:3px">Services are chosen by search volume, so without this every slot would have gone to <b>${escapeHtml((kw.topics[0]||{}).label||'the biggest topic')}</b>.</div></div>`:''}</div>`:''}
@@ -3708,7 +3708,7 @@ function tipOf(html){
 }
 
 function acronymVerdict(x, serp){
-  if(!serp) return {tag:'?', label:'unchecked', colour:'#7a6a45', why:''};
+  if(!serp) return {tag:'\u22ef', label:'checking', colour:'#7a6a45', why:'', pending:true};
   if(serp.error) return {tag:'?', label:'check failed', colour:'#7a6a45', why:serp.error};
   if(serp.client_pos!=null)
     return {tag:'\u2713', label:'KEEP', colour:'#1c7a3e',
@@ -3732,7 +3732,7 @@ function acronymPanelHtml(ac){
       <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right"><b>${x.ratio==null?'\u221e':x.ratio+'\u00d7'}</b></td>
       <td style="padding:2px 9px 2px 0;white-space:nowrap;color:${v.colour};font-weight:700">${v.tag} ${v.label}</td>
       <td style="padding:2px 9px 2px 0">${doms}${v.why?`<span class="nf"> ${escapeHtml(v.why)}</span>`:''}</td>
-      <td style="padding:2px 0;white-space:nowrap">${v.label==='KEEP'?'':`<button type="button" class="btn2 acrDrop" data-acr="${escapeHtml(x.acronym)}" style="padding:1px 8px;font-size:11px">Remove</button>`}</td>
+      <td style="padding:2px 0;white-space:nowrap">${(v.label==='KEEP'||v.pending)?'':`<button type="button" class="btn2 acrDrop" data-acr="${escapeHtml(x.acronym)}" style="padding:1px 8px;font-size:11px">Remove</button>`}</td>
     </tr>`;
   }).join('');
   const nRemove=items.filter(x=>{const sp=serps[x.acronym]; return sp&&!sp.error&&sp.client_pos==null;}).length;
@@ -3741,7 +3741,7 @@ function acronymPanelHtml(ac){
     <div style="margin-top:5px">
       <button type="button" id="acrSerpBtn" class="btn2" style="padding:3px 11px;font-size:12px">\u{1F50D} Check SERPs</button>
       ${nRemove>1?`<button type="button" id="acrDropAll" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Remove all ${nRemove}</button>`:''}
-      <span class="nf" style="font-size:11px">one Google lookup each</span>
+      <span class="nf" style="font-size:11px">${items.some(x=>!(ST.acrSerp||{})[x.acronym])?'checking Google now \u2014 verdicts appear here':'one Google lookup each'}</span>
     </div></div>`;
 }
 
@@ -3792,6 +3792,19 @@ async function runAcronymSerps(terms){
 
 function wireAcronymSerps(){
   const items=((ST.kw&&ST.kw.acronym_collisions&&ST.kw.acronym_collisions.items)||[]);
+  // "? unchecked" beside four Remove buttons asks the operator to decide with no
+  // evidence — the opposite of the point. Run the check automatically the first
+  // time the panel appears for a list, so the verdict is simply there. Manual
+  // button stays for re-runs. (2026-08-10)
+  if(items.length){
+    const sig=items.map(x=>x.acronym).sort().join(',');
+    if(ST._acrAuto!==sig){
+      ST._acrAuto=sig;
+      const done=ST.acrSerp||{};
+      const todo=items.map(x=>x.acronym).filter(a=>!done[a] || done[a].error);
+      if(todo.length) setTimeout(()=>{ try{ runAcronymSerps(todo); }catch(e){} }, 60);
+    }
+  }
   const btn=$('acrSerpBtn');
   if(btn && !btn.dataset.wired){
     btn.dataset.wired='1';
