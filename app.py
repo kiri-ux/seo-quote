@@ -3491,7 +3491,8 @@ def group_by_distance(markets, state="", radius=None):
     return groups, list(pts), unlocated
 
 
-def suggest_geo_scope(markets, state="", national_demand=False):
+def suggest_geo_scope(markets, state="", national_demand=False,
+                     national_reason=""):
     """Read the geo scope OFF the entered markets instead of asking for it.
 
     The operator picks a band from a dropdown, and the band chooses the pricing
@@ -3518,13 +3519,15 @@ def suggest_geo_scope(markets, state="", national_demand=False):
     # geography the quote had stopped using. Nothing anywhere told the operator
     # to change it. (2026-08-10)
     if national_demand:
+        why = f" ({national_reason})" if national_reason else ""
         out.update(suggested="nationwide", confidence="high",
-                   reason=("Priced on national demand, so the band should be "
-                           "Nationwide. The band sets the pricing anchor, and a "
-                           "regional one charges for a footprint this quote is "
+                   reason=(f"Priced on national demand{why}, so the band should "
+                           "be Nationwide. The band sets the pricing anchor, and "
+                           "a regional one charges for a footprint this quote is "
                            "not measuring — the keywords are bare and the volume "
                            "is a US figure."),
-                   evidence={"cities": len(mk), "national_demand": True})
+                   evidence={"cities": len(mk), "national_demand": True,
+                             "national_reason": national_reason})
         return out
     if not mk:
         return out
@@ -8052,6 +8055,18 @@ def api_markets():
     d = request.get_json(force=True) or {}
     entered = [m for m in (d.get("geo_values") or []) if m and m.strip()]
     state = (d.get("state") or "").strip()
+    # National demand has FOUR sources — the manual switch, a nationwide band,
+    # the campaign goal, and the RZ industry tag — and the band recommendation
+    # read only the switch. An ecommerce-tagged client with no markets was priced
+    # nationally by the industry rule and never got told to fix the band, which is
+    # the case where the anchor is wrong and nobody ticked anything. Ask the same
+    # function the pricing pipeline asks. (2026-08-10)
+    _nat, _nat_why = resolve_national_demand(
+        d.get("industry") or "",
+        d.get("geo_scope") or d.get("band") or "",
+        bool(d.get("national_demand")),
+        markets=[m for m in entered if not is_non_place_geo(m)],
+        goal=(d.get("goal") or ""))
     if not entered:
         # An empty geo list is exactly when the band recommendation matters most:
         # nothing is left to describe, yet the dropdown may still read
@@ -8063,7 +8078,7 @@ def api_markets():
                         "radius": int(CFG.get("market_radius_miles", 25)),
                         "located": 0,
                         "scope_suggestion": suggest_geo_scope(
-                            [], state, bool(d.get("national_demand")))})
+                            [], state, _nat, _nat_why)})
     # Non-places cover nothing, so they cannot be markets. Reported back so the
     # operator can see WHY the count moved rather than watching a pill silently
     # stop mattering.
@@ -8107,8 +8122,7 @@ def api_markets():
         "located": len(located),
         # The band the markets themselves imply. A suggestion, not an
         # assignment: the operator's dropdown still picks the pricing anchor.
-        "scope_suggestion": suggest_geo_scope(mk, state,
-                                              bool(d.get("national_demand"))),
+        "scope_suggestion": suggest_geo_scope(mk, state, _nat, _nat_why),
     })
 
 

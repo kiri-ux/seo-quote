@@ -3154,6 +3154,7 @@ $('geo_scope').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }c
 // Ticking national demand changes which band is correct, so the suggestion under
 // the geos has to re-read. (2026-08-10)
 if($('natdemand')) $('natdemand').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }catch(e){} });
+if($('goals')) $('goals').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }catch(e){} });
 syncGeoReq();
 
 ['state','geo_scope','addon','markup','brand'].forEach(fid=>{
@@ -3580,7 +3581,12 @@ async function refreshMarketSummary(){
     const nd=$('natdemand');
     const r = await postJSON('/api/markets',
       {geo_values: mk, state: ($('state') ? $('state').value : ''),
-       national_demand: !!(nd && nd.checked)});
+       national_demand: !!(nd && nd.checked),
+       // The server resolves national demand from all four sources, so it needs
+       // the industry tag, the goal and the current band — not just the switch.
+       industry: (stores.industry||[]).join(', '),
+       goal: ($('goal') ? $('goal').value : ''),
+       geo_scope: ($('geo_scope') ? $('geo_scope').value : '')});
     if(seq !== _mktSeq) return;              // superseded while in flight
     const parts = (r.groups||[]).map(g=>{
       const a = escapeHtml(String(g.anchor).split(',')[0]);
