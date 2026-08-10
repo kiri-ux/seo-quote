@@ -4907,6 +4907,23 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # only on local quotes, and only reported — never applied, because
         # switching the demand basis changes the price. (2026-08-10)
         frame = {}
+        # A NATIONAL build needs the same sanity check. Switching the basis fixes
+        # the frame but not the wording, and NASSCO went national and still
+        # returned 15 zeros out of 16 — at which point the answer is "these
+        # phrases are not what anyone types", and nothing on screen said so
+        # because the check only ran on local quotes. Here `vols` already IS the
+        # national figure, so no extra call. (2026-08-10)
+        if national_demand and svc_names:
+            nat_tot = sum(int(v or 0) for v in (vols or {}).values())
+            frame = {"local_total": None, "national_total": nat_tot,
+                     "terms": svc_names[:6], "error": vol_err}
+            if not vol_err and nat_tot < int(CFG.get("frame_national_min", 200)):
+                frame["verdict"] = "no_demand"
+                frame["reason"] = (
+                    f"Priced on national demand, and these terms still return "
+                    f"only {nat_tot:,}/mo between them. Geography was not the "
+                    "problem — the wording is. These read like descriptions of "
+                    "the client rather than phrases anyone types into Google.")
         if not national_demand and svc_names:
             try:
                 _nat, _pc, _ne = fetch_local_volume(svc_names, [], state,
@@ -5215,14 +5232,21 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             if site_locations:
                 _bits.append(f"{len(site_locations)} location page"
                              f"{'' if len(site_locations) == 1 else 's'} on the site")
+            # "A retailer with premises… if it is a store" reads as a mistake on
+            # a nonprofit standards body, and a directory-style site inflates the
+            # listing count with OTHER companies' locations — NASSCO scored 49
+            # Google Business listings, which it does not have. So say what was
+            # counted and let the operator judge it, rather than asserting the
+            # client is a shop. (2026-08-10)
             scope_warning = (
-                "Priced on NATIONAL demand, but this client has "
-                + " and ".join(_bits)
-                + ". A retailer with premises usually wants local demand \u2014 the "
-                  "keywords, volumes and rankings here are all national, which "
-                  "prices a different campaign. Confirm this is a product brand "
-                  "selling everywhere; if it is a store, set Geo scope to the "
-                  "client's region and enter their markets.")
+                "Priced on NATIONAL demand, but this client's site suggests a "
+                "physical footprint \u2014 " + " and ".join(_bits)
+                + ". The keywords, volumes and rankings here are all national, "
+                  "which prices a different campaign from a local one. If those "
+                  "premises are the client's own, set Geo scope to their region "
+                  "and enter their markets. If they belong to members, chapters "
+                  "or a directory the client publishes, the count is not theirs "
+                  "and national is right \u2014 check before trusting it.")
 
         return {
             "ultra": g["ultra"], "competitive": g["competitive"],

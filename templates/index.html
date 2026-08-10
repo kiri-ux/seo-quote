@@ -1029,7 +1029,6 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
   let loaded=false;
   det.addEventListener('toggle', async ()=>{
     if(!det.open || loaded) return;
-    loaded=true;
     const body=document.getElementById('indrules_body');
     try{
       const cfg=await (await fetch('/api/config')).json();
@@ -1044,7 +1043,11 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
       }).join('');
       body.innerHTML=`Matched by <b>substring</b> against the selected RZ values; when several match, the <b>largest anchor add wins</b>. In adtini these live in admin config — partners never see them.
         <table style="border-collapse:collapse;font-size:11.5px;margin-top:6px">${rows}</table>`;
-    }catch(e){ body.textContent='Could not load rules: '+e.message; }
+      // Only NOW is it loaded. Setting the flag before the fetch meant one
+      // failed request left "Could not load rules" permanently, with no retry
+      // on reopen.
+      loaded=true;
+    }catch(e){ body.textContent='Could not load rules: '+e.message+' — close and reopen to retry.'; }
   });
 })();
 
@@ -1298,7 +1301,13 @@ function preflightAdvice(inp){
   // 1) Business description drives balanced AI expansion (Dental Excellence
   //    lesson: one "implants" seed became 13/20 implant variants without it).
   if(!(inp.business_desc||'').trim()){
-    tips.push('<b>No business description.</b> One line ("General dental practice — cleanings, crowns, Invisalign; implants are one line, not the focus") keeps the AI from over-expanding a single seed into half the grid.');
+    // The example used to be a fixed dental one, which reads as a mistake on a
+    // sewer-standards nonprofit. Build it from THIS client's own seeds instead.
+    const _s=(inp.keywords||[]).filter(Boolean);
+    const _eg = _s.length>=2
+      ? `e.g. "${escapeHtml(String(_s[0]))} is the core of the business; ${escapeHtml(String(_s[1]))} is one line, not the focus"`
+      : 'e.g. "General dental practice — cleanings, crowns, Invisalign; implants are one line, not the focus"';
+    tips.push('<b>No business description.</b> One line ('+_eg+') keeps the AI from over-expanding a single seed into half the grid.');
   }
   // 2) Seed skew: one word dominating the seed list predicts a lopsided grid.
   const words={};
@@ -1476,12 +1485,16 @@ function renderStep1(){
         : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — the lookup worked, so re-running it will not help. Nobody searches these phrases with a city attached, which usually means the client sells <b>nationally</b> and the city grid is the wrong frame. <br>Volume contributes <b>$0</b>, so this price currently rests on the geo band alone. Tick <b>Price on national demand</b> (or set Geo scope to Nationwide) and rebuild step 1 to price it on real demand — or confirm the local framing is deliberate.</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">📊 Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}</summary>
       <div style="margin-top:6px">${kw.services.map(s=>`${s.pinned?'<b title="Pinned — highest-volume term from the search data">📌 </b>':''}${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}</div>
       ${(()=>{const cs=kw.city_selection; if(!cs||!cs.method) return '';
+        // On a national build the keywords are bare — no city is crossed with
+        // anything — so reporting "5 of 7 markets used · In the grid: mill valley
+        // (10/mo)" describes a grid that was not built. (2026-08-10)
+        if(kw.national_demand) return `<div style="margin-top:6px" class="nf">🗺 <b>Cities not crossed</b> — priced on national demand, so the keywords are bare and the entered markets are targeting only. Rankings are still measured in them.</div>`;
         const money0=n=>Number(n).toLocaleString();
         if(cs.method==='all') return `<div style="margin-top:6px" class="nf">🗺 <b>All ${cs.kept.length} market${cs.kept.length===1?'':'s'} used</b> — under the ${cs.limit}-city cap, so nothing was dropped.</div>`;
         const why = cs.method==='client term'
           ? `ranked by real search demand for <code>${escapeHtml(cs.probe||'')}</code> — the client's own service, so the markets kept are the ones where their work actually gets searched`
           : cs.method==='population proxy'
-            ? `the client's own term returned no volume anywhere, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead`
+            ? `the client's own terms returned no volume in any market, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead — that term has nothing to do with this client, it is just a stand-in for "how big is this town". <b>If the client's own service returns nothing anywhere, check the demand frame above before trusting this ordering</b>`
             : `the demand lookup failed, so markets were kept in the order they were entered — worth re-running before you quote`;
         const fmt=a=>a.map(([c,v])=>`${escapeHtml(c)}${v==null?'':` <span class="nf">(${money0(v)}/mo)</span>`}`).join(' · ');
         // A tie at the cut only makes the choice arbitrary if the cut was made
@@ -1507,7 +1520,7 @@ function renderStep1(){
         if(!f.verdict) return '';
         const n=Number(f.national_total||0).toLocaleString(), l=Number(f.local_total||0).toLocaleString();
         if(f.verdict==='national') return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">🧭 <b>This looks like a NATIONAL campaign</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span> Tick <b>Price on national demand</b> and rebuild step 1. The cities stay in the proposal grid and rankings are still measured in them — only the demand basis changes.</div>`;
-        if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>No demand either way</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span></div>`;
+        if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'The terms have no demand':'No demand either way'}</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span><br>Volume contributes <b>$0</b>. Replace the Product / Vertical Focus terms with the phrases the client's buyers actually type — short and specific beats descriptive — and rebuild step 1.</div>`;
         return `<div class="nf" style="margin-top:4px">🧭 <b>Local frame confirmed</b> — ${escapeHtml(f.reason||'')}</div>`;
       })()}
       ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b> — those are treated as the client's own service list and fill the grid before anything the AI proposes.</div>`:''}
