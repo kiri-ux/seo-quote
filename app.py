@@ -3491,7 +3491,7 @@ def group_by_distance(markets, state="", radius=None):
     return groups, list(pts), unlocated
 
 
-def suggest_geo_scope(markets, state=""):
+def suggest_geo_scope(markets, state="", national_demand=False):
     """Read the geo scope OFF the entered markets instead of asking for it.
 
     The operator picks a band from a dropdown, and the band chooses the pricing
@@ -3510,6 +3510,22 @@ def suggest_geo_scope(markets, state=""):
     """
     mk = [m for m in (markets or []) if str(m).strip()]
     out = {"suggested": "", "confidence": "", "reason": "", "evidence": {}}
+
+    # NATIONAL DEMAND AND A REGIONAL BAND ARE INCOMPATIBLE, and the band is not
+    # cosmetic — it picks the pricing anchor. NASSCO sat on non_contiguous_region
+    # while its volume, keywords and competition were all national: $2,300 hard
+    # against $2,000, a $400/mo difference decided by a dropdown describing
+    # geography the quote had stopped using. Nothing anywhere told the operator
+    # to change it. (2026-08-10)
+    if national_demand:
+        out.update(suggested="nationwide", confidence="high",
+                   reason=("Priced on national demand, so the band should be "
+                           "Nationwide. The band sets the pricing anchor, and a "
+                           "regional one charges for a footprint this quote is "
+                           "not measuring — the keywords are bare and the volume "
+                           "is a US figure."),
+                   evidence={"cities": len(mk), "national_demand": True})
+        return out
     if not mk:
         return out
 
@@ -8079,7 +8095,8 @@ def api_markets():
         "located": len(located),
         # The band the markets themselves imply. A suggestion, not an
         # assignment: the operator's dropdown still picks the pricing anchor.
-        "scope_suggestion": suggest_geo_scope(mk, state),
+        "scope_suggestion": suggest_geo_scope(mk, state,
+                                              bool(d.get("national_demand"))),
     })
 
 

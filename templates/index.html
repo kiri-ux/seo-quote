@@ -3151,6 +3151,9 @@ $('geo_scope').addEventListener('change', syncGeoReq);
 // The scope suggestion says whether the dropdown AGREES with the markets, so it
 // has to redraw when the dropdown moves, not only when the markets do.
 $('geo_scope').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }catch(e){} });
+// Ticking national demand changes which band is correct, so the suggestion under
+// the geos has to re-read. (2026-08-10)
+if($('natdemand')) $('natdemand').addEventListener('change', ()=>{ try{ scheduleMarketSummary(); }catch(e){} });
 syncGeoReq();
 
 ['state','geo_scope','addon','markup','brand'].forEach(fid=>{
@@ -3571,8 +3574,10 @@ async function refreshMarketSummary(){
   // market list — the same wrong answer reached a different way.
   const seq = ++_mktSeq;
   try{
+    const nd=$('natdemand');
     const r = await postJSON('/api/markets',
-      {geo_values: mk, state: ($('state') ? $('state').value : '')});
+      {geo_values: mk, state: ($('state') ? $('state').value : ''),
+       national_demand: !!(nd && nd.checked)});
     if(seq !== _mktSeq) return;              // superseded while in flight
     const parts = (r.groups||[]).map(g=>{
       const a = escapeHtml(String(g.anchor).split(',')[0]);
