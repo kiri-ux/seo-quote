@@ -1731,8 +1731,8 @@ function step3Html(){
       ${ctx}
       <div class="why">Checks where the client's site currently ranks (top 100 — proposal depth: a rank of 27 is a foothold worth showing, not "Not Found") for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks anywhere in the top 100, the client is genuinely starting from scratch.</div>
       <div class="calc">zero-ranking
-        <span class="flag ${ST.zero?'on':'off'}">${ST.zero?'YES':'NO'}</span>
-        — ${ST.ranked}/${checked} found in top 100 (${frac}%)${(()=>{const q=ST.table.filter(r=>r.queued).length;const f=ST.errored-q;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
+        <span class="flag ${ST.rankUnmeasured?'off':(ST.zero?'on':'off')}">${ST.rankUnmeasured?'PENDING':(ST.zero?'YES':'NO')}</span>
+        — ${ST.rankUnmeasured?'nothing measured yet, so no ranking adjustment is applied to the price':`${ST.ranked}/${checked} found in top 100 (${frac}%)`}${(()=>{const q=ST.table.filter(r=>r.queued).length;const f=ST.errored-q;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
       ${(()=>{
         // WHERE it was measured. A 0% result is uninterpretable without this —
         // Ski Barn read 0/20 because bare terms were being scored against the
@@ -1860,10 +1860,11 @@ async function _runStep3(retryOnlyFailed){
         geo_values:ST.inputs.geo_values, state:ST.inputs.state});
       const pending=(sub.tasks||[]).filter(t=>t.task_id);
       (sub.tasks||[]).filter(t=>!t.task_id).forEach(t=>{
-        ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true}); ST.errored++;
+        ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true, loc:t.loc||''}); ST.errored++;
       });
+      if(sub.rank_location) ST.rankLoc=sub.rank_location;
       pending.forEach(t=>{
-        ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true, queued:true}); ST.errored++;
+        ST.table.push({kw:t.kw, pos:'—', ranked_top:false, error:true, queued:true, loc:t.loc||''}); ST.errored++;
       });
       if(pending.length){ bgStarted=true; _bgQueuePoll(pending, ST._gen); }
     }catch(e){
@@ -1965,8 +1966,15 @@ async function _finishOrRetry(retryOnlyFailed, all){
 }
 
 function finishStep3(){
-  const checkedOk = Math.max(ST.total - excludedRows(), 0) || 1;
-  ST.zero = (ST.ranked/checkedOk) < 0.10;
+  const checkedOk = Math.max(ST.total - excludedRows(), 0);
+  // NOTHING MEASURED IS NOT A MEASUREMENT OF ZERO.
+  // checkedOk fell back to 1, so a run with all 35 rows still in Google's queue
+  // computed 0/1 = 0% ranked and asserted "zero-ranking YES". Pricing then read
+  // pct_not_ranking 0 off the same empty table and applied the well-ranked
+  // DISCOUNT — the opposite error, from the same cause. Both directions are a
+  // ranking adjustment derived from no rankings. (2026-08-10)
+  ST.rankUnmeasured = (ST.total > 0 && checkedOk === 0);
+  ST.zero = ST.rankUnmeasured ? false : (ST.ranked/(checkedOk||1)) < 0.10;
   // Long tail comes from the grid itself (lower-competition services x cities).
   // The People-Also-Ask harvest is deliberately NOT folded in: it produces
   // question-style phrases, which the real proposals essentially never use.
@@ -2148,6 +2156,7 @@ function renderStep4(p){
   const h=ai?ai.hard_total:(p.hard_true_tiers||p.hard_tiers), c=ai?ai.client_total:p.client_tiers;
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
+    ${ST.rankUnmeasured?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No ranking adjustment in this price</b> — every rank lookup is still in Google's queue or failed, so nothing has been measured. The zero-ranking component is <b>0%</b> rather than a guess in either direction: an empty table reads as "0% ranked" (largest uplift) or "0% not ranking" (well-ranked discount) depending on which way you square it, and neither is a fact. <b>Re-price once the rows land.</b></div>`:''}
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
     <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
 
@@ -2495,11 +2504,16 @@ async function runStep4(){
   // Exclude failed lookups from the denominator — a timed-out SERP call must not
   // be treated as "not ranking", or a flaky API call would raise the price.
   const checkedOk = Math.max((ST.total||0) - excludedRows(), 0);
-  const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : 0;
+  // null, not 0. 0 means "everything ranks" and buys the well-ranked discount;
+  // the truth here is that nothing has been measured, and /api/price treats a
+  // null pct together with zero_ranking false as "no ranking adjustment".
+  const pctNotRanking = checkedOk ? Math.round((1 - ST.ranked/checkedOk)*100) : null;
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
+  ST.rankUnmeasured = ((ST.total||0) > 0 && checkedOk === 0);
   try{
     const p=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
-      band:ST.inputs.geo_scope, adder:ST.adder, zero_ranking:ST.zero,
+      band:ST.inputs.geo_scope, adder:ST.adder,
+      zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
     renderStep4(p);

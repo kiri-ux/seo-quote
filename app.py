@@ -7266,8 +7266,21 @@ def api_rankings_submit():
         else:
             out.append({"kw": kw, "task_id": None,
                         "error": f"{t.get('status_code')}: {t.get('status_message')}"})
-    return jsonify({"tasks": out,
-                    "rank_location": rank_location_note(markets, state, nat)})
+    # Report the SAME per-market location the live path reports. Task mode is
+    # what the slow tail falls back to, and on a cold run that can be every row
+    # — so a note reading "Measured in Knoxville" here made the whole per-market
+    # change look like it had not shipped. (2026-08-10)
+    note = rank_location_note(markets, state, nat)
+    locs = sorted({_loc_for(kw) for kw in kws})
+    if len(locs) > 1:
+        pretty = [l.replace(",United States", "").replace(",", ", ") for l in locs]
+        note = {"location": ", ".join(pretty), "scope": "per_market",
+                "note": "Each keyword was measured in the market it names — "
+                        + ", ".join(pretty) + "."}
+    for r in out:
+        r["loc"] = (_loc_for(r.get("kw") or "")
+                    .replace(",United States", "").replace(",", ", "))
+    return jsonify({"tasks": out, "rank_location": note})
 
 
 @app.route("/api/rankings_collect", methods=["POST"])
