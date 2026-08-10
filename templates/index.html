@@ -1497,6 +1497,19 @@ function renderStep1(){
           <div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>
           ${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}
         </div>`;})()}
+      ${(()=>{
+        // LOCAL OR NATIONAL, MEASURED. The operator was left to judge this, and
+        // the intuitive test — does the client have locations — is the wrong one:
+        // NASSCO sent us seven real cities and none of them are search markets.
+        // Same seeds, priced twice: with a city and bare. Reported with both
+        // figures, never applied, because switching the basis moves the price.
+        const f=kw.demand_frame||{};
+        if(!f.verdict) return '';
+        const n=Number(f.national_total||0).toLocaleString(), l=Number(f.local_total||0).toLocaleString();
+        if(f.verdict==='national') return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">🧭 <b>This looks like a NATIONAL campaign</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span> Tick <b>Price on national demand</b> and rebuild step 1. The cities stay in the proposal grid and rankings are still measured in them — only the demand basis changes.</div>`;
+        if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>No demand either way</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span></div>`;
+        return `<div class="nf" style="margin-top:4px">🧭 <b>Local frame confirmed</b> — ${escapeHtml(f.reason||'')}</div>`;
+      })()}
       ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b> — those are treated as the client's own service list and fill the grid before anything the AI proposes.</div>`:''}
       ${(kw.geo_filter_off)?`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`:''}
       ${(kw.grounding_stood_down)?`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on. Check the list by eye for competitor names in the meantime.</div>`:''}

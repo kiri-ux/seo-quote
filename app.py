@@ -627,6 +627,10 @@ CFG = {
     # Measured instead: a big place that also owns its own name nationally.
     # These two numbers reproduce every example in the sample proposals —
     # Knoxville 31/.82 and San Diego 81/.99 pass, Alexandria VA 23/.57 does not.
+    # National monthly searches the bare service terms must clear before the tool
+    # will say "this looks national". Below it, zero local volume is just a thin
+    # vertical and says nothing about the frame.
+    "frame_national_min": 200,
     "metro_no_suffix_zips": 25,
     "metro_no_suffix_share": 0.6,
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
@@ -4887,6 +4891,53 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         vols, per_city, vol_err = fetch_local_volume(
             svc_names + _alts, [] if national_demand else cities, state,
             national=national_demand)
+        # ---- IS THE LOCAL FRAME RIGHT? ---------------------------------------
+        # "Should this be nationwide" was left to the operator's judgement, and
+        # the obvious test — does the client have locations — is the wrong one.
+        # NASSCO listed seven real cities in a document it sent us, and every one
+        # of the 35 city-attached terms returned zero: a contractor looking for
+        # ITCP certification types "itcp certification", not "itcp certification
+        # san mateo ca". Junk Bee Gone's "junk removal knoxville tn" returns
+        # 170/mo, because you need someone to drive to your house.
+        #
+        # So measure it instead of guessing. Same seeds, once with cities and
+        # once bare. If the bare terms carry real demand and the city-attached
+        # ones carry none, the buyer does not search with a place attached and
+        # the local frame is producing a quote out of nothing. One extra call,
+        # only on local quotes, and only reported — never applied, because
+        # switching the demand basis changes the price. (2026-08-10)
+        frame = {}
+        if not national_demand and svc_names:
+            try:
+                _nat, _pc, _ne = fetch_local_volume(svc_names, [], state,
+                                                    national=True)
+                loc_tot = sum(int(v or 0) for v in (vols or {}).values())
+                nat_tot = sum(int(v or 0) for v in (_nat or {}).values())
+                frame = {"local_total": loc_tot, "national_total": nat_tot,
+                         "terms": svc_names[:6], "error": _ne}
+                min_nat = int(CFG.get("frame_national_min", 200))
+                if not _ne and nat_tot >= min_nat and loc_tot == 0:
+                    frame["verdict"] = "national"
+                    frame["reason"] = (
+                        f"These services draw {nat_tot:,}/mo searches nationally "
+                        f"and {loc_tot}/mo with a city attached. Nobody searches "
+                        "them with a place, so the city grid is measuring "
+                        "something that isn't there.")
+                elif not _ne and loc_tot > 0:
+                    frame["verdict"] = "local"
+                    frame["reason"] = (
+                        f"City-attached terms carry {loc_tot:,}/mo against "
+                        f"{nat_tot:,}/mo nationally — people do search these with "
+                        "a place, so the local frame is measuring real demand.")
+                elif not _ne and nat_tot == 0:
+                    frame["verdict"] = "no_demand"
+                    frame["reason"] = (
+                        "These services return no volume either locally OR "
+                        "nationally, so the wording is the problem, not the "
+                        "geography. Check the Product / Vertical Focus terms "
+                        "against what people actually type.")
+            except Exception as e:
+                frame = {"error": str(e)[:120]}
         # LAST RESORT for a national quote: Labs carries per-term volume and is
         # a different service, so a Google Ads outage doesn't take it down too.
         # Restricted to national_demand deliberately — Labs answers at country
@@ -5225,6 +5276,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "geo_filter_off": geo_dropped is None,
             "service_volume": service_volume,
             "volume_error": vol_err,
+            "demand_frame": frame,
             "volume_location": "United States" if national_demand else loc_string(markets, state),
             "volume_source": volume_source,
             "national_demand": bool(national_demand),
@@ -6686,6 +6738,7 @@ def api_refine():
         "service_volume": s1.get("service_volume", {}),
         "total_volume": s1.get("total_volume", None),
         "volume_error": s1.get("volume_error"),
+        "demand_frame": s1.get("demand_frame") or {},
         "volume_location": s1.get("volume_location"),
         "volume_source": s1.get("volume_source") or "google_ads",
         "state_missing": s1.get("state_missing", False),
