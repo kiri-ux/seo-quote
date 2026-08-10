@@ -3255,6 +3255,25 @@ def miles_between(a, b):
     return 2 * 3958.8 * asin(sqrt(h))
 
 
+def is_state_geo(m):
+    """True if this targeting area is a whole STATE, not a market in it.
+
+    "california" as a targeting area is unplaceable, so it was counted as its own
+    market and reported as "couldn't place california" — which reads like a data
+    gap rather than what it is: a state entered where a city belongs. Its cities
+    are usually in the list already, so it is also double coverage. (2026-08-10)
+    """
+    t = re.sub(r"\s+", " ", str(m or "").strip().lower())
+    if not t:
+        return False
+    if "," in t:
+        head, tail = [p.strip() for p in t.rsplit(",", 1)]
+        # "Austin, TX" is a city; only a bare state name or "Texas, TX" counts.
+        if tail in _abbrev_to_state() or tail in STATE_ABBREV:
+            t = head
+    return t in STATE_ABBREV or t in _abbrev_to_state()
+
+
 def geo_overlaps(markets, state=""):
     """Which entered geos are already covered by another entered geo.
 
@@ -7653,13 +7672,18 @@ def api_markets():
     # operator can see WHY the count moved rather than watching a pill silently
     # stop mattering.
     non_place = [m for m in entered if is_non_place_geo(m)]
-    mk = [m for m in entered if m not in non_place]
+    # A whole state is not a market either. Reported separately from non-places
+    # because the fix is different: a state usually means the operator wants
+    # every city in it, which is a Statewide scope, not a pill.
+    state_geos = [m for m in entered if m not in non_place and is_state_geo(m)]
+    mk = [m for m in entered if m not in non_place and m not in state_geos]
     overlaps = geo_overlaps(entered, state)
     covered = sorted({c for o in overlaps if o["kind"] in ("county", "duplicate")
                       for c in o["contained"]})
     if not mk:
         return jsonify({"cities": len(entered), "markets": 0, "groups": [],
                         "unlocated": [], "non_place": non_place,
+                        "state_geos": state_geos,
                         "overlaps": overlaps, "covered": covered,
                         "radius": int(CFG.get("market_radius_miles", 25)),
                         "located": 0, "scope_suggestion": {}})
@@ -7680,6 +7704,7 @@ def api_markets():
         "groups": named,
         "unlocated": unlocated,
         "non_place": non_place,
+        "state_geos": state_geos,
         "overlaps": overlaps,
         "covered": covered,
         "radius": int(CFG.get("market_radius_miles", 25)),

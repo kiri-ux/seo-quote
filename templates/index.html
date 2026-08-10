@@ -871,12 +871,18 @@ function wirePills(key, inputId){
       box.insertBefore(el,input);
     });
     renderCount();
+    // The market summary has to follow the pills on EVERY path. It used to be
+    // scheduled by a wrapper around PILL_RENDER.geo, which only EXTERNAL callers
+    // use — a report import, a rename, the overlap cleanup, a restore. The
+    // pillbox's own handlers (commit, Backspace-pop, the x button) call this
+    // render directly, so typing or deleting a market by hand left the count,
+    // the overlap warnings and the scope suggestion describing a previous list.
+    // Seen with seven CA/MN/PA cities entered under a panel still reading
+    // "2 areas -> 2 markets ... couldn't place california, pennsylvania".
+    // (2026-08-10)
+    if(key === 'geo'){ try{ scheduleMarketSummary(); }catch(e){} }
   }
   PILL_RENDER[key] = render;
-  if(key === 'geo'){
-    const wrapped = render;
-    PILL_RENDER[key] = ()=>{ wrapped(); try{ scheduleMarketSummary(); }catch(e){} };
-  }
   const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
   const US_ST_NAMES=new Set(['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming']);
   function commit(){
@@ -3459,13 +3465,19 @@ function jumpToPriceIfHashed(){
 // asked much earlier: this is the count everything downstream is built on, so
 // seeing it wrong at the top saves running a whole quote to find out.
 let _mktTimer = null;
+let _mktSeq = 0;
 async function refreshMarketSummary(){
   const box = $('marketSummary'); if(!box) return;
   const mk = (stores.geo || []);
-  if(!mk.length){ box.innerHTML=''; return; }
+  if(!mk.length){ box.innerHTML=''; _mktSeq++; return; }
+  // Stamp the request. Two edits in quick succession put two lookups in flight,
+  // and the slower FIRST one landing last repaints the panel with the older
+  // market list — the same wrong answer reached a different way.
+  const seq = ++_mktSeq;
   try{
     const r = await postJSON('/api/markets',
       {geo_values: mk, state: ($('state') ? $('state').value : '')});
+    if(seq !== _mktSeq) return;              // superseded while in flight
     const parts = (r.groups||[]).map(g=>{
       const a = escapeHtml(String(g.anchor).split(',')[0]);
       return g.size > 1
@@ -3482,7 +3494,7 @@ async function refreshMarketSummary(){
       + scopeSuggestionHtml(r.scope_suggestion);
     wireOverlap(r);
     wireScopeSuggestion(r.scope_suggestion);
-  }catch(e){ box.innerHTML=''; }
+  }catch(e){ if(seq === _mktSeq) box.innerHTML=''; }
 }
 // ---- overlapping geos ----------------------------------------------------
 // Distance clustering answers "are these the same market". It does not answer
@@ -3500,7 +3512,12 @@ async function refreshMarketSummary(){
 function overlapHtml(r){
   const ovs = (r.overlaps||[]);
   const np  = (r.non_place||[]);
+  const sg  = (r.state_geos||[]);
   const bits = [];
+  if(sg.length){
+    bits.push(`<div class="nf" style="font-size:12px;margin-top:3px">\u26a0 <b>${sg.map(x=>escapeHtml(x)).join(', ')}</b> ${sg.length===1?'is a whole state':'are whole states'}, not ${sg.length===1?'a market':'markets'} \u2014 not counted. If the client really covers the whole state, set <b>Geo scope</b> to Statewide; otherwise list the cities. `
+      + `<button type="button" id="dropStateGeo" class="btn2" style="padding:1px 8px;font-size:11px">Remove</button></div>`);
+  }
   if(np.length){
     bits.push(`<div class="nf" style="font-size:12px;margin-top:3px">\u26a0 <b>${np.map(x=>escapeHtml(x)).join(', ')}</b> ${np.length===1?'is not a place':'are not places'} \u2014 not counted as ${np.length===1?'a market':'markets'}, and never used to measure rankings or pull volume. `
       + `<button type="button" id="dropNonPlace" class="btn2" style="padding:1px 8px;font-size:11px">Remove</button></div>`);
@@ -3537,6 +3554,8 @@ function wireOverlap(r){
   };
   const a = $('dropNonPlace');
   if(a) a.onclick = ()=> drop(r.non_place||[]);
+  const sgb = $('dropStateGeo');
+  if(sgb) sgb.onclick = ()=> drop(r.state_geos||[]);
   const b = $('dropCovered');
   // A redundant COUNTY is the container — its towns are the useful entries,
   // because they are what people actually search and what the grid is built
