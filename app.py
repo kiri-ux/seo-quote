@@ -590,6 +590,17 @@ CFG = {
     "grid_min_services": 7,
     "grid_max_services": 20,
     "grid_max_cities": 5,             # cities crossed against each service
+    # When a city needs no ", ST" in the keyword. Brendan writes "adhd treatment
+    # san diego" but "auto insurance alexandria va" — the test is whether the
+    # name is unmistakable on its own. It used to be "is this city in the
+    # CITY_STATE lookup table", which is a city->state map, not a list of
+    # metros: it holds Farragut (1 ZIP) and Maryville (4), so one grid built
+    # "junk removal farragut" beside "junk removal clinton tn" (2026-08-10).
+    # Measured instead: a big place that also owns its own name nationally.
+    # These two numbers reproduce every example in the sample proposals —
+    # Knoxville 31/.82 and San Diego 81/.99 pass, Alexandria VA 23/.57 does not.
+    "metro_no_suffix_zips": 25,
+    "metro_no_suffix_share": 0.6,
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
 }
 
@@ -3102,6 +3113,87 @@ def city_size(market, state=""):
         return 0
 
 
+_NAME_SHARE = {}
+
+
+def name_is_unmistakable(market, state=""):
+    """True if this city name needs no state suffix to mean what it means.
+
+    Two conditions, both measured off the bundled ZIP data: the place is big
+    (ZIP count), and it is the dominant bearer of its name nationally. Clinton
+    TN has 2 ZIPs out of 33 Clintons — a bare "clinton" is not this client's
+    market. Knoxville has 31 of 38.
+    """
+    if county_key(market, state):
+        return False                       # "knox county" always keeps its state
+    city, st = parse_market(market, state)
+    c = (city or "").strip().lower()
+    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    if not c or not abbr:
+        return False
+    if _NAME_SHARE.get("__built__") is None:
+        # Built ONCE, not scanned per city: Render's free tier gives 0.1 vCPU
+        # and a 16-market grid would otherwise walk 42,000 ZIP rows sixteen
+        # times inside a request.
+        counts = {}
+        try:
+            import zipcodes
+            for r in zipcodes.list_all():
+                cc = str(r.get("city", "")).lower()
+                st_ = str(r.get("state", "")).upper()
+                if not cc:
+                    continue
+                counts[(cc, st_)] = counts.get((cc, st_), 0) + 1
+                counts[cc] = counts.get(cc, 0) + 1
+        except Exception:
+            pass
+        _NAME_SHARE.clear()
+        _NAME_SHARE.update(counts)
+        _NAME_SHARE["__built__"] = True
+    n_self = _NAME_SHARE.get((c, abbr), 0)
+    n_all = _NAME_SHARE.get(c, 0)
+    if not n_all:
+        return False
+    return (n_self >= int(CFG.get("metro_no_suffix_zips", 25))
+            and (n_self / n_all) >= float(CFG.get("metro_no_suffix_share", 0.6)))
+
+
+def name_share(market, state=""):
+    """What fraction of US ZIPs carrying this city name are in THIS state.
+
+    A distinctiveness score. Clinton TN holds 2 of 33 Clintons; Oak Ridge TN
+    holds 2 of 7. Both are the same size in ZIP count, and this is what
+    separates them when one has to stand for the market.
+    """
+    name_is_unmistakable(market, state)          # builds the index on first call
+    city, st = parse_market(market, state)
+    c = (city or "").strip().lower()
+    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    n_self = _NAME_SHARE.get((c, abbr), 0)
+    n_all = _NAME_SHARE.get(c, 0)
+    return (n_self / n_all) if n_all else 0.0
+
+
+def market_anchor(group, state=""):
+    """The one name that stands for a clustered market.
+
+    Used by BOTH the market summary and the keyword grid, so the panel that says
+    "Sevierville +3" and the keywords that get built cannot disagree — they did,
+    and the grid crossed its terms with Pigeon Forge while the operator read
+    Sevierville on screen. (2026-08-10)
+
+    Towns before counties (a county describes coverage, not search), then size,
+    then distinctiveness, then the shorter name, then alphabetical so the same
+    input always gives the same answer.
+    """
+    g = [m for m in (group or []) if str(m).strip()]
+    if not g:
+        return ""
+    towns = [m for m in g if not county_key(m, state)] or g
+    return sorted(towns, key=lambda m: (-city_size(m, state), -name_share(m, state),
+                                        len(str(m)), str(m).lower()))[0]
+
+
 def city_coords(market, state=""):
     """Latitude/longitude for an entered market, or None."""
     city, st = parse_market(market, state)
@@ -3559,12 +3651,55 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
             if len(first) >= 5 and first in hint_squashed:
                 return 0                       # "clarendon" in clarendonchiro
             return 1
-        ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), home_rank(c), c.lower()))
+        # A county is coverage, not a search target: "junk removal jefferson
+        # county tn" is not a phrase anyone types, and a county only earns a grid
+        # slot when no town of its market is available to stand for it.
+        cty_rank = lambda c: 1 if county_key(c, state) else 0
+        ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), cty_rank(c),
+                                               home_rank(c), c.lower()))
         if under_cap:
             exp["method"] = "all"
             exp["kept"] = [(c, scored.get(c, 0)) for c in ranked]
             exp["dropped"] = []
             return ranked
+
+        # ---- one city per MARKET before a second city from any market --------
+        # Ranking cities on volume alone is market-blind, and in a thin vertical
+        # every city ties at Google's 10/mo floor, so the cut fell to
+        # alphabetical order. Junk Bee Gone's five slots went to Knoxville,
+        # Maryville, Clinton, Farragut and Jefferson County — and the first four
+        # are ONE market. Three slots bought near-duplicates of Knoxville while
+        # Sevierville, Oak Ridge and Morristown, three whole markets the tool had
+        # just identified, got no keywords at all.
+        #
+        # So: round-robin across markets, best city first, and only start a
+        # second lap once every market has a representative. The grouping is
+        # already computed for the market count — this just stops the grid from
+        # ignoring it. (2026-08-10)
+        try:
+            groups, _loc, _un = group_by_distance(cities, state)
+            buckets = [list(g) for g in groups] + [[u] for u in _un]
+        except Exception:
+            buckets = [[c] for c in cities]
+        order = {c: i for i, c in enumerate(ranked)}
+        for bk in buckets:
+            # The market's ANCHOR represents it, unless another city in it
+            # actually carries more measured demand for this client's service.
+            anc = market_anchor(bk, state)
+            bk.sort(key=lambda c: (-scored.get(c, 0), c != anc, order.get(c, 10**6)))
+        # Markets ordered by their strongest city, so the biggest market leads.
+        buckets.sort(key=lambda bk: order.get(bk[0], 10**6))
+        picked, lap = [], 0
+        while len(picked) < limit and any(len(bk) > lap for bk in buckets):
+            for bk in buckets:
+                if len(bk) > lap and len(picked) < limit:
+                    picked.append(bk[lap])
+            lap += 1
+        chosen = picked or ranked[:limit]
+        exp["per_market"] = True
+        exp["markets_covered"] = sum(1 for bk in buckets if any(c in chosen for c in bk))
+        exp["market_count"] = len(buckets)
+        ranked = chosen + [c for c in ranked if c not in chosen]
         exp["kept"] = [(c, scored.get(c, 0)) for c in ranked[:limit]]
         exp["dropped"] = [(c, scored.get(c, 0)) for c in ranked[limit:]]
         # If the cut line falls inside a tie, the choice between those markets
@@ -4166,13 +4301,20 @@ def build_grid(services, markets, state, prepicked=False, geo_forms=None):
     suffix_mode = CFG.get("grid_state_suffix", "auto")
     buckets = {"ultra": [], "competitive": [], "long_tail": []}
 
+    # ONE rule per grid. Brendan suffixes small or ambiguous cities but not
+    # well-known metros — "auto insurance alexandria va" and "adult autism
+    # services hyde pa", but "adhd treatment san diego" and "deck repair
+    # knoxville". Applied city-by-city, that produced a table reading "junk
+    # removal farragut" on one row and "junk removal clinton tn" on the next,
+    # which reads as a mistake to whoever receives the proposal. The cities in a
+    # grid are one footprint, so they get one convention: no suffix only if
+    # EVERY city in the grid stands on its own name. (2026-08-10)
+    _all_unmistakable = bool(cities) and all(
+        name_is_unmistakable(c, state) for c in cities)
+
     def city_suffix(city_lower, city_state):
-        """Brendan suffixes small/ambiguous cities but not well-known metros:
-        'auto insurance alexandria va' and 'adult autism services hyde pa', but
-        'adhd treatment san diego' and 'deck repair knoxville'. CITY_STATE holds
-        the recognizable metros, so membership is a good proxy for 'needs no
-        disambiguation'. Each city uses ITS OWN state — a tri-state footprint
-        gets 'cherry hill nj' and 'wilmington de' in the same grid."""
+        """Each city uses ITS OWN state — a tri-state footprint gets
+        'cherry hill nj' and 'wilmington de' in the same grid."""
         ab = STATE_ABBREV.get((city_state or "").strip().lower(), "")
         if not ab:
             return ""
@@ -4180,7 +4322,7 @@ def build_grid(services, markets, state, prepicked=False, geo_forms=None):
             return ""
         if suffix_mode is True or suffix_mode == 1:
             return f" {ab}"
-        return "" if city_lower in CITY_STATE else f" {ab}"   # auto
+        return "" if _all_unmistakable else f" {ab}"          # auto
     for s in services:
         svc, tier = clean_kw(s["service"]).lower(), s["tier"]
         if not svc:
@@ -7360,8 +7502,7 @@ def api_markets():
         # Prefer a real town over a county as the market's name: the anchor is
         # what the keyword grid and the rank check are built on, and nobody
         # searches "junk removal knox county tn".
-        towns = [m for m in g if not county_key(m, state)] or g
-        anchor = max(towns, key=lambda m: city_size(m, state)) if len(towns) > 1 else towns[0]
+        anchor = market_anchor(g, state)
         named.append({"anchor": anchor,
                       "members": [anchor] + [m for m in g if m != anchor],
                       "size": len(g)})
@@ -7519,6 +7660,8 @@ def api_config_get():
         "grid_min_services": CFG.get("grid_min_services", 4),
         "grid_max_services": CFG.get("grid_max_services", 20),
         "grid_max_cities": CFG.get("grid_max_cities", 10),
+        "metro_no_suffix_zips": CFG.get("metro_no_suffix_zips", 25),
+        "metro_no_suffix_share": CFG.get("metro_no_suffix_share", 0.6),
         "grid_state_suffix": CFG.get("grid_state_suffix", True),
         "competitive_bucket_size": CFG["competitive_bucket_size"],
         "longtail_target": CFG["longtail_target"],
@@ -7580,11 +7723,13 @@ def api_config_set():
         if "grid_state_suffix" in d:
             CFG["grid_state_suffix"] = bool(d["grid_state_suffix"])
         for key, caster in [("grid_target_keywords", int), ("grid_min_services", int),
-                            ("grid_max_services", int), ("grid_max_cities", int)]:
+                            ("grid_max_services", int), ("grid_max_cities", int),
+                            ("metro_no_suffix_zips", int)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
         for key, caster in [("service_min_volume", int), ("service_max_swaps", int),
                             ("service_upgrade_ratio", float),
+                            ("metro_no_suffix_share", float),
                             ("store_intent_tier_boost", float),
                             ("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
                             ("zero_ranking_frac", float), ("step_ratio", float),

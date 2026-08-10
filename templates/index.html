@@ -1468,9 +1468,16 @@ function renderStep1(){
             ? `the client's own term returned no volume anywhere, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead`
             : `the demand lookup failed, so markets were kept in the order they were entered — worth re-running before you quote`;
         const fmt=a=>a.map(([c,v])=>`${escapeHtml(c)}${v==null?'':` <span class="nf">(${money0(v)}/mo)</span>`}`).join(' · ');
-        const tie=(cs.tied_at_cut&&cs.tied_at_cut.length>1)
+        // A tie at the cut only makes the choice arbitrary if the cut was made
+        // on volume. Once slots are handed out one-per-market, a 14-way tie at
+        // 10/mo is no longer what decided anything.
+        const tie=(cs.tied_at_cut&&cs.tied_at_cut.length>1&&!cs.per_market)
           ? `<div style="margin-top:3px;color:var(--warn)">⚠ <b>${cs.tied_at_cut.length} markets tied at ${cs.tie_value}/mo</b>, which is the floor the keyword tool reports for thin terms — so the cut between them was arbitrary, not measured. Pick the markets by hand if some matter more than others.</div>` : '';
-        return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.${tie}
+        // WHY these cities and not the highest-scoring ones. Without this the
+        // grid looks like it ignored its own volume ranking.
+        const pm = cs.per_market
+          ? `<div style="margin-top:3px">\u25f1 <b>One city per market first</b> — the ${cs.kept.length} slots cover <b>${cs.markets_covered} of ${cs.market_count} markets</b> rather than going to the ${cs.kept.length} highest-scoring cities, which in a thin vertical would have been several suburbs of the same metro. Counties are picked last: they describe coverage, not what anyone types.</div>` : '';
+        return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.${tie}${pm}
           <div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>
           ${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}
         </div>`;})()}
