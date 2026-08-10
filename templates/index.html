@@ -1548,7 +1548,9 @@ function renderStep1(){
         if(!items.length) return '';
         const rows=items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo vs <span class="nf">“${escapeHtml(x.qualified)}” ${Number(x.qualified_volume).toLocaleString()}/mo</span> — <b>${x.ratio==null?'∞':x.ratio+'×'}</b>`).join('<br>');
         return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${items.length} acronym${items.length===1?'':'s'} may be measuring a different industry</b> — ${ac.share}% of this list's volume.<br>${rows}<br>
-          <span class="nf">A short acronym usually belongs to several fields and the keyword tool reports the total across all of them. Where the client genuinely owns the term, the bare form and the qualified form track each other closely. A bare form running many times ahead of its own “… certification” means most of that traffic wants something else. Search one in Google: if the results are not this client's field, delete the bare term and keep the qualified one — the volume is inflating the tier mix and the price.</span></div>`;
+          <span class="nf">A short acronym usually belongs to several fields and the keyword tool reports the total across all of them. Where the client genuinely owns the term, the bare form and the qualified form track each other closely. A bare form running many times ahead of its own “… certification” means most of that traffic wants something else — and the volume is inflating the tier mix and the price.</span>
+          <div style="margin-top:6px"><button type="button" id="acrSerpBtn" class="btn2" style="padding:3px 11px;font-size:12px">🔍 Check who owns these SERPs</button> <span class="nf" style="font-size:11px">one Google lookup each — shows the top domains so you can see whose field it is without leaving the page</span></div>
+          <div id="acrSerpOut" style="margin-top:5px"></div></div>`;
       })()}
       ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b> — those are treated as the client's own service list and fill the grid before anything the AI proposes.</div>`:''}
       ${(kw.geo_filter_off)?`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`:''}
@@ -1618,6 +1620,7 @@ function renderStep1(){
     };
   });
   $('step2').onclick = ()=>runStep2();
+  try{ wireAcronymSerps(); }catch(e){}
 }
 
 // ---------- STEP 2 ----------
@@ -3668,6 +3671,47 @@ async function showSourceFiles(){
       `${(f.sha||'').padEnd(8)} ${String(f.bytes).padStart(7)} B  ${f.mtime||''}  ${f.file}`
     ).join('\n') + `\n\ncombined  src ${r.source_fingerprint}`;
   }catch(e){ box.textContent='could not read /api/build — '+e.message; }
+}
+
+// The collision check says a bare acronym's volume looks wrong; only the result
+// page says whose it is. One SERP per flagged term, top domains inline, so the
+// judgement call happens here instead of in another browser tab. (2026-08-10)
+async function runAcronymSerps(terms){
+  const out=$('acrSerpOut'), btn=$('acrSerpBtn');
+  if(!out) return;
+  if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
+  out.innerHTML='<span class="nf" style="font-size:12px">asking Google…</span>';
+  try{
+    const r=await postJSON('/api/acronym_serp',{terms,
+      domain:(ST.inputs&&ST.inputs.domain)||'',
+      geo_values:(ST.inputs&&ST.inputs.geo_values)||[],
+      state:(ST.inputs&&ST.inputs.state)||'',
+      industry:(ST.inputs&&ST.inputs.industry)||'',
+      geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
+      national_demand:!!(ST.inputs&&ST.inputs.national_demand),
+      goal:(ST.inputs&&ST.inputs.goal)||''});
+    const rows=(r.results||[]).map(x=>{
+      if(x.error) return `<tr><td style="padding:2px 10px 2px 0;vertical-align:top"><b>${escapeHtml(x.term.toUpperCase())}</b></td><td class="nf" style="padding:2px 0">lookup failed — ${escapeHtml(x.error)}</td></tr>`;
+      // The client appearing on page one is the strongest evidence the term is
+      // theirs; absent from the top 100 on a term they supposedly own is the
+      // strongest evidence it is not.
+      const verdict = x.client_pos!=null
+        ? `<span style="color:var(--atlas);font-weight:600">${escapeHtml(r.client_domain||'client')} ranks #${x.client_pos} — this is their field, keep the term</span>`
+        : `<span style="color:#8a5a10;font-weight:600">${escapeHtml(r.client_domain||'client')} not in the top 100 — if none of these domains are their industry, drop the bare term</span>`;
+      return `<tr><td style="padding:2px 10px 2px 0;vertical-align:top;white-space:nowrap"><b>${escapeHtml(x.term.toUpperCase())}</b></td>
+        <td style="padding:2px 0"><span class="nf">${(x.domains||[]).map(d=>escapeHtml(d)).join(' · ')||'no organic results'}</span><br>${verdict}</td></tr>`;
+    }).join('');
+    out.innerHTML=`<table style="border-collapse:collapse;font-size:12px">${rows}</table>
+      <div class="nf" style="font-size:11px;margin-top:3px">Measured against the whole United States — who owns a word is a national question, not a local one.</div>`;
+  }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🔍 Check who owns these SERPs'; } }
+}
+
+function wireAcronymSerps(){
+  const btn=$('acrSerpBtn'); if(!btn || btn.dataset.wired) return;
+  btn.dataset.wired='1';
+  const items=((ST.kw&&ST.kw.acronym_collisions&&ST.kw.acronym_collisions.items)||[]);
+  btn.onclick=()=>runAcronymSerps(items.map(x=>x.acronym));
 }
 
 function scheduleMarketSummary(){

@@ -7566,6 +7566,78 @@ def _rank_cache_put(kw, loc, dom, top_n, pos):
             RANK_CACHE.clear()
         RANK_CACHE[(kw, loc, dom, top_n)] = (pos, time.time())
 
+def serp_top_domains(kw, loc, client_dom="", top_n=5, deadline=None):
+    """The first few organic domains for one query, plus where the client sits.
+
+    The collision check can say a bare acronym's volume looks wrong; only the
+    result page can say whose it is. Cheapest possible answer: one SERP, the top
+    handful of domains, and whether the client appears at all. If LACP returns
+    cisco.com and juniper.net, the operator has their answer without leaving the
+    page. (2026-08-10)
+    """
+    depth = max(int(CFG.get("zero_ranking_top_n", 100)), 10)
+    payload = [{"keyword": kw, "location_name": loc, "language_code": "en",
+                "depth": depth}]
+    remaining = (deadline - time.time()) if deadline else 20
+    if remaining < 4:
+        raise TimeoutError("acronym SERP budget exhausted")
+    data = dfs_post("/serp/google/organic/live/regular", payload,
+                    timeout=min(14, remaining))
+    task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+    if task0.get("status_code") not in (20000, None):
+        raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+    items = ((task0.get("result") or [{}])[0] or {}).get("items") or []
+    doms, client_pos = [], None
+    for it in items:
+        if it.get("type") != "organic":
+            continue
+        d = (it.get("domain") or "").lower().replace("www.", "")
+        if client_dom and client_dom in d and client_pos is None:
+            client_pos = it.get("rank_absolute")
+        if d and d not in doms and len(doms) < top_n:
+            doms.append(d)
+    return doms, client_pos
+
+
+@app.route("/api/acronym_serp", methods=["POST"])
+@_json_error_guard
+def api_acronym_serp():
+    """Who actually owns each flagged acronym's result page."""
+    d = request.get_json(force=True) or {}
+    terms = [str(t).strip() for t in (d.get("terms") or []) if str(t).strip()][:8]
+    if not terms:
+        return jsonify({"results": []})
+    dom = (d.get("domain") or "").replace("https://", "").replace("http://", "")
+    dom = dom.replace("www.", "").strip("/")
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    nat, _r = resolve_national_demand(d.get("industry") or "",
+                                      d.get("geo_scope") or "",
+                                      bool(d.get("national_demand")),
+                                      markets=markets,
+                                      goal=(d.get("goal") or ""))
+    # An acronym's ownership is a national question — "who does Google think this
+    # word belongs to" — so it is asked nationally even on a local quote.
+    loc = "United States"
+    _ = (nat, state, markets)
+    out = []
+    budget = time.time() + max(18, REQUEST_BUDGET_S - 12)
+    with ThreadPoolExecutor(max_workers=min(4, len(terms))) as ex:
+        futs = {ex.submit(serp_top_domains, t, loc, dom, 5, budget): t
+                for t in terms}
+        for fut in futs:
+            t = futs[fut]
+            try:
+                doms, pos = fut.result()
+                out.append({"term": t, "domains": doms, "client_pos": pos})
+            except Exception as e:
+                out.append({"term": t, "domains": [], "client_pos": None,
+                            "error": str(e)[:120]})
+    order = {t: i for i, t in enumerate(terms)}
+    out.sort(key=lambda r: order.get(r["term"], 99))
+    return jsonify({"results": out, "location": loc, "client_domain": dom})
+
+
 @app.route("/api/rankings", methods=["POST"])
 @_json_error_guard
 def api_rankings():
