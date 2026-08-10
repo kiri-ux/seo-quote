@@ -493,7 +493,14 @@ CFG = {
     "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
-    "client_floor": 0,                        # no floor — raised anchors carry pricing
+    # CALIBRATED ON 12 BE PROPOSALS (2026-08-10). His base has never gone below
+    # $2,925 and sits within $25 of $2,950 in six of them, so a quote landing
+    # under that is below anything he has ever sent. The floor only LIFTS; every
+    # quote already at or above it is untouched, which is why this is the one
+    # calibration change that cannot disturb a past quote. Junk Bee Gone is the
+    # check: the tool said 2,850 / 3,750 / 4,700 and BE sent 2,950 / 3,850 /
+    # 4,750 — the floor makes all three match exactly.
+    "client_floor": 2950,
     # Add-on market pricing, per tier. Confirmed against TN Water & Air
     # (2026-03-25): a Knoxville ladder of 2,250 / 2,950 / 3,650 with add-on
     # markets at 950 / 1,250 / 1,750 — 42%, 42%, 48%. The flat 0.42 was right
