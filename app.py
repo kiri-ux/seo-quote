@@ -5428,7 +5428,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "seed_services_used": seed_used,
             "dropped_ungrounded": [d[0] for d in (ungrounded or [])],
             "grounding_stood_down": ungrounded is None,
-            "geo_filter_off": geo_dropped is None,
+            # No foreign states exist on a nationwide quote, so the warning was
+            # telling the operator to fix something that is not broken.
+            "geo_filter_off": (geo_dropped is None) and not national_demand,
             "service_volume": service_volume,
             "volume_error": vol_err,
             "demand_frame": frame,
@@ -8051,7 +8053,17 @@ def api_markets():
     entered = [m for m in (d.get("geo_values") or []) if m and m.strip()]
     state = (d.get("state") or "").strip()
     if not entered:
-        return jsonify({"cities": 0, "markets": 0, "groups": [], "unlocated": []})
+        # An empty geo list is exactly when the band recommendation matters most:
+        # nothing is left to describe, yet the dropdown may still read
+        # "Non-contiguous region" and that is what sets the pricing anchor. The
+        # early return skipped the suggestion entirely. (2026-08-10)
+        return jsonify({"cities": 0, "entered": 0, "markets": 0, "groups": [],
+                        "unlocated": [], "non_place": [], "state_geos": [],
+                        "overlaps": [], "covered": [],
+                        "radius": int(CFG.get("market_radius_miles", 25)),
+                        "located": 0,
+                        "scope_suggestion": suggest_geo_scope(
+                            [], state, bool(d.get("national_demand")))})
     # Non-places cover nothing, so they cannot be markets. Reported back so the
     # operator can see WHY the count moved rather than watching a pill silently
     # stop mattering.

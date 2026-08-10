@@ -3568,7 +3568,10 @@ let _mktSeq = 0;
 async function refreshMarketSummary(){
   const box = $('marketSummary'); if(!box) return;
   const mk = (stores.geo || []);
-  if(!mk.length){ box.innerHTML=''; _mktSeq++; return; }
+  const ndOn = !!($('natdemand') && $('natdemand').checked);
+  // With no geos there is nothing to summarise — but the BAND may still be wrong,
+  // and the band sets the pricing anchor. Keep asking in that one case.
+  if(!mk.length && !ndOn){ box.innerHTML=''; _mktSeq++; return; }
   // Stamp the request. Two edits in quick succession put two lookups in flight,
   // and the slower FIRST one landing last repaints the panel with the older
   // market list — the same wrong answer reached a different way.
@@ -3588,6 +3591,12 @@ async function refreshMarketSummary(){
     const un = (r.unlocated||[]).length
       ? `<div class="nf" style="margin-top:2px">Couldn\u2019t place ${r.unlocated.map(x=>escapeHtml(x)).join(', ')} \u2014 counted separately.</div>` : '';
     const entered = (r.entered!=null ? r.entered : r.cities);
+    if(!entered){
+      // Band advice only.
+      box.innerHTML = scopeSuggestionHtml(r.scope_suggestion);
+      wireScopeSuggestion(r.scope_suggestion);
+      return;
+    }
     const same = entered === r.markets;
     const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Areas within <b>${r.radius} miles</b> of each other count as one market, named after the largest town. A <b>county</b> is a container, not a peer: it never merges two markets, and if a town you entered sits inside it, it adds no market of its own.<br><br>This is what the geos <b>cover</b> — not the add-on count, though everything downstream counts markets rather than entries.<br><br>Straight-line distance, not drive time, so overrule it when you know better. Radius is set in Pricing config.</div></span>`;
     box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${entered} ${entered===1?'area':'areas'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`
