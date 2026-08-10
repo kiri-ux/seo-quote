@@ -3773,6 +3773,11 @@ function dropAcronym(acr){
   // Is the qualified form already carrying this service? Usually yes — the
   // acronym miner seeds both "lacp" and "lacp certification" — in which case
   // nothing needs replacing and the list is one term shorter on purpose.
+  // Which column it sat in, so a replacement can take the same slot.
+  let tier='competitive';
+  ['ultra','competitive','long_tail'].forEach(b=>{
+    if((ST.kw[b]||[]).some(r=>String(r.kw||'').toLowerCase()===a)) tier=b;
+  });
   const kept=(ST.kw.all||[]).filter(r=>{
     const k=String(r.kw||'').toLowerCase();
     return k!==a && k.startsWith(a+' ');
@@ -3798,9 +3803,55 @@ function dropAcronym(acr){
   // the focus terms, or both — and whether the list now needed rebuilding.
   // (2026-08-10)
   ST.acrRemoved=(ST.acrRemoved||[]).filter(x=>x.term!==a);
-  ST.acrRemoved.push({term:a, wasSeed:wasSeed, kept:kept});
+  ST.acrRemoved.push({term:a, wasSeed:wasSeed, kept:kept, tier:tier});
   renderStep1();
   try{ scheduleAutoSave(); }catch(e){}
+}
+
+// Candidates for a slot a deletion emptied. Proposed by the model, then MEASURED
+// — an unmeasured suggestion is how NASSCO ended up with sixteen seeds carrying
+// 10/mo between them. Only terms with real volume become chips. (2026-08-10)
+async function suggestReplacement(term){
+  const box=$('acrSug-'+term); if(!box) return;
+  const rec=(ST.acrRemoved||[]).find(x=>x.term===term)||{};
+  box.innerHTML='<span class="nf" style="font-size:11.5px">looking for phrases with real volume\u2026</span>';
+  try{
+    const topic=((ST.kw&&ST.kw.topics)||[]).find(t=>(t.terms||[]).some(x=>String(x).toLowerCase()===term));
+    const r=await postJSON('/api/replacement_terms',{removed:term,
+      seeds:stores.kw.slice(), brand:(ST.inputs&&ST.inputs.brand)||'',
+      domain:(ST.inputs&&ST.inputs.domain)||'',
+      business_desc:(ST.inputs&&ST.inputs.business_desc)||'',
+      topic:(topic&&topic.label)||'',
+      geo_values:(ST.inputs&&ST.inputs.geo_values)||[],
+      state:(ST.inputs&&ST.inputs.state)||'',
+      national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
+    const good=r.terms||[], bad=r.rejected||[];
+    if(!good.length){
+      box.innerHTML=`<span class="nf" style="font-size:11.5px">Nothing proposed clears ${'20'}/mo${bad.length?` \u2014 tried ${bad.map(x=>escapeHtml(x.term)).join(', ')}`:''}${r.error?' ('+escapeHtml(r.error)+')':''}. Add a term by hand or rebuild.</span>`;
+      return;
+    }
+    box.innerHTML=`<span class="nf" style="font-size:11.5px">Measured against ${escapeHtml(r.basis||'')} \u2014 click to add to <b>${tierName(rec.tier||'competitive')}</b>:</span><br>`
+      + good.map(x=>`<span class="repChip" data-term="${escapeHtml(x.term)}" data-vol="${x.volume}" data-tier="${escapeHtml(rec.tier||'competitive')}" style="display:inline-block;margin:3px 6px 0 0;padding:3px 10px;border-radius:13px;border:1px solid var(--atlas);color:var(--atlas);font-size:12px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('');
+    box.querySelectorAll('.repChip').forEach(ch=>{
+      ch.onclick=()=>{
+        const t=ch.getAttribute('data-term'), tr=ch.getAttribute('data-tier');
+        const row={kw:t, vol:Number(ch.getAttribute('data-vol'))||0};
+        if(!(ST.kw.all||[]).some(r=>String(r.kw).toLowerCase()===t)){
+          ST.kw[tr]=(ST.kw[tr]||[]).concat([row]);
+          ST.kw.all=(ST.kw.all||[]).concat([row]);
+          if(tr!=='long_tail') ST.kw.head=(ST.kw.head||[]).concat([row]);
+          ST.kw.services=(ST.kw.services||[]).concat([{service:t, tier:tr}]);
+        }
+        if(!stores.kw.includes(t)){ stores.kw.push(t); PILL_RENDER.kw(); }
+        // The gap is filled, so the row stops asking to be filled.
+        const rec2=(ST.acrRemoved||[]).find(x=>x.term===term);
+        if(rec2){ rec2.kept=[{kw:t, vol:row.vol}]; rec2.filled=true; }
+        ST.kw.total_volume=(ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
+        renderStep1();
+        try{ scheduleAutoSave(); }catch(e){}
+      };
+    });
+  }catch(e){ box.innerHTML=`<span class="err" style="font-size:11.5px">${escapeHtml(e.message)}</span>`; }
 }
 
 function removedAcronymHtml(){
@@ -3809,9 +3860,14 @@ function removedAcronymHtml(){
   const needFill=list.filter(x=>!x.kept.length);
   const rows=list.map(x=>{
     const where=x.wasSeed?'the keyword list and your Product / Vertical Focus terms':'the keyword list';
+    // "stays" is only true for a sibling that was already there. A term the
+    // operator just added is a replacement, and calling it "stays" reads as if
+    // the click did nothing. (2026-08-10)
     return x.kept.length
-      ? `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo) stays \u2014 that is the wording buyers use, so nothing needs to replace it.`
-      : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. Nothing covers that service now \u2014 add a replacement term above, or rebuild to let the tool fill the slot.`;
+      ? (x.filled
+          ? `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}, replaced with <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo).`
+          : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo) stays \u2014 that is the wording buyers use, so nothing needs to replace it.`)
+      : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. Nothing covers that service now. <button type="button" class="btn2 acrSuggest" data-acr="${escapeHtml(x.term)}" style="padding:1px 8px;font-size:11px">\u2726 Suggest a replacement</button><div id="acrSug-${escapeHtml(x.term)}" style="margin-top:3px"></div>`;
   }).join('<br>');
   return `<div class="calc" style="background:#eef7ef;border-color:#9ccfa8">\u2713 <b>${list.length} removed</b><br>${rows}
     <div style="margin-top:5px"><button type="button" id="acrRebuild" class="btn2" style="padding:3px 11px;font-size:12px">\u21bb Rebuild list</button>
@@ -3873,6 +3929,10 @@ function wireAcronymSerps(){
   document.querySelectorAll('#p1 .acrDrop').forEach(b=>{
     if(b.dataset.wired) return; b.dataset.wired='1';
     b.onclick=()=>dropAcronym(b.getAttribute('data-acr'));
+  });
+  document.querySelectorAll('#p1 .acrSuggest').forEach(b=>{
+    if(b.dataset.wired) return; b.dataset.wired='1';
+    b.onclick=()=>{ b.disabled=true; suggestReplacement(b.getAttribute('data-acr')); };
   });
   const rb=$('acrRebuild');
   if(rb && !rb.dataset.wired){

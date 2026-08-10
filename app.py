@@ -641,6 +641,8 @@ CFG = {
     # since a small number proves nothing either way.
     "acronym_collision_ratio": 8.0,
     "acronym_collision_min_volume": 100,
+    # Monthly searches a proposed replacement term must clear to be offered.
+    "replacement_min_volume": 20,
     "metro_no_suffix_zips": 25,
     "metro_no_suffix_share": 0.6,
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
@@ -7662,6 +7664,94 @@ def serp_top_domains(kw, loc, client_dom="", top_n=5, deadline=None):
         if d and d not in doms and len(doms) < top_n:
             doms.append(d)
     return doms, client_pos
+
+
+def claude_replacements(removed, kept_seeds, brand="", domain="",
+                        business_desc="", topic="", n=6):
+    """Alternative phrasings for a service whose term had to be deleted.
+
+    Removing a colliding acronym can leave a service uncovered — "lacp" goes and
+    nothing in the list speaks to lateral assessment any more. Rebuilding refills
+    the slot, but that re-runs the whole step for one gap. This proposes named
+    candidates instead, inside the same topic, which are then MEASURED before any
+    of them is offered: a suggestion with no search volume is the exact mistake
+    that produced NASSCO's first keyword list. (2026-08-10)
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not removed:
+        return []
+    prompt = f"""A keyword list for {brand or domain or "a business"} had to drop the term "{removed}".
+{f'The business describes itself as: {business_desc}' if business_desc else ''}
+{f'That term belonged to the topic: {topic}' if topic else ''}
+Its other terms are: {", ".join(str(x) for x in (kept_seeds or [])[:25])}
+
+Propose {n} SHORT search phrases that cover the same service as "{removed}" but that
+real buyers type into Google. Rules:
+1. Phrases people SEARCH, not descriptions of the organisation. "manhole inspection
+   certification" not "manhole assessment certification program provider".
+2. 2-5 words. No city names, no brand names other than this client's own.
+3. Stay on the same service as the removed term. Do not drift to its siblings.
+4. Prefer the words an outsider would use over the client's internal naming.
+
+Return ONLY JSON: {{"terms": ["...", "..."]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 600, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=25)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        terms = json.loads(text).get("terms") or []
+    except Exception:
+        app.logger.exception("claude_replacements failed")
+        return []
+    out, seen = [], {str(removed).strip().lower()}
+    for t in terms:
+        t = clean_kw(strip_placeholders(str(t).strip().lower()))
+        if t and t not in seen and 1 < len(t.split()) <= 6:
+            seen.add(t)
+            out.append(t)
+    return out[:n]
+
+
+@app.route("/api/replacement_terms", methods=["POST"])
+@_json_error_guard
+def api_replacement_terms():
+    """Measured candidates to fill the slot a deleted term left behind."""
+    d = request.get_json(force=True) or {}
+    removed = (d.get("removed") or "").strip()
+    if not removed:
+        return jsonify({"terms": []})
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    nat = bool(d.get("national_demand")) or not markets
+    cands = claude_replacements(removed,
+                               [x for x in (d.get("seeds") or []) if x],
+                               d.get("brand") or "", d.get("domain") or "",
+                               d.get("business_desc") or "",
+                               d.get("topic") or "")
+    if not cands:
+        return jsonify({"terms": [], "error": "no candidates proposed"})
+    # MEASURE before offering. Same rule the acronym chips follow.
+    try:
+        vols, _pc, verr = fetch_local_volume(cands, [] if nat else markets, state,
+                                             national=nat)
+    except Exception as e:
+        return jsonify({"terms": [], "error": str(e)[:120]})
+    floor = int(CFG.get("replacement_min_volume", 20))
+    rows = [{"term": t, "volume": int((vols or {}).get(t, 0) or 0)} for t in cands]
+    rows.sort(key=lambda r: -r["volume"])
+    return jsonify({"terms": [r for r in rows if r["volume"] >= floor],
+                    "rejected": [r for r in rows if r["volume"] < floor],
+                    "basis": "US national" if nat else "targeted cities",
+                    "error": verr})
 
 
 @app.route("/api/acronym_serp", methods=["POST"])
