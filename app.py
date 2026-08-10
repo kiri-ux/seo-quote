@@ -3328,6 +3328,16 @@ def acronym_collisions(rows, min_ratio=None, min_volume=None):
         # Every longer phrase in the list that starts with this acronym.
         quals = {k: n for k, n in vols.items() if k.startswith(kw + " ")}
         if not quals:
+            # NOTHING TO COMPARE AGAINST is not the same as passing. The ratio
+            # test silently skipped any bare acronym with no qualified sibling in
+            # the list — so removing "itcp certification" stopped "itcp" being
+            # checked at all, and a big untested number kept setting the price.
+            # Flag it as untestable when it is material, and let the SERP decide.
+            # (2026-08-10)
+            if v >= vol_floor * 2:
+                out.append({"acronym": kw, "volume": v,
+                            "qualified_volume": None, "qualified": "",
+                            "ratio": None, "untestable": True})
             continue
         best_q = max(quals.values())
         ratio = (v / best_q) if best_q else float("inf")
@@ -8802,6 +8812,44 @@ _SERVICE_PATH_HINT = re.compile(
     r"capabilit(?:y|ies)|specialt(?:y|ies)|divisions?|expertise|solutions?)"
     r"[a-z0-9-]*(?:/|$)", re.I)
 
+# Generic fallbacks, only used when the client's own vocabulary yields nothing.
+_QUALIFIER_FALLBACK = ("certification", "training", "course")
+_QUALIFIER_STOP = {
+    "the", "and", "for", "with", "your", "our", "near", "best", "top", "new",
+    "services", "service", "company", "companies", "local", "cheap", "free",
+    "professional", "commercial", "residential", "industry", "industrial",
+}
+
+
+def qualifier_words(seeds, site_terms=None, limit=3):
+    """The words THIS client attaches to things, commonest first.
+
+    The qualified form of an acronym was hardcoded to "certification", which is
+    right for a standards body and wrong for most clients — "adr" wants
+    "mediation", "pmp" wants "exam", "hipaa" wants "compliance". Read it off the
+    client's own vocabulary instead: the words already recurring in their seeds
+    ARE how they describe what they sell. (2026-08-10)
+    """
+    counts = {}
+    for t in list(seeds or []) + list(site_terms or []):
+        words = re.sub(r"[^a-z0-9 ]", " ", str(t).lower()).split()
+        # Skip 1-word seeds: an acronym on its own contributes no qualifier.
+        if len(words) < 2:
+            continue
+        for w in words:
+            if len(w) < 4 or w in _QUALIFIER_STOP:
+                continue
+            counts[w] = counts.get(w, 0) + 1
+    ranked = sorted(counts, key=lambda w: (-counts[w], w))
+    out = [w for w in ranked if counts[w] >= 2][:limit]
+    for f in _QUALIFIER_FALLBACK:
+        if len(out) >= limit:
+            break
+        if f not in out:
+            out.append(f)
+    return out[:limit]
+
+
 _ACRONYM_STOP = {
     "USA", "US", "FAQ", "FAQS", "PDF", "HTML", "HTTP", "HTTPS", "WWW", "URL",
     "CEO", "CFO", "COO", "CTO", "HR", "IT", "PR", "AI", "SEO", "PPC", "ROI",
@@ -9120,10 +9168,12 @@ def api_site_services():
     try:
         mined = mine_acronyms(html, d.get("brand") or "")
         if mined:
+            quals = qualifier_words(d.get("seeds") or [],
+                                    [x.get("term") or x.get("label") for x in out])
             probes, seen_p = [], set()
             for a in mined:
-                for form in (a["acronym"].lower(),
-                             f"{a['acronym'].lower()} certification"):
+                lo = a["acronym"].lower()
+                for form in [lo] + [f"{lo} {q}" for q in quals]:
                     if form not in seen_p:
                         seen_p.add(form)
                         probes.append(form)
@@ -9132,13 +9182,15 @@ def api_site_services():
             for a in mined:
                 lo = a["acronym"].lower()
                 forms = {f: int((vols or {}).get(f, 0) or 0)
-                         for f in (lo, f"{lo} certification")}
+                         for f in [lo] + [f"{lo} {q}" for q in quals]}
                 best = max(forms, key=lambda f: forms[f])
                 a["volume"] = forms[best]
                 a["term"] = best
                 a["forms"] = forms
                 a["worth_it"] = (not verr) and forms[best] >= floor
             acronyms = mined
+            for a in acronyms:
+                a["qualifiers"] = quals
     except Exception as _ae:
         acronyms = [{"error": str(_ae)[:120]}]
     return jsonify({"domain": dom, "services": out,

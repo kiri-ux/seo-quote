@@ -3760,23 +3760,24 @@ function acronymPanelHtml(ac){
     return `<tr>
       <td style="padding:2px 9px 2px 0;white-space:nowrap"><b>${escapeHtml(x.acronym.toUpperCase())}</b></td>
       <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right">${Number(x.volume).toLocaleString()}</td>
-      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right" class="nf" title="${escapeHtml(x.qualified)}">${Number(x.qualified_volume).toLocaleString()}</td>
-      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right"><b>${x.ratio==null?'\u221e':x.ratio+'\u00d7'}</b></td>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right" class="nf" title="${x.untestable?'No qualified form of this acronym is in the list, so there is nothing to compare against':escapeHtml(x.qualified)}">${x.untestable?'\u2014':Number(x.qualified_volume).toLocaleString()}</td>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right"><b title="${x.untestable?'Untestable — the SERP is the only evidence available for this one':''}">${x.untestable?'n/a':(x.ratio==null?'\u221e':x.ratio+'\u00d7')}</b></td>
       <td style="padding:2px 9px 2px 0;white-space:nowrap;color:${v.colour};font-weight:700">${v.tag} ${v.label}</td>
       <td style="padding:2px 9px 2px 0">${doms}${v.why?`<span class="nf"> ${escapeHtml(v.why)}</span>`:''}</td>
       <td style="padding:2px 0;white-space:nowrap">${(v.label==='KEEP'||v.pending)?'':`<button type="button" class="btn2 acrDrop" data-acr="${escapeHtml(x.acronym)}" style="padding:1px 8px;font-size:11px">Remove</button>`}</td>
     </tr>`;
   }).join('');
   const nRemove=items.filter(x=>{const sp=serps[x.acronym]; return sp&&!sp.error&&sp.client_pos==null;}).length;
-  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${ac.share}% of the list's volume${tip}
+  const nUn=items.filter(x=>x.untestable).length;
+  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${ac.share}% of the list's volume${nUn?` <span class="nf">(${nUn} with no qualified form to compare, so the SERP is the only evidence)</span>`:''}${tip}
     <table style="border-collapse:collapse;font-size:12px;margin-top:4px">
       <thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">
-        <th style="text-align:left;padding:0 9px 2px 0;font-weight:700">Acronym</th>
-        <th style="text-align:right;padding:0 9px 2px 0;font-weight:700;white-space:nowrap">Bare /mo</th>
+        <th style="text-align:left;padding:0 9px 2px 0;font-weight:700" title="The short term flagged. It is in the list because you seeded it, or because the site-menu miner found it on the client's own pages.">Acronym</th>
+        <th style="text-align:right;padding:0 9px 2px 0;font-weight:700;white-space:nowrap" title="US monthly searches for the acronym ON ITS OWN. This is the figure that feeds the volume total and decides which tier the term lands in — so if it belongs to another industry, it is inflating the price.">Bare /mo</th>
         <th style="text-align:right;padding:0 9px 2px 0;font-weight:700;white-space:nowrap" title="The same acronym with a qualifier, e.g. &quot;pacp certification&quot; — hover a figure to see which phrase it is">Qualified /mo</th>
         <th style="text-align:right;padding:0 9px 2px 0;font-weight:700;white-space:nowrap" title="How many times the bare form outsearches its qualified form. Near 1x means the client owns the word; a big number means most of that traffic belongs to another industry.">Gap</th>
-        <th style="text-align:left;padding:0 9px 2px 0;font-weight:700;white-space:nowrap">Verdict</th>
-        <th style="text-align:left;padding:0 9px 2px 0;font-weight:700">Who ranks for the bare term</th>
+        <th style="text-align:left;padding:0 9px 2px 0;font-weight:700;white-space:nowrap" title="Read off the SERP, not the numbers. KEEP = the client's own domain ranks for the bare term, so the word is theirs. REMOVE = the client is absent from the top 100, so the traffic is not theirs to win.">Verdict</th>
+        <th style="text-align:left;padding:0 9px 2px 0;font-weight:700" title="The top organic domains for the bare acronym, measured nationally, plus where the client sits. This is the evidence behind the verdict — if these sites are not the client's industry, the volume is not theirs.">Who ranks for the bare term</th>
         <th></th>
       </tr></thead>${rows}</table>
     <div style="margin-top:5px">
@@ -3883,11 +3884,17 @@ function removedAcronymHtml(){
     // "stays" is only true for a sibling that was already there. A term the
     // operator just added is a replacement, and calling it "stays" reads as if
     // the click did nothing. (2026-08-10)
+    // The suggester used to appear ONLY when nothing covered the service. On the
+    // common case — a qualified sibling already in the list — it never showed, so
+    // the feature was invisible. And "covered" is not the same as "covered well":
+    // "lacp certification" at 30/mo technically holds the slot while carrying
+    // almost no demand. Always offer it. (2026-08-10)
+    const btn=`<button type="button" class="btn2 acrSuggest" data-acr="${escapeHtml(x.term)}" style="padding:1px 8px;font-size:11px;margin-left:4px">\u2726 Suggest a replacement</button><div id="acrSug-${escapeHtml(x.term)}" style="margin-top:3px"></div>`;
     return x.kept.length
       ? (x.filled
-          ? `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}, replaced with <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo).`
-          : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo) stays \u2014 that is the wording buyers use, so nothing needs to replace it.`)
-      : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. Nothing covers that service now. <button type="button" class="btn2 acrSuggest" data-acr="${escapeHtml(x.term)}" style="padding:1px 8px;font-size:11px">\u2726 Suggest a replacement</button><div id="acrSug-${escapeHtml(x.term)}" style="margin-top:3px"></div>`;
+          ? `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}, replaced with <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo).${btn}`
+          : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. <b>${escapeHtml(x.kept[0].kw)}</b> (${Number(x.kept[0].vol||0).toLocaleString()}/mo) still covers it \u2014 replace only if that is too thin.${btn}`)
+      : `<b>${escapeHtml(x.term.toUpperCase())}</b> removed from ${where}. <b>Nothing covers that service now.</b>${btn}`;
   }).join('<br>');
   return `<div class="calc" style="background:#eef7ef;border-color:#9ccfa8">\u2713 <b>${list.length} removed</b><br>${rows}
     <div style="margin-top:5px"><button type="button" id="acrRebuild" class="btn2" style="padding:3px 11px;font-size:12px">\u21bb Rebuild list</button>
