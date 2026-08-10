@@ -1497,7 +1497,7 @@ function renderStep1(){
         // national trade association looks like when it is priced on a city
         // grid. NASSCO: 35 terms, 35 zeros, and the price then rested entirely
         // on the geo band. (2026-08-10)
-        : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — the lookup worked, so re-running it will not help. Nobody searches these phrases with a city attached, which usually means the client sells <b>nationally</b> and the city grid is the wrong frame. <br>Volume contributes <b>$0</b>, so this price currently rests on the geo band alone. Tick <b>Price on national demand</b> (or set Geo scope to Nationwide) and rebuild step 1 to price it on real demand — or confirm the local framing is deliberate.</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">📊 Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}</summary>
+        : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — volume contributes <b>$0</b>, so the price rests on the geo band alone. Try <b>Price on national demand</b>.${tipOf('The lookup worked, so re-running will not help. Nobody searches these phrases with a city attached, which usually means the client sells nationally and the city grid is the wrong frame. Either switch the basis and rebuild, or confirm the local framing is deliberate.')}</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">📊 Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}</summary>
       <div style="margin-top:6px">${kw.services.map(s=>`${s.pinned?'<b title="Pinned — highest-volume term from the search data">📌 </b>':''}${escapeHtml(s.service)} <span class="nf">(${s.tier.replace('_',' ')})</span>`).join(' · ')}</div>
       ${(()=>{const cs=kw.city_selection; if(!cs||!cs.method) return '';
         // On a national build the keywords are bare — no city is crossed with
@@ -1520,7 +1520,7 @@ function renderStep1(){
         // WHY these cities and not the highest-scoring ones. Without this the
         // grid looks like it ignored its own volume ranking.
         const pm = cs.per_market
-          ? `<div style="margin-top:3px">\u25f1 <b>One city per market first</b> — the ${cs.kept.length} slots cover <b>${cs.markets_covered} of ${cs.market_count} markets</b> rather than going to the ${cs.kept.length} highest-scoring cities, which in a thin vertical would have been several suburbs of the same metro. Counties are picked last: they describe coverage, not what anyone types.</div>` : '';
+          ? `<div style="margin-top:3px">\u25f1 <b>One city per market first</b> — ${cs.kept.length} slots cover <b>${cs.markets_covered} of ${cs.market_count} markets</b>${tipOf('Not the ' + cs.kept.length + ' highest-scoring cities, which in a thin vertical would have been several suburbs of one metro. Counties are picked last: they describe coverage, not what anyone types.')}</div>` : '';
         return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.${tie}${pm}
           <div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>
           ${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}
@@ -1534,9 +1534,9 @@ function renderStep1(){
         const f=kw.demand_frame||{};
         if(!f.verdict) return '';
         const n=Number(f.national_total||0).toLocaleString(), l=Number(f.local_total||0).toLocaleString();
-        if(f.verdict==='national') return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">🧭 <b>This looks like a NATIONAL campaign</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span> Tick <b>Price on national demand</b> and rebuild step 1. The cities stay in the proposal grid and rankings are still measured in them — only the demand basis changes.</div>`;
-        if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'The terms have no demand':'No demand either way'}</b> — ${escapeHtml(f.reason||'')}<br><span class="nf">Measured on ${(f.terms||[]).map(t=>escapeHtml(t)).join(', ')}.</span><br>Volume contributes <b>$0</b>. Replace the Product / Vertical Focus terms with the phrases the client's buyers actually type — short and specific beats descriptive — and rebuild step 1.</div>`;
-        return `<div class="nf" style="margin-top:4px">🧭 <b>Local frame confirmed</b> — ${escapeHtml(f.reason||'')}</div>`;
+        if(f.verdict==='national') return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">🧭 <b>Looks NATIONAL</b> — ${Number(f.national_total||0).toLocaleString()}/mo bare vs <b>${Number(f.local_total||0).toLocaleString()}/mo</b> with a city attached. Tick <b>Price on national demand</b> and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>The cities stay in the proposal grid and rankings are still measured in them — only the demand basis changes.')}</div>`;
+        if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'These terms have no demand':'No demand either way'}</b> — ${Number(f.national_total||0).toLocaleString()}/mo total. Volume contributes <b>$0</b>. Reword the focus terms and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>Use the phrases buyers type — short and specific beats descriptive.')}</div>`;
+        return `<div class="nf" style="margin-top:4px">🧭 <b>Local frame confirmed</b> — ${Number(f.local_total||0).toLocaleString()}/mo with a city attached${tipOf(escapeHtml(f.reason||''))}</div>`;
       })()}
       ${(()=>{
         // A short acronym is rarely owned by one industry, and Google Ads sums
@@ -1544,23 +1544,18 @@ function renderStep1(){
         // acronym-seeded list, because the volume it invents goes straight into
         // the tier mix and the price. (2026-08-10)
         const ac=kw.acronym_collisions||{};
-        const items=ac.items||[];
-        if(!items.length) return '';
-        const rows=items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo vs <span class="nf">“${escapeHtml(x.qualified)}” ${Number(x.qualified_volume).toLocaleString()}/mo</span> — <b>${x.ratio==null?'∞':x.ratio+'×'}</b>`).join('<br>');
-        return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${items.length} acronym${items.length===1?'':'s'} may be measuring a different industry</b> — ${ac.share}% of this list's volume.<br>${rows}<br>
-          <span class="nf">A short acronym usually belongs to several fields and the keyword tool reports the total across all of them. Where the client genuinely owns the term, the bare form and the qualified form track each other closely. A bare form running many times ahead of its own “… certification” means most of that traffic wants something else — and the volume is inflating the tier mix and the price.</span>
-          <div style="margin-top:6px"><button type="button" id="acrSerpBtn" class="btn2" style="padding:3px 11px;font-size:12px">🔍 Check who owns these SERPs</button> <span class="nf" style="font-size:11px">one Google lookup each — shows the top domains so you can see whose field it is without leaving the page</span></div>
-          <div id="acrSerpOut" style="margin-top:5px"></div></div>`;
+        if(!(ac.items||[]).length) return '';
+        return acronymPanelHtml(ac);
       })()}
-      ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b> — those are treated as the client's own service list and fill the grid before anything the AI proposes.</div>`:''}
+      ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b> — ${tipOf("Treated as the client's own service list — they fill the grid before anything the AI proposes.")}</div>`:''}
       ${(kw.geo_filter_off)?`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`:''}
       ${(kw.grounding_stood_down)?`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on. Check the list by eye for competitor names in the meantime.</div>`:''}
-      ${(kw.dropped_ungrounded&&kw.dropped_ungrounded.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. Each uses wording found nowhere in the client's seeds, description or site. That is usually a competitor's name riding high in the keyword data, sometimes an unrelated product that happens to share a word, and occasionally a real service the client words differently. If one is a real service, add it to <b>Product / Vertical Focus</b> and rebuild.</div>`:''}
+      ${(kw.dropped_ungrounded&&kw.dropped_ungrounded.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. ${tipOf("Wording found nowhere in the client's seeds, description or site. Usually a competitor riding high in the keyword data, sometimes an unrelated product sharing a word. If one is real, add it to Product / Vertical Focus and rebuild.")}</div>`:''}
       ${(kw.dropped_out_of_area&&kw.dropped_out_of_area.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_out_of_area.length} out-of-area term${kw.dropped_out_of_area.length>1?'s':''} removed</b> — ${kw.dropped_out_of_area.map(t=>escapeHtml(t)).join(', ')}. These name a state the client doesn't serve; the idea list is ranked by national volume so it fills with them. If one is actually a style or product name rather than a place (e.g. "new york style pizza"), add it back with <b>add term…</b>.</div>`:''}
       ${(kw.pinned_head_terms&&kw.pinned_head_terms.length)?`<div style="margin-top:4px" class="nf">📌 <b>${kw.pinned_head_terms.length} head term${kw.pinned_head_terms.length>1?'s':''} pinned</b> — ${kw.pinned_head_terms.map(t=>escapeHtml(t)).join(', ')}. These carry the most search volume in the data, so they're forced into the list rather than left to the AI pass; volume is a pricing input and shouldn't move between runs.</div>`:''}
       ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:''}
-      ${(kw.tier_moves&&kw.tier_moves.length)?`<div style="margin-top:4px" class="nf">\u2195 <b>${kw.tier_moves.length} term${kw.tier_moves.length>1?'s':''} re-tiered by measured demand</b> — ${kw.tier_moves.map(t=>`${escapeHtml(t.service)} ${t.from}\u2192${t.to} <span style="color:var(--muted)">(${Number(t.volume||0).toLocaleString()}/mo)</span>`).join(' \u00b7 ')}. The AI assigns tiers before volumes are known; these were reordered so the columns run high-to-low on demand. Tier counts are unchanged.</div>`:''}
-      ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. High volume alone doesn't make a term the client's — the pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to <b>Product / Vertical Focus</b> and rebuild — seeds are never blocked.</div>`:''}
+      ${(kw.tier_moves&&kw.tier_moves.length)?`<div style="margin-top:4px" class="nf">\u2195 <b>${kw.tier_moves.length} term${kw.tier_moves.length>1?'s':''} re-tiered by measured demand</b> — ${kw.tier_moves.map(t=>`${escapeHtml(t.service)} ${t.from}\u2192${t.to} <span style="color:var(--muted)">(${Number(t.volume||0).toLocaleString()}/mo)</span>`).join(' \u00b7 ')}. ${tipOf('Tiers are assigned before volumes are known; these were reordered so the columns run high-to-low on demand. Tier counts are unchanged.')}</div>`:''}
+      ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. ${tipOf("High volume alone does not make a term the client's. The pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild — seeds are never blocked.")}</div>`:''}
       ${(kw.topics&&kw.topics.length>1)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> \u2014 ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% of what you typed \u2192 ${t.services} service${t.services===1?'':'s'})</span>`).join(' \u00b7 ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words \u2014 the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px"><b style="color:var(--ink)">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears:</b>${kw.topic_fixes.map(f=>`<div style="margin-top:2px">\u2192 <b>${escapeHtml(f.added)}</b> <span style="opacity:.8">in, ${escapeHtml(f.replaced)} out</span></div>`).join('')}<div style="margin-top:3px">Services are chosen by search volume, so without this every slot would have gone to <b>${escapeHtml((kw.topics[0]||{}).label||'the biggest topic')}</b>.</div></div>`:''}</div>`:''}
       ${(kw.service_swaps&&kw.service_swaps.length)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50D} <b>${kw.service_swaps.length} service${kw.service_swaps.length===1?'':'s'} replaced by measured demand</b><div class="nf" style="margin-top:3px">${kw.service_swaps.map(x=>`<div>\u2192 <b>${escapeHtml(x['in'])}</b> <span style="opacity:.75">(${Number(x.in_volume||0).toLocaleString()}/mo)</span> replaced ${escapeHtml(x.out)} <span style="opacity:.75">(${Number(x.out_volume||0).toLocaleString()}/mo${x.kind==='upgrade'?', '+Math.round((x.in_volume||0)/Math.max(x.out_volume||1,1))+'\u00d7 lower':' \u2014 nobody searches it'})</span></div>`).join('')}</div><div class="nf" style="margin-top:3px">Replacements come from your own <b>Product / Vertical Focus</b> list and stay inside the same topic, so a patio-furniture slot is never filled by a ski term. A dead slot can't win traffic and drags the volume total that sets the price; an upgrade only fires when the alternative is at least ${kw.service_upgrade_ratio||10}\u00d7 bigger, never on a close call. A shop term is only ever replaced by another shop term, and a manufacturer&rsquo;s brand is never swapped in \u2014 &ldquo;weber grill&rdquo; and &ldquo;ski jackets&rdquo; outsearch &ldquo;ski shop&rdquo; but belong to Amazon and the makers, not to a five-store retailer.</div></div>`:''}
       ${(kw.market_renames&&kw.market_renames.length)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F4CD} <b>${kw.market_renames.length} market${kw.market_renames.length===1?'':'s'} looked up under Google's own name</b><div class="nf" style="margin-top:3px">${kw.market_renames.map(r=>`${escapeHtml(r.market)} \u2192 <b>${escapeHtml(r.used)}</b>`).join(' \u00b7 ')}</div><div class="nf" style="margin-top:3px">Google Ads has no location called &ldquo;New York City&rdquo; \u2014 its name for that place is &ldquo;New York&rdquo;. Same place, so the volume is the city's own and counts in full. Keyword text is unaffected.</div></div>`:''}
@@ -1585,7 +1580,7 @@ function renderStep1(){
         return `<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50E} <b>Market wording checked against search volume</b><div class="nf" style="margin-top:3px">${bits.join('')}</div><div class="nf" style="margin-top:4px;font-size:11px">Each spelling was measured nationally with ${probed.length?'\u201c'+probed.map(t=>escapeHtml(t)).join('\u201d, \u201c')+'\u201d':'the client\u2019s own terms'} attached \u2014 the question is which words people type, not how much local demand there is. Per-city demand is measured separately.</div></div>`;
       })():''}
       ${kw.ecommerce_suppressed?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">🛒 <b>Storefront detected — kept local</b><br><span class="nf">${escapeHtml(kw.ecommerce_suppressed)}</span></div>`:(kw.ecommerce_detected&&kw.ecommerce_reason)?`<div style="margin-top:4px" class="nf">🛒 <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`:''}
-      ${kw.total_volume?`<div style="margin-top:4px" class="nf">${kw.national_demand?'Volume is the US national figure for each term — it drives the volume component of price.':"Volume is summed across all targeted cities — it drives the volume component of price. The number beside each keyword is <b>that city's demand for the service</b>, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like <i>&middot; statewide</i> means Google holds no data for that city, so a wider area answered — <b>excluded from the pricing total</b>. Hover any figure for its source."}</div>`:''}</details>`:''}
+      ${kw.total_volume?`<div style="margin-top:4px" class="nf">${kw.national_demand?'Volume is the US national figure for each term — it drives the volume component of price.':'Volume is summed across all targeted cities and drives the volume component of price.'+tipOf("The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total. Hover any figure for its source.")}</div>`:''}</details>`:''}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">
       ${kwBucket('Ultra Competitive','ultra')}
@@ -1812,7 +1807,7 @@ function step3Html(){
           // how much of that percentage is real. (2026-08-10)
           const t20=ST.table.filter(r=>!r.error && typeof r.pos==='number' && r.pos<=20).length;
           if(!checked || t20===ST.ranked) return '';
-          return ` <span class="nf">· only <b>${t20}</b> in the top 20 — ${ST.ranked-t20} sit past position 20 and count as ranked, which lowers the price</span>`;
+          return ` <span class="nf">· <b>${t20}</b> in the top 20${tipOf(ST.ranked-t20+' rows sit past position 20. Top 100 is the proposal depth and the zero-ranking tier keys off it, so those count as ranked and lower the price — they are not visibility in any commercial sense.')}</span>`;
         })()}`}${(()=>{const q=ST.table.filter(r=>r.queued).length;const f=ST.errored-q;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
       ${(()=>{
         // WHERE it was measured. A 0% result is uninterpretable without this —
@@ -3673,16 +3668,78 @@ async function showSourceFiles(){
   }catch(e){ box.textContent='could not read /api/build — '+e.message; }
 }
 
-// The collision check says a bare acronym's volume looks wrong; only the result
-// page says whose it is. One SERP per flagged term, top domains inline, so the
-// judgement call happens here instead of in another browser tab. (2026-08-10)
+// One panel, rendered from two sources: the ratio (always) and the SERP check
+// (once run). Kept in one function so the verdict tag, the evidence and the
+// Remove button can never disagree with each other. (2026-08-10)
+// Fold rationale into the existing tooltip instead of printing it. The
+// reasoning is why this tool is trusted, so it is kept — just not shouted.
+// (2026-08-10)
+function tipOf(html){
+  return ` <span class="tipwrap"><i class="tipicon">i</i><div class="help">${html}</div></span>`;
+}
+
+function acronymVerdict(x, serp){
+  if(!serp) return {tag:'?', label:'unchecked', colour:'#7a6a45', why:''};
+  if(serp.error) return {tag:'?', label:'check failed', colour:'#7a6a45', why:serp.error};
+  if(serp.client_pos!=null)
+    return {tag:'\u2713', label:'KEEP', colour:'#1c7a3e',
+            why:`ranks #${serp.client_pos}`};
+  return {tag:'\u2717', label:'REMOVE', colour:'#a33', why:'not in top 100'};
+}
+
+function acronymPanelHtml(ac){
+  const items=ac.items||[];
+  const serps=ST.acrSerp||{};
+  const tip=`<span class="tipwrap"><i class="tipicon">i</i><div class="help">A short acronym usually belongs to several industries, and the keyword tool reports the <b>total across all of them</b>. Where the client owns the term, the bare form and its "… certification" form track each other (PACP: 480 vs 320). A bare form running many times ahead means most of that traffic wants something else \u2014 and it is inflating the tier mix and the price.<br><br>The ratio only flags a suspect. The SERP settles it: if the client ranks, the term is theirs.</div></span>`;
+  const rows=items.map(x=>{
+    const v=acronymVerdict(x, serps[x.acronym]);
+    const sp=serps[x.acronym];
+    const doms=(sp&&!sp.error&&(sp.domains||[]).length)
+      ? `<span class="nf">${(sp.domains||[]).slice(0,3).map(d=>escapeHtml(d)).join(' \u00b7 ')}</span>` : '';
+    return `<tr>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap"><b>${escapeHtml(x.acronym.toUpperCase())}</b></td>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right">${Number(x.volume).toLocaleString()}</td>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right" class="nf">vs ${Number(x.qualified_volume).toLocaleString()}</td>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap;text-align:right"><b>${x.ratio==null?'\u221e':x.ratio+'\u00d7'}</b></td>
+      <td style="padding:2px 9px 2px 0;white-space:nowrap;color:${v.colour};font-weight:700">${v.tag} ${v.label}</td>
+      <td style="padding:2px 9px 2px 0">${doms}${v.why?`<span class="nf"> ${escapeHtml(v.why)}</span>`:''}</td>
+      <td style="padding:2px 0;white-space:nowrap">${v.label==='KEEP'?'':`<button type="button" class="btn2 acrDrop" data-acr="${escapeHtml(x.acronym)}" style="padding:1px 8px;font-size:11px">Remove</button>`}</td>
+    </tr>`;
+  }).join('');
+  const nRemove=items.filter(x=>{const sp=serps[x.acronym]; return sp&&!sp.error&&sp.client_pos==null;}).length;
+  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${ac.share}% of the list's volume${tip}
+    <table style="border-collapse:collapse;font-size:12px;margin-top:4px">${rows}</table>
+    <div style="margin-top:5px">
+      <button type="button" id="acrSerpBtn" class="btn2" style="padding:3px 11px;font-size:12px">\u{1F50D} Check SERPs</button>
+      ${nRemove>1?`<button type="button" id="acrDropAll" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Remove all ${nRemove}</button>`:''}
+      <span class="nf" style="font-size:11px">one Google lookup each</span>
+    </div></div>`;
+}
+
+// Drop a term from the built list AND from the seeds — leaving the seed behind
+// means the next rebuild puts it straight back.
+function dropAcronym(acr){
+  const a=String(acr||'').toLowerCase();
+  ['ultra','competitive','long_tail','all','head'].forEach(b=>{
+    if(Array.isArray(ST.kw[b])) ST.kw[b]=ST.kw[b].filter(r=>String(r.kw||'').toLowerCase()!==a);
+  });
+  const before=stores.kw.length;
+  stores.kw=stores.kw.filter(k=>String(k).toLowerCase()!==a);
+  if(stores.kw.length!==before){ PILL_RENDER.kw(); }
+  if(ST.kw.acronym_collisions){
+    ST.kw.acronym_collisions.items=(ST.kw.acronym_collisions.items||[])
+      .filter(x=>x.acronym!==a);
+  }
+  ST.kw.total_volume=(ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
+  renderStep1();
+  try{ scheduleAutoSave(); }catch(e){}
+}
+
 async function runAcronymSerps(terms){
-  const out=$('acrSerpOut'), btn=$('acrSerpBtn');
-  if(!out) return;
-  if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
-  out.innerHTML='<span class="nf" style="font-size:12px">asking Google…</span>';
+  const btn=$('acrSerpBtn');
+  if(btn){ btn.disabled=true; btn.textContent='Checking\u2026'; }
   try{
-    let r=await postJSON('/api/acronym_serp',{terms,
+    const r=await postJSON('/api/acronym_serp',{terms,
       domain:(ST.inputs&&ST.inputs.domain)||'',
       geo_values:(ST.inputs&&ST.inputs.geo_values)||[],
       state:(ST.inputs&&ST.inputs.state)||'',
@@ -3690,42 +3747,57 @@ async function runAcronymSerps(terms){
       geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
       national_demand:!!(ST.inputs&&ST.inputs.national_demand),
       goal:(ST.inputs&&ST.inputs.goal)||''});
-    // Merge anything a previous pass already answered.
-    const keep=(ST._acrKeep||[]); ST._acrKeep=null;
-    const merged=keep.concat((r.results||[]).filter(x=>!keep.some(k=>k.term===x.term)));
-    r=Object.assign({}, r, {results:merged});
-    const rows=(r.results||[]).map(x=>{
-      if(x.error) return `<tr><td style="padding:2px 10px 2px 0;vertical-align:top"><b>${escapeHtml(x.term.toUpperCase())}</b></td><td class="nf" style="padding:2px 0">lookup failed — ${escapeHtml(x.error)}</td></tr>`;
-      // The client appearing on page one is the strongest evidence the term is
-      // theirs; absent from the top 100 on a term they supposedly own is the
-      // strongest evidence it is not.
-      const verdict = x.client_pos!=null
-        ? `<span style="color:var(--atlas);font-weight:600">${escapeHtml(r.client_domain||'client')} ranks #${x.client_pos} — this is their field, keep the term</span>`
-        : `<span style="color:#8a5a10;font-weight:600">${escapeHtml(r.client_domain||'client')} not in the top 100 — if none of these domains are their industry, drop the bare term</span>`;
-      return `<tr><td style="padding:2px 10px 2px 0;vertical-align:top;white-space:nowrap"><b>${escapeHtml(x.term.toUpperCase())}</b></td>
-        <td style="padding:2px 0"><span class="nf">${(x.domains||[]).map(d=>escapeHtml(d)).join(' · ')||'no organic results'}</span><br>${verdict}</td></tr>`;
-    }).join('');
-    // A timed-out row leaves the operator's actual question unanswered, so it
-    // gets its own retry rather than making them re-run the clean ones too.
-    const failed=(r.results||[]).filter(x=>x.error).map(x=>x.term);
-    out.innerHTML=`<table style="border-collapse:collapse;font-size:12px">${rows}</table>
-      ${failed.length?`<div style="margin-top:4px"><button type="button" id="acrSerpRetry" class="btn2" style="padding:2px 9px;font-size:11.5px">↻ Retry ${failed.length} failed</button> <span class="nf" style="font-size:11px">only the ones that timed out — the answered rows are kept</span></div>`:''}
-      <div class="nf" style="font-size:11px;margin-top:3px">Measured against the whole United States — who owns a word is a national question, not a local one.</div>`;
-    const rb=$('acrSerpRetry');
-    if(rb) rb.onclick=()=>{
-      // Keep what landed: re-render the good rows, then append the retried ones.
-      ST._acrKeep=(r.results||[]).filter(x=>!x.error);
-      runAcronymSerps(failed);
-    };
-  }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='🔍 Check who owns these SERPs'; } }
+    // Kept on ST, not written into the DOM, so the verdict tags survive a
+    // re-render — which happens every time a term is removed.
+    ST.acrSerp=ST.acrSerp||{};
+    ST.acrClientDomain=r.client_domain||'';
+    (r.results||[]).forEach(x=>{ ST.acrSerp[x.term]=x; });
+    renderStep1();
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='\u{1F50D} Check SERPs'; }
+    const box=$('p1');
+    if(box) box.insertAdjacentHTML('afterbegin',
+      `<div class="err" style="font-size:12px">SERP check failed: ${escapeHtml(e.message)}</div>`);
+  }
 }
 
 function wireAcronymSerps(){
-  const btn=$('acrSerpBtn'); if(!btn || btn.dataset.wired) return;
-  btn.dataset.wired='1';
   const items=((ST.kw&&ST.kw.acronym_collisions&&ST.kw.acronym_collisions.items)||[]);
-  btn.onclick=()=>runAcronymSerps(items.map(x=>x.acronym));
+  const btn=$('acrSerpBtn');
+  if(btn && !btn.dataset.wired){
+    btn.dataset.wired='1';
+    // Re-check only what has no answer yet, so a second press after a timeout
+    // doesn't pay for the rows that already landed.
+    btn.onclick=()=>{
+      const done=ST.acrSerp||{};
+      const todo=items.map(x=>x.acronym).filter(a=>!done[a] || done[a].error);
+      runAcronymSerps(todo.length?todo:items.map(x=>x.acronym));
+    };
+  }
+  document.querySelectorAll('#p1 .acrDrop').forEach(b=>{
+    if(b.dataset.wired) return; b.dataset.wired='1';
+    b.onclick=()=>dropAcronym(b.getAttribute('data-acr'));
+  });
+  const all=$('acrDropAll');
+  if(all && !all.dataset.wired){
+    all.dataset.wired='1';
+    all.onclick=()=>{
+      const serps=ST.acrSerp||{};
+      items.filter(x=>{const sp=serps[x.acronym]; return sp&&!sp.error&&sp.client_pos==null;})
+           .map(x=>x.acronym).forEach(a=>{
+        ['ultra','competitive','long_tail','all','head'].forEach(bk=>{
+          if(Array.isArray(ST.kw[bk])) ST.kw[bk]=ST.kw[bk].filter(r=>String(r.kw||'').toLowerCase()!==a);
+        });
+        stores.kw=stores.kw.filter(k=>String(k).toLowerCase()!==a);
+        if(ST.kw.acronym_collisions)
+          ST.kw.acronym_collisions.items=(ST.kw.acronym_collisions.items||[]).filter(x=>x.acronym!==a);
+      });
+      PILL_RENDER.kw();
+      ST.kw.total_volume=(ST.kw.all||[]).reduce((s,r)=>s+(Number(r.vol)||0),0);
+      renderStep1();
+      try{ scheduleAutoSave(); }catch(e){}
+    };
+  }
 }
 
 function scheduleMarketSummary(){
