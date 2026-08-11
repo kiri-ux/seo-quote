@@ -1177,18 +1177,60 @@ def market_state(m, default_state=""):
     return parse_market(m, default_state)[1]
 
 def derive_state(markets, provided_state=""):
-    """Return a state: use the partner's value if given, else look up the first
-    market. Empty if unknown (loc_string then falls back to city,United States)."""
-    if provided_state and provided_state.strip():
-        return provided_state.strip()
+    """Return the client's state as a FULL NAME, or "" if genuinely unknown.
+
+    Three bugs in one function, all the same shape: it only ever recognised a
+    full state name, and the tool asks for abbreviations everywhere.
+
+      1. CITY_STATE is keyed on a BARE city name, so a market typed in the
+         documented "Knoxville, TN" form matched nothing and this returned "".
+      2. provided_state was passed through verbatim, so a state field holding
+         "TN" came back as "TN" - and every caller then does
+         STATE_ABBREV.get("tn"), which is a miss, because that map goes
+         "tennessee" -> "tn".
+      3. Both failures are silent. The keyword TEXT was unaffected, because it
+         takes the state from parse_market(), which does parse the tag. So the
+         grid was built on "junk removal sevierville tn" while pick_grid_cities
+         SCORED markets on "junk removal sevierville" - two different strings,
+         two different volumes. Sevierville read 0/mo on the probe and 20/mo
+         twice in the grid, and the axis recommendation rests on that score.
+
+    Returning a canonical full name fixes every caller at once rather than
+    needing a guard at each site. Order: the operator's own value, then any
+    market's "City, ST" tag, then the bare-city lookup. (2026-08-11)
+    """
+    # Built here, not at import: STATE_ABBREV is defined further down the module.
+    inv = {a: n.title() for n, a in STATE_ABBREV.items()}
+
+    def canon(v):
+        t = (v or "").strip()
+        if not t:
+            return ""
+        low = t.lower()
+        if low in STATE_ABBREV:                    # already a full name
+            return t.title()
+        return inv.get(low, "")                    # "tn" -> "Tennessee"
+
+    got = canon(provided_state)
+    if got:
+        return got
     for mkt in markets:
-        ml = mkt.strip().lower()
+        # "Knoxville, TN" / "Knox County, TN" - the format the placeholder asks
+        # for. parse_market already handles this; do the same here.
+        if "," in (mkt or ""):
+            got = canon((mkt or "").rsplit(",", 1)[-1])
+            if got:
+                return got
+    for mkt in markets:
+        ml = (mkt or "").strip().lower()
         s = CITY_STATE.get(ml)
         if not s and ml.endswith(" county"):
             s = CITY_STATE.get(ml[:-len(" county")].strip())
         if s:
             return s
-    return ""
+    # An unrecognised free-text value is still better than nothing for
+    # loc_string, which passes it to the location API as-is.
+    return (provided_state or "").strip()
 
 def is_longtail(kw):
     """A keyword qualifies as long-tail if it's long or question/intent-shaped."""
@@ -2264,15 +2306,13 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     def norm(t):
         return " ".join((t or "").lower().split())
 
-    tiers = ["ultra", "ultra", "competitive", "competitive", "competitive",
-             "long_tail", "long_tail"]
     out, taken = [], set()
-    for i, term in enumerate(clean[:max_services]):
+    for term in clean[:max_services]:
         if norm(term) in taken:
             continue
         taken.add(norm(term))
-        out.append({"service": term, "tier": tiers[min(i, len(tiers) - 1)],
-                    "from_seed": True})
+        # Tier assigned below, once the final length is known.
+        out.append({"service": term, "tier": "competitive", "from_seed": True})
     used = len(out)
     # Model-chosen services fill any remaining slots, in the order it ranked
     # them. Exact duplicates only — "auto insurance" and "bundle home and auto
@@ -2285,7 +2325,31 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
             continue
         taken.add(n)
         out.append(dict(svc))
-    return out[:max_services], used, len(clean)
+    out = out[:max_services]
+
+    # TIERS FROM THE MEASURED MIX, NOT A FIXED LADDER. This used to assign from a
+    # seven-element list by position, so everything from index 5 on was long tail
+    # forever: any seed-driven list of 20 landed at 2/3/15 - 10/15/75 against the
+    # 30/38/32 measured off twelve of BE's own proposals. It also fought
+    # CFG["tier_mix"], which the keyword pool already obeys (see tier_split at the
+    # candidate-bucketing call), so the tool held two tier models and the seed
+    # path won because it ran last.
+    #
+    # Scored on every proposal we hold rather than on the client in front of us
+    # (bench.py): tier_split wins on 10 of 12 and cuts aggregate error from 1047
+    # to 319 percentage points. The two it loses are long-tail-heavy outliers -
+    # NASSCO at 11/14/74 and Red Shoes at 23/7/70 - where the old ladder was
+    # right by accident rather than by rule.
+    #
+    # Assignment is by POSITION, which is demand rank: the list arrives ordered
+    # by measured volume from rank_seeds(), or by the model's own ranking. Same
+    # basis step 1 uses to choose head terms. (2026-08-11)
+    n_u, n_c, _n_l = tier_split(len(out))
+    for i, svc in enumerate(out):
+        svc["tier"] = ("ultra" if i < n_u
+                       else "competitive" if i < n_u + n_c
+                       else "long_tail")
+    return out, used, len(clean)
 
 
 # Words that describe the SHAPE of a retail term rather than its subject. They
