@@ -4015,8 +4015,24 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # vectors were all zeros so nothing grouped, and the city ranking fell
         # back to alphabetical (2026-08-03). It only bit clients whose markets
         # carry a state tag, which is the format we ask for.
-        _ck = {c: clean_kw(parse_market(c, state)[0] or c).lower() for c in cities}
-        key = lambda t, c: clean_kw(f"{t} {_ck[c]}{sfx}")
+        # PER CITY, FROM THE MARKET ITSELF. The single `sfx` above comes from
+        # derive_state(), which reads CITY_STATE keyed on a BARE city name — so
+        # for a market typed in the documented "Knoxville, TN" form it returns
+        # nothing and the suffix is empty. The grid keyword text does not have
+        # that problem: it takes the state from parse_market(), which does parse
+        # the tag. Result: markets were SCORED on "junk removal sevierville"
+        # while the grid was BUILT on "junk removal sevierville tn" — two
+        # different strings, two different volumes. Sevierville scored 0 on the
+        # probe and 20/mo twice in the grid, and the axis recommendation rests on
+        # that score. parse_market already returns the state here; use it.
+        # (2026-08-11)
+        def _ckey(c):
+            cty, st = parse_market(c, state)
+            ab = STATE_ABBREV.get((st or "").strip().lower(), "") or (
+                abbr if not st else "")
+            return clean_kw(cty or c).lower(), (f" {ab}" if ab else "")
+        _ck = {c: _ckey(c) for c in cities}
+        key = lambda t, c: clean_kw(f"{t} {_ck[c][0]}{_ck[c][1]}")
         probe = [key(t, c) for c in cities for t in terms][:700]
         payload = [{"keywords": dfs_kw_list(probe),
                     "location_name": loc_string(cities, state),
@@ -4025,7 +4041,10 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         items = (data.get("tasks") or [{}])[0].get("result") or []
         vol = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                for it in items}
-        exp["probe"] = " / ".join(f"{t} <city>{sfx}" for t in terms)
+        # Show the form actually sent, suffix included — the label read
+        # "junk removal <city>" while the probe carried the state.
+        _lbl_sfx = (_ck[cities[0]][1] if cities else sfx) or sfx
+        exp["probe"] = " / ".join(f"{t} <city>{_lbl_sfx}" for t in terms)
         exp["method"] = "client term"
         scored = {c: sum(vol.get(key(t, c), 0) for t in terms) for c in cities}
         # The same lookup that ranks the cities also reveals which of them
