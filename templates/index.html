@@ -329,6 +329,8 @@
     <div id="siteSvcOut" style="margin-top:7px"></div>
     <div style="margin-top:8px"><button id="expandSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button> <span class="nf" style="font-size:11.5px">services this client sells that you haven't listed yet</span></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
+    <div style="margin-top:8px"><button id="rankSeedBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Rank &amp; trim</button> <span class="nf" style="font-size:11.5px">folds synonyms, keeps the highest-demand terms — preview first</span></div>
+    <div id="rankSeedOut" style="margin-top:6px"></div>
 
 
     <label>Business description</label>
@@ -1063,6 +1065,59 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
   });
 })();
 
+// RANK & TRIM THE SEED LIST. The grid fills from the seeds in ENTRY ORDER, so a
+// 69-term focus list is decided by typing order — and eight slots went to
+// synonyms of one service on Junk Bee Gone. This measures every seed, folds the
+// near-duplicates and shows what would be kept BEFORE anything changes: applying
+// it rewrites the seed pills, which moves tier assignment and therefore price,
+// so it is never automatic. (2026-08-11)
+let _rankUndo=null;
+async function runRankSeeds(){
+  const btn=$('rankSeedBtn'), out=$('rankSeedOut');
+  if(!stores.kw.length){ out.innerHTML='<div class="nf" style="font-size:12px">Add some focus terms first.</div>'; return; }
+  btn.disabled=true; btn.textContent='Measuring…'; out.innerHTML='';
+  try{
+    const r=await postJSON('/api/rank_seeds',{
+      seeds:stores.kw.slice(), geo_values:stores.geo.slice(),
+      state:($('state')||{}).value||'',
+      national_demand:!!($('natdemand')&&$('natdemand').checked)});
+    const n=x=>Number(x||0).toLocaleString();
+    const kept=r.kept||[], dropped=r.dropped||[], folded=r.folded||[];
+    const chip=(t,v)=>`${escapeHtml(t)} <span class="nf" style="font-size:10.5px">(${n(v)}/mo)</span>`;
+    if(!r.measured){
+      out.innerHTML=`<div class="calc" style="background:#fdecea;border-color:#e0a3a0;font-size:12.5px">⚠ <b>No volume data came back${r.error?' — '+escapeHtml(r.error):''}</b>, so there is nothing to rank on. Nothing was changed. ${r.error?'Usually transient — try again.':'These terms may be too niche for the keyword tool; reword them and retry.'}</div>`;
+      return;
+    }
+    // "nothing is lost" was wrong whenever synonyms had been folded — six terms
+    // do leave the list, they are just duplicates of ones that stay.
+    const after = dropped.length
+      ? 'Rebuild step 1 afterwards.'
+      : (folded.length ? 'Only the folded synonyms leave the list.' : 'Reorders the list only.');
+    out.innerHTML=`<div style="border:1px solid #d9cfe8;background:#f8f6fc;border-radius:9px;padding:9px 11px;font-size:12.5px">
+      <div class="nf" style="font-size:11.5px;margin-bottom:5px">Measured against <b>${escapeHtml(r.basis||'')}</b> — ${r.total} term${r.total===1?'':'s'} in, ${kept.length} would fill the ${r.limit}-service grid. Nothing has changed yet.</div>
+      <div style="margin-bottom:6px"><b style="color:var(--ink)">Keep, best first</b><div class="nf" style="margin-top:2px;line-height:1.7">${kept.map((x,i)=>`<span style="display:inline-block;margin:0 5px 3px 0;padding:2px 9px;border-radius:12px;border:1px solid var(--atlas);color:var(--atlas);background:#fff">${i+1}. ${chip(x.term,x.volume)}</span>`).join('')}</div></div>
+      ${folded.length?`<div style="margin-bottom:6px"><b style="color:var(--ink)">${r.folded_total} synonym${r.folded_total===1?'':'s'} folded in</b>${tipOf('Same service line written more than one way. A 20-slot grid cannot spend two slots saying the same thing, and the bare head noun never represents the group &mdash; &ldquo;junk&rdquo; outsearches &ldquo;junk removal&rdquo; and is not a service anyone sells.')}<div class="nf" style="margin-top:2px">${folded.map(g=>`<div>→ <b>${escapeHtml(g.keep)}</b> absorbs ${g.fold.map(f=>chip(f.term,f.volume)).join(' · ')}</div>`).join('')}</div></div>`:''}
+      ${dropped.length?`<div style="margin-bottom:6px"><b style="color:var(--ink)">${dropped.length} below the cut</b> <span class="nf">— real terms, just lower demand than the ${kept.length} above. They stay out of the grid.</span><div class="nf" style="margin-top:2px">${dropped.map(x=>chip(x.term,x.volume)).join(' · ')}</div></div>`:''}
+      <button type="button" id="rankSeedApply" style="background:var(--atlas);color:#fff;border:none;padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Replace my ${r.total} terms with these ${kept.length}</button>
+      <span class="nf" style="font-size:11px;margin-left:7px">${after}</span>
+    </div>`;
+    $('rankSeedApply').onclick=()=>{
+      _rankUndo=stores.kw.slice();
+      stores.kw=kept.map(x=>x.term);
+      PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
+      out.innerHTML=`<div class="nf" style="font-size:12px">✓ Focus terms replaced — ${_rankUndo.length} → ${stores.kw.length}, ranked by demand. <b>Rebuild step 1</b> to price it. <button type="button" id="rankSeedUndo" class="btn2" style="padding:1px 9px;font-size:11px;margin-left:5px">Undo</button></div>`;
+      $('rankSeedUndo').onclick=()=>{
+        if(!_rankUndo) return;
+        stores.kw=_rankUndo.slice(); _rankUndo=null;
+        PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
+        out.innerHTML='<div class="nf" style="font-size:12px">↺ Original focus terms restored.</div>';
+      };
+    };
+  }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
+  finally{ btn.disabled=false; btn.textContent="✦ Rank & trim"; }
+}
+document.getElementById('rankSeedBtn').addEventListener('click', runRankSeeds);
+
 // SERVICE LINES THE SEED LIST IS MISSING. The grid can only choose among the
 // seeds it is handed, so a list seeded from an incumbent's report inherits that
 // incumbent's blind spots — Junk Bee Gone spent eight slots on synonyms of "junk
@@ -1613,6 +1668,17 @@ function renderStep1(){
     b.onclick=()=>{ ST.gridAxis=b.getAttribute('data-axis');
       b.disabled=true; b.textContent='Rebuilding\u2026';
       const s1=$('step1'); if(s1) s1.click(); };
+  })();
+  // The overflow warning names the fix; this makes it reachable from there
+  // rather than sending the operator hunting back up the form.
+  (function(){
+    const j=$('rankSeedsJump'); if(!j || j.dataset.wired) return;
+    j.dataset.wired='1';
+    j.onclick=()=>{
+      const t=$('rankSeedBtn'); if(!t) return;
+      t.scrollIntoView({behavior:'smooth',block:'center'});
+      setTimeout(()=>t.click(), 350);
+    };
   })();
 }
 
@@ -3754,7 +3820,7 @@ function step1Grid(kw){
   // in ENTRY ORDER, not by volume — 80 focus terms against a 20-service grid
   // silently drops 60 on typing order alone, and the operator has no way to see
   // which. This is a warning, not a note. (2026-08-11)
-  if(kw.seed_services_dropped>0) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — the grid holds ${kw.seed_services_used} service${kw.seed_services_used===1?'':'s'}, and seeds fill it <b>in the order you typed them</b>. Terms ${kw.seed_services_used+1}–${kw.seed_services_total} were dropped, whatever their demand.${tipOf('Raise <b>Grid max services</b> in Pricing config to keep more, or cut the list down to the services you actually want quoted &mdash; put them first. Note the grid is services &times; cities, so raising the cap raises the keyword count and the price with it.<br><br>This is also why a long seed list can price lower than a short one: the AI never gets a slot to balance the topics, so a dozen synonyms of one service can take the whole grid.')}</div>`);
+  if(kw.seed_services_dropped>0) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — the grid holds ${kw.seed_services_used} service${kw.seed_services_used===1?'':'s'}, and seeds fill it <b>in the order you typed them</b>. Terms ${kw.seed_services_used+1}–${kw.seed_services_total} were dropped, whatever their demand. <button type="button" id="rankSeedsJump" class="btn2" style="padding:2px 10px;font-size:12px">Rank &amp; trim the list</button>${tipOf('Raise <b>Grid max services</b> in Pricing config to keep more, or cut the list down to the services you actually want quoted &mdash; put them first. Note the grid is services &times; cities, so raising the cap raises the keyword count and the price with it.<br><br>This is also why a long seed list can price lower than a short one: the AI never gets a slot to balance the topics, so a dozen synonyms of one service can take the whole grid.')}</div>`);
 
   if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);
 
@@ -3822,7 +3888,11 @@ function step1Grid(kw){
     const changed=G.filter(x=>x.status==='changed');
     const nodata=G.filter(x=>x.status==='no data');
     const err=G.filter(x=>x.status==='error');
-    if(changed.length||nodata.length||err.length){
+    // Only a CHANGED spelling alters the keyword text, and only an ERROR means
+    // the check didn't happen. "No measurable volume in any spelling, so we kept
+    // the default" is the check running and finding nothing to do — the same
+    // non-event as "already correct". (2026-08-11)
+    if(changed.length||err.length){
       const probed=(G[0]&&G[0].probed_with)||[];
       const line=x=>'<div style="margin-top:2px">'+(x.tested||[]).slice(0,4).map(y=>escapeHtml(y.form)+' <span style="opacity:.7">'+Number(y.volume||0).toLocaleString()+'</span>').join(' · ')+'</div>';
       const bits=[];

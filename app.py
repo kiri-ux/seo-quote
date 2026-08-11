@@ -3049,6 +3049,137 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
+
+# --- ranking the partner's own seed list ------------------------------------
+# enforce_seed_services() fills the grid from clean[:max_services] IN ENTRY
+# ORDER, so a 69-term focus list against a 20-service grid is decided by typing
+# order and nothing else — and the first two seeds typed become the "ultra
+# competitive" tier whatever their demand. Junk Bee Gone's list spent eight of
+# its twenty slots on synonyms of one service (haul away / haul away junk / haul
+# away service / junk haulers / hauling services / junk remover / remove junk /
+# junk) while demolition, hoarding cleanup and paper shredding — all on the
+# client's own site — never reached the grid.
+#
+# Two problems, two fixes: FOLD the near-duplicates so one service line cannot
+# take eight slots, then RANK what survives by measured demand. Deliberately NOT
+# wired into the build: reordering seeds moves tier assignment and therefore
+# price, so this runs only when the operator asks and shows every fold and drop
+# before anything changes. (2026-08-11)
+
+# Words that describe the SHAPE of a service phrase, not its subject. Dropped
+# before folding, so "haul away" and "haul away service" collapse together.
+_SEED_SHAPE = frozenset("""
+service services company companies contractor contractors business businesses
+pro pros professional professionals expert experts specialist specialists
+near me nearby local best top cheap affordable cost price prices pricing quote
+quotes estimate estimates free same day emergency 24 7 hour hours a an the and
+or for of in my your our
+""".split())
+
+
+def _seed_stem(word):
+    """Crude, deterministic stemmer. A real one is not worth the dependency:
+    the only job is making 'hauling', 'haulers' and 'haul' the same token."""
+    w = re.sub(r"[^a-z0-9]+", "", (word or "").lower())
+    # Trailing "e" is last on purpose: without it "remove" and "removal" stem to
+    # different tokens and "remove junk" survives as a second slot for the same
+    # service as "junk removal".
+    for suf in ("ations", "ation", "ings", "ing", "ers", "er", "ors", "or",
+                "als", "al", "ies", "es", "s", "e"):
+        if len(w) > len(suf) + 2 and w.endswith(suf):
+            return w[: -len(suf)]
+    return w
+
+
+def _seed_key(term):
+    """Stemmed token set with shape words removed — the near-duplicate key."""
+    toks = set()
+    for w in (term or "").lower().split():
+        if w in _SEED_SHAPE:
+            continue
+        st = _seed_stem(w)
+        if st and st not in _SEED_SHAPE:
+            toks.add(st)
+    return frozenset(toks)
+
+
+def rank_seeds(seeds, markets, state, national=False, limit=None):
+    """Fold near-duplicate seeds, rank the survivors by measured demand, and
+    say which ones fit the grid.
+
+    Returns a dict the panel renders verbatim. Never mutates anything.
+    """
+    limit = int(limit or CFG.get("grid_max_services", 20))
+    clean, order = [], {}
+    for s in seeds or []:
+        t = clean_kw(strip_placeholders(strip_proximity(
+            _strip_markets((s or "").lower(), list(markets or []), state)))).strip()
+        if t and t not in order:
+            order[t] = len(clean)
+            clean.append(t)
+    if not clean:
+        return {"kept": [], "folded": [], "dropped": [], "limit": limit,
+                "total": 0, "measured": False, "basis": "", "error": ""}
+
+    vols, err = {}, ""
+    try:
+        vols, _pc, err = fetch_local_volume(clean, [] if national else markets,
+                                           state, national=national)
+    except Exception as e:                       # noqa: BLE001
+        err = str(e)[:140]
+    vols = vols or {}
+    vol = lambda t: int(vols.get(t, 0) or 0)     # noqa: E731
+    measured = any(vol(t) for t in clean)
+
+    # ---- fold near-duplicates -------------------------------------------
+    # Highest volume wins the group; ties fall back to entry order so the
+    # result is stable across runs. Containment counts as duplication: "junk"
+    # and "junk removal" are one service line, not two, and a 20-slot grid
+    # cannot afford to spend two slots saying it twice.
+    # A BARE HEAD NOUN NEVER REPRESENTS THE GROUP. "junk" outsearches "junk
+    # removal" 2,400 to 1,900 and is not a service anybody sells — same
+    # bare-versus-qualified trap the acronym check exists for. So single-token
+    # seeds sort last inside their group and only win when nothing else is left.
+    # Counted on the RAW phrase, not the stemmed key: "services" is a shape word,
+    # so keying "demolition services" gives one token and the penalty below would
+    # hand its group to "shed demolition" (90/mo) over the real label (880/mo).
+    ntok = lambda t: len((t or "").split())                # noqa: E731
+    ranked = sorted(clean, key=lambda t: (ntok(t) < 2, -vol(t), order[t]))
+    groups = []                                   # [{"keep":t, "fold":[t,...], "key":set}]
+    for t in ranked:
+        k = _seed_key(t)
+        if not k:
+            continue
+        hit = None
+        for g in groups:
+            if k == g["key"] or k <= g["key"] or g["key"] <= k:
+                hit = g
+                break
+        if hit is None:
+            groups.append({"keep": t, "fold": [], "key": k})
+        else:
+            hit["fold"].append(t)
+            hit["key"] = hit["key"] | k
+
+    survivors = [g["keep"] for g in groups]
+    kept_terms = survivors[:limit]
+    dropped_terms = survivors[limit:]
+    keptset = set(kept_terms)
+    row = lambda t: {"term": t, "volume": vol(t)}  # noqa: E731
+    return {
+        "kept": [row(t) for t in kept_terms],
+        "dropped": [row(t) for t in dropped_terms],
+        # Only report folds on seeds that actually made the cut — a fold under a
+        # term that was dropped anyway is noise.
+        "folded": [{"keep": g["keep"], "volume": vol(g["keep"]),
+                    "fold": [row(f) for f in g["fold"]]}
+                   for g in groups if g["fold"] and g["keep"] in keptset],
+        "folded_total": sum(len(g["fold"]) for g in groups),
+        "limit": limit, "total": len(clean), "measured": measured,
+        "basis": "US national" if national or not markets else "targeted cities",
+        "error": err or "",
+    }
+
 # --- geographic market grouping -------------------------------------------
 # Three attempts at inferring market identity from SEARCH DEMAND all failed on
 # the same client: geo-modified probes, resolved location names, and per-city
@@ -9182,6 +9313,20 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
         seen.add(t)
         out.append({"term": t, "why": str((it or {}).get("why") or "")[:80]})
     return out[:n]
+
+
+@app.route("/api/rank_seeds", methods=["POST"])
+@_json_error_guard
+def api_rank_seeds():
+    """Fold synonym seeds and rank the rest by measured demand. Preview only —
+    the operator applies it."""
+    d = request.get_json(force=True) or {}
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    nat = bool(d.get("national_demand")) or not markets
+    return jsonify(rank_seeds([x for x in (d.get("seeds") or []) if x],
+                              markets, state, national=nat,
+                              limit=d.get("limit")))
 
 
 @app.route("/api/expand_services", methods=["POST"])
