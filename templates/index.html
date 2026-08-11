@@ -315,6 +315,8 @@
     <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
     <button id="siteSvcBtn" type="button" style="margin-top:7px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button>
+    <button id="expandSvcBtn" type="button" style="margin-top:7px;margin-left:6px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button>
+    <div id="expandSvcOut" style="margin-top:6px"></div>
     <span class="nf" style="font-size:11.5px;margin-left:6px">reads the client site's navigation — menu items are usually their service list</span>
     <div id="siteSvcOut" style="margin-top:7px"></div>
 
@@ -1050,6 +1052,43 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
     }catch(e){ body.textContent='Could not load rules: '+e.message+' — close and reopen to retry.'; }
   });
 })();
+
+// SERVICE LINES THE SEED LIST IS MISSING. The grid can only choose among the
+// seeds it is handed, so a list seeded from an incumbent's report inherits that
+// incumbent's blind spots — Junk Bee Gone spent eight slots on synonyms of "junk
+// removal" while its own site sells demolition, hoarding cleanup and paper
+// shredding. Asks what is MISSING given what is already covered, measures each,
+// and offers only the ones with demand. (2026-08-10)
+document.getElementById('expandSvcBtn').addEventListener('click', async ()=>{
+  const btn=$('expandSvcBtn'), out=$('expandSvcOut');
+  btn.disabled=true; btn.textContent='Looking…';
+  out.innerHTML='';
+  try{
+    const r=await postJSON('/api/expand_services',{
+      brand:($('brand')||{}).value||'', domain:(stores.sites||[])[0]||'',
+      industry:(stores.industry||[]).join(', '),
+      business_desc:($('business_desc')||{}).value||'',
+      seeds:stores.kw.slice(), geo_values:stores.geo.slice(),
+      state:($('state')||{}).value||'',
+      national_demand:!!($('natdemand')&&$('natdemand').checked)});
+    const good=r.services||[], bad=r.rejected||[];
+    if(!good.length){
+      out.innerHTML=`<div class="nf" style="font-size:12px">Nothing missing clears the volume floor${bad.length?` — tried ${bad.slice(0,8).map(x=>escapeHtml(x.term)).join(', ')}`:''}${r.error?' ('+escapeHtml(r.error)+')':''}.</div>`;
+      return;
+    }
+    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.</div>`
+      + good.map(x=>`<span class="svc-chip" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
+      + (bad.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below ${'20'}/mo, not offered: ${bad.slice(0,10).map(x=>escapeHtml(x.term)).join(' · ')}</div>`:'');
+    out.querySelectorAll('.svc-chip').forEach(ch=>{
+      ch.onclick=()=>{
+        const v=ch.getAttribute('data-label').toLowerCase();
+        if(!stores.kw.includes(v)){ stores.kw.push(v); PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} }
+        ch.style.opacity=.35; ch.style.pointerEvents='none';
+      };
+    });
+  }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
+  finally{ btn.disabled=false; btn.textContent="✦ What's missing"; }
+});
 
 function renderSvcChips(data, out){
   const chips=data.services.map((s,i)=>{

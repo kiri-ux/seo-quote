@@ -635,6 +635,8 @@ CFG = {
     # like any other; only forms clearing near_me_min_volume are added.
     "near_me_terms": 3,
     "near_me_probe_cap": 12,
+    # Monthly searches a proposed extra service must clear to be offered.
+    "expand_min_volume": 20,
     "near_me_min_volume": 30,
     "axis_city_volume_floor": 20,
     "axis_min_seeds_for_services": 8,
@@ -9085,6 +9087,117 @@ def mine_acronyms(html, brand="", limit=14):
     out.sort(key=lambda v: (v["source"] == "repeated on the page", -v["hits"],
                             v["acronym"]))
     return out[:limit]
+
+
+def claude_industry_services(brand="", domain="", industry="", business_desc="",
+                             site_pages=None, seeds=None, geo="", n=14):
+    """What ELSE does a business of this kind sell that people search for.
+
+    The list can only ever choose among the seeds it is handed, so when those
+    seeds come from an incumbent's ranking report they inherit that incumbent's
+    blind spots. Junk Bee Gone is the case (2026-08-10): 69 seeds from the old
+    agency's report, and the tool spent eight slots on synonyms — haul away,
+    haul away junk, haul away service, junk haulers, hauling services, junk
+    remover, remove junk, junk. Brendan's list for the same client covered
+    hoarding cleanup, demolition, shed demolition, paper shredding, estate
+    cleanout, house cleanout, construction debris removal and appliance removal:
+    eight DIFFERENT services, none of them in the seed list, several of them
+    named on the client's own website.
+
+    So ask for the GAPS rather than a generic industry list — the model is told
+    what is already covered and asked what is missing. Output is offered as seed
+    chips, never fed straight into the grid: seeds are never blocked by the
+    grounding check, so a term the operator accepts is trusted, and one they
+    ignore costs nothing.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return []
+    have = [str(x).strip().lower() for x in (seeds or []) if str(x).strip()]
+    pages = [str(p) for p in (site_pages or [])][:40]
+    prompt = f"""A search campaign is being scoped for {brand or domain or "a business"}.
+Industry: {industry or "(not given)"}
+{f'They describe themselves as: {business_desc}' if business_desc else ''}
+{f'Pages on their website: {", ".join(pages)}' if pages else ''}
+{f'Area served: {geo}' if geo else ''}
+
+The keyword list ALREADY covers these services:
+{", ".join(have[:60]) if have else "(nothing yet)"}
+
+Name up to {n} ADDITIONAL service lines a business of this type sells that people
+search for, and that are NOT already covered above. Rules:
+1. A DIFFERENT service, never a synonym of one already listed. "haul away
+   service" when "junk removal" is present is a synonym — do not return it.
+2. The phrase a customer types, 2-4 words, no city, no brand.
+3. Only services this business plausibly sells. If the website pages or the
+   description name something, prefer it.
+4. Order by how commonly the service is bought, most common first.
+
+Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on their site"}}]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 1200, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        raw = json.loads(text).get("services") or []
+    except Exception:
+        app.logger.exception("claude_industry_services failed")
+        return []
+    out, seen = [], set(have)
+    for it in raw:
+        t = clean_kw(strip_placeholders(str((it or {}).get("term") or "").lower())).strip()
+        if not t or t in seen or not (1 < len(t.split()) <= 5):
+            continue
+        seen.add(t)
+        out.append({"term": t, "why": str((it or {}).get("why") or "")[:80]})
+    return out[:n]
+
+
+@app.route("/api/expand_services", methods=["POST"])
+@_json_error_guard
+def api_expand_services():
+    """Service lines the seed list is missing — proposed, then measured."""
+    d = request.get_json(force=True) or {}
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    nat = bool(d.get("national_demand")) or not markets
+    dom = (d.get("domain") or "").strip()
+    pages = []
+    if dom:
+        try:
+            pages = fetch_site_pages(dom) or []
+        except Exception:
+            pages = []
+    cands = claude_industry_services(
+        d.get("brand") or "", dom, d.get("industry") or "",
+        d.get("business_desc") or "", pages,
+        [x for x in (d.get("seeds") or []) if x],
+        ", ".join(markets[:4]))
+    if not cands:
+        return jsonify({"services": [], "error": "no suggestions returned"})
+    terms = [c["term"] for c in cands]
+    try:
+        vols, _pc, verr = fetch_local_volume(terms, [] if nat else markets, state,
+                                             national=nat)
+    except Exception as e:
+        return jsonify({"services": [], "error": str(e)[:120]})
+    floor = int(CFG.get("expand_min_volume", 20))
+    rows = [{"term": c["term"], "why": c["why"],
+             "volume": int((vols or {}).get(c["term"], 0) or 0)} for c in cands]
+    rows.sort(key=lambda r: -r["volume"])
+    return jsonify({"services": [r for r in rows if r["volume"] >= floor],
+                    "rejected": [r for r in rows if r["volume"] < floor],
+                    "basis": "US national" if nat else "targeted cities",
+                    "error": verr})
 
 
 @app.route("/api/site_services", methods=["POST"])
