@@ -3196,6 +3196,17 @@ def _seed_key(term):
     return frozenset(toks)
 
 
+def seed_norm(term, markets=None, state=""):
+    """One definition of "the same seed", shared by rank_seeds() and the build.
+
+    Both need to answer "have I already got this term?" and they have to answer
+    it identically, or reordering the list in the build silently duplicates
+    entries whose raw text differs only in case or a stripped market name.
+    """
+    return clean_kw(strip_placeholders(strip_proximity(
+        _strip_markets((term or "").lower(), list(markets or []), state)))).strip()
+
+
 def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     """Fold near-duplicate seeds, rank the survivors by measured demand, and
     say which ones fit the grid.
@@ -3211,8 +3222,7 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     kinds = kinds or {}
     clean, order = [], {}
     for s in seeds or []:
-        t = clean_kw(strip_placeholders(strip_proximity(
-            _strip_markets((s or "").lower(), list(markets or []), state)))).strip()
+        t = seed_norm(s, markets, state)
         if t and t not in order:
             order[t] = len(clean)
             clean.append(t)
@@ -5216,6 +5226,51 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     # ---- GRID MODE: build a service x city grid like the real proposals -----
     if CFG.get("grid_mode"):
         cands = ultra + competitive + long_tail
+        # ---- SEEDS IN DEMAND ORDER, BEFORE ANYTHING READS THEM --------------
+        # enforce_seed_services() fills the grid from the front, so the order
+        # this list arrives in decides which services get quoted. That order was
+        # whatever the partner happened to type: Junk Bee Gone's 20 focus terms
+        # against a 7-service grid dropped 13 on typing order alone, and the ones
+        # that went were hoarding cleanup, appliance removal, debris removal,
+        # tire disposal and mattress removal — every one of them on the client's
+        # own website.
+        #
+        # There was a button for this. The operator had to read a warning, click
+        # through to a preview and apply it, and nobody was ever going to
+        # disagree with "keep the terms with the most demand" — so the click was
+        # pure friction and a place to forget. It runs in the build now. One
+        # extra search_volume call, the same one the button made.
+        #
+        # Reordering only; nothing is deleted and the operator's own pill list is
+        # untouched. Reported as a decision taken, with the evidence. (2026-08-11)
+        seed_ranking = {}
+        if seeds:
+            _sr = rank_seeds(seeds, markets, state, national=national_demand,
+                             limit=len(seeds))
+            if _sr.get("measured"):
+                _ordered = [r["term"] for r in _sr["kept"]]
+                _folded = [f["term"] for g in _sr["folded"] for f in g["fold"]]
+                # Folded synonyms go to the BACK rather than out: the fold is a
+                # ranking device, and a client who really does want both wordings
+                # keeps them if the grid has room.
+                _have = set(_ordered) | set(_folded)
+                _tail = []
+                for _t in seeds:
+                    _k = seed_norm(_t, markets, state)
+                    if _k and _k not in _have:
+                        _have.add(_k)
+                        _tail.append(_k)
+                if _ordered:
+                    seed_ranking = {
+                        "basis": _sr.get("basis", ""),
+                        "order": [[r["term"], r["volume"]] for r in _sr["kept"]],
+                        "folded": _sr.get("folded") or [],
+                        "was": list(seeds),
+                    }
+                    seeds = _ordered + _folded + _tail
+            else:
+                seed_ranking = {"failed": _sr.get("error") or "no volume data",
+                                "was": list(seeds)}
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
@@ -5869,6 +5924,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "scope_note": scope_note,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
+            "seed_ranking": seed_ranking,
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
@@ -7339,6 +7395,7 @@ def api_refine():
         "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
+        "seed_ranking": s1.get("seed_ranking") or {},
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
         "seed_services_dropped": s1.get("seed_services_dropped", 0),

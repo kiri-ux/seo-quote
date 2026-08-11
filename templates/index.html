@@ -3791,7 +3791,16 @@ async function showSourceFiles(){
 // (nothing changed, every service came from your seeds, all wording already
 // correct) are silenced outright. (2026-08-11)
 function step1Grid(kw){
-  const warn=[], notes=[];
+  // THREE KINDS OF LINE, NOT TWO. Warnings and folded notes left the biggest
+  // category homeless: things the build DECIDED, from a measurement, that change
+  // what gets quoted. Those were rendered as warnings with a button, so a normal
+  // build looked like it needed triage and the button read as advice — the
+  // operator clicked "Use geography instead" believing it was a recommendation.
+  //
+  // auto[] is now the middle case: decided, applied, visible, overridable in one
+  // click. warn[] is only what the tool could not decide or refuses to.
+  // (2026-08-11)
+  const warn=[], notes=[], auto=[];
   const ga=kw.grid_axis||{}, ev=ga.evidence||{};
   const f=kw.demand_frame||{};
   const cs=kw.city_selection;
@@ -3828,7 +3837,7 @@ function step1Grid(kw){
       // is an amber warning rather than a grey note.
       warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Budget spent on ${svc?'services':'geography'} by hand</b> — the measurement says <b>${escapeHtml(rec)}</b>: only ${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carr${(ev.cities_with_demand||0)===1?'ies':'y'} demand above ${floor}/mo.${(nAll&&dead)?` <b>${dead} of the ${nAll} terms below report under ${floor}/mo</b> — the crossing is buying copies of one market in markets with nothing to win.`:''} ${btn}${why}</div>`);
     } else {
-      warn.push(`<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> — ${ev.by_hand?'set by hand, and the measurement agrees':`${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${floor}/mo`}${(ev.dropped_cities&&ev.dropped_cities.length)?`, so ${ev.dropped_cities.length} market${ev.dropped_cities.length===1?'':'s'} ${ev.dropped_cities.length===1?'was':'were'} not crossed`:''}. ${btn}${why}</div>`);
+      auto.push(`${svc?'\u{1F527}':'\u{1F5FA}'} <b>Term budget spent on ${svc?'services':'geography'}</b> — ${ev.by_hand?'set by hand, and the measurement agrees':`${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${floor}/mo`}${(ev.dropped_cities&&ev.dropped_cities.length)?`, so ${ev.dropped_cities.length} market${ev.dropped_cities.length===1?'':'s'} ${ev.dropped_cities.length===1?'was':'were'} not crossed`:''}. ${btn}${why}`);
     }
   }
 
@@ -3855,7 +3864,25 @@ function step1Grid(kw){
   // in ENTRY ORDER, not by volume — 80 focus terms against a 20-service grid
   // silently drops 60 on typing order alone, and the operator has no way to see
   // which. This is a warning, not a note. (2026-08-11)
-  if(kw.seed_services_dropped>0) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — the grid holds ${kw.seed_services_used} service${kw.seed_services_used===1?'':'s'}, and seeds fill it <b>in the order you typed them</b>. Terms ${kw.seed_services_used+1}–${kw.seed_services_total} were dropped, whatever their demand. <button type="button" id="rankSeedsJump" class="btn2" style="padding:2px 10px;font-size:12px">Rank &amp; trim the list</button>${tipOf('Raise <b>Grid max services</b> in Pricing config to keep more, or cut the list down to the services you actually want quoted &mdash; put them first. Note the grid is services &times; cities, so raising the cap raises the keyword count and the price with it.<br><br>This is also why a long seed list can price lower than a short one: the AI never gets a slot to balance the topics, so a dozen synonyms of one service can take the whole grid.')}</div>`);
+  const sr=kw.seed_ranking||{};
+  // A quote saved before the build started ranking seeds carries no seed_ranking
+  // at all, and its overflow is still arbitrary — report it rather than going
+  // quiet on restored work.
+  if(!sr.order && !sr.failed && kw.seed_services_dropped>0){
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — this list was built before the tool ranked focus terms by demand, so the grid filled <b>in the order they were typed</b>. <b>Re-run step 1</b> to rank them, or <button type="button" id="rankSeedsJump" class="btn2" style="padding:2px 10px;font-size:12px">Rank &amp; trim the list</button>${tipOf('Rebuilding measures every focus term and fills the grid with the highest-demand ones, which will change which services are quoted &mdash; and therefore the price. The saved numbers on this quote are untouched until you rebuild.')}</div>`);
+  } else if(sr.failed && kw.seed_services_dropped>0){
+    // The ONE case that still needs a human: the demand lookup failed, so the
+    // grid really did fill in typing order.
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit, and they could not be ranked</b> — ${escapeHtml(String(sr.failed))}. The grid filled <b>in the order you typed them</b>, so which ${kw.seed_services_used} got quoted was arbitrary. <button type="button" id="rankSeedsJump" class="btn2" style="padding:2px 10px;font-size:12px">Try ranking them</button>${tipOf('Normally the build measures every focus term and fills the grid with the highest-demand ones. That lookup failed here &mdash; usually transient. Re-run step 1, or use Rank &amp; trim to measure them by hand.')}</div>`);
+  } else if(sr.order && sr.order.length){
+    const kept=sr.order.slice(0, kw.seed_services_used||sr.order.length);
+    const cut=sr.order.slice(kw.seed_services_used||sr.order.length);
+    const n=x=>Number(x||0).toLocaleString();
+    // "ranked, and all 20 fit" changed nothing anyone can see — fold it. The
+    // line earns its place on the panel only when the ranking DECIDED something,
+    // i.e. some of the client's services are not in the quote.
+    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${tipOf('The grid fills from the front of this list, so the order decides which services get quoted. It used to be the order you typed &mdash; on this client that dropped hoarding cleanup, appliance removal, debris removal and tire disposal, all named on their own website, in favour of nothing better. Measured against '+escapeHtml(sr.basis||'the targeted cities')+'.<br><br>Nothing was deleted and your Product / Vertical Focus list is untouched &mdash; only the order the grid reads it in.'+(cut.length?'<br><br>To quote more of them: raise <b>Grid max services</b> in Pricing config, or spend the budget on services rather than geography. The grid is services &times; cities, so either one raises the keyword count and the price.':''))}${cut.length?'':'</div>'}`);
+  }
 
   if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);
 
@@ -3936,7 +3963,7 @@ function step1Grid(kw){
       if(err.length) bits.push('<div style="margin-top:3px">⚠ The wording check could not run ('+escapeHtml(err[0].detail||'API error')+') — default wording used.</div>');
       const confirmed=G.length-changed.length-nodata.length-err.length;
       if(confirmed>0) bits.push('<div style="margin-top:3px">'+confirmed+' already correct.</div>');
-      notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50E} <b>Market wording checked against search volume</b>${tipOf('Each spelling was measured nationally with '+(probed.length?'“'+probed.map(t=>escapeHtml(t)).join('”, “')+'”':'the client’s own terms')+' attached &mdash; the question is which words people type, not how much local demand there is. Per-city demand is measured separately.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+      (changed.length?auto:notes).push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50E} <b>Market wording checked against search volume</b>${tipOf('Each spelling was measured nationally with '+(probed.length?'“'+probed.map(t=>escapeHtml(t)).join('”, “')+'”':'the client’s own terms')+' attached &mdash; the question is which words people type, not how much local demand there is. Per-city demand is measured separately.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
     }
   }
 
@@ -3969,7 +3996,15 @@ function step1Grid(kw){
       ? `<details style="${st}"><summary style="cursor:pointer;user-select:none">${head} <span class="nf">— click for ${notes.length} build note${notes.length===1?'':'s'}</span>${tail}</summary>${notes.join('')}</details>`
       : `<div style="${st}">${head}${tail}</div>`;
   }
-  return warn.join('') + box;
+  // One band, so a build reads as "here is what I decided" rather than as four
+  // separate things that might be problems.
+  const autoBox = auto.length
+    ? `<div style="margin:0 0 8px;padding:8px 11px;background:#eef6ee;border:1px solid #bcd9bc;border-radius:8px;font-size:12.5px;color:#2c4a2c">
+        <div style="font-weight:700;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:#3d6b3d;margin-bottom:3px">Decided from the measurements</div>
+        ${auto.map(a=>`<div style="margin-top:3px">${a}</div>`).join('')}
+      </div>`
+    : '';
+  return warn.join('') + autoBox + box;
 }
 
 // gridWarnings()/warnBadge() removed 2026-08-11 — step1Grid() now renders
