@@ -277,7 +277,16 @@
 <div class="grid">
   <!-- ============ FORM ============ -->
   <div class="card">
-    <h2>Product Details</h2>
+    <!-- ORDER DETAILS, FOLDED. Everything from the brand name down to the demand
+         basis is entered once and then never touched again, but it sat open for
+         the whole session above the quote it produced. Collapsed it shows the two
+         things that identify the order; any warning inside surfaces on the row so
+         folding it cannot hide a problem. (2026-08-11) -->
+    <details id="orderPanel" open>
+      <summary style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
+        <h2 style="margin:0;display:inline">Order Details</h2>
+        <span id="orderSummary" class="nf" style="font-size:12.5px"></span>
+      </summary>
 
     <label>Brand name</label>
     <div class="help">Excluded from generated keywords and the rank check — without it, branded terms pollute the grid.</div>
@@ -436,6 +445,9 @@
 
 
 
+
+    </details>
+    <div id="orderAlerts"></div>
 
     <!-- Retail margin moved out of the form (2026-08-07): the same control lives
          on the quote itself as "Client price · markup", where the number it
@@ -896,6 +908,7 @@ function wirePills(key, inputId){
     // the moment to propose one. Inside render() so every path reaches it —
     // typing, the x button, a report import, a restore.
     if(key === 'sites' || key === 'kw'){ try{ maybeAutoSuggest(); }catch(e){} }
+    if(key === 'sites'){ try{ refreshOrderPanel(); }catch(e){} }
   }
   PILL_RENDER[key] = render;
   const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
@@ -3648,6 +3661,52 @@ function wireAddonField(){
   try{ wireAddonToggle(); }catch(e){}
 }
 
+// ORDER DETAILS PANEL. Two jobs: say what the order is when it is folded, and
+// make sure folding it cannot hide a warning. The mirror does NOT clone the
+// warnings — they carry buttons ("Use Nationwide") whose handlers would not come
+// with them — it counts them and offers to open the panel. (2026-08-11)
+function refreshOrderPanel(){
+  const det=$('orderPanel'); if(!det) return;
+  const sum=$('orderSummary'), out=$('orderAlerts');
+  const brand=(($('brand')||{}).value||'').trim();
+  const site=(stores.sites||[])[0]||'';
+  if(sum){
+    sum.innerHTML = det.open
+      ? ''
+      : (brand||site)
+        ? `${brand?`<b style="color:var(--ink)">${escapeHtml(brand)}</b>`:''}${(brand&&site)?' · ':''}${site?escapeHtml(site):''}`
+        : 'not filled in yet';
+  }
+  if(!out) return;
+  // Amber and red blocks anywhere inside the panel. Detected by the colours the
+  // rest of the page already uses, so a warning added later is mirrored without
+  // anyone remembering to register it here.
+  const alerts=[...det.querySelectorAll('.calc, .err, [style*="fdf1d8"], [style*="fdecea"]')]
+    .filter(el=>/⚠|Markets suggest|didn.t fit|not a place|whole states/.test(el.textContent||''));
+  const seen=new Set(), lines=[];
+  for(const el of alerts){
+    // textContent, not innerText: innerText is layout-dependent and returns ''
+    // for anything inside a CLOSED <details> — the one state this runs in.
+    const t=(el.textContent||'').replace(/\s+/g,' ').trim().slice(0,120);
+    if(t && !seen.has(t)){ seen.add(t); lines.push(t); }
+  }
+  if(det.open || !lines.length){ out.innerHTML=''; return; }
+  out.innerHTML=`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:8px">⚠ <b>${lines.length} thing${lines.length===1?'':'s'} to look at in Order Details</b>
+      <div class="nf" style="margin-top:3px">${lines.map(l=>'• '+escapeHtml(l)).join('<br>')}</div>
+      <button type="button" id="orderOpen" class="btn2" style="margin-top:5px;padding:2px 10px;font-size:12px">Open Order Details</button></div>`;
+  const b=$('orderOpen');
+  if(b) b.onclick=()=>{ det.open=true; refreshOrderPanel(); det.scrollIntoView({behavior:'smooth',block:'start'}); };
+}
+
+(function(){
+  const det=document.getElementById('orderPanel');
+  if(!det) return;
+  det.addEventListener('toggle', refreshOrderPanel);
+  const br=document.getElementById('brand');
+  if(br) br.addEventListener('input', refreshOrderPanel);
+  refreshOrderPanel();
+})();
+
 // A share-for-review link can point straight at the price with #price, which
 // is what a reviewer opens the page for.
 function jumpToPriceIfHashed(){
@@ -3705,6 +3764,7 @@ async function refreshMarketSummary(){
     wireOverlap(r);
     wireScopeSuggestion(r.scope_suggestion);
   }catch(e){ if(seq === _mktSeq) box.innerHTML=''; }
+  try{ refreshOrderPanel(); }catch(e){}
 }
 // ---- overlapping geos ----------------------------------------------------
 // Distance clustering answers "are these the same market". It does not answer
@@ -3886,7 +3946,14 @@ function step1Grid(kw){
   // A short acronym is rarely owned by one industry and Google Ads sums every
   // meaning, so the volume it invents goes straight into the price. Carries
   // KEEP/REMOVE verdicts and Remove buttons — never folded.
-  if(((kw.acronym_collisions||{}).items||[]).length) warn.push(acronymPanelHtml(kw.acronym_collisions));
+  if(((kw.acronym_collisions||{}).items||[]).length){
+    // A cleared acronym check belongs in the build notes. The ratio raised a
+    // suspicion, the SERP answered it, and a ✓ at the top of the panel is a line
+    // announcing that nothing happened. The table with REMOVE verdicts still
+    // renders above the fold, because that one needs a decision. (2026-08-11)
+    const acHtml=acronymPanelHtml(kw.acronym_collisions);
+    (/acr-clear/.test(acHtml) ? notes : warn).push(acHtml);
+  }
 
   // SEEDS THAT DIDN'T FIT. enforce_seed_services() slices clean[:max_services]
   // in ENTRY ORDER, not by volume — 80 focus terms against a 20-service grid
@@ -4092,7 +4159,8 @@ function acronymPanelHtml(ac){
   // green ticks trains the operator to ignore the badge. (2026-08-10)
   const verdicts=items.map(x=>acronymVerdict(x, serps[x.acronym]));
   if(verdicts.length && verdicts.every(v=>v.label==='KEEP')){
-    return `<div class="nf" style="margin-top:4px">\u2713 <b>${items.length} acronym${items.length===1?'':'s'} checked and cleared</b> \u2014 ${items.map(x=>escapeHtml(x.acronym.toUpperCase())).join(', ')} ${items.length===1?'is':'are'} this client's; the SERP confirms it${tipOf('The volume gap flagged '+(items.length===1?'it':'them')+' as a suspect, then the result page settled it: the client ranks for the bare term, so the traffic is theirs and the volume counts.<br><br>'+items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo, gap ${x.ratio==null?'n/a':x.ratio+'\u00d7'} \u2014 ${escapeHtml(((serps[x.acronym]||{}).domains||[]).slice(0,3).join(', '))}`).join('<br>'))}</div>`;
+    // Tagged so the caller can fold it: a cleared check is provenance, not news.
+    return `<div class="nf acr-clear" style="margin-top:4px">\u2713 <b>${items.length} acronym${items.length===1?'':'s'} checked and cleared</b> \u2014 ${items.map(x=>escapeHtml(x.acronym.toUpperCase())).join(', ')} ${items.length===1?'is':'are'} this client's; the SERP confirms it${tipOf('The volume gap flagged '+(items.length===1?'it':'them')+' as a suspect, then the result page settled it: the client ranks for the bare term, so the traffic is theirs and the volume counts.<br><br>'+items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo, gap ${x.ratio==null?'n/a':x.ratio+'\u00d7'} \u2014 ${escapeHtml(((serps[x.acronym]||{}).domains||[]).slice(0,3).join(', '))}`).join('<br>'))}</div>`;
   }
   return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${ac.share}% of the list's volume${nUn?` <span class="nf">(${nUn} with no qualified form to compare, so the SERP is the only evidence)</span>`:''}${tip}
     <table style="border-collapse:collapse;font-size:12px;margin-top:4px">
