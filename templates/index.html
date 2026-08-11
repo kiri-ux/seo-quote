@@ -1887,6 +1887,19 @@ function step3Html(){
         const rl=ST.rankLoc;
         if(!rl) return '';
         const nat=rl.scope==='national';
+        // BUILT FROM THE TABLE, NOT FROM THE LAST BATCH. The server computes this
+        // note from the keywords in whichever call reported it, and the task path
+        // only ever carries the slow tail — so a 35-row table measured across
+        // five markets announced "Measured in Oak Ridge, Sevierville, Tellico
+        // Village", the three that happened to be in the last batch. Knoxville
+        // and Morristown were measured and went unmentioned. This line is the
+        // audit trail for the Ski Barn / NASSCO class of error, so it has to
+        // describe every row on screen. (2026-08-11)
+        const rowLocs=[...new Set((ST.table||[]).map(r=>r&&r.loc).filter(Boolean))].sort();
+        const missing=(ST.table||[]).filter(r=>r&&!r.loc).length;
+        if(!nat && rowLocs.length>1){
+          return `<div class="calc">📍 <b>Measured in ${rowLocs.length} markets</b><span class="nf"> — each keyword in the market it names: ${rowLocs.map(escapeHtml).join(' · ')}.${missing?` ${missing} row${missing===1?'':'s'} finished by a path that did not record one.`:''}</span></div>`;
+        }
         return `<div class="calc" style="${nat?'background:#fdf1d8;border-color:#e8c98a':''}">${nat?'⚠ ':'📍 '}<b>${nat?'Measured nationally':'Measured in '+escapeHtml(String(rl.location||'').replace(',United States','').replace(/,/g,', '))}</b><span class="nf"> — ${escapeHtml(rl.note||'')}</span></div>`;
       })()}
       ${(()=>{
