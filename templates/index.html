@@ -1072,7 +1072,7 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
 // it rewrites the seed pills, which moves tier assignment and therefore price,
 // so it is never automatic. (2026-08-11)
 let _rankUndo=null;
-async function runRankSeeds(){
+async function runRankSeeds(skipKinds){
   const btn=$('rankSeedBtn'), out=$('rankSeedOut');
   if(!stores.kw.length){ out.innerHTML='<div class="nf" style="font-size:12px">Add some focus terms first.</div>'; return; }
   btn.disabled=true; btn.textContent='Measuring…'; out.innerHTML='';
@@ -1080,27 +1080,34 @@ async function runRankSeeds(){
     const r=await postJSON('/api/rank_seeds',{
       seeds:stores.kw.slice(), geo_values:stores.geo.slice(),
       state:($('state')||{}).value||'',
+      brand:($('brand')||{}).value||'', domain:(stores.sites||[])[0]||'',
+      industry:(stores.industry||[]).join(', '),
+      business_desc:($('business_desc')||{}).value||'',
+      skip_kinds:!!skipKinds,
       national_demand:!!($('natdemand')&&$('natdemand').checked)});
     const n=x=>Number(x||0).toLocaleString();
-    const kept=r.kept||[], dropped=r.dropped||[], folded=r.folded||[];
+    const kept=r.kept||[], dropped=r.dropped||[], folded=r.folded||[], demoted=r.demoted||[];
     const chip=(t,v)=>`${escapeHtml(t)} <span class="nf" style="font-size:10.5px">(${n(v)}/mo)</span>`;
     if(!r.measured){
       out.innerHTML=`<div class="calc" style="background:#fdecea;border-color:#e0a3a0;font-size:12.5px">⚠ <b>No volume data came back${r.error?' — '+escapeHtml(r.error):''}</b>, so there is nothing to rank on. Nothing was changed. ${r.error?'Usually transient — try again.':'These terms may be too niche for the keyword tool; reword them and retry.'}</div>`;
       return;
     }
-    // "nothing is lost" was wrong whenever synonyms had been folded — six terms
-    // do leave the list, they are just duplicates of ones that stay.
-    const after = dropped.length
-      ? 'Rebuild step 1 afterwards.'
-      : (folded.length ? 'Only the folded synonyms leave the list.' : 'Reorders the list only.');
+    // State what LEAVES, counted from the real numbers. Naming one cause at a
+    // time got it wrong every time a second one applied.
+    const gone = Math.max(0, (r.total||0) - kept.length);
+    const after = gone
+      ? `${gone} term${gone===1?'':'s'} leave the list — rebuild step 1 afterwards.`
+      : 'Reorders the list only.';
     out.innerHTML=`<div style="border:1px solid #d9cfe8;background:#f8f6fc;border-radius:9px;padding:9px 11px;font-size:12.5px">
       <div class="nf" style="font-size:11.5px;margin-bottom:5px">Measured against <b>${escapeHtml(r.basis||'')}</b> — ${r.total} term${r.total===1?'':'s'} in, ${kept.length} would fill the ${r.limit}-service grid. Nothing has changed yet.</div>
       <div style="margin-bottom:6px"><b style="color:var(--ink)">Keep, best first</b><div class="nf" style="margin-top:2px;line-height:1.7">${kept.map((x,i)=>`<span style="display:inline-block;margin:0 5px 3px 0;padding:2px 9px;border-radius:12px;border:1px solid var(--atlas);color:var(--atlas);background:#fff">${i+1}. ${chip(x.term,x.volume)}</span>`).join('')}</div></div>
       ${folded.length?`<div style="margin-bottom:6px"><b style="color:var(--ink)">${r.folded_total} synonym${r.folded_total===1?'':'s'} folded in</b>${tipOf('Same service line written more than one way. A 20-slot grid cannot spend two slots saying the same thing, and the bare head noun never represents the group &mdash; &ldquo;junk&rdquo; outsearches &ldquo;junk removal&rdquo; and is not a service anyone sells.')}<div class="nf" style="margin-top:2px">${folded.map(g=>`<div>→ <b>${escapeHtml(g.keep)}</b> absorbs ${g.fold.map(f=>chip(f.term,f.volume)).join(' · ')}</div>`).join('')}</div></div>`:''}
+      ${demoted.length?`<div style="margin-bottom:6px;padding:7px 9px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px"><b>${demoted.length} not a service for this client</b>${tipOf('Set aside BEFORE the ranking, not filtered after it &mdash; the whole point is that these must not take a slot. &ldquo;old tvs&rdquo; carried 80/mo and ranked fourth, pushing hoarding cleanup, appliance removal and demolition below the cut; most of that volume is people shopping for a television, not hiring anyone to take one away. Judged against this client, so the same phrase can be a service for one business and an object for another.')}<div class="nf" style="margin-top:3px">${demoted.map(x=>`<div>${x.kind==='item'?'\u{1F4E6}':'\u{1F6AB}'} ${chip(x.term,x.volume)} — ${escapeHtml(x.why||(x.kind==='item'?'an object, not a service':'a different trade'))}</div>`).join('')}</div><button type="button" id="rankSeedKeepKinds" class="btn2" style="margin-top:5px;padding:2px 10px;font-size:11.5px">Keep them anyway</button></div>`:''}
       ${dropped.length?`<div style="margin-bottom:6px"><b style="color:var(--ink)">${dropped.length} below the cut</b> <span class="nf">— real terms, just lower demand than the ${kept.length} above. They stay out of the grid.</span><div class="nf" style="margin-top:2px">${dropped.map(x=>chip(x.term,x.volume)).join(' · ')}</div></div>`:''}
       <button type="button" id="rankSeedApply" style="background:var(--atlas);color:#fff;border:none;padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Replace my ${r.total} terms with these ${kept.length}</button>
       <span class="nf" style="font-size:11px;margin-left:7px">${after}</span>
     </div>`;
+    if($('rankSeedKeepKinds')) $('rankSeedKeepKinds').onclick=()=>runRankSeeds(true);
     $('rankSeedApply').onclick=()=>{
       _rankUndo=stores.kw.slice();
       stores.kw=kept.map(x=>x.term);
@@ -1116,7 +1123,7 @@ async function runRankSeeds(){
   }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
   finally{ btn.disabled=false; btn.textContent="✦ Rank & trim"; }
 }
-document.getElementById('rankSeedBtn').addEventListener('click', runRankSeeds);
+document.getElementById('rankSeedBtn').addEventListener('click', ()=>runRankSeeds(false));
 
 // SERVICE LINES THE SEED LIST IS MISSING. The grid can only choose among the
 // seeds it is handed, so a list seeded from an incumbent's report inherits that

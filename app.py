@@ -3086,30 +3086,65 @@ def _seed_stem(word):
     # service as "junk removal".
     for suf in ("ations", "ation", "ings", "ing", "ers", "er", "ors", "or",
                 "als", "al", "ies", "es", "s", "e"):
-        if len(w) > len(suf) + 2 and w.endswith(suf):
+        # One-letter suffixes get a shorter guard so three-letter plurals stem:
+        # without it "tvs" and "tv" are different tokens.
+        floor = 2 if len(suf) == 1 else len(suf) + 2
+        if len(w) > floor and w.endswith(suf):
             return w[: -len(suf)]
     return w
 
 
+# THE VERB IS NOT THE SERVICE, THE OBJECT IS. "yard waste removal" and "yard
+# waste disposal" both took a slot on Junk Bee Gone, as did "furniture removal"
+# and "furniture pick up", and "mattress removal" was kept while "mattress
+# disposal" fell below the cut — the same service bought twice, or split across
+# the cut so neither read as important. Canonicalising the action verbs merges
+# them; it can only ever merge phrases that already share their object noun, so
+# it stays safe across verticals ("tooth extraction" / "tooth removal" are also
+# one service). (2026-08-11)
+_SEED_ACTION = {
+    # get-rid-of family
+    "remov": "remov", "remo": "remov", "dispos": "remov", "disposit": "remov",
+    "pickup": "remov", "pick": "remov", "haul": "remov", "hauling": "remov",
+    "junk": "junk",          # 'junk' is an object here, never an action
+    "takeaway": "remov", "discard": "remov", "dump": "remov", "toss": "remov",
+    "recycl": "remov", "scrap": "remov",
+    "extract": "remov", "extraction": "remov",
+    # clear-the-space family
+    "cleanout": "clean", "cleanup": "clean", "clean": "clean", "clear": "clean",
+    "clearanc": "clean", "clearout": "clean", "declutt": "clean",
+    # equipment-hire family
+    "rental": "rent", "rent": "rent", "leas": "rent", "hir": "rent",
+}
+
+
 def _seed_key(term):
-    """Stemmed token set with shape words removed — the near-duplicate key."""
+    """Stemmed token set with shape words removed and action verbs canonicalised
+    — the near-duplicate key."""
     toks = set()
     for w in (term or "").lower().split():
         if w in _SEED_SHAPE:
             continue
         st = _seed_stem(w)
+        st = _SEED_ACTION.get(st, st)
         if st and st not in _SEED_SHAPE:
             toks.add(st)
     return frozenset(toks)
 
 
-def rank_seeds(seeds, markets, state, national=False, limit=None):
+def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     """Fold near-duplicate seeds, rank the survivors by measured demand, and
     say which ones fit the grid.
+
+    `kinds` is the claude_seed_kinds() map. Anything it calls an item or another
+    trade is set aside BEFORE the ranking rather than filtered after it, so a
+    high-volume object like "old tvs" cannot displace a real service line. It is
+    reported, not deleted.
 
     Returns a dict the panel renders verbatim. Never mutates anything.
     """
     limit = int(limit or CFG.get("grid_max_services", 20))
+    kinds = kinds or {}
     clean, order = [], {}
     for s in seeds or []:
         t = clean_kw(strip_placeholders(strip_proximity(
@@ -3118,8 +3153,9 @@ def rank_seeds(seeds, markets, state, national=False, limit=None):
             order[t] = len(clean)
             clean.append(t)
     if not clean:
-        return {"kept": [], "folded": [], "dropped": [], "limit": limit,
-                "total": 0, "measured": False, "basis": "", "error": ""}
+        return {"kept": [], "folded": [], "dropped": [], "demoted": [],
+                "limit": limit, "total": 0, "measured": False, "basis": "",
+                "error": ""}
 
     vols, err = {}, ""
     try:
@@ -3130,6 +3166,27 @@ def rank_seeds(seeds, markets, state, national=False, limit=None):
     vols = vols or {}
     vol = lambda t: int(vols.get(t, 0) or 0)     # noqa: E731
     measured = any(vol(t) for t in clean)
+
+    # Set aside anything that is not a service for this client. Done here, not
+    # after the cut, because the whole point is that these must not take a slot.
+    demoted = []
+    if kinds:
+        keep = []
+        for t in clean:
+            k = kinds.get(t) or kinds.get(t.lower())
+            if k:
+                demoted.append({"term": t, "volume": vol(t),
+                                "kind": k.get("kind", "item"),
+                                "why": k.get("why", "")})
+            else:
+                keep.append(t)
+        # Never demote the entire list: if the classifier disliked everything the
+        # classifier is what is wrong, not the seeds.
+        if keep:
+            clean = keep
+        else:
+            demoted = []
+    demoted.sort(key=lambda r: -r["volume"])
 
     # ---- fold near-duplicates -------------------------------------------
     # Highest volume wins the group; ties fall back to entry order so the
@@ -3175,7 +3232,8 @@ def rank_seeds(seeds, markets, state, national=False, limit=None):
                     "fold": [row(f) for f in g["fold"]]}
                    for g in groups if g["fold"] and g["keep"] in keptset],
         "folded_total": sum(len(g["fold"]) for g in groups),
-        "limit": limit, "total": len(clean), "measured": measured,
+        "demoted": demoted,
+        "limit": limit, "total": len(clean) + len(demoted), "measured": measured,
         "basis": "US national" if national or not markets else "targeted cities",
         "error": err or "",
     }
@@ -9315,6 +9373,97 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
     return out[:n]
 
 
+
+def claude_seed_kinds(seeds, brand="", domain="", industry="",
+                      business_desc="", site_pages=None):
+    """Is each seed a SERVICE this business performs, or just a THING?
+
+    "old tvs" (80/mo) ranked fourth on Junk Bee Gone's focus list and pushed
+    hoarding cleanup, appliance removal and demolition below the cut. It is not a
+    service: it is an object, and most of that volume is people SHOPPING for old
+    televisions, not paying to have one taken away — the same bare-versus-
+    qualified collision the acronym check exists for, in a different costume.
+    "furniture movers" is the other kind of miss: a real service, but a different
+    trade from the one being quoted.
+
+    A word list cannot do this job. "old tvs" has no action verb and neither does
+    "invisalign", and one is an item while the other is the whole practice. So it
+    is asked, per client, with the business in front of it.
+
+    Only ever DEMOTES, never reorders and never deletes: the caller shows every
+    verdict with its reason and the operator can keep the lot. Returns
+    {term: {"kind": service|item|other_business, "why": str}} and {} on any
+    failure — no key, no network, bad JSON — so the ranking degrades to
+    volume-only rather than breaking. (2026-08-11)
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    terms = []
+    for s in seeds or []:
+        t = str(s or "").strip().lower()
+        if t and t not in terms:
+            terms.append(t)
+    if not api_key or not terms:
+        return {}
+    pages = [str(p) for p in (site_pages or [])][:30]
+    prompt = f"""{brand or domain or "A business"} is being quoted for SEO.
+Industry: {industry or "(not given)"}
+{f'They describe themselves as: {business_desc}' if business_desc else ''}
+{f'Pages on their website: {", ".join(pages)}' if pages else ''}
+
+Below is the list of terms the partner wants this client to rank for. Classify
+EVERY term as exactly one of:
+
+  "service"        - something this business DOES or SELLS. The normal case.
+                     A bare product or treatment name counts as a service when
+                     the business is what people buy it from ("invisalign" for a
+                     dentist, "trex decking" for a deck builder).
+  "item"           - a THING, with no indication of what the business does with
+                     it. "old tvs", "mattress", "washing machine" for a junk
+                     removal company: someone searching that phrase is at least
+                     as likely to be SHOPPING for the object as hiring anyone to
+                     take it away, so the search volume is not this client's.
+  "other_business" - a real service, but a DIFFERENT trade from this client's.
+                     "furniture movers" for a junk removal company; "roofing"
+                     for a plumber. Also use this for a competitor's company name.
+
+Rules:
+- Default to "service". Only say "item" when the phrase names an object and
+  nothing else — if it contains any hint of the work ("mattress removal",
+  "tv disposal", "appliance pickup") it is a service.
+- Judge against THIS client. The same phrase can be a service for one business
+  and an item for another.
+- "why" must be under 12 words and say what the term actually is.
+
+TERMS: {json.dumps(terms, ensure_ascii=False)}
+
+Return ONLY JSON:
+{{"terms": [{{"term": "old tvs", "kind": "item", "why": "an object, not work the company performs"}}]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 4000, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=60)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        raw = json.loads(text).get("terms") or []
+    except Exception:
+        app.logger.exception("claude_seed_kinds failed")
+        return {}
+    out = {}
+    for it in raw:
+        t = str((it or {}).get("term") or "").strip().lower()
+        k = str((it or {}).get("kind") or "").strip().lower()
+        if t and k in ("item", "other_business"):
+            out[t] = {"kind": k, "why": str((it or {}).get("why") or "")[:90]}
+    return out
+
 @app.route("/api/rank_seeds", methods=["POST"])
 @_json_error_guard
 def api_rank_seeds():
@@ -9324,9 +9473,21 @@ def api_rank_seeds():
     markets = usable_markets(d.get("geo_values") or [])
     state = derive_state(markets, (d.get("state") or "").strip())
     nat = bool(d.get("national_demand")) or not markets
-    return jsonify(rank_seeds([x for x in (d.get("seeds") or []) if x],
-                              markets, state, national=nat,
-                              limit=d.get("limit")))
+    seeds = [x for x in (d.get("seeds") or []) if x]
+    kinds = {}
+    if not d.get("skip_kinds"):
+        dom = (d.get("domain") or "").strip()
+        pages = []
+        if dom:
+            try:
+                pages = fetch_site_pages(dom) or []
+            except Exception:
+                pages = []
+        kinds = claude_seed_kinds(seeds, d.get("brand") or "", dom,
+                                  d.get("industry") or "",
+                                  d.get("business_desc") or "", pages)
+    return jsonify(rank_seeds(seeds, markets, state, national=nat,
+                              limit=d.get("limit"), kinds=kinds))
 
 
 @app.route("/api/expand_services", methods=["POST"])
