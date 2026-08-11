@@ -3204,9 +3204,11 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     ranked = sorted(clean, key=lambda t: (ntok(t) < 2, -vol(t), order[t]))
     groups = []                                   # [{"keep":t, "fold":[t,...], "key":set}]
     for t in ranked:
-        k = _seed_key(t)
-        if not k:
-            continue
+        # A seed made entirely of shape words ("services", "near me") keys to the
+        # empty set. Skipping it dropped the term from every bucket, so applying
+        # the trim deleted a term the operator was never shown. Give it a key of
+        # its own instead: it appears, and it folds with nothing. (2026-08-11)
+        k = _seed_key(t) or frozenset({t})
         hit = None
         for g in groups:
             if k == g["key"] or k <= g["key"] or g["key"] <= k:
@@ -9375,7 +9377,7 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
 
 
 def claude_seed_kinds(seeds, brand="", domain="", industry="",
-                      business_desc="", site_pages=None):
+                      business_desc="", site_pages=None, sells_products=False):
     """Is each seed a SERVICE this business performs, or just a THING?
 
     "old tvs" (80/mo) ranked fourth on Junk Bee Gone's focus list and pushed
@@ -9409,29 +9411,41 @@ def claude_seed_kinds(seeds, brand="", domain="", industry="",
 Industry: {industry or "(not given)"}
 {f'They describe themselves as: {business_desc}' if business_desc else ''}
 {f'Pages on their website: {", ".join(pages)}' if pages else ''}
+{'This client SELLS PRODUCTS (a storefront was detected, or they are priced on national product demand), so the objects they stock are their offer, not things they are hired to work on.' if sells_products else ''}
 
 Below is the list of terms the partner wants this client to rank for. Classify
 EVERY term as exactly one of:
 
-  "service"        - something this business DOES or SELLS. The normal case.
-                     A bare product or treatment name counts as a service when
-                     the business is what people buy it from ("invisalign" for a
-                     dentist, "trex decking" for a deck builder).
-  "item"           - a THING, with no indication of what the business does with
-                     it. "old tvs", "mattress", "washing machine" for a junk
-                     removal company: someone searching that phrase is at least
-                     as likely to be SHOPPING for the object as hiring anyone to
-                     take it away, so the search volume is not this client's.
+  "service"        - the person searching this wants what this client provides.
+                     THE NORMAL CASE, and it covers products as well as work: a
+                     bare object IS the offer when the client sells that object.
+                     "invisalign" for a dentist, "trex decking" for a deck
+                     builder, "old tvs" for a used-electronics dealer,
+                     "mattress" for a mattress store.
+  "item"           - the phrase names an object, and this client does not SELL
+                     that object - they are paid to do something TO it. The
+                     person searching it is at least as likely to be shopping
+                     for the thing as hiring this client, so the volume is not
+                     theirs. "old tvs" and "mattress" for a JUNK REMOVAL company
+                     (they would be paid to take one away; the searcher wants to
+                     buy one). The same two phrases are "service" for a used-
+                     electronics dealer and a mattress store.
   "other_business" - a real service, but a DIFFERENT trade from this client's.
                      "furniture movers" for a junk removal company; "roofing"
                      for a plumber. Also use this for a competitor's company name.
 
 Rules:
-- Default to "service". Only say "item" when the phrase names an object and
-  nothing else — if it contains any hint of the work ("mattress removal",
-  "tv disposal", "appliance pickup") it is a service.
-- Judge against THIS client. The same phrase can be a service for one business
-  and an item for another.
+- Default to "service". These three buckets are not balanced: most terms are
+  services, and "item" is the rare case.
+- THE SAME PHRASE GOES BOTH WAYS depending on the client, so decide from the
+  business above, never from the words alone. Ask: would this searcher be happy
+  to land on this client's website? If the client sells the object, yes - that
+  is "service".
+- If the client is a retailer, dealer, manufacturer or product brand, the object
+  is their whole offer and "item" should essentially never fire. Shopping intent
+  is exactly the audience they want.
+- Never say "item" when the phrase already contains the work ("mattress removal",
+  "tv disposal", "appliance pickup") - that is a service whatever the client is.
 - "why" must be under 12 words and say what the term actually is.
 
 TERMS: {json.dumps(terms, ensure_ascii=False)}
@@ -9456,12 +9470,21 @@ Return ONLY JSON:
     except Exception:
         app.logger.exception("claude_seed_kinds failed")
         return {}
+    # A PRODUCT SELLER'S OBJECTS ARE ITS OFFER. For a used-electronics dealer
+    # "old tvs" is the whole business and shopping intent is exactly the audience
+    # wanted, so the item verdict is refused outright rather than trusted — a
+    # wrong call there deletes the client's best terms. Judgement is still used
+    # for other_business, which is wrong for a retailer too but not fatal.
+    # (2026-08-11)
     out = {}
     for it in raw:
         t = str((it or {}).get("term") or "").strip().lower()
         k = str((it or {}).get("kind") or "").strip().lower()
-        if t and k in ("item", "other_business"):
-            out[t] = {"kind": k, "why": str((it or {}).get("why") or "")[:90]}
+        if not t or k not in ("item", "other_business"):
+            continue
+        if k == "item" and sells_products:
+            continue
+        out[t] = {"kind": k, "why": str((it or {}).get("why") or "")[:90]}
     return out
 
 @app.route("/api/rank_seeds", methods=["POST"])
@@ -9477,15 +9500,24 @@ def api_rank_seeds():
     kinds = {}
     if not d.get("skip_kinds"):
         dom = (d.get("domain") or "").strip()
-        pages = []
+        pages, urls = [], []
         if dom:
             try:
-                pages = fetch_site_pages(dom) or []
+                pages = fetch_site_pages(dom, collect_urls=urls) or []
             except Exception:
-                pages = []
+                pages, urls = [], []
+        # Two independent reads on "do they sell things": the operator's own
+        # national-product-demand switch, and a storefront in the URL structure.
+        ecom, _why = detect_ecommerce(urls)
         kinds = claude_seed_kinds(seeds, d.get("brand") or "", dom,
                                   d.get("industry") or "",
-                                  d.get("business_desc") or "", pages)
+                                  d.get("business_desc") or "", pages,
+                                  # NOT `nat` — that is true whenever no geos
+                                  # are entered, which would switch the check off
+                                  # for a local hauler mid-setup. Only the
+                                  # operator's explicit product-demand tick counts.
+                                  sells_products=bool(d.get("national_demand")
+                                                      or ecom))
     return jsonify(rank_seeds(seeds, markets, state, national=nat,
                               limit=d.get("limit"), kinds=kinds))
 
