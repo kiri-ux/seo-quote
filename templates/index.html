@@ -3792,16 +3792,31 @@ function step1Grid(kw){
   if(ga.axis){
     const svc = ga.axis==='services';
     const other = svc?'geography':'services';
-    // One line. The server's full sentence and the measurement both live in the
-    // hover — this is the first thing on the panel and a five-line paragraph
-    // there set the tone for the whole page. (2026-08-11)
-    const dc=(ev.dropped_cities||[]).length;
-    // A hand override must not print the evidence for the OTHER axis as though
-    // it justified this one. (2026-08-11)
-    const measured = ev.by_hand
-      ? `set by hand${(ev.measured_axis && ev.measured_axis!==ga.axis)?`, overriding the measurement (it said <b>${escapeHtml(ev.measured_axis)}</b>)`:', and the measurement agrees'}`
-      : `${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${ev.floor||20}/mo`;
-    warn.push(`<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> \u2014 ${measured}${dc?`, so ${dc} market${dc===1?'':'s'} ${dc===1?'was':'were'} not crossed`:''}. <button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Use ${other} instead</button>${tipOf(escapeHtml(ga.reason||'')+(dc?'<br><br>Not crossed: '+ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')+'. They stay on the order as targeting area.':'')+'<br><br>A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+(ev.floor||20)+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.')}</div>`);
+    const rec = ev.measured_axis || (ev.by_hand ? '' : ga.axis);
+    const against = !!(ev.by_hand && rec && rec !== ga.axis);
+    const floor = ev.floor || 20;
+    // MEASURED, not inferred: how many of the terms actually on the panel report
+    // nothing. Crossing markets with no demand is what an override against the
+    // measurement buys, and the size of it should not be left to the operator
+    // to work out from a ratio. (2026-08-11)
+    const dead = (kw.all||[]).filter(x=>!Number(x.vol) || Number(x.vol) < floor).length;
+    const nAll = (kw.all||[]).length;
+    // A BUTTON IS NOT ADVICE. "Use geography instead" read as a recommendation,
+    // so the operator clicked it and landed on a panel telling them to use
+    // services — the tool looked like it had changed its mind when all it ever
+    // recommended was services. The label now says which of the two it is.
+    const flip = (other === rec)
+      ? `Put it back to ${other}`
+      : `Override to ${other}`;
+    const btn = `<button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px${against?';background:var(--atlas);color:#fff;border-color:var(--atlas)':''}">${flip}</button>`;
+    const why = tipOf(escapeHtml(ga.reason||'')+((ev.dropped_cities&&ev.dropped_cities.length)?'<br><br>Not crossed: '+ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')+'. They stay on the order as targeting area.':'')+'<br><br>A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+floor+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.<br><br>The button beside this line is an override, not a recommendation. What the measurement recommends is '+escapeHtml(rec||ga.axis)+'.');
+    if(against){
+      // Overriding the measurement is a decision with a measurable cost, so it
+      // is an amber warning rather than a grey note.
+      warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Budget spent on ${svc?'services':'geography'} by hand</b> — the measurement says <b>${escapeHtml(rec)}</b>: only ${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carr${(ev.cities_with_demand||0)===1?'ies':'y'} demand above ${floor}/mo.${(nAll&&dead)?` <b>${dead} of the ${nAll} terms below report under ${floor}/mo</b> — the crossing is buying copies of one market in markets with nothing to win.`:''} ${btn}${why}</div>`);
+    } else {
+      warn.push(`<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> — ${ev.by_hand?'set by hand, and the measurement agrees':`${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${floor}/mo`}${(ev.dropped_cities&&ev.dropped_cities.length)?`, so ${ev.dropped_cities.length} market${ev.dropped_cities.length===1?'':'s'} ${ev.dropped_cities.length===1?'was':'were'} not crossed`:''}. ${btn}${why}</div>`);
+    }
   }
 
   // A national list measured in one entered market is the Ski Barn error
