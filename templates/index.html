@@ -325,12 +325,9 @@
     <label>Product / Vertical Focus<span class="req">*</span></label>
     <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
-    <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button> <span class="nf" style="font-size:11.5px">copies the service list off the client's own navigation</span></div>
+    <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest services</button> <span class="nf" style="font-size:11.5px">reads their site, then names what this industry sells that isn't listed</span></div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
-    <div style="margin-top:8px"><button id="expandSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button> <span class="nf" style="font-size:11.5px">services this client sells that you haven't listed yet</span></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
-    <div style="margin-top:8px"><button id="rankSeedBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Rank &amp; trim</button> <span class="nf" style="font-size:11.5px">folds synonyms, keeps the highest-demand terms — preview first</span></div>
-    <div id="rankSeedOut" style="margin-top:6px"></div>
 
 
     <label>Business description</label>
@@ -895,6 +892,10 @@ function wirePills(key, inputId){
     // "2 areas -> 2 markets ... couldn't place california, pennsylvania".
     // (2026-08-10)
     if(key === 'geo'){ try{ scheduleMarketSummary(); }catch(e){} }
+    // Same reasoning, other field: a site arriving with an empty focus list is
+    // the moment to propose one. Inside render() so every path reaches it —
+    // typing, the x button, a report import, a restore.
+    if(key === 'sites' || key === 'kw'){ try{ maybeAutoSuggest(); }catch(e){} }
   }
   PILL_RENDER[key] = render;
   const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
@@ -1071,59 +1072,11 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
 // near-duplicates and shows what would be kept BEFORE anything changes: applying
 // it rewrites the seed pills, which moves tier assignment and therefore price,
 // so it is never automatic. (2026-08-11)
-let _rankUndo=null;
-async function runRankSeeds(skipKinds){
-  const btn=$('rankSeedBtn'), out=$('rankSeedOut');
-  if(!stores.kw.length){ out.innerHTML='<div class="nf" style="font-size:12px">Add some focus terms first.</div>'; return; }
-  btn.disabled=true; btn.textContent='Measuring…'; out.innerHTML='';
-  try{
-    const r=await postJSON('/api/rank_seeds',{
-      seeds:stores.kw.slice(), geo_values:stores.geo.slice(),
-      state:($('state')||{}).value||'',
-      brand:($('brand')||{}).value||'', domain:(stores.sites||[])[0]||'',
-      industry:(stores.industry||[]).join(', '),
-      business_desc:($('business_desc')||{}).value||'',
-      skip_kinds:!!skipKinds,
-      national_demand:!!($('natdemand')&&$('natdemand').checked)});
-    const n=x=>Number(x||0).toLocaleString();
-    const kept=r.kept||[], dropped=r.dropped||[], folded=r.folded||[], demoted=r.demoted||[];
-    const chip=(t,v)=>`${escapeHtml(t)} <span class="nf" style="font-size:10.5px">(${n(v)}/mo)</span>`;
-    if(!r.measured){
-      out.innerHTML=`<div class="calc" style="background:#fdecea;border-color:#e0a3a0;font-size:12.5px">⚠ <b>No volume data came back${r.error?' — '+escapeHtml(r.error):''}</b>, so there is nothing to rank on. Nothing was changed. ${r.error?'Usually transient — try again.':'These terms may be too niche for the keyword tool; reword them and retry.'}</div>`;
-      return;
-    }
-    // State what LEAVES, counted from the real numbers. Naming one cause at a
-    // time got it wrong every time a second one applied.
-    const gone = Math.max(0, (r.total||0) - kept.length);
-    const after = gone
-      ? `${gone} term${gone===1?'':'s'} leave the list — rebuild step 1 afterwards.`
-      : 'Reorders the list only.';
-    out.innerHTML=`<div style="border:1px solid #d9cfe8;background:#f8f6fc;border-radius:9px;padding:9px 11px;font-size:12.5px">
-      <div class="nf" style="font-size:11.5px;margin-bottom:5px">Measured against <b>${escapeHtml(r.basis||'')}</b> — ${r.total} term${r.total===1?'':'s'} in, ${kept.length} would fill the ${r.limit}-service grid. Nothing has changed yet.</div>
-      <div style="margin-bottom:6px"><b style="color:var(--ink)">Keep, best first</b><div class="nf" style="margin-top:2px;line-height:1.7">${kept.map((x,i)=>`<span style="display:inline-block;margin:0 5px 3px 0;padding:2px 9px;border-radius:12px;border:1px solid var(--atlas);color:var(--atlas);background:#fff">${i+1}. ${chip(x.term,x.volume)}</span>`).join('')}</div></div>
-      ${folded.length?`<div style="margin-bottom:6px"><b style="color:var(--ink)">${r.folded_total} synonym${r.folded_total===1?'':'s'} folded in</b>${tipOf('Same service line written more than one way. A 20-slot grid cannot spend two slots saying the same thing, and the bare head noun never represents the group &mdash; &ldquo;junk&rdquo; outsearches &ldquo;junk removal&rdquo; and is not a service anyone sells.')}<div class="nf" style="margin-top:2px">${folded.map(g=>`<div>→ <b>${escapeHtml(g.keep)}</b> absorbs ${g.fold.map(f=>chip(f.term,f.volume)).join(' · ')}</div>`).join('')}</div></div>`:''}
-      ${demoted.length?`<div style="margin-bottom:6px;padding:7px 9px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px"><b>${demoted.length} set aside \u2014 not what this client sells</b>${tipOf('Set aside BEFORE the ranking, not filtered after it &mdash; the whole point is that these must not take a slot. &ldquo;old tvs&rdquo; carried 80/mo and ranked fourth for a junk hauler, pushing hoarding cleanup, appliance removal and demolition below the cut; most of that volume is people shopping for a television, not hiring anyone to take one away.<br><br>The test is whether the searcher wants what this client provides, so <b>the same phrase goes both ways</b>: &ldquo;old tvs&rdquo; is set aside for a hauler and kept for a used-electronics dealer. For a retailer, dealer or product brand the objects ARE the offer, and this check is switched off entirely when a storefront is detected or you have ticked Price on national demand.')}<div class="nf" style="margin-top:3px">${demoted.map(x=>`<div>${x.kind==='item'?'\u{1F4E6}':'\u{1F6AB}'} ${chip(x.term,x.volume)} — ${escapeHtml(x.why||(x.kind==='item'?'an object, not a service':'a different trade'))}</div>`).join('')}</div><button type="button" id="rankSeedKeepKinds" class="btn2" style="margin-top:5px;padding:2px 10px;font-size:11.5px">Keep them anyway</button></div>`:''}
-      ${dropped.length?`<div style="margin-bottom:6px"><b style="color:var(--ink)">${dropped.length} below the cut</b> <span class="nf">— real terms, just lower demand than the ${kept.length} above. They stay out of the grid.</span><div class="nf" style="margin-top:2px">${dropped.map(x=>chip(x.term,x.volume)).join(' · ')}</div></div>`:''}
-      <button type="button" id="rankSeedApply" style="background:var(--atlas);color:#fff;border:none;padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Replace my ${r.total} terms with these ${kept.length}</button>
-      <span class="nf" style="font-size:11px;margin-left:7px">${after}</span>
-    </div>`;
-    if($('rankSeedKeepKinds')) $('rankSeedKeepKinds').onclick=()=>runRankSeeds(true);
-    $('rankSeedApply').onclick=()=>{
-      _rankUndo=stores.kw.slice();
-      stores.kw=kept.map(x=>x.term);
-      PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
-      out.innerHTML=`<div class="nf" style="font-size:12px">✓ Focus terms replaced — ${_rankUndo.length} → ${stores.kw.length}, ranked by demand. <b>Rebuild step 1</b> to price it. <button type="button" id="rankSeedUndo" class="btn2" style="padding:1px 9px;font-size:11px;margin-left:5px">Undo</button></div>`;
-      $('rankSeedUndo').onclick=()=>{
-        if(!_rankUndo) return;
-        stores.kw=_rankUndo.slice(); _rankUndo=null;
-        PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
-        out.innerHTML='<div class="nf" style="font-size:12px">↺ Original focus terms restored.</div>';
-      };
-    };
-  }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
-  finally{ btn.disabled=false; btn.textContent="✦ Rank & trim"; }
-}
-document.getElementById('rankSeedBtn').addEventListener('click', ()=>runRankSeeds(false));
+// RANK & TRIM REMOVED 2026-08-11. The build ranks every focus term by measured
+// demand and folds synonyms on its own (see seed_ranking), so the button was a
+// click that produced the outcome the build had already produced — running it by
+// hand on NASSCO returned "9 -> 9, ranked by demand". /api/rank_seeds and
+// rank_seeds() stay: the build is the caller now.
 
 // SERVICE LINES THE SEED LIST IS MISSING. The grid can only choose among the
 // seeds it is handed, so a list seeded from an incumbent's report inherits that
@@ -1131,10 +1084,9 @@ document.getElementById('rankSeedBtn').addEventListener('click', ()=>runRankSeed
 // removal" while its own site sells demolition, hoarding cleanup and paper
 // shredding. Asks what is MISSING given what is already covered, measures each,
 // and offers only the ones with demand. (2026-08-10)
-document.getElementById('expandSvcBtn').addEventListener('click', async ()=>{
-  const btn=$('expandSvcBtn'), out=$('expandSvcOut');
-  btn.disabled=true; btn.textContent='Looking…';
-  out.innerHTML='';
+async function runExpandServices(){
+  const btn=$('siteSvcBtn'), out=$('expandSvcOut');
+  out.innerHTML='<div class="nf" style="font-size:12px">Checking what this industry sells that you haven\'t listed…</div>';
   try{
     const r=await postJSON('/api/expand_services',{
       brand:($('brand')||{}).value||'', domain:(stores.sites||[])[0]||'',
@@ -1153,8 +1105,7 @@ document.getElementById('expandSvcBtn').addEventListener('click', async ()=>{
       + (bad.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below ${'20'}/mo, not offered: ${bad.slice(0,10).map(x=>escapeHtml(x.term)).join(' · ')}</div>`:'');
     wireSvcChips(out);
   }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
-  finally{ btn.disabled=false; btn.textContent="✦ What's missing"; }
-});
+}
 
 // ADD ALL. A menu read comes back with fifteen chips and clicking fifteen chips
 // one at a time is data entry, not a decision. One button per chip group, so
@@ -1239,13 +1190,20 @@ function renderSvcChips(data, out){
 }
 
 // ---- suggest services from the client site's nav menu ----
-document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
+async function runSuggestServices(auto){
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
   const btn=document.getElementById('siteSvcBtn'), out=document.getElementById('siteSvcOut');
   const dom=stores.sites[0];
-  if(!dom){ out.innerHTML='<div class="nf" style="font-size:12px">Add the client website above first.</div>'; return; }
-  btn.disabled=true; btn.textContent='Reading site menu…';
+  if(!dom){
+    // Silent when it fired itself — there is nothing to read yet and nobody asked.
+    if(!auto) out.innerHTML='<div class="nf" style="font-size:12px">Add the client website above first.</div>';
+    return;
+  }
+  btn.disabled=true; btn.textContent='Reading their site…';
   out.innerHTML='';
+  // Both sources run: their own menu says what they sell, the industry pass says
+  // what businesses like them sell that this list is missing. One question.
+  runExpandServices().catch(()=>{});
   try{
     document.getElementById('brand') && document.getElementById('brand').dispatchEvent(new Event('blur'));
     const res=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1280,11 +1238,31 @@ document.getElementById('siteSvcBtn').addEventListener('click', async()=>{
     renderSvcChips(data, out);
     return;
   }catch(e){
-    out.innerHTML=`<div class="err" style="font-size:12px">${e.message}</div>`;
+    // Nobody asked for this run, and the industry pass below usually still
+    // delivers — a red band for a site that blocks bots is a scare, not news.
+    out.innerHTML = auto
+      ? `<div class="nf" style="font-size:11.5px">Couldn't read the site menu (${escapeHtml(String(e.message)).slice(0,90)}) — suggestions below come from the industry instead.</div>`
+      : `<div class="err" style="font-size:12px">${escapeHtml(String(e.message))}</div>`;
   }finally{
-    btn.disabled=false; btn.textContent='✦ Suggest from site menu';
+    btn.disabled=false; btn.textContent='✦ Suggest services';
   }
-});
+}
+document.getElementById('siteSvcBtn').addEventListener('click', ()=>runSuggestServices(false));
+
+// FIRES ITSELF ON AN EMPTY LIST. Product / Vertical Focus is required, so on a
+// new quote the operator is always going to fill it — leaving a suggest button
+// beside an empty required field is a click that serves nobody. Only ever when
+// the list is EMPTY, so it can never overwrite a judgement, and only once per
+// site so retyping the domain does not re-fire it. (2026-08-11)
+let _autoSuggested = '';
+function maybeAutoSuggest(){
+  const dom = (stores.sites || [])[0] || '';
+  if(!dom || dom === _autoSuggested) return;
+  if((stores.kw || []).length) return;
+  if(SUPPRESS_AUTOSAVE) return;      // mid-restore of a saved quote
+  _autoSuggested = dom;
+  runSuggestServices(true).catch(()=>{});
+}
 
 // ---- toggle ----
 const pastseo=document.getElementById('pastseo');
@@ -1676,17 +1654,7 @@ function renderStep1(){
       b.disabled=true; b.textContent='Rebuilding\u2026';
       const s1=$('step1'); if(s1) s1.click(); };
   })();
-  // The overflow warning names the fix; this makes it reachable from there
-  // rather than sending the operator hunting back up the form.
-  (function(){
-    const j=$('rankSeedsJump'); if(!j || j.dataset.wired) return;
-    j.dataset.wired='1';
-    j.onclick=()=>{
-      const t=$('rankSeedBtn'); if(!t) return;
-      t.scrollIntoView({behavior:'smooth',block:'center'});
-      setTimeout(()=>t.click(), 350);
-    };
-  })();
+
 }
 
 // ---------- STEP 2 ----------
@@ -3856,7 +3824,10 @@ function step1Grid(kw){
   // WHERE THE TERM BUDGET WENT. A 32-term list buys either service breadth or
   // geographic reach, and which one is right depends on whether the other
   // markets have anything to buy. It carries a switch, so it cannot be folded.
-  if(ga.axis){
+  // Not a question on a national build: nothing is crossed with a city, so the
+  // budget cannot go to geography and the line would describe a decision that
+  // was never taken. (2026-08-11)
+  if(ga.axis && !kw.national_demand){
     const svc = ga.axis==='services';
     const other = svc?'geography':'services';
     const rec = ev.measured_axis || (ev.by_hand ? '' : ga.axis);
@@ -3914,11 +3885,11 @@ function step1Grid(kw){
   // at all, and its overflow is still arbitrary — report it rather than going
   // quiet on restored work.
   if(!sr.order && !sr.failed && kw.seed_services_dropped>0){
-    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — this list was built before the tool ranked focus terms by demand, so the grid filled <b>in the order they were typed</b>. <b>Re-run step 1</b> to rank them, or <button type="button" id="rankSeedsJump" class="btn2" style="padding:2px 10px;font-size:12px">Rank &amp; trim the list</button>${tipOf('Rebuilding measures every focus term and fills the grid with the highest-demand ones, which will change which services are quoted &mdash; and therefore the price. The saved numbers on this quote are untouched until you rebuild.')}</div>`);
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — this list was built before the tool ranked focus terms by demand, so the grid filled <b>in the order they were typed</b>. <b>Re-run step 1</b> and the build will rank them.${tipOf('Rebuilding measures every focus term and fills the grid with the highest-demand ones, which will change which services are quoted &mdash; and therefore the price. The saved numbers on this quote are untouched until you rebuild.')}</div>`);
   } else if(sr.failed && kw.seed_services_dropped>0){
     // The ONE case that still needs a human: the demand lookup failed, so the
     // grid really did fill in typing order.
-    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit, and they could not be ranked</b> — ${escapeHtml(String(sr.failed))}. The grid filled <b>in the order you typed them</b>, so which ${kw.seed_services_used} got quoted was arbitrary. <button type="button" id="rankSeedsJump" class="btn2" style="padding:2px 10px;font-size:12px">Try ranking them</button>${tipOf('Normally the build measures every focus term and fills the grid with the highest-demand ones. That lookup failed here &mdash; usually transient. Re-run step 1, or use Rank &amp; trim to measure them by hand.')}</div>`);
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit, and they could not be ranked</b> — ${escapeHtml(String(sr.failed))}. The grid filled <b>in the order you typed them</b>, so which ${kw.seed_services_used} got quoted was arbitrary. <b>Re-run step 1</b> to try again.${tipOf('Normally the build measures every focus term and fills the grid with the highest-demand ones. That lookup failed here &mdash; usually transient.')}</div>`);
   } else if(sr.order && sr.order.length){
     const kept=sr.order.slice(0, kw.seed_services_used||sr.order.length);
     const cut=sr.order.slice(kw.seed_services_used||sr.order.length);
@@ -3935,7 +3906,11 @@ function step1Grid(kw){
 
   if(kw.scope_warning) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">⚠ <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`);
 
-  if(kw.blocked_pins&&kw.blocked_pins.length) warn.push(`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. ${tipOf("High volume alone does not make a term the client's. The pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild &mdash; seeds are never blocked.")}</div>`);
+  // PROVENANCE, NOT A DECISION. A blocked pin is a term that never entered the
+  // list — there is nothing to check and nothing to act on, and it sat at the top
+  // of the panel beside things that do need attention. Folded to a count, detail
+  // on the hover. (2026-08-11)
+  if(kw.blocked_pins&&kw.blocked_pins.length) notes.push(`<div style="margin-top:4px" class="nf">\u26d4 <b>${kw.blocked_pins.length} high-volume term${kw.blocked_pins.length>1?'s':''} left out</b>${tipOf(kw.blocked_pins.map(b=>escapeHtml(b[0])+' &mdash; &ldquo;'+escapeHtml(b[1])+'&rdquo; is not used by this client').join('<br>')+"<br><br>High volume alone does not make a term the client's. The idea pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild &mdash; your own seeds are never blocked.")}</div>`);
 
   if(kw.market_volume_gaps&&kw.market_volume_gaps.length) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;font-size:12.5px">⚠ <b>${kw.market_volume_gaps.length} of ${(kw.grid_cities||[]).length||kw.market_volume_gaps.length} market${kw.market_volume_gaps.length===1?'':'s'} contributed no volume</b><div class="nf" style="margin-top:3px">${kw.market_volume_gaps.map(g=>`<div>${escapeHtml(g.market)}${g.suggestion?` — Google calls this <b>${escapeHtml(g.suggestion)}</b>; use that spelling in Geographic targeting areas and rebuild to price it`:` — Google has no targetable location for this name`}</div>`).join('')}</div><div class="nf" style="margin-top:4px">These markets still appear in the grid and still get rank-checked — they just add nothing to the volume component, so the quote is priced on the remaining markets only.</div></div>`);
 
