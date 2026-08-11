@@ -634,6 +634,7 @@ CFG = {
     # How many of the lead services also get a "<service> near me" term. Measured
     # like any other; only forms clearing near_me_min_volume are added.
     "near_me_terms": 3,
+    "near_me_probe_cap": 12,
     "near_me_min_volume": 30,
     "axis_city_volume_floor": 20,
     "axis_min_seeds_for_services": 8,
@@ -5085,10 +5086,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # MARKET (it poisoned the rank location) but nothing ever made it a
         # KEYWORD. Measured in the same call as everything else, so a form that
         # nobody searches costs nothing and never reaches the list. (2026-08-10)
+        # Probe near-me for EVERY service, then keep the best few. Taking the
+        # first three by list order gave Junk Bee Gone "rent a dumpster near me"
+        # and "dumpster rentals near me" while missing "junk removal near me" —
+        # the one BE put in his proposal at rank 2, and the biggest of the three.
+        # Extra keywords in a call already being made; no extra request.
         near_n = int(CFG.get("near_me_terms", 3))
         near_forms = []
         if near_n > 0 and not national_demand:
-            for nm in svc_names[:near_n]:
+            for nm in svc_names[:int(CFG.get("near_me_probe_cap", 12))]:
                 f = clean_kw(f"{nm} near me")
                 if f and f not in near_forms:
                     near_forms.append(f)
@@ -5102,8 +5108,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         if near_forms and not vol_err:
             _nfloor = int(CFG.get("near_me_min_volume", 30))
             _tier_of = {s["service"]: s["tier"] for s in services}
-            for nm in svc_names[:len(near_forms) + 2]:
-                f = clean_kw(f"{nm} near me")
+            # Highest measured demand wins the slots, not list order.
+            _ranked = sorted(
+                ((clean_kw(f"{nm} near me"), nm) for nm in svc_names),
+                key=lambda fn: -int((vols or {}).get(fn[0], 0) or 0))
+            for f, nm in _ranked[:near_n]:
                 if f not in near_forms:
                     continue
                 v = int((vols or {}).get(f, 0) or 0)
