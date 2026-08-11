@@ -2235,7 +2235,13 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
 
     So the seeds are enforced here. Someone who knows the account typed them;
     they outrank anything the model invents. Model-chosen services only fill
-    the slots the seeds don't. Returns (services, used_seed_count).
+    the slots the seeds don't.
+
+    Returns (services, used_seed_count, clean_seed_total). The total matters
+    because the slice below is clean[:max_services] IN ENTRY ORDER, not by
+    volume — hand the tool 80 focus terms against a 20-service grid and 60 of
+    them are silently dropped on typing order alone. The caller surfaces that.
+    (2026-08-11)
     """
     clean = []
     seen = set()
@@ -2248,7 +2254,7 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
             seen.add(name)
             clean.append(name)
     if not clean:
-        return list(services or []), 0
+        return list(services or []), 0, 0
 
     # Seeds FIRST, then model picks fill what's left. The earlier version
     # appended seeds to the model's list and displaced from the tail, which
@@ -2279,7 +2285,7 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
             continue
         taken.add(n)
         out.append(dict(svc))
-    return out[:max_services], used
+    return out[:max_services], used, len(clean)
 
 
 # Words that describe the SHAPE of a retail term rather than its subject. They
@@ -3002,7 +3008,18 @@ def choose_grid_axis(city_scores, n_seeds, forced=""):
           "floor": floor, "seeds": int(n_seeds or 0),
           "top": scored[:5]}
     if forced in ("services", "geography"):
-        return forced, f"set by hand ({forced})", ev
+        # WHAT THE MEASUREMENT SAID, EVEN WHEN OVERRIDDEN. The panel used to
+        # print the chosen axis beside the raw evidence, which on a hand-forced
+        # build read "Budget spent on geography - 1 of 5 markets carry demand"
+        # - the evidence for the OPPOSITE choice, presented as its
+        # justification. Recompute the unforced verdict and carry it. (2026-08-11)
+        m_axis, m_reason, _m_ev = choose_grid_axis(city_scores, n_seeds, "")
+        ev["by_hand"] = True
+        ev["measured_axis"] = m_axis
+        ev["measured_reason"] = m_reason
+        if m_axis == forced:
+            return forced, f"set by hand, and the measurement agrees: {m_reason}", ev
+        return forced, f"set by hand, overriding the measurement: {m_reason}", ev
     if len(scored) <= 1:
         return "services", "only one market, so the budget can only buy services", ev
     if len(real) <= 1 and (n_seeds or 0) >= min_seeds:
@@ -4993,9 +5010,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # re-inserted below it. Filter again AFTER pinning and fold the two
         # result sets together; a pin is not a licence to sell in a state the
         # client doesn't operate in.
-        services, seed_used = (enforce_seed_services(services, seeds, n_services,
-                                                    markets, state, phrase_geos)
-                               if seeds else (services, 0))
+        services, seed_used, seed_total = (enforce_seed_services(
+                                        services, seeds, n_services,
+                                        markets, state, phrase_geos)
+                               if seeds else (services, 0, 0))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
         services, ungrounded, blocked_pins = drop_ungrounded_services(
             services, seeds, biz, [p.get("title", "") if isinstance(p, dict) else str(p)
@@ -5578,6 +5596,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_services_used": seed_used,
+            "seed_services_total": seed_total,
+            "seed_services_dropped": max(0, seed_total - seed_used),
             "dropped_ungrounded": [d[0] for d in (ungrounded or [])],
             "grounding_stood_down": ungrounded is None,
             # No foreign states exist on a nationwide quote, so the warning was
@@ -7046,6 +7066,8 @@ def api_refine():
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_services_used": s1.get("seed_services_used", 0),
+        "seed_services_total": s1.get("seed_services_total", 0),
+        "seed_services_dropped": s1.get("seed_services_dropped", 0),
         "pinned_head_terms": s1.get("pinned_head_terms") or [],
         "blocked_pins": s1.get("blocked_pins") or [],
         "dropped_out_of_area": s1.get("dropped_out_of_area") or [],

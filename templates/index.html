@@ -203,11 +203,22 @@
     border-left:3px solid var(--gold);padding-left:11px}
 
   /* ---- keyword columns + tables ------------------------------- */
-  .kwcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-size:13px}
-  @media(max-width:700px){.kwcols{grid-template-columns:1fr}}
-  .kwcols h4{margin:0 0 6px;font-family:'Barlow Condensed',sans-serif;font-size:13px;
+  /* THREE CARDS, NOT THREE RAGGED TEXT RUNS. The buckets almost never hold the
+     same number of terms, so as bare lists the three "add term" inputs landed at
+     three different heights with whitespace between them and the columns read as
+     broken rather than as different lengths. A border per bucket makes the
+     difference legible. (2026-08-11) */
+  .kwcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px;align-items:start}
+  @media(max-width:820px){.kwcols{grid-template-columns:1fr}}
+  .kwcol{border:1px solid var(--line);border-radius:9px;background:#fff;padding:8px 10px 9px}
+  .kwcols h4{margin:0 0 5px;font-family:'Barlow Condensed',sans-serif;font-size:13px;
     font-weight:600;color:var(--atlas);text-transform:uppercase;letter-spacing:.06em}
+  .kwcols h4 .kwn{font-family:inherit;color:var(--muted);font-weight:600;font-size:12px;margin-left:5px}
   .kwcols ul{margin:0;padding-left:16px} .kwcols li{margin:2px 0}
+  .kwcol ul{list-style:none;padding:0;margin:0 0 7px}
+  .kwrow{display:flex;align-items:baseline;gap:7px;padding:3px 0;margin:0;line-height:1.35}
+  .kwrow+.kwrow{border-top:1px solid #eef1f4}
+  .kwrow .kwt{flex:1;min-width:0;overflow-wrap:anywhere}
   table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
   th{font-family:'Barlow Condensed',sans-serif;color:var(--atlas);font-weight:600;font-size:12.5px;
@@ -316,7 +327,7 @@
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
     <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button> <span class="nf" style="font-size:11.5px">copies the service list off the client's own navigation</span></div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
-    <div style="margin-top:8px"><button id="expandSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button> <span class="nf" style="font-size:11.5px">services this industry sells that you haven't listed yet</span></div>
+    <div style="margin-top:8px"><button id="expandSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button> <span class="nf" style="font-size:11.5px">services this client sells that you haven't listed yet</span></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
 
 
@@ -1078,16 +1089,45 @@ document.getElementById('expandSvcBtn').addEventListener('click', async ()=>{
     out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.</div>`
       + good.map(x=>`<span class="svc-chip" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
       + (bad.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below ${'20'}/mo, not offered: ${bad.slice(0,10).map(x=>escapeHtml(x.term)).join(' · ')}</div>`:'');
-    out.querySelectorAll('.svc-chip').forEach(ch=>{
-      ch.onclick=()=>{
-        const v=ch.getAttribute('data-label').toLowerCase();
-        if(!stores.kw.includes(v)){ stores.kw.push(v); PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} }
-        ch.style.opacity=.35; ch.style.pointerEvents='none';
-      };
-    });
+    wireSvcChips(out);
   }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
   finally{ btn.disabled=false; btn.textContent="✦ What's missing"; }
 });
+
+// ADD ALL. A menu read comes back with fifteen chips and clicking fifteen chips
+// one at a time is data entry, not a decision. One button per chip group, so
+// the site-menu services and the acronyms stay separately acceptable.
+// (2026-08-11)
+function wireSvcChips(box, sel){
+  const chips=[...box.querySelectorAll(sel||'.svc-chip')];
+  if(!chips.length) return;
+  const take=ch=>{
+    const v=(ch.getAttribute('data-label')||'').toLowerCase();
+    ch.style.opacity=.35; ch.style.pointerEvents='none';
+    if(!v || stores.kw.includes(v)) return false;
+    stores.kw.push(v); return true;
+  };
+  const commit=()=>{ PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} };
+  chips.forEach(ch=>{ ch.onclick=()=>{ if(take(ch)) commit(); }; });
+  if(chips.length<2) return;
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.textContent='+ Add all '+chips.length;
+  btn.style.cssText='margin:0 0 5px;background:var(--atlas);color:#fff;border:none;padding:3px 11px;border-radius:12px;font-size:11.5px;font-weight:600;cursor:pointer';
+  btn.className='svcAddAll';
+  btn.onclick=()=>{
+    let n=0;
+    chips.forEach(ch=>{ if(ch.style.pointerEvents!=='none' && take(ch)) n++; });
+    commit();
+    btn.textContent='\u2713 Added '+n;
+    btn.disabled=true; btn.style.opacity=.6; btn.style.cursor='default';
+  };
+  const wrap=document.createElement('div');
+  wrap.appendChild(btn);
+  const cap=[...box.children].find(el=>el.classList&&el.classList.contains('nf'));
+  if(cap) cap.insertAdjacentElement('afterend', wrap);
+  else box.insertBefore(wrap, box.firstChild);
+}
 
 function renderSvcChips(data, out){
   const chips=data.services.map((s,i)=>{
@@ -1105,7 +1145,7 @@ function renderSvcChips(data, out){
     const good=acr.filter(a=>a.worth_it), thin=acr.filter(a=>!a.worth_it);
     const chip=a=>`<span class="svc-chip" data-label="${String(a.term||a.acronym).toLowerCase().replace(/"/g,'&quot;')}" title="${(a.expansion?a.expansion.replace(/"/g,'&quot;')+' — ':'')}${String(a.source||'').replace(/"/g,'&quot;')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(String(a.term||a.acronym))} <span class="nf" style="font-size:10.5px">(${Number(a.volume||0).toLocaleString()}/mo)</span></span>`;
     out.insertAdjacentHTML('beforeend',
-      `<div style="margin-top:9px;border-top:1px solid var(--line);padding-top:7px">
+      `<div id="acrSeedBox" style="margin-top:9px;border-top:1px solid var(--line);padding-top:7px">
         <div class="nf" style="font-size:11.5px;margin-bottom:4px">\u{1F524} <b>Short names found on the site</b>, each priced against US national demand \u2014 an industry acronym is usually what buyers type, and the menu converter only ever makes labels longer. Click to add as a seed.</div>
         ${good.length?good.map(chip).join(''):'<div class="nf" style="font-size:12px">None of them carry real search volume \u2014 so they are internal codes, not keywords.</div>'}
         ${thin.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below the ${'20'}/mo floor, not offered: ${thin.map(a=>escapeHtml(a.acronym)+' ('+Number(a.volume||0).toLocaleString()+')').join(' \u00b7 ')}</div>`:''}
@@ -1129,13 +1169,11 @@ function renderSvcChips(data, out){
       if(box) box.outerHTML='<div class="nf" style="margin-top:6px;font-size:11.5px">✓ Site self-description added to Business description below — edit it there (add what they are NOT, if you know it).</div>';
     };
   }
-  out.querySelectorAll('.svc-chip').forEach(ch=>{
-      ch.onclick=()=>{
-        const v=ch.getAttribute('data-label').toLowerCase();
-        if(!stores.kw.includes(v)){ stores.kw.push(v); PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} }
-        ch.style.opacity=.35; ch.style.pointerEvents='none';
-      };
-    });
+  // Two groups, two buttons: the converted menu items and the site's own short
+  // names are different propositions and get accepted separately.
+  wireSvcChips(out, ':scope > .svc-chip');
+  const acrBox=document.getElementById('acrSeedBox');
+  if(acrBox) wireSvcChips(acrBox);
 }
 
 // ---- suggest services from the client site's nav menu ----
@@ -1490,18 +1528,20 @@ function kwBucket(title, bucketKey){
     const dot = added
       ? `<span title="Added by AI" style="color:var(--velocity,#378ADD);font-weight:700;margin-right:3px">✦</span>`
       : '';
-    return `<li style="display:flex;align-items:flex-start;gap:6px;margin:2px 0">
-      <span style="flex:1${added?';color:#1c5fa8':''}">${dot}${x.kw}${volTag(x)}</span>
-      <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700;line-height:1.2">×</b>
+    // Volume stays inline with the term — these columns are narrow and giving
+    // it its own right-hand slot turned every two-line term into three lines.
+    // Only the × gets a gutter, so it no longer lands wherever the wrap did.
+    // (2026-08-11)
+    return `<li class="kwrow">
+      <span class="kwt"${added?' style="color:#1c5fa8"':''}>${dot}${x.kw}${volTag(x)}</span>
+      <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700">×</b>
     </li>`;
   }).join('');
-  return `<div>
-    <h4>${title}</h4>
-    <ul style="list-style:none;padding:0;margin:0 0 6px">${items||'<li class="nf">—</li>'}</ul>
-    <div style="display:flex;gap:4px">
-      <input type="text" class="kwadd" data-bucket="${bucketKey}" placeholder="add term…"
-        style="flex:1;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px">
-    </div>
+  return `<div class="kwcol">
+    <h4>${title}<span class="kwn">${arr.length}</span></h4>
+    <ul>${items||'<li class="kwrow nf">—</li>'}</ul>
+    <input type="text" class="kwadd" data-bucket="${bucketKey}" placeholder="add term…"
+      style="width:100%;box-sizing:border-box;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px">
   </div>`;
 }
 
@@ -3683,7 +3723,12 @@ function step1Grid(kw){
     // hover — this is the first thing on the panel and a five-line paragraph
     // there set the tone for the whole page. (2026-08-11)
     const dc=(ev.dropped_cities||[]).length;
-    warn.push(`<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> \u2014 ${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${ev.floor||20}/mo${dc?`, so ${dc} ${dc===1?'was':'were'} not crossed`:''}. <button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Use ${other} instead</button>${tipOf(escapeHtml(ga.reason||'')+(dc?'<br><br>Not crossed: '+ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')+'. They stay on the order as targeting area.':'')+'<br><br>A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+(ev.floor||20)+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.')}</div>`);
+    // A hand override must not print the evidence for the OTHER axis as though
+    // it justified this one. (2026-08-11)
+    const measured = ev.by_hand
+      ? `set by hand${(ev.measured_axis && ev.measured_axis!==ga.axis)?`, overriding the measurement (it said <b>${escapeHtml(ev.measured_axis)}</b>)`:', and the measurement agrees'}`
+      : `${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${ev.floor||20}/mo`;
+    warn.push(`<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> \u2014 ${measured}${dc?`, so ${dc} market${dc===1?'':'s'} ${dc===1?'was':'were'} not crossed`:''}. <button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Use ${other} instead</button>${tipOf(escapeHtml(ga.reason||'')+(dc?'<br><br>Not crossed: '+ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')+'. They stay on the order as targeting area.':'')+'<br><br>A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+(ev.floor||20)+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.')}</div>`);
   }
 
   // A national list measured in one entered market is the Ski Barn error
@@ -3704,6 +3749,12 @@ function step1Grid(kw){
   // meaning, so the volume it invents goes straight into the price. Carries
   // KEEP/REMOVE verdicts and Remove buttons — never folded.
   if(((kw.acronym_collisions||{}).items||[]).length) warn.push(acronymPanelHtml(kw.acronym_collisions));
+
+  // SEEDS THAT DIDN'T FIT. enforce_seed_services() slices clean[:max_services]
+  // in ENTRY ORDER, not by volume — 80 focus terms against a 20-service grid
+  // silently drops 60 on typing order alone, and the operator has no way to see
+  // which. This is a warning, not a note. (2026-08-11)
+  if(kw.seed_services_dropped>0) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${kw.seed_services_dropped} of your ${kw.seed_services_total} focus terms didn't fit</b> — the grid holds ${kw.seed_services_used} service${kw.seed_services_used===1?'':'s'}, and seeds fill it <b>in the order you typed them</b>. Terms ${kw.seed_services_used+1}–${kw.seed_services_total} were dropped, whatever their demand.${tipOf('Raise <b>Grid max services</b> in Pricing config to keep more, or cut the list down to the services you actually want quoted &mdash; put them first. Note the grid is services &times; cities, so raising the cap raises the keyword count and the price with it.<br><br>This is also why a long seed list can price lower than a short one: the AI never gets a slot to balance the topics, so a dozen synonyms of one service can take the whole grid.')}</div>`);
 
   if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);
 
