@@ -2459,6 +2459,12 @@ function renderStep4(p){
     <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
     <label>Add-on markets <span style="font-weight:400;color:var(--muted)">(separately-activated, optional)</span>
       <span class="tipwrap"><i class="tipicon">i</i><div class="help">A judgement call, not a count of locations. The rule: <b>2–3 related nearby markets usually run under one campaign</b> with no add-ons; once a client has many locations, the extra ones become separate campaigns. What tips it is how <b>different</b> the markets are, how <b>competitive</b> they are, and the client's <b>total budget</b>.<br><br>Both patterns exist in real proposals. Skills of Central PA covers eight Pennsylvania towns and the proposal says the campaign "would cover all locations mentioned on the website" — <b>0 add-ons</b>. TN Water &amp; Air is a Knoxville campaign with twelve distinct markets offered as optional add-ons at $950 / $1,250 / $1,750 each. The difference isn't the count so much as whether the markets share one customer base or are genuinely separate territories.<br><br>Each add-on is a fraction of the full ladder because technical work, content strategy and domain authority are shared; only the per-location work repeats.</div></span></label>
+    <div style="display:flex;align-items:center;gap:9px;margin:2px 0 4px">
+      <label class="switch"><input type="checkbox" id="addonOn"${(ST.addonOn||((ST.inputs&&ST.inputs.addon_markets)||0)>0)?' checked':''}><span class="slider"></span></label>
+      <span id="addonOn_lbl" style="cursor:pointer" onclick="var t=document.getElementById('addonOn');t.checked=!t.checked;t.dispatchEvent(new Event('change'));">${(ST.addonOn||((ST.inputs&&ST.inputs.addon_markets)||0)>0)?'Yes':'No'}</span>
+      <span class="nf" id="addonHint" style="font-size:12px"></span>
+    </div>
+    <div id="addonWrap" class="${(ST.addonOn||((ST.inputs&&ST.inputs.addon_markets)||0)>0)?'':'hidden'}">
     <div style="display:flex;align-items:center;gap:8px">
       <button type="button" id="addonDown" style="width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:7px;font-size:17px;line-height:1;cursor:pointer;color:var(--atlas)">&minus;</button>
       <input type="text" id="addon" value="${(ST.inputs&&ST.inputs.addon_markets)||0}" style="width:64px;text-align:center">
@@ -2466,8 +2472,9 @@ function renderStep4(p){
       <span class="nf" id="addonCap" style="font-size:12px"></span>
     </div>
     <div id="addonCost" style="margin-top:8px"></div>
-    </div>
     <div id="addonSuggest" style="margin-top:10px"></div>
+    </div>
+    </div>
     <details style="margin-top:18px"><summary style="cursor:pointer;user-select:none;display:list-item"><span class="sec" style="display:inline;margin:0">Keyword table</span> <span class="nf" style="font-size:12px">— ${exp.length} terms, click to open</span><button id="csvbtn" type="button" style="float:right;margin:-3px 0 0;background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer">⬇ CSV</button></summary>
     <table style="font-size:12.5px;margin-top:6px">
       <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
@@ -3084,6 +3091,7 @@ function snapshotQuote(){
     baseReason: ST.baseReason||'',
     geoOverride: ST.geoOverride||'',
     addonOverride: ST.addonOverride||'',
+    addonOn: !!ST.addonOn,
     addonPicked: (ST.inputs&&ST.inputs.addon_picked)||[],
     actual: ST.actual||null,
     // Imported incumbent reports (extraction only — see rememberReport).
@@ -3106,6 +3114,10 @@ function restoreQuote(p){
   ST.baseReason=p.baseReason||'';
   ST.geoOverride=p.geoOverride||'';
   ST.addonOverride=p.addonOverride||'';
+  // A quote saved before the toggle existed has no flag; infer it from the count
+  // so an existing add-on quote reopens with its fields showing.
+  ST.addonOn = (p.addonOn!=null) ? !!p.addonOn
+             : (((p.inputs&&p.inputs.addon_markets)||0) > 0);
   if(ST.inputs) ST.inputs.addon_picked=p.addonPicked||[];
   ST.actual=p.actual||{};
   ST.reports=p.reports||[];
@@ -3598,6 +3610,38 @@ function renderAddonCost(){
   ${R.ai?`<div class="nf" style="font-size:11.5px;margin-top:3px">AI Search is not included in add-on pricing — the assumption is that AI Search works at brand level rather than per market. <b>Unconfirmed.</b></div>`:''}`;
 }
 
+// ADD-ONS ARE OFF UNTIL ASKED FOR. The stepper, the recommendation panel and the
+// per-market cost table were always on screen, so every quote carried a pricing
+// question most clients never need — and the suggestion panel SEEDED a non-zero
+// count on its own while untouched, which quietly moved the price. One toggle,
+// defaulting to No, and the whole block is hidden until it is a real question.
+// Restored quotes that carry a count come up as Yes so nothing already sold
+// changes shape. (2026-08-11)
+function wireAddonToggle(){
+  const t = $('addonOn');
+  if(!t || t.dataset.wired) return;
+  t.dataset.wired = '1';
+  const paint = ()=>{
+    const on = !!t.checked;
+    ST.addonOn = on;
+    const lbl = $('addonOn_lbl'); if(lbl) lbl.textContent = on ? 'Yes' : 'No';
+    const wrap = $('addonWrap'); if(wrap) wrap.classList.toggle('hidden', !on);
+    const hint = $('addonHint'); if(hint && on) hint.textContent = '';
+  };
+  t.addEventListener('change', ()=>{
+    paint();
+    const a = $('addon');
+    if(!t.checked && a && (parseInt(a.value||'0',10)||0) !== 0){
+      // Go through the field's own handler: that is what re-prices and saves.
+      a.value = '0';
+      a.dispatchEvent(new Event('change'));
+    }
+    try{ refreshAddonSuggestion(); }catch(e){}
+    try{ scheduleAutoSave(); }catch(e){}
+  });
+  paint();
+}
+
 function wireAddonField(){
   const a = $('addon');
   if(!a || a.dataset.wired) return;
@@ -3625,6 +3669,7 @@ function wireAddonField(){
   if(up) up.onclick = step(1);
   if(dn) dn.onclick = step(-1);
   try{ renderAddonCost(); }catch(e){}
+  try{ wireAddonToggle(); }catch(e){}
 }
 
 // A share-for-review link can point straight at the price with #price, which
@@ -3985,7 +4030,7 @@ function step1Grid(kw){
     const thinVol = thinRows.reduce((a,x)=>a+Number(x.vol||0),0);
     const thinPct = kw.total_volume ? Math.round(100*thinVol/Number(kw.total_volume)) : 0;
     const thinBit = (thinRows.length>1 && thinPct>=20)
-      ? ` <span style="color:#8a5a10">· ${Number(thinVol).toLocaleString()} of it (${thinPct}%) from ${thinRows.length} terms under ${vfloor}/mo</span>${tipOf('Google Ads reports a floor figure &mdash; usually 10/mo &mdash; for a phrase it holds no real data on, so a grid padded with unmeasurable terms adds volume without adding demand. That part of the total still sets the price, which is why a build can price HIGHER on the axis the measurement argues against: '+thinRows.length+' terms at the floor are worth '+Number(thinVol).toLocaleString()+'/mo on paper and close to nothing in practice.<br><br>Nothing is deducted here &mdash; changing how volume is counted would move the price on every quote already written. Use it to judge whether the total is real before you quote.')}`
+      ? ` <span style="color:#8a5a10">· ${Number(thinVol).toLocaleString()} of it (${thinPct}%) from ${thinRows.length} terms under ${vfloor}/mo</span>${tipOf('Google Ads reports a floor figure &mdash; usually 10/mo &mdash; for a phrase it holds no real data on, so a grid padded with unmeasurable terms adds volume without adding demand: '+thinRows.length+' terms here are worth '+Number(thinVol).toLocaleString()+'/mo on paper and close to nothing in practice.<br><br><b>This is about the proposal, not the price.</b> Volume only starts adding money above the first bracket in Pricing config (10,000/mo), so on a local list this size it contributes $0 either way and padding costs nothing &mdash; measured, not assumed. What it does affect is the headline number the client reads, and whether the grid is buying real demand or copies of one market.<br><br>Nothing is deducted here. Use it to judge whether the total is real before you quote.')}`
       : '';
     const head=`<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.national_demand?kw.all.length:kw.services.length} ${kw.national_demand?'terms':'services'}${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}${tipOf(kw.national_demand?'The US national figure for each term, summed. Drives the volume component of price.':'Summed across all targeted cities. The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total.')}${thinBit}`:''}`;
     const tail=`${kw.total_volume?'':(kw.volume_error
@@ -4455,6 +4500,16 @@ async function refreshAddonSuggestion(){
       ST.addonMax = r.suggested;
       const capEl=$('addonCap');
       if(capEl) capEl.textContent = `of ${r.suggested} recommended`;
+      // With the toggle at No the price must not move on its own. Say what the
+      // evidence found in one line beside the toggle and leave the count at 0 —
+      // losing the finding entirely would be worse than the clutter it replaces.
+      if(!ST.addonOn){
+        const hint=$('addonHint');
+        if(hint) hint.textContent = r.suggested > 0
+          ? `${r.suggested} market${r.suggested===1?'':'s'} could be separate campaigns — switch to Yes to price them`
+          : '';
+        return;
+      }
       const f=$('addon');
       if(f){
         const v = parseInt(f.value||'0',10)||0;
