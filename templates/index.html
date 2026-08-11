@@ -314,11 +314,10 @@
     <label>Product / Vertical Focus<span class="req">*</span></label>
     <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
-    <button id="siteSvcBtn" type="button" style="margin-top:7px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button>
-    <button id="expandSvcBtn" type="button" style="margin-top:7px;margin-left:6px;background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button>
-    <div id="expandSvcOut" style="margin-top:6px"></div>
-    <span class="nf" style="font-size:11.5px;margin-left:6px">reads the client site's navigation — menu items are usually their service list</span>
+    <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from site menu</button> <span class="nf" style="font-size:11.5px">copies the service list off the client's own navigation</span></div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
+    <div style="margin-top:8px"><button id="expandSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ What's missing</button> <span class="nf" style="font-size:11.5px">services this industry sells that you haven't listed yet</span></div>
+    <div id="expandSvcOut" style="margin-top:6px"></div>
 
 
     <label>Business description</label>
@@ -1531,124 +1530,7 @@ function renderStep1(){
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
       ${removedAcronymHtml()}
-    ${kw.grid&&kw.services&&kw.services.length?`<details style="background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px">
-      <summary style="cursor:pointer;user-select:none">${warnBadge(gridWarnings(kw))}<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.national_demand?kw.all.length:kw.services.length} ${kw.national_demand?'terms':'services'}${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}${tipOf(kw.national_demand?'The US national figure for each term, summed. Drives the volume component of price.':'Summed across all targeted cities. The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total.')}`:''} <span class="nf">— click for ${kw.national_demand?'the notes':'the service list'}</span>${kw.total_volume?'':(kw.volume_error
-        ? `<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data — ${escapeHtml(kw.volume_error)}. The volume part of pricing will be $0. <b>Re-run step 1</b> before quoting — a timeout here is usually transient.</span></div>`
-        // A SUCCESSFUL lookup that returns zero everywhere is a different
-        // finding, and telling the operator to re-run it is the wrong advice:
-        // it will return zero again. Every term reading no data across every
-        // market means these phrases are not searched locally — which is what a
-        // national trade association looks like when it is priced on a city
-        // grid. NASSCO: 35 terms, 35 zeros, and the price then rested entirely
-        // on the geo band. (2026-08-10)
-        : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — volume contributes <b>$0</b>, so the price rests on the geo band alone. Try <b>Price on national demand</b>.${tipOf('The lookup worked, so re-running will not help. Nobody searches these phrases with a city attached, which usually means the client sells nationally and the city grid is the wrong frame. Either switch the basis and rebuild, or confirm the local framing is deliberate.')}</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">📊 Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}</summary>
-      
-      ${(kw.near_me_added&&kw.near_me_added.length)?`<div class="nf" style="margin-top:4px">\u{1F4CD} <b>${kw.near_me_added.length} \u201cnear me\u201d term${kw.near_me_added.length>1?'s':''} added</b> \u2014 ${kw.near_me_added.map(x=>escapeHtml(x[0])+' ('+Number(x[1]).toLocaleString()+'/mo)').join(' \u00b7 ')}${tipOf('Measured like any other term, so a form nobody searches never reaches the list. These carry no city because Google resolves &quot;near me&quot; from the location of the person searching, which is why they sit outside the city grid.')}</div>`:''}
-      ${(()=>{
-        // WHERE THE TERM BUDGET WENT. A 32-term list buys either service breadth
-        // or geographic reach, and which one is right depends on whether the
-        // other markets have anything to buy. Shown with the evidence and a
-        // switch, because it changes the shape of the proposal. (2026-08-10)
-        const ga=kw.grid_axis||{};
-        if(!ga.axis) return '';
-        const ev=ga.evidence||{};
-        const svc = ga.axis==='services';
-        const other = svc?'geography':'services';
-        return `<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> \u2014 ${escapeHtml(ga.reason||'')}${(ev.dropped_cities&&ev.dropped_cities.length)?` <span class="nf">Not crossed: ${ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')}.</span>`:''}
-          <button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Use ${other} instead</button>${tipOf('A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+(ev.floor||20)+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.')}</div>`;
-      })()}
-      ${(()=>{const cs=kw.city_selection; if(!cs||!cs.method) return '';
-        // On a national build the keywords are bare — no city is crossed with
-        // anything — so reporting "5 of 7 markets used · In the grid: mill valley
-        // (10/mo)" describes a grid that was not built. (2026-08-10)
-        // The "cities not crossed" half of this was noise — the columns visibly
-        // contain bare terms. The half that MATTERS is where step 3 will measure,
-        // because a national organisation measured in Millbrae is the Ski Barn
-        // error wearing a different hat. Say it only when markets are entered,
-        // and say what to do about it. (2026-08-10)
-        if(kw.national_demand){
-          const n=((ST.inputs&&ST.inputs.geo_values)||[]).length;
-          if(!n) return '';
-          return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Rankings will be measured locally, not nationally</b> — the keywords are bare, but step 3 measures in one of your <b>${n} entered market${n===1?'':'s'}</b>. For a client selling everywhere that understates visibility. <button type="button" id="clearGeos" class="btn2" style="padding:2px 10px;font-size:12px">Clear the geos and measure nationally</button>${tipOf('Under national demand the geos no longer enter the keyword text or the volume lookup — they stay on the order as the targeting area. Rankings are a different question: with markets present the tool measures in the primary one, which is right for a regional retailer priced on national demand and wrong for a national body.')}</div>`;
-        }
-        const money0=n=>Number(n).toLocaleString();
-        if(cs.method==='all') return `<div style="margin-top:6px" class="nf">🗺 <b>All ${cs.kept.length} market${cs.kept.length===1?'':'s'} used</b> — under the ${cs.limit}-city cap, so nothing was dropped.</div>`;
-        const why = cs.method==='client term'
-          ? `ranked by real search demand for <code>${escapeHtml(cs.probe||'')}</code> — the client's own service, so the markets kept are the ones where their work actually gets searched`
-          : cs.method==='population proxy'
-            ? `the client's own terms returned no volume in any market, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead — that term has nothing to do with this client, it is just a stand-in for "how big is this town". <b>If the client's own service returns nothing anywhere, check the demand frame above before trusting this ordering</b>`
-            : `the demand lookup failed, so markets were kept in the order they were entered — worth re-running before you quote`;
-        const fmt=a=>a.map(([c,v])=>`${escapeHtml(c)}${v==null?'':` <span class="nf">(${money0(v)}/mo)</span>`}`).join(' · ');
-        // A tie at the cut only makes the choice arbitrary if the cut was made
-        // on volume. Once slots are handed out one-per-market, a 14-way tie at
-        // 10/mo is no longer what decided anything.
-        const tie=(cs.tied_at_cut&&cs.tied_at_cut.length>1&&!cs.per_market)
-          ? `<div style="margin-top:3px;color:var(--warn)">⚠ <b>${cs.tied_at_cut.length} markets tied at ${cs.tie_value}/mo</b>, which is the floor the keyword tool reports for thin terms — so the cut between them was arbitrary, not measured. Pick the markets by hand if some matter more than others.</div>` : '';
-        // WHY these cities and not the highest-scoring ones. Without this the
-        // grid looks like it ignored its own volume ranking.
-        const pm = cs.per_market
-          ? `<div style="margin-top:3px">\u25f1 <b>One city per market first</b> — ${cs.kept.length} slots cover <b>${cs.markets_covered} of ${cs.market_count} markets</b>${tipOf('Not the ' + cs.kept.length + ' highest-scoring cities, which in a thin vertical would have been several suburbs of one metro. Counties are picked last: they describe coverage, not what anyone types.')}</div>` : '';
-        return `<div style="margin-top:6px" class="nf">🗺 <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.${tie}${pm}
-          <div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>
-          ${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}
-        </div>`;})()}
-      ${(()=>{
-        // LOCAL OR NATIONAL, MEASURED. The operator was left to judge this, and
-        // the intuitive test — does the client have locations — is the wrong one:
-        // NASSCO sent us seven real cities and none of them are search markets.
-        // Same seeds, priced twice: with a city and bare. Reported with both
-        // figures, never applied, because switching the basis moves the price.
-        const f=kw.demand_frame||{};
-        if(!f.verdict) return '';
-        const n=Number(f.national_total||0).toLocaleString(), l=Number(f.local_total||0).toLocaleString();
-        if(f.verdict==='national_ok') return `<div class="nf" style="margin-top:4px">\u{1F9ED} <b>National confirmed</b> — ${Number(f.national_total||0).toLocaleString()}/mo bare vs ${Number(f.local_total||0).toLocaleString()}/mo with a city attached${tipOf(escapeHtml(f.reason||'')+'<br><br>This also settles the scope check: a footprint read off the page structure of the site cannot outvote measured demand, so that warning is suppressed.')}</div>`;
-        if(f.verdict==='national') return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">🧭 <b>Looks NATIONAL</b> — ${Number(f.national_total||0).toLocaleString()}/mo bare vs <b>${Number(f.local_total||0).toLocaleString()}/mo</b> with a city attached. Tick <b>Price on national demand</b> and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>The cities stay in the proposal grid and rankings are still measured in them — only the demand basis changes.')}</div>`;
-        if(f.verdict==='no_demand') return `<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'These terms have no demand':'No demand either way'}</b> — ${Number(f.national_total||0).toLocaleString()}/mo total. Volume contributes <b>$0</b>. Reword the focus terms and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>Use the phrases buyers type — short and specific beats descriptive.')}</div>`;
-        return `<div class="nf" style="margin-top:4px">🧭 <b>Local frame confirmed</b> — ${Number(f.local_total||0).toLocaleString()}/mo with a city attached${tipOf(escapeHtml(f.reason||''))}</div>`;
-      })()}
-      ${(()=>{
-        // A short acronym is rarely owned by one industry, and Google Ads sums
-        // every meaning. This is the loudest thing that can be wrong with an
-        // acronym-seeded list, because the volume it invents goes straight into
-        // the tier mix and the price. (2026-08-10)
-        const ac=kw.acronym_collisions||{};
-        if(!(ac.items||[]).length) return '';
-        return acronymPanelHtml(ac);
-      })()}
-      ${(kw.seed_services_used)?`<div style="margin-top:4px" class="nf">🌱 <b>${kw.seed_services_used} of the services came from your Product / Vertical Focus terms</b>${tipOf("Treated as the client's own service list — they fill the grid before anything the AI proposes.")}</div>`:''}
-      ${(kw.geo_filter_off)?`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`:''}
-      ${(kw.grounding_stood_down)?`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on. Check the list by eye for competitor names in the meantime.</div>`:''}
-      ${(kw.dropped_ungrounded&&kw.dropped_ungrounded.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. ${tipOf("Wording found nowhere in the client's seeds, description or site. Usually a competitor riding high in the keyword data, sometimes an unrelated product sharing a word. If one is real, add it to Product / Vertical Focus and rebuild.")}</div>`:''}
-      ${(kw.dropped_out_of_area&&kw.dropped_out_of_area.length)?`<div style="margin-top:4px" class="nf">🚫 <b>${kw.dropped_out_of_area.length} out-of-area term${kw.dropped_out_of_area.length>1?'s':''} removed</b> — ${kw.dropped_out_of_area.map(t=>escapeHtml(t)).join(', ')}. These name a state the client doesn't serve; the idea list is ranked by national volume so it fills with them. If one is actually a style or product name rather than a place (e.g. "new york style pizza"), add it back with <b>add term…</b>.</div>`:''}
-      ${(kw.pinned_head_terms&&kw.pinned_head_terms.length)?`<div style="margin-top:4px" class="nf">📌 <b>${kw.pinned_head_terms.length} head term${kw.pinned_head_terms.length>1?'s':''} pinned</b> — ${kw.pinned_head_terms.map(t=>escapeHtml(t)).join(', ')}. These carry the most search volume in the data, so they're forced into the list rather than left to the AI pass; volume is a pricing input and shouldn't move between runs.</div>`:''}
-      ${kw.scope_warning?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`:(kw.scope_note?`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>National set deliberately</b>${tipOf(escapeHtml(kw.scope_note))}</div>`:'')}
-      
-      ${(kw.blocked_pins&&kw.blocked_pins.length)?`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. ${tipOf("High volume alone does not make a term the client's. The pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild — seeds are never blocked.")}</div>`:''}
-      ${(kw.topics&&kw.topics.length>1)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> \u2014 ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% of what you typed \u2192 ${t.services} service${t.services===1?'':'s'})</span>`).join(' \u00b7 ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words \u2014 the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px"><b style="color:var(--ink)">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears:</b>${kw.topic_fixes.map(f=>`<div style="margin-top:2px">\u2192 <b>${escapeHtml(f.added)}</b> <span style="opacity:.8">in, ${escapeHtml(f.replaced)} out</span></div>`).join('')}<div style="margin-top:3px">Services are chosen by search volume, so without this every slot would have gone to <b>${escapeHtml((kw.topics[0]||{}).label||'the biggest topic')}</b>.</div></div>`:''}</div>`:''}
-      ${(kw.service_swaps&&kw.service_swaps.length)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50D} <b>${kw.service_swaps.length} service${kw.service_swaps.length===1?'':'s'} replaced by measured demand</b><div class="nf" style="margin-top:3px">${kw.service_swaps.map(x=>`<div>\u2192 <b>${escapeHtml(x['in'])}</b> <span style="opacity:.75">(${Number(x.in_volume||0).toLocaleString()}/mo)</span> replaced ${escapeHtml(x.out)} <span style="opacity:.75">(${Number(x.out_volume||0).toLocaleString()}/mo${x.kind==='upgrade'?', '+Math.round((x.in_volume||0)/Math.max(x.out_volume||1,1))+'\u00d7 lower':' \u2014 nobody searches it'})</span></div>`).join('')}</div><div class="nf" style="margin-top:3px">Replacements come from your own <b>Product / Vertical Focus</b> list and stay inside the same topic, so a patio-furniture slot is never filled by a ski term. A dead slot can't win traffic and drags the volume total that sets the price; an upgrade only fires when the alternative is at least ${kw.service_upgrade_ratio||10}\u00d7 bigger, never on a close call. A shop term is only ever replaced by another shop term, and a manufacturer&rsquo;s brand is never swapped in \u2014 &ldquo;weber grill&rdquo; and &ldquo;ski jackets&rdquo; outsearch &ldquo;ski shop&rdquo; but belong to Amazon and the makers, not to a five-store retailer.</div></div>`:''}
-      ${(kw.market_renames&&kw.market_renames.length)?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F4CD} <b>${kw.market_renames.length} market${kw.market_renames.length===1?'':'s'} looked up under Google's own name</b><div class="nf" style="margin-top:3px">${kw.market_renames.map(r=>`${escapeHtml(r.market)} \u2192 <b>${escapeHtml(r.used)}</b>`).join(' \u00b7 ')}</div><div class="nf" style="margin-top:3px">Google Ads has no location called &ldquo;New York City&rdquo; \u2014 its name for that place is &ldquo;New York&rdquo;. Same place, so the volume is the city's own and counts in full. Keyword text is unaffected.</div></div>`:''}
-      ${(kw.market_volume_gaps&&kw.market_volume_gaps.length)?`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;font-size:12.5px">\u26a0 <b>${kw.market_volume_gaps.length} of ${(kw.grid_cities||[]).length||kw.market_volume_gaps.length} market${kw.market_volume_gaps.length===1?'':'s'} contributed no volume</b><div class="nf" style="margin-top:3px">${kw.market_volume_gaps.map(g=>`<div>${escapeHtml(g.market)}${g.suggestion?` \u2014 Google calls this <b>${escapeHtml(g.suggestion)}</b>; use that spelling in Geographic targeting areas and rebuild to price it`:` \u2014 Google has no targetable location for this name`}</div>`).join('')}</div><div class="nf" style="margin-top:4px">These markets still appear in the grid and still get rank-checked \u2014 they just add nothing to the volume component, so the quote is priced on the remaining markets only.</div></div>`:''}
-      ${(kw.geo_forms&&kw.geo_forms.length)?(()=>{
-        const G=kw.geo_forms;
-        const changed=G.filter(f=>f.status==='changed');
-        const nodata=G.filter(f=>f.status==='no data');
-        const err=G.filter(f=>f.status==='error');
-        const probed=(G[0]&&G[0].probed_with)||[];
-        const line=f=>{
-          const t=(f.tested||[]).slice(0,4).map(x=>escapeHtml(x.form)+' <span style="opacity:.7">'+Number(x.volume||0).toLocaleString()+'</span>').join(' \u00b7 ');
-          return '<div style="margin-top:2px">'+t+'</div>';
-        };
-        const bits=[];
-        if(changed.length) bits.push('<div>'+changed.map(f=>'\u2713 <b>'+escapeHtml(f.chose)+'</b> instead of \u201c'+escapeHtml(f.instead_of)+'\u201d <span style="opacity:.75">('+Number(f.volume||0).toLocaleString()+'/mo vs '+Number(f.default_volume||0).toLocaleString()+'/mo)</span>'+line(f)+'</div>').join('')+'</div>');
-        if(nodata.length) bits.push('<div style="margin-top:3px">'+nodata.length+' market'+(nodata.length===1?'':'s')+' had no measurable volume in any spelling \u2014 kept the default wording: '+nodata.map(f=>'<b>'+escapeHtml(f.kept)+'</b>').join(', ')+'. Silence is not evidence, so nothing was changed on a guess.</div>');
-        if(err.length) bits.push('<div style="margin-top:3px">\u26a0 The wording check could not run ('+escapeHtml(err[0].detail||'API error')+') \u2014 default wording used.</div>');
-        const confirmed=G.filter(f=>f.status==='confirmed').length;
-        if(confirmed && !changed.length && !nodata.length) bits.push('<div>All '+confirmed+' market'+(confirmed===1?'':'s')+' already used the wording people search most.</div>');
-        else if(confirmed) bits.push('<div style="margin-top:3px">'+confirmed+' already correct.</div>');
-        return `<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50E} <b>Market wording checked against search volume</b><div class="nf" style="margin-top:3px">${bits.join('')}</div><div class="nf" style="margin-top:4px;font-size:11px">Each spelling was measured nationally with ${probed.length?'\u201c'+probed.map(t=>escapeHtml(t)).join('\u201d, \u201c')+'\u201d':'the client\u2019s own terms'} attached \u2014 the question is which words people type, not how much local demand there is. Per-city demand is measured separately.</div></div>`;
-      })():''}
-      ${kw.ecommerce_suppressed?`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">🛒 <b>Storefront detected — kept local</b><br><span class="nf">${escapeHtml(kw.ecommerce_suppressed)}</span></div>`:(kw.ecommerce_detected&&kw.ecommerce_reason)?`<div style="margin-top:4px" class="nf">🛒 <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`:''}
-      </details>`:''}
+    ${step1Grid(kw)}
     <div class="why">Builds the terms this client should rank for. Remove any off-target term with its ×, or type a term and press Enter to add one. ${kw.refined_by_ai?`<span style="color:var(--velocity,#378ADD)">✦ blue terms were added by AI</span>; the rest came from search data. `:''}Edits here flow through to scoring, rankings, and the proposal table.</div>
     <div class="kwcols">
       ${kwBucket('Ultra Competitive','ultra')}
@@ -3775,31 +3657,154 @@ async function showSourceFiles(){
 // <details>, so it could be missed entirely. Counted on the summary with the
 // reasons named, so the badge says WHY to expand rather than just "look in
 // here". (2026-08-10)
-function gridWarnings(kw){
-  const w=[];
-  const ac=(kw.acronym_collisions&&kw.acronym_collisions.items)||[];
-  const sp=ST.acrSerp||{};
-  const unresolved=ac.filter(x=>{
-    const v=acronymVerdict(x, sp[x.acronym]);
-    return v.label!=='KEEP';                 // cleared rows are not warnings
-  });
-  if(unresolved.length) w.push(`${unresolved.length} acronym${unresolved.length===1?'':'s'} may not be this client's (${kw.acronym_collisions.share}% of the volume)`);
+// STEP 1 NOTES, SPLIT IN TWO. Everything the build wanted to say lived in one
+// collapsed box, so a real warning sat at note 14 of 20 and a perfectly normal
+// build read as an incident report. Warnings and anything with a button now
+// render above the box and are always visible; the rest is "how this list was
+// built" and stays folded. Blocks that only ever report normal operation
+// (nothing changed, every service came from your seeds, all wording already
+// correct) are silenced outright. (2026-08-11)
+function step1Grid(kw){
+  const warn=[], notes=[];
+  const ga=kw.grid_axis||{}, ev=ga.evidence||{};
   const f=kw.demand_frame||{};
-  if(f.verdict==='national') w.push('the demand looks national, not local');
-  // 'national_ok' is a confirmation, not a warning — it must not badge.
-  if(f.verdict==='no_demand') w.push('these terms have no measurable demand');
-  if(kw.national_demand && ((ST.inputs&&ST.inputs.geo_values)||[]).length)
-    w.push('rankings will be measured locally, not nationally');
-  if(!kw.total_volume) w.push(kw.volume_error?('volume lookup failed — '+kw.volume_error):'every term returned zero volume');
-  if(kw.scope_warning) w.push('scope check');
-  if(kw.geo_filter_off) w.push('out-of-area filter is off');
-  return w;
+  const cs=kw.city_selection;
+  const svcCount=((kw.services||[]).length)||0;
+
+  // ---------- always visible: warnings and anything with a button ----------
+
+  // WHERE THE TERM BUDGET WENT. A 32-term list buys either service breadth or
+  // geographic reach, and which one is right depends on whether the other
+  // markets have anything to buy. It carries a switch, so it cannot be folded.
+  if(ga.axis){
+    const svc = ga.axis==='services';
+    const other = svc?'geography':'services';
+    // One line. The server's full sentence and the measurement both live in the
+    // hover — this is the first thing on the panel and a five-line paragraph
+    // there set the tone for the whole page. (2026-08-11)
+    const dc=(ev.dropped_cities||[]).length;
+    warn.push(`<div class="nf" style="margin-top:6px">${svc?'\u{1F527}':'\u{1F5FA}'} <b>Budget spent on ${svc?'services':'geography'}</b> \u2014 ${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${ev.floor||20}/mo${dc?`, so ${dc} ${dc===1?'was':'were'} not crossed`:''}. <button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px">Use ${other} instead</button>${tipOf(escapeHtml(ga.reason||'')+(dc?'<br><br>Not crossed: '+ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')+'. They stay on the order as targeting area.':'')+'<br><br>A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+(ev.floor||20)+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.')}</div>`);
+  }
+
+  // A national list measured in one entered market is the Ski Barn error
+  // wearing a different hat. Independent of city_selection, which is absent on
+  // some national builds — the warning matters most exactly then.
+  if(kw.national_demand){
+    const n=((ST.inputs&&ST.inputs.geo_values)||[]).length;
+    if(n) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Rankings will be measured locally, not nationally</b> — the keywords are bare, but step 3 measures in one of your <b>${n} entered market${n===1?'':'s'}</b>. For a client selling everywhere that understates visibility. <button type="button" id="clearGeos" class="btn2" style="padding:2px 10px;font-size:12px">Clear the geos and measure nationally</button>${tipOf('Under national demand the geos no longer enter the keyword text or the volume lookup &mdash; they stay on the order as the targeting area. Rankings are a different question: with markets present the tool measures in the primary one, which is right for a regional retailer priced on national demand and wrong for a national body.')}</div>`);
+  }
+
+  // LOCAL OR NATIONAL, MEASURED. Same seeds priced twice: bare and with a city.
+  if(f.verdict==='national')
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u{1F9ED} <b>Looks NATIONAL</b> — ${Number(f.national_total||0).toLocaleString()}/mo bare vs <b>${Number(f.local_total||0).toLocaleString()}/mo</b> with a city attached. Tick <b>Price on national demand</b> and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>The cities stay in the proposal grid and rankings are still measured in them &mdash; only the demand basis changes.')}</div>`);
+  else if(f.verdict==='no_demand')
+    warn.push(`<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'These terms have no demand':'No demand either way'}</b> — ${Number(f.national_total||0).toLocaleString()}/mo total. Volume contributes <b>$0</b>. Reword the focus terms and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>Use the phrases buyers type &mdash; short and specific beats descriptive.')}</div>`);
+
+  // A short acronym is rarely owned by one industry and Google Ads sums every
+  // meaning, so the volume it invents goes straight into the price. Carries
+  // KEEP/REMOVE verdicts and Remove buttons — never folded.
+  if(((kw.acronym_collisions||{}).items||[]).length) warn.push(acronymPanelHtml(kw.acronym_collisions));
+
+  if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);
+
+  if(kw.grounding_stood_down) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on.</div>`);
+
+  if(kw.scope_warning) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">⚠ <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`);
+
+  if(kw.blocked_pins&&kw.blocked_pins.length) warn.push(`<div style="margin-top:4px" class="nf">⛔ <b>${kw.blocked_pins.length} head term${kw.blocked_pins.length>1?'s':''} blocked from pinning</b> — ${kw.blocked_pins.map(b=>`${escapeHtml(b[0])} <span style="color:var(--muted)">(“${escapeHtml(b[1])}” not used by this client)</span>`).join(', ')}. ${tipOf("High volume alone does not make a term the client's. The pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild &mdash; seeds are never blocked.")}</div>`);
+
+  if(kw.market_volume_gaps&&kw.market_volume_gaps.length) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;font-size:12.5px">⚠ <b>${kw.market_volume_gaps.length} of ${(kw.grid_cities||[]).length||kw.market_volume_gaps.length} market${kw.market_volume_gaps.length===1?'':'s'} contributed no volume</b><div class="nf" style="margin-top:3px">${kw.market_volume_gaps.map(g=>`<div>${escapeHtml(g.market)}${g.suggestion?` — Google calls this <b>${escapeHtml(g.suggestion)}</b>; use that spelling in Geographic targeting areas and rebuild to price it`:` — Google has no targetable location for this name`}</div>`).join('')}</div><div class="nf" style="margin-top:4px">These markets still appear in the grid and still get rank-checked — they just add nothing to the volume component, so the quote is priced on the remaining markets only.</div></div>`);
+
+  // ---------- folded: how this list was built ----------
+
+  if(kw.near_me_added&&kw.near_me_added.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4CD} <b>${kw.near_me_added.length} “near me” term${kw.near_me_added.length>1?'s':''} added</b> — ${kw.near_me_added.map(x=>escapeHtml(x[0])+' ('+Number(x[1]).toLocaleString()+'/mo)').join(' · ')}${tipOf('Measured like any other term, so a form nobody searches never reaches the list. These carry no city because Google resolves &quot;near me&quot; from the location of the person searching, which is why they sit outside the city grid.')}</div>`);
+
+  // Silenced when the budget went to services: the axis line above already
+  // names every market that was not crossed, so this repeats it.
+  if(cs && cs.method && !kw.national_demand && ga.axis!=='services'){
+    if(cs.method==='all'){
+      notes.push(`<div style="margin-top:6px" class="nf">\u{1F5FA} <b>All ${cs.kept.length} market${cs.kept.length===1?'':'s'} used</b> — under the ${cs.limit}-city cap, so nothing was dropped.</div>`);
+    } else {
+      const money0=n=>Number(n).toLocaleString();
+      const why = cs.method==='client term'
+        ? `ranked by real search demand for <code>${escapeHtml(cs.probe||'')}</code> — the client's own service, so the markets kept are the ones where their work actually gets searched`
+        : cs.method==='population proxy'
+          ? `the client's own terms returned no volume in any market, so markets were ranked by a generic <code>${escapeHtml(cs.probe||'')}</code> population proxy instead — that term has nothing to do with this client, it is just a stand-in for &ldquo;how big is this town&rdquo;`
+          : `the demand lookup failed, so markets were kept in the order they were entered — worth re-running before you quote`;
+      const fmt=a=>a.map(([c,v])=>`${escapeHtml(c)}${v==null?'':` <span class="nf">(${money0(v)}/mo)</span>`}`).join(' · ');
+      const tie=(cs.tied_at_cut&&cs.tied_at_cut.length>1&&!cs.per_market)
+        ? `<div style="margin-top:3px;color:var(--warn)">⚠ <b>${cs.tied_at_cut.length} markets tied at ${cs.tie_value}/mo</b>, which is the floor the keyword tool reports for thin terms — so the cut between them was arbitrary, not measured. Pick the markets by hand if some matter more than others.</div>` : '';
+      const pm = cs.per_market
+        ? `<div style="margin-top:3px">◱ <b>One city per market first</b> — ${cs.kept.length} slots cover <b>${cs.markets_covered} of ${cs.market_count} markets</b>${tipOf('Not the ' + cs.kept.length + ' highest-scoring cities, which in a thin vertical would have been several suburbs of one metro. Counties are picked last: they describe coverage, not what anyone types.')}</div>` : '';
+      notes.push(`<div style="margin-top:6px" class="nf">\u{1F5FA} <b>${cs.kept.length} of ${cs.kept.length+cs.dropped.length} markets used</b> — ${why}.${tie}${pm}<div style="margin-top:3px"><b style="color:var(--ink)">In the grid:</b> ${fmt(cs.kept)}</div>${cs.dropped.length?`<div style="margin-top:2px">Not crossed: ${fmt(cs.dropped)}. They stay on the order as targeting; they just don't each get their own keywords. Raise <b>Grid max cities</b> in Pricing config to include more.</div>`:''}</div>`);
+    }
+  }
+
+  // Only interesting when the AI contributed something. "20 of 20 came from
+  // your focus terms" is the list you can already see.
+  if(kw.seed_services_used && !(svcCount && kw.seed_services_used>=svcCount))
+    notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>${kw.seed_services_used} of ${svcCount||'the'} services came from your Product / Vertical Focus terms</b>${tipOf("Treated as the client's own service list &mdash; they fill the grid before anything the AI proposes.")}</div>`);
+
+  if(kw.topics&&kw.topics.length>1)
+    notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> — ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% → ${t.services} service${t.services===1?'':'s'})</span>`).join(' · ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words — the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears${tipOf(kw.topic_fixes.map(x=>'<b>'+escapeHtml(x.added)+'</b> in, '+escapeHtml(x.replaced)+' out').join('<br>')+'<br><br>Services are chosen by search volume, so without this every slot would have gone to <b>'+escapeHtml((kw.topics[0]||{}).label||'the biggest topic')+'</b>.')}</div>`:''}</div>`);
+
+  if(kw.service_swaps&&kw.service_swaps.length)
+    notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50D} <b>${kw.service_swaps.length} service${kw.service_swaps.length===1?'':'s'} replaced by measured demand</b>${tipOf('Replacements come from your own Product / Vertical Focus list and stay inside the same topic, so a patio-furniture slot is never filled by a ski term. A dead slot cannot win traffic and drags the volume total that sets the price; an upgrade only fires when the alternative is at least '+(kw.service_upgrade_ratio||10)+'&times; bigger, never on a close call. A shop term is only ever replaced by another shop term, and a manufacturer&rsquo;s brand is never swapped in.')}<div class="nf" style="margin-top:3px">${kw.service_swaps.map(x=>`<div>→ <b>${escapeHtml(x['in'])}</b> <span style="opacity:.75">(${Number(x.in_volume||0).toLocaleString()}/mo)</span> replaced ${escapeHtml(x.out)} <span style="opacity:.75">(${Number(x.out_volume||0).toLocaleString()}/mo${x.kind==='upgrade'?', '+Math.round((x.in_volume||0)/Math.max(x.out_volume||1,1))+'× lower':' — nobody searches it'})</span></div>`).join('')}</div></div>`);
+
+  if(kw.dropped_ungrounded&&kw.dropped_ungrounded.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6AB} <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. ${tipOf("Wording found nowhere in the client's seeds, description or site. Usually a competitor riding high in the keyword data, sometimes an unrelated product sharing a word. If one is real, add it to Product / Vertical Focus and rebuild.")}</div>`);
+
+  if(kw.dropped_out_of_area&&kw.dropped_out_of_area.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6AB} <b>${kw.dropped_out_of_area.length} out-of-area term${kw.dropped_out_of_area.length>1?'s':''} removed</b> — ${kw.dropped_out_of_area.map(t=>escapeHtml(t)).join(', ')}. ${tipOf('These name a state the client does not serve; the idea list is ranked by national volume so it fills with them. If one is actually a style or product name rather than a place (e.g. &ldquo;new york style pizza&rdquo;), add it back with <b>add term…</b>.')}</div>`);
+
+  if(kw.pinned_head_terms&&kw.pinned_head_terms.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F4CC} <b>${kw.pinned_head_terms.length} head term${kw.pinned_head_terms.length>1?'s':''} pinned</b> — ${kw.pinned_head_terms.map(t=>escapeHtml(t)).join(', ')}. ${tipOf('These carry the most search volume in the data, so they are forced into the list rather than left to the AI pass; volume is a pricing input and should not move between runs.')}</div>`);
+
+  if(!kw.scope_warning && kw.scope_note) notes.push(`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>National set deliberately</b>${tipOf(escapeHtml(kw.scope_note))}</div>`);
+
+  if(f.verdict==='national_ok') notes.push(`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>National confirmed</b> — ${Number(f.national_total||0).toLocaleString()}/mo bare vs ${Number(f.local_total||0).toLocaleString()}/mo with a city attached${tipOf(escapeHtml(f.reason||'')+'<br><br>This also settles the scope check: a footprint read off the page structure of the site cannot outvote measured demand, so that warning is suppressed.')}</div>`);
+  else if(f.verdict && f.verdict!=='national' && f.verdict!=='no_demand') notes.push(`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>Local frame confirmed</b> — ${Number(f.local_total||0).toLocaleString()}/mo with a city attached${tipOf(escapeHtml(f.reason||''))}</div>`);
+
+  if(kw.market_renames&&kw.market_renames.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F4CD} <b>${kw.market_renames.length} market${kw.market_renames.length===1?'':'s'} looked up under Google's own name</b> — ${kw.market_renames.map(r=>`${escapeHtml(r.market)} → <b>${escapeHtml(r.used)}</b>`).join(' · ')}${tipOf('Google Ads has no location called &ldquo;New York City&rdquo; &mdash; its name for that place is &ldquo;New York&rdquo;. Same place, so the volume is the city&rsquo;s own and counts in full. Keyword text is unaffected.')}</div>`);
+
+  // Silenced when every market already used the wording people search for:
+  // "checked, nothing changed" is not a note, it is the absence of one.
+  if(kw.geo_forms&&kw.geo_forms.length){
+    const G=kw.geo_forms;
+    const changed=G.filter(x=>x.status==='changed');
+    const nodata=G.filter(x=>x.status==='no data');
+    const err=G.filter(x=>x.status==='error');
+    if(changed.length||nodata.length||err.length){
+      const probed=(G[0]&&G[0].probed_with)||[];
+      const line=x=>'<div style="margin-top:2px">'+(x.tested||[]).slice(0,4).map(y=>escapeHtml(y.form)+' <span style="opacity:.7">'+Number(y.volume||0).toLocaleString()+'</span>').join(' · ')+'</div>';
+      const bits=[];
+      if(changed.length) bits.push('<div>'+changed.map(x=>'✓ <b>'+escapeHtml(x.chose)+'</b> instead of “'+escapeHtml(x.instead_of)+'” <span style="opacity:.75">('+Number(x.volume||0).toLocaleString()+'/mo vs '+Number(x.default_volume||0).toLocaleString()+'/mo)</span>'+line(x)+'</div>').join('')+'</div>');
+      if(nodata.length) bits.push('<div style="margin-top:3px">'+nodata.length+' market'+(nodata.length===1?'':'s')+' had no measurable volume in any spelling — kept the default wording: '+nodata.map(x=>'<b>'+escapeHtml(x.kept)+'</b>').join(', ')+'. Silence is not evidence, so nothing was changed on a guess.</div>');
+      if(err.length) bits.push('<div style="margin-top:3px">⚠ The wording check could not run ('+escapeHtml(err[0].detail||'API error')+') — default wording used.</div>');
+      const confirmed=G.length-changed.length-nodata.length-err.length;
+      if(confirmed>0) bits.push('<div style="margin-top:3px">'+confirmed+' already correct.</div>');
+      notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50E} <b>Market wording checked against search volume</b>${tipOf('Each spelling was measured nationally with '+(probed.length?'“'+probed.map(t=>escapeHtml(t)).join('”, “')+'”':'the client’s own terms')+' attached &mdash; the question is which words people type, not how much local demand there is. Per-city demand is measured separately.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+    }
+  }
+
+  if(kw.ecommerce_suppressed) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6D2} <b>Storefront detected — kept local</b> — ${escapeHtml(kw.ecommerce_suppressed)}</div>`);
+  else if(kw.ecommerce_detected&&kw.ecommerce_reason) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6D2} <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`);
+
+  // ---------- the box ----------
+  let box='';
+  if(kw.grid&&kw.services&&kw.services.length){
+    const head=`<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.national_demand?kw.all.length:kw.services.length} ${kw.national_demand?'terms':'services'}${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}${tipOf(kw.national_demand?'The US national figure for each term, summed. Drives the volume component of price.':'Summed across all targeted cities. The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total.')}`:''}`;
+    const tail=`${kw.total_volume?'':(kw.volume_error
+      ? `<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data — ${escapeHtml(kw.volume_error)}. The volume part of pricing will be $0. <b>Re-run step 1</b> before quoting — a timeout here is usually transient.</span></div>`
+      : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — volume contributes <b>$0</b>, so the price rests on the geo band alone. Try <b>Price on national demand</b>.${tipOf('The lookup worked, so re-running will not help. Nobody searches these phrases with a city attached, which usually means the client sells nationally and the city grid is the wrong frame. Either switch the basis and rebuild, or confirm the local framing is deliberate.')}</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">\u{1F4CA} Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}`;
+    const st='background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px';
+    box = notes.length
+      ? `<details style="${st}"><summary style="cursor:pointer;user-select:none">${head} <span class="nf">— click for ${notes.length} build note${notes.length===1?'':'s'}</span>${tail}</summary>${notes.join('')}</details>`
+      : `<div style="${st}">${head}${tail}</div>`;
+  }
+  return warn.join('') + box;
 }
 
-function warnBadge(list){
-  if(!list.length) return '';
-  return ` <span class="tipwrap" style="cursor:help"><span style="display:inline-block;background:#b3261e;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;font-weight:700;vertical-align:1px">\u26a0 ${list.length}</span><div class="help"><b>Expand to see:</b><br>${list.map(x=>'\u2022 '+escapeHtml(x)).join('<br>')}</div></span>&nbsp;`;
-}
+// gridWarnings()/warnBadge() removed 2026-08-11 — step1Grid() now renders
+// every warning above the box, always visible, so a count badge on a collapsed
+// summary has nothing left to announce.
 
 // "long_tail" is the internal bucket key, not a name to show anyone. It leaked
 // into the re-tier line while every other place humanised it. (2026-08-10)
