@@ -291,22 +291,25 @@ CFG = {
     # already ranks; fit on Susquehanna (60% of head terms ranking, quoted
     # ~7% under the statewide anchor). ONE datapoint — confirm with Brendan
     # before trusting it on a second well-ranked client.
+    # RECALIBRATED ON 12 BE PROPOSALS (2026-08-10). Ranking coverage barely moves
+    # his price: r = +0.10 ex-insurance, and the two clearest cases contradict the
+    # old ladder outright — Nob Hill Dental at 80% not ranking and Visit Central
+    # PA at 5% were both quoted $2,950, and Junk Bee Gone at 5% not ranking (it
+    # ranks 1-8 on twenty of twenty-one terms) was also $2,950. He never
+    # discounts for good visibility.
+    #
+    # The old tiers spanned -3% to +14%, swinging the client price $350-$550 —
+    # up to 88% of his ENTIRE observed spread of $625 — on the one input his book
+    # shows no response to. So: the discount is gone, and the uplifts are halved.
+    # Direction is kept because a genuinely greenfield build IS more work; the
+    # magnitude is no longer inventing variance he does not have.
+    #
+    # Superseded values, for the record: [[80,14],[65,9],[50,5],[45,0],[0,-3]].
     "zero_ranking_tiers": [
-        [80, 14],   # 80%+ not ranking -> +14%
-        [65, 9],    # 65-80% -> +9%
-        [50, 5],    # 50-65% -> +5%
-        [45, 0],    # 45-50% -> par (buffer so the sign doesn't flip on a hair)
-        # RECALIBRATED 2026-07-27 (-7 -> -3). The -7 was fit on Susquehanna
-        # alone. Red Shoes is the second well-ranked client and it contradicts
-        # it: 80% of its terms rank — BETTER than Susquehanna's 60% — and it
-        # was quoted the standard $2,950 card, not a discount. Swept against
-        # both, -7 is the worst value in the range (7.7% error on Red Shoes);
-        # 0 to -3 is the best balance and the two are within noise of each
-        # other. -3 keeps a small, defensible nod to existing visibility
-        # without the one-client overfit. The residual on Susquehanna is an
-        # ANCHOR question (statewide at 2,350 for a small regional bureau),
-        # not a visibility one — don't chase it with this tier.
-        [0, -3],    # under 45% not ranking = well-ranked -> small discount
+        [80, 7],    # 80%+ not ranking -> +7%
+        [65, 4],    # 65-80% -> +4%
+        [50, 2],    # 50-65% -> +2%
+        [0,  0],    # below half -> par. Never a discount.
     ],
     # --- VOLUME-based pricing (fixed $ per additional search, declining marginal
     # rate, like tax brackets). Base price assumes a "normalized" volume up to
@@ -628,6 +631,10 @@ CFG = {
     # crossing to be worth a term slot; 20 sits just above Google's 10/mo floor
     # for thin terms, which is what an empty market reports. Below that the
     # budget is better spent on service breadth — see choose_grid_axis.
+    # How many of the lead services also get a "<service> near me" term. Measured
+    # like any other; only forms clearing near_me_min_volume are added.
+    "near_me_terms": 3,
+    "near_me_min_volume": 30,
     "axis_city_volume_floor": 20,
     "axis_min_seeds_for_services": 8,
     "grid_max_cities": 5,             # cities crossed against each service
@@ -5071,9 +5078,46 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 _i += 1
         else:
             _alts = _pool[:_cand_cap]
+        # ---- "<service> near me" -------------------------------------------
+        # BE's Junk Bee Gone list carries "junk removal near me" at rank 2 and
+        # "dumpster rental near me" at 6 — real terms with real positions. The
+        # tool could not produce them at all: "near me" was correctly banned as a
+        # MARKET (it poisoned the rank location) but nothing ever made it a
+        # KEYWORD. Measured in the same call as everything else, so a form that
+        # nobody searches costs nothing and never reaches the list. (2026-08-10)
+        near_n = int(CFG.get("near_me_terms", 3))
+        near_forms = []
+        if near_n > 0 and not national_demand:
+            for nm in svc_names[:near_n]:
+                f = clean_kw(f"{nm} near me")
+                if f and f not in near_forms:
+                    near_forms.append(f)
         vols, per_city, vol_err = fetch_local_volume(
-            svc_names + _alts, [] if national_demand else cities, state,
+            svc_names + _alts + near_forms,
+            [] if national_demand else cities, state,
             national=national_demand)
+        # Add the near-me forms that earned their place, into the same tier as the
+        # service they came from.
+        near_added = []
+        if near_forms and not vol_err:
+            _nfloor = int(CFG.get("near_me_min_volume", 30))
+            _tier_of = {s["service"]: s["tier"] for s in services}
+            for nm in svc_names[:len(near_forms) + 2]:
+                f = clean_kw(f"{nm} near me")
+                if f not in near_forms:
+                    continue
+                v = int((vols or {}).get(f, 0) or 0)
+                if v < _nfloor:
+                    continue
+                t = _tier_of.get(nm, "competitive")
+                if any(r["keyword"] == f for r in g[t]):
+                    continue
+                row = {"keyword": f, "volume": v, "src": "grid",
+                       "origin": "added", "service": nm, "city": ""}
+                g[t].append(row)
+                full.append(row)
+                near_added.append((f, v))
+
         # ---- IS THE LOCAL FRAME RIGHT? ---------------------------------------
         # "Should this be nationwide" was left to the operator's judgement, and
         # the obvious test — does the client have locations — is the wrong one.
@@ -5532,6 +5576,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "volume_error": vol_err,
             "demand_frame": frame,
             "grid_axis": {"axis": axis, "reason": axis_reason, "evidence": axis_ev},
+            "near_me_added": [[f, v] for f, v in (near_added or [])],
             "acronym_collisions": acronym_collisions(full),
             "volume_location": "United States" if national_demand else loc_string(markets, state),
             "volume_source": volume_source,
@@ -7005,6 +7050,7 @@ def api_refine():
         "volume_error": s1.get("volume_error"),
         "demand_frame": s1.get("demand_frame") or {},
         "grid_axis": s1.get("grid_axis") or {},
+        "near_me_added": s1.get("near_me_added") or [],
         "acronym_collisions": s1.get("acronym_collisions") or {},
         "volume_location": s1.get("volume_location"),
         "volume_source": s1.get("volume_source") or "google_ads",
