@@ -6649,6 +6649,30 @@ _ECOM_SIGNATURES = [
 _ECOM_CHECKOUT = re.compile(r"/(cart|checkout|basket|my-account/orders)\b", re.I)
 
 
+# A meta description is written for a search snippet, not as a description of the
+# business, and plenty of them open with the call to action. NASSCO's is "Click
+# here to read and learn more about the education, technical resources and
+# advocacy for the underground infrastructure industry" — offered verbatim as the
+# business description, which then feeds the grounding filter and the AI prompt,
+# so "click", "here" and "read" join the client's accepted vocabulary.
+#
+# Detected and REFUSED rather than rewritten. Every attempt to cut the CTA off the
+# front either left a fragment ("To schedule your free estimate...") or ate real
+# words, and there is a better source sitting right behind it: refusing falls back
+# to the AI read of the site, which describes the business because that is what it
+# was asked for. (2026-08-11)
+_CTA_OPENER = re.compile(
+    r"^\s*(?:please\s+)?"
+    r"(?:click|tap|visit|contact|call|see|read|learn|find|discover|explore|"
+    r"schedule|request|sign\s+up|subscribe|join)\b",
+    re.I)
+
+
+def _is_cta(text):
+    """Does this meta description open by telling the reader what to do?"""
+    return bool(_CTA_OPENER.match((text or "").strip()))
+
+
 def detect_ecommerce(urls, min_hits=3):
     """Is the client running a storefront? Reads ONLY the sitemap URLs that
     fetch_site_pages already collected — no extra HTTP calls, no extra latency.
@@ -9816,6 +9840,9 @@ def api_site_services():
         return (m.group(1).strip() if m else "")
     site_desc = _meta("name", "description") or _meta("property", "og:description")
     site_desc = re.sub(r"\s+", " ", site_desc)[:400]
+    # A CTA is not a description — fall back to the AI read of the site.
+    if _is_cta(site_desc):
+        site_desc = ""
 
     def _clean(t):
         t = re.sub(r"[»›→▸▾▼+]+$", "", t).strip()
