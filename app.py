@@ -10219,9 +10219,11 @@ def api_site_services():
             for x in out:
                 x["term"] = x["label"].lower()
         # 39 chips off a retail menu is not 39 services — see fold_proposals().
-    out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
-    return jsonify({"domain": dom, "services": out,
-                    "folded": [(x.get("term") or x.get("label") or "") for x in folded_out], "ai_refined": ai_used,
+        out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
+        return jsonify({"domain": dom, "services": out,
+                        "folded": [(x.get("term") or x.get("label") or "")
+                                   for x in folded_out],
+                        "ai_refined": ai_used,
                         "from_sitemap": False, "pasted": True, "n_nav_links": 0})
     # Two identities: some servers stub out bots, others' WAFs block a Chrome UA
     # that lacks full browser fingerprints while allowing honest bots through.
@@ -10440,7 +10442,11 @@ def api_site_services():
                 a["qualifiers"] = quals
     except Exception as _ae:
         acronyms = [{"error": str(_ae)[:120]}]
+    # 39 chips off a retail menu is not 39 services — see fold_proposals().
+    out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
     return jsonify({"domain": dom, "services": out,
+                    "folded": [(x.get("term") or x.get("label") or "")
+                               for x in folded_out],
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,
                     "from_headings": used_headings,
                     "site_description": site_desc,
