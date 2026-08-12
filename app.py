@@ -3293,6 +3293,47 @@ def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
     return kept, folded
 
 
+def demote_nonservices(seeds, kinds, markets=None, state=""):
+    """Split seeds into what this client actually sells and what belongs to
+    somebody else, per claude_seed_kinds().
+
+    VOLUME-FREE ON PURPOSE. This has to run on every build, and the check used to
+    live inside rank_seeds() — which needs a DataForSEO call, is capped at twelve
+    a minute, and is therefore gated on the ranking mattering. NPAIHB had 8 seeds
+    for 20 slots, so the ranking was skipped, so nothing ever asked whether
+    "confederated tribes warm springs" is a service NPAIHB sells. It is a member
+    tribe the site-heading miner scraped off their own pages. Classifying is an
+    Anthropic call and costs nothing against the DataForSEO allowance, so it is
+    split out and always runs. (2026-08-12)
+
+    Matches on the raw seed and on its seed_norm() form, because the classifier
+    is keyed on what the operator typed and the build works in normalised terms.
+
+    Returns (keep, demoted) with `keep` in the order given. Never demotes
+    everything: if the classifier disliked every seed, the classifier is what is
+    wrong, not the seed list.
+    """
+    kinds = kinds or {}
+    if not kinds:
+        return list(seeds or []), []
+    keep, demoted = [], []
+    for t in seeds or []:
+        raw = str(t or "").strip().lower()
+        k = kinds.get(raw)
+        if not k:
+            n = seed_norm(t, markets, state)
+            if n:
+                k = kinds.get(n) or kinds.get(n.strip().lower())
+        if k:
+            demoted.append({"term": t, "kind": k.get("kind", "item"),
+                            "why": k.get("why", "")})
+        else:
+            keep.append(t)
+    if not keep:
+        return list(seeds or []), []
+    return keep, demoted
+
+
 def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     """Fold near-duplicate seeds, rank the survivors by measured demand, and
     say which ones fit the grid.
@@ -3331,21 +3372,8 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     # after the cut, because the whole point is that these must not take a slot.
     demoted = []
     if kinds:
-        keep = []
-        for t in clean:
-            k = kinds.get(t) or kinds.get(t.lower())
-            if k:
-                demoted.append({"term": t, "volume": vol(t),
-                                "kind": k.get("kind", "item"),
-                                "why": k.get("why", "")})
-            else:
-                keep.append(t)
-        # Never demote the entire list: if the classifier disliked everything the
-        # classifier is what is wrong, not the seeds.
-        if keep:
-            clean = keep
-        else:
-            demoted = []
+        clean, _dem = demote_nonservices(clean, kinds, markets, state)
+        demoted = [dict(r, volume=vol(r["term"])) for r in _dem]
     demoted.sort(key=lambda r: -r["volume"])
 
     # ---- fold near-duplicates -------------------------------------------
@@ -5249,7 +5277,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
                    national_demand=False, goal="", band="",
-                   national_reason="", grid_axis=""):
+                   national_reason="", grid_axis="", industry="",
+                   product_demand=False):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -5313,6 +5342,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     if CFG.get("grid_mode"):
         cands = ultra + competitive + long_tail
         seed_ranking = {}
+        seeds_demoted = []
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
@@ -5364,6 +5394,30 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # measurement buys nothing. Measure only when the ranking DECIDES
         # something. (2026-08-12)
         _slots = services_needed(len(grid_cities))
+        # ---- IS EVERY SEED A SERVICE THIS CLIENT SELLS? ------------------
+        # Runs on EVERY build, unlike the ranking below it. The check used to be
+        # reachable only through rank_seeds(), which is gated on the DataForSEO
+        # allowance — so NPAIHB (8 seeds, 20 slots) skipped it, and nine member
+        # tribes the heading miner scraped off npaihb.org became the quote.
+        # claude_seed_kinds is an Anthropic call; the gate never applied to it.
+        # (2026-08-12)
+        if seeds:
+            _kinds = {}
+            try:
+                _kinds = claude_seed_kinds(
+                    seeds, brand, domain, industry, biz, site_pages,
+                    # NOT national_demand — that is true whenever no geos are
+                    # entered, which would switch the item verdict off for a
+                    # local hauler mid-setup. Only the operator's own product
+                    # tick, or a storefront in the URLs, means "they sell things".
+                    sells_products=bool(product_demand or ecom_found))
+            except Exception:                             # noqa: BLE001
+                app.logger.exception("claude_seed_kinds failed during build")
+            if _kinds:
+                _keep, _dem = demote_nonservices(seeds, _kinds, markets, state)
+                if _dem:
+                    seeds_demoted = _dem
+                    seeds = _keep
         if seeds and len(seeds) > _slots:
             _sr = rank_seeds(seeds, markets, state, national=national_demand,
                              limit=len(seeds))
@@ -6003,6 +6057,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
+            "seeds_demoted": seeds_demoted,
             # HOW FULL THE GRID IS. NPAIHB had room for 20 services and got 9 — a
             # 9-keyword quote against BE's 20 for the same client — and the panel
             # said nothing, because every check was about whether the terms were
@@ -7458,6 +7513,9 @@ def api_refine():
                             national_demand=nat_demand,
                             national_reason=nat_reason,
                             grid_axis=(d.get("grid_axis") or ""),
+                            industry=(d.get("industry") or ""),
+                            product_demand=bool(d.get("national_demand"))
+                                           or bool(d.get("ecommerce")),
                             goal=(d.get("goal") or ""),
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
@@ -7504,6 +7562,7 @@ def api_refine():
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
+        "seeds_demoted": s1.get("seeds_demoted") or [],
         "service_slots": s1.get("service_slots") or 0,
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
@@ -10336,6 +10395,48 @@ def api_expand_services():
                     "error": verr})
 
 
+
+def _split_proposal_kinds(items, d, dom, pages=None, ecom=False):
+    """Run claude_seed_kinds over PROPOSED chips and split them in two.
+
+    A chip is a suggestion, so a wrong verdict costs nothing here — the operator
+    still sees the term and its reason and can add it anyway. What it buys is that
+    "+ Add all 9" cannot sweep nine member tribes into the focus list, which is
+    exactly how NPAIHB's quote was built. Same classifier the build now runs, so
+    the two cannot disagree. (2026-08-12)
+
+    Returns (services, not_services). Degrades to (items, []) on any failure.
+    """
+    terms = [(x.get("term") or x.get("label") or "") for x in (items or [])]
+    if not terms:
+        return list(items or []), []
+    try:
+        kinds = claude_seed_kinds(terms, d.get("brand") or "", dom,
+                                  d.get("industry") or "",
+                                  d.get("business_desc") or "", pages or [],
+                                  sells_products=bool(d.get("national_demand")
+                                                      or ecom))
+    except Exception:                                     # noqa: BLE001
+        app.logger.exception("claude_seed_kinds failed on proposals")
+        return list(items or []), []
+    if not kinds:
+        return list(items or []), []
+    good, bad = [], []
+    for x in items or []:
+        t = str(x.get("term") or x.get("label") or "").strip().lower()
+        k = kinds.get(t)
+        if k:
+            bad.append(dict(x, kind=k.get("kind", "item"),
+                            kind_why=k.get("why", "")))
+        else:
+            good.append(x)
+    # Every chip rejected means the classifier is what is wrong — a menu read that
+    # returns nothing is worse than a menu read with a caveat on it.
+    if not good:
+        return list(items or []), []
+    return good, bad
+
+
 @app.route("/api/site_services", methods=["POST"])
 @_json_error_guard
 def api_site_services():
@@ -10384,7 +10485,9 @@ def api_site_services():
                 x["term"] = x["label"].lower()
         # 39 chips off a retail menu is not 39 services — see fold_proposals().
         out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
+        out, not_svc = _split_proposal_kinds(out, d, dom or "(pasted list)")
         return jsonify({"domain": dom, "services": out,
+                        "not_services": not_svc,
                         "folded": [(x.get("term") or x.get("label") or "")
                                    for x in folded_out],
                         "ai_refined": ai_used,
@@ -10608,7 +10711,21 @@ def api_site_services():
         acronyms = [{"error": str(_ae)[:120]}]
     # 39 chips off a retail menu is not 39 services — see fold_proposals().
     out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
+    # Headings are the risky source by construction: it fires when the nav gave
+    # nothing, so it over-collects on purpose, and on npaihb.org it collected
+    # member tribes. Classify whatever came back, whatever the source.
+    # The client's own menu labels ARE the "what does this site sell" context, and
+    # a storefront in the link structure is the second read on whether their
+    # objects are their offer — same two signals the build uses.
+    try:
+        _ecom_chips, _ = detect_ecommerce(
+            [h for _t, h in (list(p.nav_links) + list(p.other_links)) if h])
+    except Exception:                                     # noqa: BLE001
+        _ecom_chips = False
+    out, not_svc = _split_proposal_kinds(
+        out, d, dom, pages=[x.get("label") for x in out][:30], ecom=_ecom_chips)
     return jsonify({"domain": dom, "services": out,
+                    "not_services": not_svc,
                     "folded": [(x.get("term") or x.get("label") or "")
                                for x in folded_out],
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,

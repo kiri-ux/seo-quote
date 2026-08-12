@@ -1213,6 +1213,26 @@ function renderSvcChips(data, out){
         ${thin.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below the ${'20'}/mo floor, not offered: ${thin.map(a=>escapeHtml(a.acronym)+' ('+Number(a.volume||0).toLocaleString()+')').join(' \u00b7 ')}</div>`:''}
       </div>`);
   }
+  // ---- proposed, but not a service THIS client sells ----------------------
+  // A separate group with its own Add-all, deliberately: the whole failure was
+  // "+ Add all 9" sweeping nine of NPAIHB's member tribes into the focus list.
+  // They stay clickable — a wrong verdict costs one click, a swept list costs a
+  // quote — and each carries the reason it was set aside. (2026-08-12)
+  const notSvc=(data.not_services||[]).filter(x=>x&&(x.term||x.label));
+  if(notSvc.length){
+    const kindWord=k=>k==='other_business'?'a different business':'a thing, not a service';
+    const chip=x=>{
+      const term=String(x.term||x.label).toLowerCase();
+      return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${escapeHtml(kindWord(x.kind)+(x.kind_why?' — '+x.kind_why:''))}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px dashed #c9a227;color:#7a6410;font-size:12.5px;cursor:pointer;background:#fffdf5">${escapeHtml(term)} <span class="nf" style="font-size:10.5px">· ${escapeHtml(kindWord(x.kind))}</span></span>`;
+    };
+    out.insertAdjacentHTML('beforeend',
+      `<div id="notSvcBox" style="margin-top:9px;border-top:1px solid var(--line);padding-top:7px">
+        <div class="nf" style="font-size:11.5px;margin-bottom:4px">⚠ <b>${notSvc.length} of these don't look like services ${escapeHtml((($('brand')||{}).value||'this client'))} sells</b> — kept out of the group above so "Add all" can't sweep them in. Hover one for the reason; click to add anyway.${tipOf('Read per client, not from a word list: the same phrase is a service for one business and somebody else&rsquo;s for the next. On npaihb.org the site&rsquo;s own headings were its MEMBER TRIBES, and nine of them became the quote&rsquo;s keywords.')}</div>
+        ${notSvc.map(chip).join('')}
+      </div>`);
+    const nb=document.getElementById('notSvcBox');
+    if(nb) wireSvcChips(nb);
+  }
   const bd=document.getElementById('business_desc');
   if(data.site_description && bd && !bd.value.trim()){
     out.insertAdjacentHTML('beforeend',
@@ -1257,7 +1277,9 @@ async function runSuggestServices(auto){
     document.getElementById('brand') && document.getElementById('brand').dispatchEvent(new Event('blur'));
     const res=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({domain:dom, brand:(document.getElementById('brand')||{}).value||'',
-        business_desc:(document.getElementById('business_desc')||{}).value||'', seeds:stores.kw.slice()})});
+        business_desc:(document.getElementById('business_desc')||{}).value||'', seeds:stores.kw.slice(),
+        industry:(stores.industry||[]).join(', '),
+        national_demand:!!($('natdemand')&&$('natdemand').checked)})});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
     // AN EMPTY LIST HAS TWO CAUSES AND THEY NEED OPPOSITE ADVICE. Ski Barn's
@@ -1288,7 +1310,9 @@ async function runSuggestServices(auto){
         try{
           const res2=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify({domain:stores.sites[0]||'',pasted:txt,brand:(document.getElementById('brand')||{}).value||'',
-              business_desc:(document.getElementById('business_desc')||{}).value||'',seeds:stores.kw.slice()})});
+              business_desc:(document.getElementById('business_desc')||{}).value||'',seeds:stores.kw.slice(),
+              industry:(stores.industry||[]).join(', '),
+              national_demand:!!($('natdemand')&&$('natdemand').checked)})});
           const d2=await res2.json();
           if(!res2.ok) throw new Error(d2.error||'Conversion failed');
           renderSvcChips(d2, out);
@@ -4227,6 +4251,16 @@ function step1Grid(kw){
   const slots=Number(kw.service_slots||0);
   if(slots && svcCount && svcCount < slots*0.75){
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>The grid had room for ${slots} services and filled ${svcCount}</b> — so this quote carries ${(kw.all||[]).length} keyword${(kw.all||[]).length===1?'':'s'} where the same client would normally get around ${slots}${((kw.dropped_ungrounded||[]).length||(kw.grounding_stood_down))?`, and ${(kw.dropped_ungrounded||[]).length||'some'} of the AI's suggestions were filtered out`:''}. Add more <b>Product / Vertical Focus</b> terms — the ✦ Suggest services panel measures them for you — and rebuild.${tipOf('The grid is services &times; cities and the service count scales to the number of cities, so a one-city client has the most slots to fill and needs the most seeds. Nothing here is broken: the list is as long as the input allowed. A short list also prices lower, because both the volume total and the tier mix are computed from the terms that exist.')}</div>`);
+  }
+  // SET ASIDE BEFORE THE GRID SAW THEM. Amber, not a note: the operator's own
+  // typed list was overruled, and they are the only one who can say whether the
+  // call was right. (2026-08-12)
+  const dem=kw.seeds_demoted||[];
+  if(dem.length){
+    const word=k=>k==='other_business'?'a different business':'an object, not work they perform';
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out — they don't look like services this client sells</b>${tipOf('Asked per client with the business in front of it, not matched against a word list. Set aside BEFORE the grid filled, so they could not take a service slot from a real line.')}
+      <div style="margin-top:3px">${dem.slice(0,12).map(x=>`<span style="display:inline-block;margin:0 5px 3px 0;padding:1px 8px;border-radius:11px;background:#fff;border:1px dashed #c9a227;font-size:12px" title="${escapeHtml(String(x.why||''))}">${escapeHtml(String(x.term||''))} <span class="nf" style="font-size:10.5px">· ${escapeHtml(word(x.kind))}</span></span>`).join('')}${dem.length>12?`<span class="nf"> +${dem.length-12} more</span>`:''}</div>
+      <div class="nf" style="margin-top:3px">If any of these ARE what they sell, put it back in Keyword / Vertical Focus and rebuild — nothing was deleted.</div></div>`);
   }
   const sr=kw.seed_ranking||{};
   // A quote saved before the build started ranking seeds carries no seed_ranking
