@@ -720,6 +720,26 @@ def _remaining(deadline, minimum=5):
     return left if left >= minimum else None
 
 
+# Seconds to wait out a per-minute rate limit. Long enough for a slot to free up,
+# short enough to stay inside the per-route budget.
+DFS_RATE_LIMIT_WAIT = 8.0
+# The rate-limit family. 40202 is the per-minute cap; the neighbours are the
+# per-second and concurrent-task versions of the same refusal.
+_DFS_RATE_CODES = {40202, 40203, 40204, 40205}
+
+
+def _dfs_rate_limited(data):
+    """Is this HTTP 200 actually a rate-limit refusal?"""
+    if not isinstance(data, dict):
+        return False
+    if int(data.get("status_code") or 0) in _DFS_RATE_CODES:
+        return True
+    for t in (data.get("tasks") or []):
+        if isinstance(t, dict) and int(t.get("status_code") or 0) in _DFS_RATE_CODES:
+            return True
+    return False
+
+
 def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     """One DataForSEO call, retried once on a TRANSIENT failure.
 
@@ -730,6 +750,16 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     Only network-level failures and 5xx are retried — a 4xx is a real answer
     about the request and repeating it just wastes the budget. Two attempts at
     the 25s default fit inside the 90s per-route budget.
+
+    RATE LIMITS ARE THE EXCEPTION, and they do not arrive as an HTTP status: a
+    "40202: The rates limit per minute has been exceeded: 12 >= 12" comes back
+    inside an HTTP 200, in the TASK, exactly like the 40501 that once turned every
+    rank check into "Not Found". Ski Barn lost its whole volume component to one
+    ($0 volume, every keyword reading "no data") on a build that had simply made
+    thirteen calls in a minute. A per-minute limit is transient by definition, so
+    it is retried — but after a real pause, not the 1s a timeout gets, because
+    retrying immediately just spends another slot on the same refusal.
+    (2026-08-12)
     """
     if timeout is None:
         timeout = DFS_TIMEOUT
@@ -750,7 +780,12 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
                 time.sleep(1.0 + attempt)
                 continue
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            if attempt < retries and _dfs_rate_limited(data):
+                last = RuntimeError("40202: rate limit per minute exceeded")
+                time.sleep(DFS_RATE_LIMIT_WAIT)
+                continue
+            return data
         except (requests.Timeout, requests.ConnectionError) as e:
             last = e
             if attempt >= retries:
@@ -5277,51 +5312,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     # ---- GRID MODE: build a service x city grid like the real proposals -----
     if CFG.get("grid_mode"):
         cands = ultra + competitive + long_tail
-        # ---- SEEDS IN DEMAND ORDER, BEFORE ANYTHING READS THEM --------------
-        # enforce_seed_services() fills the grid from the front, so the order
-        # this list arrives in decides which services get quoted. That order was
-        # whatever the partner happened to type: Junk Bee Gone's 20 focus terms
-        # against a 7-service grid dropped 13 on typing order alone, and the ones
-        # that went were hoarding cleanup, appliance removal, debris removal,
-        # tire disposal and mattress removal — every one of them on the client's
-        # own website.
-        #
-        # There was a button for this. The operator had to read a warning, click
-        # through to a preview and apply it, and nobody was ever going to
-        # disagree with "keep the terms with the most demand" — so the click was
-        # pure friction and a place to forget. It runs in the build now. One
-        # extra search_volume call, the same one the button made.
-        #
-        # Reordering only; nothing is deleted and the operator's own pill list is
-        # untouched. Reported as a decision taken, with the evidence. (2026-08-11)
         seed_ranking = {}
-        if seeds:
-            _sr = rank_seeds(seeds, markets, state, national=national_demand,
-                             limit=len(seeds))
-            if _sr.get("measured"):
-                _ordered = [r["term"] for r in _sr["kept"]]
-                _folded = [f["term"] for g in _sr["folded"] for f in g["fold"]]
-                # Folded synonyms go to the BACK rather than out: the fold is a
-                # ranking device, and a client who really does want both wordings
-                # keeps them if the grid has room.
-                _have = set(_ordered) | set(_folded)
-                _tail = []
-                for _t in seeds:
-                    _k = seed_norm(_t, markets, state)
-                    if _k and _k not in _have:
-                        _have.add(_k)
-                        _tail.append(_k)
-                if _ordered:
-                    seed_ranking = {
-                        "basis": _sr.get("basis", ""),
-                        "order": [[r["term"], r["volume"]] for r in _sr["kept"]],
-                        "folded": _sr.get("folded") or [],
-                        "was": list(seeds),
-                    }
-                    seeds = _ordered + _folded + _tail
-            else:
-                seed_ranking = {"failed": _sr.get("error") or "no volume data",
-                                "was": list(seeds)}
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
@@ -5365,6 +5356,42 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # don't enter the keyword text or the volume lookup.
         if national_demand:
             grid_cities = []
+        # ---- SEEDS IN DEMAND ORDER, before anything reads them ----------
+        # ONE FEWER CALL WHEN IT CANNOT MATTER. Ranking the seeds costs a
+        # search_volume call, and DataForSEO allows twelve a minute — adding one to
+        # every build is what pushed Ski Barn over the limit. When there are no
+        # more seeds than slots, every seed is quoted whatever the order, so the
+        # measurement buys nothing. Measure only when the ranking DECIDES
+        # something. (2026-08-12)
+        _slots = services_needed(len(grid_cities))
+        if seeds and len(seeds) > _slots:
+            _sr = rank_seeds(seeds, markets, state, national=national_demand,
+                             limit=len(seeds))
+            if _sr.get("measured"):
+                _ordered = [r["term"] for r in _sr["kept"]]
+                _folded = [f["term"] for g in _sr["folded"] for f in g["fold"]]
+                # Folded synonyms go to the BACK rather than out: the fold is a
+                # ranking device, and a client who really does want both wordings
+                # keeps them if the grid has room.
+                _have = set(_ordered) | set(_folded)
+                _tail = []
+                for _t in seeds:
+                    _k = seed_norm(_t, markets, state)
+                    if _k and _k not in _have:
+                        _have.add(_k)
+                        _tail.append(_k)
+                if _ordered:
+                    seed_ranking = {
+                        "basis": _sr.get("basis", ""),
+                        "order": [[r["term"], r["volume"]] for r in _sr["kept"]],
+                        "folded": _sr.get("folded") or [],
+                        "was": list(seeds),
+                    }
+                    seeds = _ordered + _folded + _tail
+            else:
+                seed_ranking = {"failed": _sr.get("error") or "no volume data",
+                                "was": list(seeds)}
+
         n_services = services_needed(len(grid_cities))
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
                                           cands, n_services,
@@ -9782,6 +9809,11 @@ def calibration_rows(payloads):
             "updated_at": q.get("updated_at"),
             "band": band, "national_demand": nat,
             "strategy": inp.get("strategy") or "Core SEO",
+            # The RZ category list is multi-select; the FIRST tag is the one the
+            # pricing rules key on, so that is the one to group by.
+            "industry": _first_industry(inp.get("industry")),
+            "industry_rule": pricing.get("industry_rule") or "",
+            "industry_anchor_add": pricing.get("industry_anchor_add") or 0,
             "markets": len(inp.get("geo_values") or []),
             "pct_not_ranking": pricing.get("pct_not_ranking"),
             "total_volume": kw.get("total_volume") or pricing.get("total_volume"),
@@ -9961,6 +9993,23 @@ def calibration_advice(groups, rows, drivers=None):
                         if top.get("fragile") else "")),
         })
 
+    if top and top["variable"] in ("industry", "industry rule") \
+            and (top["spread"] or 0) >= CALIB_MIN_GAP_PCT:
+        bits = " · ".join(f"{b['value']} {b['median_gap_pct']:+.1f}% (n={b['n']})"
+                          for b in top["buckets"] if b["n"] >= 2)
+        tips.append({
+            "kind": "band", "constant": "industry_anchor_add", "from": None, "to": None,
+            "text": ("The gaps separate by VERTICAL more than by anything else — "
+                     f"{bits}. There is already a per-industry lever for exactly this "
+                     "(industry_anchor_add, keyed on the RZ category), so this is that "
+                     "rule reading wrong for these categories rather than the base being "
+                     "wrong for everyone. Worth checking against BE first: a vertical "
+                     "pattern can also just be which clients happened to come in that "
+                     "month."
+                     + (" Fragile — at least one bucket has fewer than four quotes."
+                        if top.get("fragile") else "")),
+        })
+
     for g in flat:
         tips.append({
             "kind": "ok", "constant": "", "from": None, "to": None,
@@ -10001,6 +10050,18 @@ def _calib_shape(g):
 # partition the set identically and no amount of data will tell them apart. Saying
 # so is the difference between a finding and a coincidence. (2026-08-12)
 
+def _first_industry(v):
+    """The primary RZ category, however it was stored (list, string, blank)."""
+    if isinstance(v, (list, tuple)):
+        v = next((x for x in v if str(x or "").strip()), "")
+    t = str(v or "").strip()
+    if not t:
+        return "no industry set"
+    # "Waste Management/Utilities - Trash / Dumpster Rental" -> the top level, so
+    # two dumpster clients group together instead of splitting on the sub-category.
+    return t.split(" - ")[0].strip()[:48]
+
+
 def _rank_rung(pct):
     """Which geo_pct_tiers rung a quote landed on — the table that sets the rate."""
     if pct is None:
@@ -10031,6 +10092,13 @@ CALIB_DRIVERS = [
     ("strategy", lambda r: r.get("strategy") or "Core SEO"),
     ("search volume", lambda r: _vol_bucket(r.get("total_volume"))),
     ("market count", lambda r: _mkt_bucket(int(r.get("markets") or 0))),
+    # INDUSTRY, tested the same way as everything else rather than assumed. There
+    # is already an industry pricing rule (industry_anchor_add), so if BE's prices
+    # move by vertical this is the variable that will show it — and if they do not,
+    # this says that too, which is the more useful answer for a rule nobody wants
+    # to maintain per category. (2026-08-12)
+    ("industry", lambda r: r.get("industry") or "no industry set"),
+    ("industry rule", lambda r: r.get("industry_rule") or "no rule matched"),
 ]
 
 
@@ -10114,8 +10182,12 @@ def calibration_outliers(rows, factor=2.5):
                 "shape": f"{(r['band'] or 'unset').replace('_', ' ')}"
                          + (" + national demand" if r["national_demand"] else ""),
                 "times_typical": round(g / typical, 1) if ratio_meaningful else None,
-                "appears_in": [label for label, fn in CALIB_DRIVERS
-                               if len({fn(x) for x in rows}) > 1],
+                # WHICH BUCKET, per variable. Four stacked warning cards repeating
+                # the same forty words is not four findings — it is one fact the
+                # reader has to carry to the numbers themselves. Sent as a map so
+                # the panel can mark the exact bucket each outlier sits in.
+                # (2026-08-12)
+                "buckets": {label: fn(r) for label, fn in CALIB_DRIVERS},
             })
     out.sort(key=lambda o: -abs(o["gap_pct"]))
     return out

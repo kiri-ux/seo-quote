@@ -1704,8 +1704,10 @@ function renderStep1(){
   (function(){
     const b=$('axisFlip'); if(!b || b.dataset.wired) return;
     b.dataset.wired='1';
-    b.onclick=()=>{ ST.gridAxis=b.getAttribute('data-axis');
-      b.disabled=true; b.textContent='Rebuilding\u2026';
+    b.onclick=(e)=>{ if(e && e.preventDefault) e.preventDefault();
+      ST.gridAxis=b.getAttribute('data-axis');
+      b.textContent='Rebuilding\u2026';
+      if('disabled' in b) b.disabled=true;
       const s1=$('step1'); if(s1) s1.click(); };
   })();
 
@@ -2820,11 +2822,17 @@ async function openCalib(){
         if(!ds.length && !conf.length) return '';
         return `<div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin:14px 0 6px">What explains the spread</div>
           ${ds.map(d=>`<div style="margin-bottom:6px;font-size:12.5px">
-            <b>${escapeHtml(d.variable)}</b> <span class="nf">— splits the gap by ${d.spread.toFixed(1)} points${d.fragile?' <span style="color:#8a5a10">(fragile — a median over fewer than four quotes moves if one of them moves)</span>':''}</span>
-            <div class="nf" style="margin-top:2px">${d.buckets.map(bk=>`${escapeHtml(bk.value)} <b style="color:${Math.abs(bk.median_gap_pct||0)>=4?'#8a5a10':'var(--ink)'}">${(bk.median_gap_pct>0?'+':'')+(bk.median_gap_pct||0).toFixed(1)}%</b> <span style="opacity:.7">(n=${bk.n})</span>`).join(' · ')}</div>
+            <b>${escapeHtml(d.variable)}</b> <span class="nf">— splits the gap by ${d.spread.toFixed(1)} points</span>${d.fragile?` <span class="tipwrap" style="cursor:help"><span style="background:#fdf1d8;color:#7a5410;border:1px solid #e8c98a;border-radius:9px;padding:0 6px;font-size:10px;font-weight:700">fragile</span><div class="help">At least one bucket here has fewer than four quotes, so one quote moving moves the median. The split may still be real; it is not yet evidence.</div></span>`:''}
+            <div class="nf" style="margin-top:2px">${d.buckets.map(bk=>{
+              // The outlier warning belongs ON the number it distorts, not in a
+              // card at the bottom of the section. (2026-08-12)
+              const own=(r.outliers||[]).filter(o=>(o.buckets||{})[d.variable]===bk.value);
+              const mark=own.length?`<span class="tipwrap" style="cursor:help"><span style="color:#8a5a10;font-weight:700">&nbsp;\u26a0</span><div class="help">${own.map(o=>`<b>${escapeHtml(o.name)}</b> at ${(o.gap_pct>0?'+':'')+o.gap_pct.toFixed(1)}%${o.times_typical?` (${o.times_typical}\u00d7 the typical gap)`:''} is in this bucket.`).join('<br>')}<br><br>With this few quotes one extreme deal <b>is</b> the median, so this figure may be describing that quote rather than the bucket.</div></span>`:'';
+              return `${escapeHtml(bk.value)} <b style="color:${Math.abs(bk.median_gap_pct||0)>=4?'#8a5a10':'var(--ink)'}">${(bk.median_gap_pct>0?'+':'')+(bk.median_gap_pct||0).toFixed(1)}%</b> <span style="opacity:.7">(n=${bk.n})</span>${mark}`;
+            }).join(' · ')}</div>
           </div>`).join('')}
           ${ds.length?`<div class="nf" style="font-size:11px;margin:-2px 0 6px">Biggest spread first. A variable whose buckets all show the same gap explains nothing, however plausible it sounded.</div>`:''}
-          ${(r.outliers||[]).map(o=>`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;font-size:12.5px">⚠ <b>One quote is doing a lot of the work:</b> ${escapeHtml(o.name)} at ${(o.gap_pct>0?'+':'')+o.gap_pct.toFixed(1)}% ${o.times_typical?` — ${o.times_typical}× the typical gap`:''}, and the only quote in <b>${escapeHtml(o.shape)}</b>. With three quotes in a split, one extreme deal <b>is</b> the median, so it can appear as evidence in several variables at once. Check it before believing any split it lands in${tipOf('Not excluded automatically &mdash; an outlier is sometimes the finding. But a median is only robust to one when the bucket is big enough to have one, and yours are not yet.')}</div>`).join('')}
+          ${(r.outliers||[]).length?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;font-size:12.5px">\u26a0 <b>${r.outliers.length} quote${r.outliers.length===1?'':'s'} sit${r.outliers.length===1?'s':''} far from the rest</b> \u2014 ${r.outliers.map(o=>`${escapeHtml(o.name)} <b>${(o.gap_pct>0?'+':'')+o.gap_pct.toFixed(1)}%</b>`).join(' \u00b7 ')}. Marked <b style="color:#8a5a10">\u26a0</b> above on every bucket they land in \u2014 hover one to see which${tipOf('Not excluded automatically &mdash; an outlier is sometimes the finding. But a median is only robust to one when the bucket is big enough to have one, and yours are not yet. Each of these is also the only quote in its shape, which is why one deal can appear as evidence in several variables at once.')}</div>`:''}
           ${conf.map(c=>`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;font-size:12.5px">⚠ <b>Can't be told apart:</b> ${c.variables.map(escapeHtml).join(', ')} split these quotes identically. No amount of extra quotes fixes that on its own — it needs a quote where one of them differs, so a gap credited to any one of them could belong to any of the others.</div>`).join('')}
           ${flat.length?`<div class="nf" style="font-size:11px;margin-top:5px">Doesn't vary in this data: ${flat.map(d=>escapeHtml(d.variable)).join(', ')} — nothing to learn either way yet.</div>`:''}
           ${(()=>{
@@ -4098,17 +4106,16 @@ function step1Grid(kw){
     // so the operator clicked it and landed on a panel telling them to use
     // services — the tool looked like it had changed its mind when all it ever
     // recommended was services. The label now says which of the two it is.
-    const flip = (other === rec)
-      ? `Put it back to ${other}`
-      : `Override to ${other}`;
-    const btn = `<button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px${against?';background:var(--atlas);color:#fff;border-color:var(--atlas)':''}">${flip}</button>`;
+    const btn = against
+      ? `<button type="button" id="axisFlip" data-axis="${other}" class="btn2" style="padding:1px 8px;font-size:11px;margin-left:4px;background:var(--atlas);color:#fff;border-color:var(--atlas)">Put it back to ${other}</button>`
+      : `<a href="#" id="axisFlip" data-axis="${other}" style="margin-left:6px;font-size:11.5px;color:var(--muted);text-decoration:underline dotted">switch to ${other}</a>`;
     const why = tipOf(escapeHtml(ga.reason||'')+((ev.dropped_cities&&ev.dropped_cities.length)?'<br><br>Not crossed: '+ev.dropped_cities.map(c=>escapeHtml(String(c).split(',')[0])).join(', ')+'. They stay on the order as targeting area.':'')+'<br><br>A fixed term count buys either many services in one market or a few services across many. Geography only earns it when more than one market carries demand above '+floor+'/mo &mdash; otherwise the crossing buys near-duplicates of the one market that does, and the service lines the client actually sells go unmentioned.<br><br>Measured: '+(ev.cities_with_demand||0)+' of '+(ev.cities_scored||0)+' markets above the floor, '+(ev.seeds||0)+' focus terms supplied.<br><br>The button beside this line is an override, not a recommendation. What the measurement recommends is '+escapeHtml(rec||ga.axis)+'.');
     if(against){
       // Overriding the measurement is a decision with a measurable cost, so it
       // is an amber warning rather than a grey note.
       warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Budget spent on ${svc?'services':'geography'} by hand</b> — the measurement says <b>${escapeHtml(rec)}</b>: only ${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carr${(ev.cities_with_demand||0)===1?'ies':'y'} demand above ${floor}/mo.${(nAll&&dead)?` <b>${dead} of the ${nAll} terms below report under ${floor}/mo</b> — the crossing is buying copies of one market in markets with nothing to win.`:''} ${btn}${why}</div>`);
     } else {
-      auto.push(`${svc?'\u{1F527}':'\u{1F5FA}'} <b>Term budget spent on ${svc?'services':'geography'}</b> — ${ev.by_hand?'set by hand, and the measurement agrees':`${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${floor}/mo`}${(ev.dropped_cities&&ev.dropped_cities.length)?`, so ${ev.dropped_cities.length} market${ev.dropped_cities.length===1?'':'s'} ${ev.dropped_cities.length===1?'was':'were'} not crossed`:''}. ${btn}${why}`);
+      auto.push(`${svc?'\u{1F527}':'\u{1F5FA}'} <b>Term budget spent on ${svc?'services':'geography'}</b> — ${ev.cities_with_demand||0} of ${ev.cities_scored||0} market${(ev.cities_scored||0)===1?'':'s'} carry demand above ${floor}/mo${(ev.dropped_cities&&ev.dropped_cities.length)?`, so ${ev.dropped_cities.length} market${ev.dropped_cities.length===1?'':'s'} ${ev.dropped_cities.length===1?'was':'were'} not crossed`:''}.${ev.by_hand?` <span class="nf">You set this by hand and the measurement says the same.</span>`:''} ${btn}${why}`);
     }
   }
 
