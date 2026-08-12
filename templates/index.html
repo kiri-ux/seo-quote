@@ -937,7 +937,9 @@ function wirePills(key, inputId){
     if(key === 'sites' || key === 'kw'){ try{ maybeAutoSuggest(); }catch(e){} }
     if(key === 'sites'){ try{ refreshOrderPanel(); }catch(e){} }
   }
-  PILL_RENDER[key] = render;
+  PILL_RENDER[key] = (key === 'kw')
+    ? function(){ render(); try{ syncSvcChips(); }catch(e){} }
+    : render;
   const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
   const US_ST_NAMES=new Set(['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming']);
   function commit(){
@@ -1160,35 +1162,121 @@ async function runExpandServices(){
 // one at a time is data entry, not a decision. One button per chip group, so
 // the site-menu services and the acronyms stay separately acceptable.
 // (2026-08-11)
+// NOTHING IS RECOMMENDED THAT IS ALREADY ON THE LIST — and it stays true as the
+// list changes. Three groups propose terms (the site menu, the site's own short
+// names, the industry gap-finder) and not one of them looked at the list it was
+// proposing INTO: NPAIHB was offered `ctws` and `npaihb` while both sat in
+// Product / Vertical Focus, with "+ Add all 2" ready to add nothing at all.
+// Every group funnels through wireSvcChips, so the check belongs here — a fourth
+// group inherits it instead of repeating the bug. Greyed and ticked rather than
+// hidden: "we read their site, found CTWS, you already have it" is a useful
+// answer, and hiding it just invites the question again. (2026-08-12)
+const SVC_GROUPS=[];
+function syncSvcChips(){
+  for(let i=SVC_GROUPS.length-1;i>=0;i--){
+    const g=SVC_GROUPS[i];
+    // a group whose panel has been re-rendered away is dead weight
+    if(!document.body.contains(g.box)){ SVC_GROUPS.splice(i,1); continue; }
+    try{ g.refresh(); }catch(e){}
+  }
+}
+// SCROLL TO THE LIST AND STILL BE ON IT WHEN IT ARRIVES.
+// scrollIntoView aims once, against the layout at that instant, and the keyword
+// list renders in three async stages — placeholder, keywords, AI refinement —
+// each taller than the last. So a single smooth scroll lands short, and whatever
+// it does land on sits under a sticky header that covers the top ~110px of it.
+// Aim by hand with the header's measured height subtracted, then re-aim after
+// each stage renders. Any real scroll input from the operator cancels the re-aim
+// for that build — if they have looked away deliberately, yanking them back is
+// worse than landing short. (2026-08-12)
+let _aimLive=false;
+function _aimRelease(){ _aimLive=false; }
+function aimAtList(start){
+  const q=$('out'); if(!q) return;
+  if(start){
+    _aimLive=true;
+    for(const ev of ['wheel','touchmove','keydown','mousedown'])
+      window.addEventListener(ev, _aimRelease, {passive:true});
+  }else if(!_aimLive) return;
+  const hdr=document.querySelector('header');
+  let off=0;
+  try{
+    if(hdr && getComputedStyle(hdr).position==='sticky')
+      off=hdr.getBoundingClientRect().height;
+  }catch(e){}
+  const top=Math.max(0, q.getBoundingClientRect().top + window.scrollY - off - 8);
+  // No-op when we are already there, so a re-aim after a stage that changed
+  // nothing above the list does not re-trigger a smooth scroll.
+  if(Math.abs(top - window.scrollY) < 4) return;
+  try{ window.scrollTo({top, behavior:'smooth'}); }
+  catch(e){ window.scrollTo(0, top); }
+}
+
 function wireSvcChips(box, sel){
   const chips=[...box.querySelectorAll(sel||'.svc-chip')];
   if(!chips.length) return;
+  const key=ch=>(ch.getAttribute('data-label')||'').toLowerCase();
+  const onList=()=>new Set((stores.kw||[]).map(v=>String(v).toLowerCase()));
   const take=ch=>{
-    const v=(ch.getAttribute('data-label')||'').toLowerCase();
-    ch.style.opacity=.35; ch.style.pointerEvents='none';
+    const v=key(ch);
     if(!v || stores.kw.includes(v)) return false;
     stores.kw.push(v); return true;
   };
   const commit=()=>{ PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){} };
   chips.forEach(ch=>{ ch.onclick=()=>{ if(take(ch)) commit(); }; });
-  if(chips.length<2) return;
-  const btn=document.createElement('button');
-  btn.type='button';
-  btn.textContent='+ Add all '+chips.length;
-  btn.style.cssText='margin:0 0 5px;background:var(--atlas);color:#fff;border:none;padding:3px 11px;border-radius:12px;font-size:11.5px;font-weight:600;cursor:pointer';
-  btn.className='svcAddAll';
-  btn.onclick=()=>{
-    let n=0;
-    chips.forEach(ch=>{ if(ch.style.pointerEvents!=='none' && take(ch)) n++; });
-    commit();
-    btn.textContent='\u2713 Added '+n;
-    btn.disabled=true; btn.style.opacity=.6; btn.style.cursor='default';
+  let btn=null;
+  const refresh=()=>{
+    const have=onList();
+    let addable=0;
+    chips.forEach(ch=>{
+      const on=have.has(key(ch));
+      if(!on) addable++;
+      if(ch.dataset.tip===undefined) ch.dataset.tip=ch.title||'';
+      ch.style.opacity=on?.4:'';
+      ch.style.pointerEvents=on?'none':'';
+      ch.title=on?'Already in Product / Vertical Focus — nothing to add':ch.dataset.tip;
+      let tag=ch.querySelector('.svc-on');
+      if(on && !tag){
+        tag=document.createElement('span');
+        tag.className='svc-on nf'; tag.style.cssText='font-size:10.5px';
+        tag.textContent=' \u2713 on your list';
+        ch.appendChild(tag);
+      }else if(!on && tag){ tag.remove(); }
+    });
+    if(!btn) return;
+    if(!addable){
+      // Never "+ Add all 0". Say what is true: the panel checked and you are
+      // already covered.
+      btn.textContent='\u2713 All '+chips.length+' already on your list';
+      btn.disabled=true; btn.style.opacity=1; btn.style.cursor='default';
+      btn.style.background='transparent'; btn.style.color='var(--muted)';
+      btn.style.padding='0 0 3px';
+    }else{
+      btn.textContent='+ Add all '+addable;
+      btn.disabled=false; btn.style.opacity=1; btn.style.cursor='pointer';
+      btn.style.background='var(--atlas)'; btn.style.color='#fff';
+      btn.style.padding='3px 11px';
+    }
   };
-  const wrap=document.createElement('div');
-  wrap.appendChild(btn);
-  const cap=[...box.children].find(el=>el.classList&&el.classList.contains('nf'));
-  if(cap) cap.insertAdjacentElement('afterend', wrap);
-  else box.insertBefore(wrap, box.firstChild);
+  if(chips.length>=2){
+    btn=document.createElement('button');
+    btn.type='button';
+    btn.style.cssText='margin:0 0 5px;background:var(--atlas);color:#fff;border:none;padding:3px 11px;border-radius:12px;font-size:11.5px;font-weight:600;cursor:pointer';
+    btn.className='svcAddAll';
+    btn.onclick=()=>{
+      let n=0;
+      chips.forEach(ch=>{ if(take(ch)) n++; });
+      commit();                                    // -> PILL_RENDER.kw -> refresh
+      if(n) btn.textContent='\u2713 Added '+n;
+    };
+    const wrap=document.createElement('div');
+    wrap.appendChild(btn);
+    const cap=[...box.children].find(el=>el.classList&&el.classList.contains('nf'));
+    if(cap) cap.insertAdjacentElement('afterend', wrap);
+    else box.insertBefore(wrap, box.firstChild);
+  }
+  SVC_GROUPS.push({box, refresh});
+  refresh();
 }
 
 function renderSvcChips(data, out){
@@ -1574,13 +1662,14 @@ $('step1').addEventListener('click', async()=>{
   // TOP of the other column, so clicking it moved everything worth watching out of
   // view — the operator stared at a greyed-out button instead of the thing being
   // built. Scroll to the panel that is about to fill. (2026-08-12)
-  try{ const q=$('out')||$('p1'); if(q) q.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
+  try{ aimAtList(true); requestAnimationFrame(()=>aimAtList(false)); }catch(e){}
   try{
     const kw=await postJSON('/api/keywords',{
       keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
       domain:inp.domain, business_desc:inp.business_desc});
     ST.kw=kw;
     renderStep1();
+    try{ aimAtList(false); }catch(e){}
     // Step 1b — AI refinement runs as its OWN request so it can't time out the
     // build. Show the list immediately, then refine it in place.
     if(kw.all && kw.all.length){
