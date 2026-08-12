@@ -1197,7 +1197,20 @@ function renderSvcChips(data, out){
       const showLabel=s.label && s.label.toLowerCase()!==term;
       return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
     }).join('');
-  out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.from_headings?'Nav menu was generic (Work/About/Contact), so these came from the page\'s <b>service headings</b> instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.${(data.folded||[]).length?` <span style="opacity:.8">${data.folded.length} near-duplicate${data.folded.length===1?'':'s'} folded out${tipOf('Same rule the build uses on your focus terms: one service line cannot take two slots. Folded here: '+data.folded.slice(0,20).map(escapeHtml).join(' &middot; ')+'.')}</span>`:''}</div>${chips}`;
+  out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.from_headings?'Nav menu was generic (Work/About/Contact), so these came from the page\'s <b>service headings</b> instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.${(()=>{
+      // ONE VOICE. Near-duplicates and things that are not this client's to sell
+      // are both "we read it and left it out", so they share the line that
+      // already reports what the panel filtered. A second panel arguing with the
+      // first is two steps where the operator asked for one. (2026-08-12)
+      const dupes=(data.folded||[]).length, ns=(data.not_services||[]).length, bits=[];
+      if(dupes) bits.push(`${dupes} near-duplicate${dupes===1?'':'s'}`);
+      if(ns) bits.push(`${ns} not a service they sell`);
+      if(!bits.length) return '';
+      const why=(dupes?'Near-duplicates (one service line cannot take two slots): '+(data.folded||[]).slice(0,20).map(escapeHtml).join(' &middot; ')+'.':'')
+        +(dupes&&ns?'<br><br>':'')
+        +(ns?'Not a service this client sells:<br>'+(data.not_services||[]).slice(0,20).map(x=>escapeHtml(String(x.term||x.label))+(x.kind_why?' &mdash; '+escapeHtml(x.kind_why):'')).join('<br>')+'<br><br>Read per client with the business in front of it, not matched against a word list. On npaihb.org the site&rsquo;s own section headings were its MEMBER TRIBES. Type one into Product / Vertical Focus if you disagree.':'');
+      return ` <span style="opacity:.8">${bits.join(' + ')} left out${tipOf(why)}</span>`;
+    })()}</div>${chips}`;
   // ---- the client's own SHORT names, with volume attached -----------------
   // The chips above are the menu converted to prose, which is how NASSCO ended
   // up with sixteen seeds carrying 10/mo between them. These are the acronyms
@@ -1212,26 +1225,6 @@ function renderSvcChips(data, out){
         ${good.length?good.map(chip).join(''):'<div class="nf" style="font-size:12px">None of them carry real search volume \u2014 so they are internal codes, not keywords.</div>'}
         ${thin.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below the ${'20'}/mo floor, not offered: ${thin.map(a=>escapeHtml(a.acronym)+' ('+Number(a.volume||0).toLocaleString()+')').join(' \u00b7 ')}</div>`:''}
       </div>`);
-  }
-  // ---- proposed, but not a service THIS client sells ----------------------
-  // A separate group with its own Add-all, deliberately: the whole failure was
-  // "+ Add all 9" sweeping nine of NPAIHB's member tribes into the focus list.
-  // They stay clickable — a wrong verdict costs one click, a swept list costs a
-  // quote — and each carries the reason it was set aside. (2026-08-12)
-  const notSvc=(data.not_services||[]).filter(x=>x&&(x.term||x.label));
-  if(notSvc.length){
-    const kindWord=k=>k==='other_business'?'a different business':'a thing, not a service';
-    const chip=x=>{
-      const term=String(x.term||x.label).toLowerCase();
-      return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${escapeHtml(kindWord(x.kind)+(x.kind_why?' — '+x.kind_why:''))}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px dashed #c9a227;color:#7a6410;font-size:12.5px;cursor:pointer;background:#fffdf5">${escapeHtml(term)} <span class="nf" style="font-size:10.5px">· ${escapeHtml(kindWord(x.kind))}</span></span>`;
-    };
-    out.insertAdjacentHTML('beforeend',
-      `<div id="notSvcBox" style="margin-top:9px;border-top:1px solid var(--line);padding-top:7px">
-        <div class="nf" style="font-size:11.5px;margin-bottom:4px">⚠ <b>${notSvc.length} of these don't look like services ${escapeHtml((($('brand')||{}).value||'this client'))} sells</b> — kept out of the group above so "Add all" can't sweep them in. Hover one for the reason; click to add anyway.${tipOf('Read per client, not from a word list: the same phrase is a service for one business and somebody else&rsquo;s for the next. On npaihb.org the site&rsquo;s own headings were its MEMBER TRIBES, and nine of them became the quote&rsquo;s keywords.')}</div>
-        ${notSvc.map(chip).join('')}
-      </div>`);
-    const nb=document.getElementById('notSvcBox');
-    if(nb) wireSvcChips(nb);
   }
   const bd=document.getElementById('business_desc');
   if(data.site_description && bd && !bd.value.trim()){
@@ -4252,15 +4245,15 @@ function step1Grid(kw){
   if(slots && svcCount && svcCount < slots*0.75){
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>The grid had room for ${slots} services and filled ${svcCount}</b> — so this quote carries ${(kw.all||[]).length} keyword${(kw.all||[]).length===1?'':'s'} where the same client would normally get around ${slots}${((kw.dropped_ungrounded||[]).length||(kw.grounding_stood_down))?`, and ${(kw.dropped_ungrounded||[]).length||'some'} of the AI's suggestions were filtered out`:''}. Add more <b>Product / Vertical Focus</b> terms — the ✦ Suggest services panel measures them for you — and rebuild.${tipOf('The grid is services &times; cities and the service count scales to the number of cities, so a one-city client has the most slots to fill and needs the most seeds. Nothing here is broken: the list is as long as the input allowed. A short list also prices lower, because both the volume total and the tier mix are computed from the terms that exist.')}</div>`);
   }
-  // SET ASIDE BEFORE THE GRID SAW THEM. Amber, not a note: the operator's own
-  // typed list was overruled, and they are the only one who can say whether the
-  // call was right. (2026-08-12)
+  // SET ASIDE BEFORE THE GRID SAW THEM. Amber, because a list a human typed was
+  // overruled and only they can say whether the call was right — but ONE LINE,
+  // with the reasons on the hover. The chip panel no longer reports this at all
+  // (it simply doesn't propose them), so this is the only place it appears and
+  // it is always about terms a person chose. (2026-08-12)
   const dem=kw.seeds_demoted||[];
   if(dem.length){
     const word=k=>k==='other_business'?'a different business':'an object, not work they perform';
-    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out — they don't look like services this client sells</b>${tipOf('Asked per client with the business in front of it, not matched against a word list. Set aside BEFORE the grid filled, so they could not take a service slot from a real line.')}
-      <div style="margin-top:3px">${dem.slice(0,12).map(x=>`<span style="display:inline-block;margin:0 5px 3px 0;padding:1px 8px;border-radius:11px;background:#fff;border:1px dashed #c9a227;font-size:12px" title="${escapeHtml(String(x.why||''))}">${escapeHtml(String(x.term||''))} <span class="nf" style="font-size:10.5px">· ${escapeHtml(word(x.kind))}</span></span>`).join('')}${dem.length>12?`<span class="nf"> +${dem.length-12} more</span>`:''}</div>
-      <div class="nf" style="margin-top:3px">If any of these ARE what they sell, put it back in Keyword / Vertical Focus and rebuild — nothing was deleted.</div></div>`);
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b> — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''} ${dem.length===1?'is':'are'} not something this client sells${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
   }
   const sr=kw.seed_ranking||{};
   // A quote saved before the build started ranking seeds carries no seed_ranking
@@ -4284,7 +4277,24 @@ function step1Grid(kw){
 
   if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);
 
-  if(kw.grounding_stood_down) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter stood down</b> — it would have removed most of the AI's services, which usually means the business description is too short to judge them against rather than that the services are wrong. Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on.</div>`);
+  if(kw.grounding_stood_down){
+    // WHAT HAPPENED, then WHAT TO DO — and the advice is computed, not assumed.
+    // The old line blamed a short business description. NPAIHB's was a complete,
+    // accurate sentence; the filter tripped because their own text says "tribal"
+    // and never says "native american", "indigenous" or "wellness", so every
+    // service using those words looked as foreign as a competitor's name would.
+    // The words that tripped it ARE the answer, and they were already in hand.
+    // (2026-08-12)
+    const wd=kw.grounding_would_drop||[], gap=kw.grounding_gap_words||[],
+          tot=Number(kw.grounding_total||0);
+    const pct=(tot&&wd.length)?Math.round(wd.length/tot*100):0;
+    const gapWords=gap.slice(0,5).map(g=>`<b>${escapeHtml(String(g[0]))}</b>`).join(' · ');
+    const detail=wd.length
+      ? tipOf('It would have removed:<br>'+wd.slice(0,20).map(d=>escapeHtml(String(d[0]))+' &mdash; on the word &ldquo;'+escapeHtml(String(d[1]))+'&rdquo;').join('<br>')
+              +'<br><br>The filter drops any service containing a word the client never uses about themselves — that is how a competitor&rsquo;s company name gets caught. Past half the list it is not a targeted removal any more, so it switches itself off rather than gut the quote.')
+      : '';
+    notes.push(`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter off for this build</b> — it would have cut ${wd.length||'most'}${tot?` of ${tot}`:''} of the AI\'s services${pct?` (${pct}%)`:''}, too much of the list to be a targeted removal.${detail}${gap.length?`<div style="margin-top:2px">Every one tripped on a word the client\'s own text never uses: ${gapWords}. If those are fair synonyms for what they do, add them to <b>Business description</b> and rebuild — the filter switches back on and keeps working.</div>`:` Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on.`}</div>`);
+  }
 
   if(kw.scope_warning) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">⚠ <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`);
 

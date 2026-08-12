@@ -2233,10 +2233,15 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
     then bypassed this filter, which would have caught all three, because
     pitcher/chess/carafe appear nowhere in the client's vocabulary.
 
-    Returns (services, dropped, blocked_pins). `dropped` is the model's own
-    picks that failed; `blocked_pins` is reported separately because a pin is
-    forced in for PRICE STABILITY, so the operator needs to see when one was
-    refused rather than have it vanish.
+    Returns (services, dropped, blocked_pins, stood_down). `dropped` is the
+    model's own picks that failed — reported WHETHER OR NOT the filter stood
+    down, because "here is what it would have cut" is the only thing that tells
+    an operator whether standing down was right. `blocked_pins` is separate
+    because a pin is forced in for PRICE STABILITY, so a refused one has to be
+    seen rather than vanish. `stood_down` used to be signalled by dropped=None,
+    which threw away the evidence and left the panel guessing at the cause —
+    it told NPAIHB its business description was too short when the description
+    was fine and the real problem was vocabulary. (2026-08-12)
     """
     corpus = " ".join([
         " ".join(seeds or []), business_desc or "",
@@ -2301,8 +2306,29 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
         blocked_l = {(b[0] or "").lower() for b in blocked_pins}
         return ([s for s in (services or [])
                  if (s.get("service") or "").lower() not in blocked_l],
-                None, blocked_pins)          # None = filter stood down
-    return out, dropped, blocked_pins
+                dropped, blocked_pins, True)
+    return out, dropped, blocked_pins, False
+
+
+def grounding_gap_words(dropped, limit=6):
+    """The client's VOCABULARY HOLE, in their own frequency order.
+
+    NPAIHB's description was a full, accurate sentence and the panel still told
+    the operator to go write one. The filter had not failed on length — it failed
+    because npaihb.org says "tribal" and never says "native american",
+    "indigenous" or "wellness", so every service using those words looked as
+    foreign as a competitor's name would. That is a fixable, nameable gap and the
+    words are already in hand: they are the ones that tripped the filter.
+    (2026-08-12)
+
+    Returns [(word, count)], commonest first.
+    """
+    tally = {}
+    for _term, word in (dropped or []):
+        w = str(word or "").strip().lower()
+        if len(w) > 2:
+            tally[w] = tally.get(w, 0) + 1
+    return sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))[:int(limit)]
 
 
 def enforce_seed_services(services, seeds, max_services, markets, state, phrase_geos=None):
@@ -5476,7 +5502,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                         markets, state, phrase_geos)
                                if seeds else (services, 0, 0))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
-        services, ungrounded, blocked_pins = drop_ungrounded_services(
+        # Counted HERE, not off the final payload: several more filters run below
+        # and "11 of 15" has to mean 15 as the grounding filter saw it.
+        _gtotal = len([x for x in (services or []) if not x.get("pinned")])
+        services, ungrounded, blocked_pins, grounding_off = drop_ungrounded_services(
             services, seeds, biz, [p.get("title", "") if isinstance(p, dict) else str(p)
                                    for p in (site_pages or [])], brand, domain)
         # LAST, after every filter has had its say: make sure each topic the
@@ -6067,8 +6096,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
-            "dropped_ungrounded": [d[0] for d in (ungrounded or [])],
-            "grounding_stood_down": ungrounded is None,
+            # Removed for real (empty when the filter stood down) versus what it
+            # WOULD have removed — the panel needs both to say anything true.
+            "dropped_ungrounded": ([] if grounding_off
+                                   else [d[0] for d in (ungrounded or [])]),
+            "grounding_stood_down": grounding_off,
+            "grounding_would_drop": ([list(d) for d in (ungrounded or [])]
+                                     if grounding_off else []),
+            "grounding_gap_words": (grounding_gap_words(ungrounded)
+                                    if grounding_off else []),
+            "grounding_total": _gtotal,
             # No foreign states exist on a nationwide quote, so the warning was
             # telling the operator to fix something that is not broken.
             "geo_filter_off": (geo_dropped is None) and not national_demand,
@@ -7572,6 +7609,9 @@ def api_refine():
         "dropped_out_of_area": s1.get("dropped_out_of_area") or [],
         "geo_filter_off": bool(s1.get("geo_filter_off")),
         "dropped_ungrounded": s1.get("dropped_ungrounded") or [],
+        "grounding_would_drop": s1.get("grounding_would_drop") or [],
+        "grounding_gap_words": s1.get("grounding_gap_words") or [],
+        "grounding_total": s1.get("grounding_total") or 0,
         "grounding_stood_down": bool(s1.get("grounding_stood_down")),
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
