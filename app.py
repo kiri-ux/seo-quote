@@ -8864,6 +8864,12 @@ def api_config_set():
     """Apply edited constants to the running session (not persisted to disk —
     a restart reverts to the file defaults). Lets Brendan tune and re-quote live."""
     d = request.get_json(force=True)
+    # A CONSTANT THAT QUIETLY REVERTS IS WORSE THAN ONE THAT NEVER MOVED, because
+    # by then nobody is watching it. The source fingerprint tells you which CODE
+    # is running; this is the same idea for the CONFIG, so a session tuned away
+    # from the file says so in the header. (2026-08-12)
+    CFG_EDITS.append({"keys": sorted(k for k in d if k != "_note"),
+                      "note": str(d.get("_note") or "")[:120]})
     try:
         if "geo_anchor" in d:
             for k, v in d["geo_anchor"].items():
@@ -9731,6 +9737,10 @@ Return ONLY JSON:
 # geo band and demand basis — and a recommendation is only offered once a group
 # has enough quotes to mean something. (2026-08-12)
 
+# Every session edit to CFG, in order. Empty means the running config is exactly
+# what the file says.
+CFG_EDITS = []
+
 CALIB_MIN_N = 3            # below this a group is an anecdote, not a pattern
 CALIB_MIN_GAP_PCT = 4.0    # below this the formula is already within noise
 _TIERS = ("base", "intermediate", "advanced")
@@ -9826,6 +9836,15 @@ def calibration_advice(groups, rows, drivers=None):
     """
     tips = []
     strong = [g for g in groups if g["enough"]]
+
+    def edit_line(key, value):
+        """The literal line to change in app.py, because the session copy reverts.
+
+        api_config_set() only tunes the RUNNING process — a redeploy restores the
+        file. So a recommendation that can only be applied to the session is half
+        a recommendation; it ships with the permanent version attached.
+        """
+        return f'    "{key}": {value},'
     if not strong:
         n = len(rows)
         tips.append({
@@ -9905,6 +9924,7 @@ def calibration_advice(groups, rows, drivers=None):
         shape, g, want = floor_wants[0]
         tips.append({
             "kind": "floor", "constant": "client_floor", "from": floor, "to": want,
+            "apply": {"client_floor": want}, "edit": edit_line("client_floor", want),
             "text": (f"{shape}: the formula is landing ON the floor (${floor:,}) and the "
                      f"actual is ${g['median_base_actual']:,.0f} — median "
                      f"{g['median_gap_pct']['base']:+.1f}% across {g['n']} quotes. The floor "
@@ -9916,6 +9936,7 @@ def calibration_advice(groups, rows, drivers=None):
         detail = "; ".join(f"{sh} wants ${w:,}" for sh, _g, w in floor_wants)
         tips.append({
             "kind": "floor", "constant": "client_floor", "from": floor, "to": lo,
+            "apply": {"client_floor": lo}, "edit": edit_line("client_floor", lo),
             "text": (f"Every leaning shape is sitting on the floor, but they disagree on "
                      f"what it should be — {detail}. client_floor is one number, so it can "
                      f"only go to the LOWEST of them (${lo:,}), which is safe for all of "
@@ -10029,7 +10050,13 @@ def calibration_drivers(rows, min_bucket=2):
             buckets.setdefault(fn(r), []).append(r["gap_pct"]["base"])
         shown = [{"value": k, "n": len(v), "median_gap_pct": _median(v)}
                  for k, v in buckets.items()]
-        shown.sort(key=lambda b: -(b["median_gap_pct"] or 0))
+        # The ranking rung is an ORDERED scale, so listing it by gap printed the
+        # rungs 0, 40, 90, 70 and the trend in it was unreadable. Ordered variables
+        # sort by their own value; the rest by size of gap.
+        if label == "ranking rung":
+            shown.sort(key=lambda b: -_leading_num(b["value"]))
+        else:
+            shown.sort(key=lambda b: -(b["median_gap_pct"] or 0))
         solid = [b for b in shown if b["n"] >= min_bucket]
         spread = (max(b["median_gap_pct"] for b in solid)
                   - min(b["median_gap_pct"] for b in solid)) if len(solid) > 1 else None
@@ -10043,7 +10070,54 @@ def calibration_drivers(rows, min_bucket=2):
                     # One bucket holding everything means the variable does not
                     # vary in this data at all — nothing to learn either way.
                     "constant_here": len(shown) <= 1})
-    out.sort(key=lambda d: (d["spread"] is None, -(d["spread"] or 0)))
+    # SOLID BEFORE FRAGILE. Sorting on spread alone put a three-quote split at the
+    # top of the panel above a ten-quote one, and the loudest line was one outlier
+    # wearing several hats — Ski Barn's single statewide quote at -41.9% was
+    # driving four of the six splits. The fragile flag said so in small text under
+    # a heading that had already made the point. Order says it instead.
+    out.sort(key=lambda d: (d["spread"] is None, bool(d.get("fragile")),
+                            -(d["spread"] or 0)))
+    return out
+
+
+def _leading_num(text):
+    m = re.match(r"\s*(-?\d+(?:\.\d+)?)", str(text or ""))
+    return float(m.group(1)) if m else -1e9
+
+
+def calibration_outliers(rows, factor=2.5):
+    """Quotes whose gap sits far from every other quote's.
+
+    A median is robust to an outlier only when the bucket is big enough to have
+    one. With three quotes in a split, one extreme quote IS the median, so a
+    single unusual deal can appear as evidence in four different variables at
+    once. Named here with the splits it lands in, so it can be checked or
+    excluded rather than silently believed. (2026-08-12)
+    """
+    gaps = [(r, abs(r["gap_pct"]["base"])) for r in rows
+            if r["gap_pct"]["base"] is not None]
+    if len(gaps) < 4:
+        return []
+    typical = _median([g for _r, g in gaps]) or 0.0
+    # When most quotes match exactly the median gap is ~0, and dividing by it
+    # produces "20x the typical gap" against a typical of nothing. Floor it for the
+    # comparison and drop the multiple from the output when it is meaningless.
+    ratio_meaningful = typical >= 2.0
+    if typical < 1.0:
+        typical = 1.0
+    out = []
+    for r, g in gaps:
+        if g >= typical * factor and g >= CALIB_MIN_GAP_PCT:
+            out.append({
+                "name": r["name"] or r["client"],
+                "gap_pct": r["gap_pct"]["base"],
+                "shape": f"{(r['band'] or 'unset').replace('_', ' ')}"
+                         + (" + national demand" if r["national_demand"] else ""),
+                "times_typical": round(g / typical, 1) if ratio_meaningful else None,
+                "appears_in": [label for label, fn in CALIB_DRIVERS
+                               if len({fn(x) for x in rows}) > 1],
+            })
+    out.sort(key=lambda o: -abs(o["gap_pct"]))
     return out
 
 
@@ -10075,6 +10149,16 @@ def calibration_confounds(rows):
     return [{"variables": sorted(v), "n_groups": len(set(sig))}
             for sig, v in classes.items() if len(v) > 1]
 
+@app.route("/api/config_state")
+@_json_error_guard
+def api_config_state():
+    """Has the running config been tuned away from the file this session?"""
+    keys = sorted({k for e in CFG_EDITS for k in e["keys"]})
+    return jsonify({"edited": bool(CFG_EDITS), "n": len(CFG_EDITS), "keys": keys,
+                    "note": (CFG_EDITS[-1]["note"] if CFG_EDITS else ""),
+                    "values": {k: CFG.get(k) for k in keys}})
+
+
 @app.route("/api/calibration")
 @_json_error_guard
 def api_calibration():
@@ -10086,6 +10170,7 @@ def api_calibration():
     return jsonify({"rows": rows, "groups": groups,
                     "drivers": calibration_drivers(rows),
                     "confounds": calibration_confounds(rows),
+                    "outliers": calibration_outliers(rows),
                     "advice": calibration_advice(groups, rows,
                                                   calibration_drivers(rows)),
                     "min_n": CALIB_MIN_N,

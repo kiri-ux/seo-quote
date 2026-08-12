@@ -233,7 +233,7 @@
 <body>
 <header>
   <div class="hrow">
-    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— {{ build }} <button type="button" id="srcChk" title="Show the hash of every file on the server, so a file that didn’t land is obvious" style="background:none;border:none;color:inherit;opacity:.75;cursor:pointer;font:inherit;text-decoration:underline dotted">files</button></span></h1>
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder <span>— {{ build }}<span id="cfgState"></span> <button type="button" id="srcChk" title="Show the hash of every file on the server, so a file that didn’t land is obvious" style="background:none;border:none;color:inherit;opacity:.75;cursor:pointer;font:inherit;text-decoration:underline dotted">files</button></span></h1>
     <div id="srcFiles" class="hidden" style="font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f6f7f9;border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 8px;white-space:pre"></div>
     <span style="display:flex;gap:8px;flex:none">
     <button id="cfgBtn" title="Pricing config — internal, not partner-facing" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
@@ -273,7 +273,7 @@
     <h2 style="margin:0;color:var(--atlas);font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">Calibration</h2>
     <button id="calibClose" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--muted)">&times;</button>
   </div>
-  <div class="help" style="margin:4px 0 12px">What the formula produced versus the price actually sent, on every saved quote where you filled in <b>Compare to actual quote</b>. Grouped by geo band and demand basis — the shape of the quote, not the client.</div>
+  <div class="help" style="margin:4px 0 12px">What the formula produced versus the price actually sent, on every saved quote where you filled in <b>Compare to actual quote</b>. Grouped by geo band and demand basis — the shape of the quote, not the client.<br><b>Each row compares against the formula price stored on that quote</b>, so a constant you change today only shows up in quotes priced after it — these gaps will not close retroactively.</div>
   <div id="calibOut" style="font-size:13px">Loading…</div>
 </div>
 
@@ -2804,6 +2804,10 @@ async function openCalib(){
       ${advice.map(t=>{const c=TIP[t.kind]||TIP.note; return `<div style="background:${c[0]};border:1px solid ${c[1]};border-radius:8px;padding:8px 11px;margin-bottom:7px;font-size:12.5px">
         <b>${c[2]}</b> — ${escapeHtml(t.text)}
         ${t.constant?`<div class="nf" style="margin-top:4px;font-family:ui-monospace,monospace;font-size:11.5px">${escapeHtml(t.constant)}${t.to?`: ${t.from} → <b style="color:var(--ink)">${t.to}</b>`:''}</div>`:''}
+        ${t.apply?(t.from===t.to?`<div class="nf" style="margin-top:6px;font-size:11.5px">\u2713 This session already has that value — the recommendation persists because it is measured against each quote's <b>stored</b> formula price, and those were priced before the change.</div>`:`<div style="margin-top:6px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn2 calibApply" data-apply="${escapeHtml(JSON.stringify(t.apply))}" data-note="${escapeHtml(t.constant+' from calibration')}" style="padding:3px 11px;font-size:12px">Apply for this session</button>
+          <span class="nf" style="font-size:11px">re-prices immediately — <b>a redeploy reverts it</b></span>
+        </div>`)+(t.edit?`<div class="nf" style="margin-top:5px;font-size:11px">Permanent version — change this line in <code>app.py</code>:<div style="margin-top:2px;padding:5px 8px;background:#f4f4f6;border:1px solid var(--line);border-radius:6px;font-family:ui-monospace,monospace;font-size:11.5px;color:var(--ink);user-select:all">${escapeHtml(t.edit)}</div></div>`:''):''}
       </div>`;}).join('')}
 
       ${(()=>{
@@ -2820,8 +2824,16 @@ async function openCalib(){
             <div class="nf" style="margin-top:2px">${d.buckets.map(bk=>`${escapeHtml(bk.value)} <b style="color:${Math.abs(bk.median_gap_pct||0)>=4?'#8a5a10':'var(--ink)'}">${(bk.median_gap_pct>0?'+':'')+(bk.median_gap_pct||0).toFixed(1)}%</b> <span style="opacity:.7">(n=${bk.n})</span>`).join(' · ')}</div>
           </div>`).join('')}
           ${ds.length?`<div class="nf" style="font-size:11px;margin:-2px 0 6px">Biggest spread first. A variable whose buckets all show the same gap explains nothing, however plausible it sounded.</div>`:''}
+          ${(r.outliers||[]).map(o=>`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;font-size:12.5px">⚠ <b>One quote is doing a lot of the work:</b> ${escapeHtml(o.name)} at ${(o.gap_pct>0?'+':'')+o.gap_pct.toFixed(1)}% ${o.times_typical?` — ${o.times_typical}× the typical gap`:''}, and the only quote in <b>${escapeHtml(o.shape)}</b>. With three quotes in a split, one extreme deal <b>is</b> the median, so it can appear as evidence in several variables at once. Check it before believing any split it lands in${tipOf('Not excluded automatically &mdash; an outlier is sometimes the finding. But a median is only robust to one when the bucket is big enough to have one, and yours are not yet.')}</div>`).join('')}
           ${conf.map(c=>`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;font-size:12.5px">⚠ <b>Can't be told apart:</b> ${c.variables.map(escapeHtml).join(', ')} split these quotes identically. No amount of extra quotes fixes that on its own — it needs a quote where one of them differs, so a gap credited to any one of them could belong to any of the others.</div>`).join('')}
-          ${flat.length?`<div class="nf" style="font-size:11px;margin-top:5px">Doesn't vary in this data: ${flat.map(d=>escapeHtml(d.variable)).join(', ')} — nothing to learn either way yet.</div>`:''}`;
+          ${flat.length?`<div class="nf" style="font-size:11px;margin-top:5px">Doesn't vary in this data: ${flat.map(d=>escapeHtml(d.variable)).join(', ')} — nothing to learn either way yet.</div>`:''}
+          ${(()=>{
+            // Varies, but one side has a single quote — so it is neither a finding
+            // nor a non-finding. It was appearing in neither list and vanishing.
+            const thin=(r.drivers||[]).filter(d=>d.spread==null && !d.constant_here);
+            if(!thin.length) return '';
+            return `<div class="nf" style="font-size:11px;margin-top:3px">Not testable yet: ${thin.map(d=>escapeHtml(d.variable)+' ('+d.buckets.map(b=>'n='+b.n).join('/')+')').join(', ')} — needs two quotes on each side of the split.</div>`;
+          })()}`;
       })()}
       <div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin:14px 0 6px">By shape</div>
       <table style="font-size:12px;width:100%">
@@ -2849,8 +2861,38 @@ async function openCalib(){
           <td style="text-align:right;${Math.abs(x.gap_pct.base||0)>=4?'color:#8a5a10':''}">${pc(x.gap_pct.base)}</td>
         </tr>`).join('')}</tbody>
       </table></details>`;
+    out.querySelectorAll('.calibApply').forEach(btn=>{
+      btn.onclick=async()=>{
+        btn.disabled=true; btn.textContent='Applying…';
+        try{
+          const body=JSON.parse(btn.getAttribute('data-apply'));
+          body._note=btn.getAttribute('data-note')||'';
+          await postJSON('/api/config', body);
+          btn.textContent='✓ Applied to this session';
+          btn.style.opacity=.65;
+          // Re-price straight away: a recommendation you cannot see the effect of
+          // is the same click problem in a different place.
+          try{ if(ST.pricing) await runStep4(); }catch(e){}
+          try{ await refreshCfgState(); }catch(e){}
+        }catch(e){ btn.disabled=false; btn.textContent='Apply for this session';
+          alert('Could not apply: '+e.message); }
+      };
+    });
   }catch(e){ out.innerHTML=`<div class="err">${escapeHtml(e.message)}</div>`; }
 }
+
+// THE HEADER SAYS WHICH CODE IS RUNNING (src XXXXXX); this says whether the
+// CONFIG still matches it. A tuned session that looks untouched is how a reverted
+// constant goes unnoticed. (2026-08-12)
+async function refreshCfgState(){
+  const el=$('cfgState'); if(!el) return;
+  try{
+    const st=await (await fetch('/api/config_state')).json();
+    if(!st.edited){ el.innerHTML=''; return; }
+    el.innerHTML=` · <span title="Tuned this session — a redeploy reverts to the file defaults" style="background:#fdf1d8;color:#7a5410;border:1px solid #e8c98a;border-radius:10px;padding:0 7px;font-size:10.5px;font-weight:700">config edited: ${st.keys.map(escapeHtml).join(', ')}</span>`;
+  }catch(e){ el.innerHTML=''; }
+}
+try{ refreshCfgState(); }catch(e){}
 $('calibBtn').addEventListener('click', openCalib);
 $('calibClose').addEventListener('click', closeCalib);
 
