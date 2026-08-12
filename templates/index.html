@@ -208,6 +208,8 @@
      three different heights with whitespace between them and the columns read as
      broken rather than as different lengths. A border per bucket makes the
      difference legible. (2026-08-11) */
+  #orderBar:hover{background:var(--info-bg)!important}
+  #orderPanel[open] > #orderBar{border-bottom:1px solid var(--line);border-radius:8px 8px 0 0}
   .kwcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px;align-items:start}
   @media(max-width:820px){.kwcols{grid-template-columns:1fr}}
   .kwcol{border:1px solid var(--line);border-radius:9px;background:#fff;padding:8px 10px 9px}
@@ -235,6 +237,7 @@
     <div id="srcFiles" class="hidden" style="font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f6f7f9;border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:0 0 8px;white-space:pre"></div>
     <span style="display:flex;gap:8px;flex:none">
     <button id="cfgBtn" title="Pricing config — internal, not partner-facing" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚙ Pricing config</button>
+    <button id="calibBtn" title="Formula vs the prices actually sent" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">⚖ Calibration</button>
     <button id="savedBtn" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:7px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📁 Saved quotes</button>
     </span>
   </div>
@@ -261,6 +264,19 @@
 </div>
 <div id="cfgBackdrop" style="display:none;position:fixed;inset:0;background:rgba(0,45,88,.25);z-index:40"></div>
 
+<!-- CALIBRATION DRAWER. Reads the Actual column off every saved quote and groups
+     the deltas by the things that plausibly cause them, because one client being
+     15% low is an anecdote and the same 15% across a shape is a rule. Never
+     applies anything: it names the constant. (2026-08-12) -->
+<div id="calibPanel" style="display:none;position:fixed;top:0;right:0;width:620px;max-width:96vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,45,88,.18);z-index:200;overflow-y:auto;padding:20px 22px 60px">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+    <h2 style="margin:0;color:var(--atlas);font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;letter-spacing:.04em;text-transform:uppercase">Calibration</h2>
+    <button id="calibClose" style="background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--muted)">&times;</button>
+  </div>
+  <div class="help" style="margin:4px 0 12px">What the formula produced versus the price actually sent, on every saved quote where you filled in <b>Compare to actual quote</b>. Grouped by geo band and demand basis — the shape of the quote, not the client.</div>
+  <div id="calibOut" style="font-size:13px">Loading…</div>
+</div>
+
 <!-- Saved quotes drawer -->
 <div id="savedPanel" style="display:none;position:fixed;top:0;right:0;width:420px;max-width:90vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.15);z-index:200;overflow-y:auto;padding:20px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -283,9 +299,11 @@
          things that identify the order; any warning inside surfaces on the row so
          folding it cannot hide a problem. (2026-08-11) -->
     <details id="orderPanel" open>
-      <summary style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
+      <summary id="orderBar" style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:5px 9px;margin:-5px -9px 2px;border-radius:8px">
+        <span id="orderCaret" style="color:var(--atlas);font-size:13px;width:11px;display:inline-block">▾</span>
         <h2 style="margin:0;display:inline">Order Details</h2>
         <span id="orderSummary" class="nf" style="font-size:12.5px"></span>
+        <span id="orderHint" style="margin-left:auto;font-size:11px;font-weight:600;color:var(--atlas);border:1px solid var(--atlas);border-radius:12px;padding:1px 9px;white-space:nowrap"></span>
       </summary>
 
     <label>Brand name</label>
@@ -331,17 +349,8 @@
       <textarea id="pastseo_detail" rows="2" style="min-height:42px"></textarea>
     </div>
 
-    <label>Product / Vertical Focus<span class="req">*</span></label>
-    <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
-    <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
-    <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest services</button> <span class="nf" style="font-size:11.5px">reads their site, then names what this industry sells that isn't listed</span></div>
-    <div id="siteSvcOut" style="margin-top:7px"></div>
-    <div id="expandSvcOut" style="margin-top:6px"></div>
 
 
-    <label>Business description</label>
-    <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
-    <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
 
     <label>Strategy</label>
     <div class="help">Pulls from RZ line item. In adtini the strategy arrives with the order — this selector is the demo stand-in. Core SEO is the priced product; the AI Search add-on and Website Audit are captured for the reviewer and the proposal, with pricing hooks to be added priced once actual quotes exist.</div>
@@ -397,22 +406,7 @@
     <div class="pillbox" data-for="geo"><input type="text" id="geo_in" placeholder="Philadelphia, PA — press Enter (state optional)"></div>
     <div id="marketSummary" style="margin-top:6px"></div>
 
-    <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-    <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
-    <div class="pillbox" data-for="spgeo"><input type="text" id="spgeo_in" placeholder="south jersey, fox cities"></div>
-    <button id="spgeo_suggest" style="margin-top:8px;background:#fff;color:var(--velocity);border:1px solid var(--velocity);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from markets</button>
-    <span class="help" style="display:inline;margin-left:8px">proposes the regional names locals use, then keeps only the ones with real search volume behind your first focus term</span>
-    <div id="spgeo_out" style="margin-top:8px"></div>
 
-    <div class="toggle-row" style="margin-top:10px">
-      <label class="switch"><input type="checkbox" id="natdemand"><span class="slider"></span></label>
-      <div>
-        <div style="font-size:13.5px;font-weight:600">Price on national demand
-          <span class="tipwrap"><i class="tipicon">i</i><div class="help">Looks up search volume nationally instead of per city, and prices off the national anchor with proportional tier steps. Product brands sell everywhere even when they list a home city — nobody searches "collagen gummies fairfax va". Turns on automatically for e-commerce / product-brand industries and for Nationwide scope; use this switch when the industry tag doesn't catch it. The city grid in the proposal is unchanged either way.</div></span>
-        </div>
-        <div class="help" id="natdemand_auto" style="margin:1px 0 0"></div>
-      </div>
-    </div>
 
     <details style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — validation UI<span id="stateSummary" style="font-weight:400;text-transform:none;letter-spacing:0"></span></summary>
@@ -448,6 +442,39 @@
 
     </details>
     <div id="orderAlerts"></div>
+
+    <!-- OUTSIDE THE FOLD (2026-08-11). These four are not order identity, they are
+         what the operator works on: the focus list gets edited on every rebuild, the
+         description feeds the AI and the grounding filter, and the phrase geos and the
+         demand basis change what the keyword list IS. Folding them away would hide the
+         controls the build is most often re-run for. -->
+    <label>Product / Vertical Focus<span class="req">*</span></label>
+    <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
+    <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
+    <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest services</button> <span class="nf" style="font-size:11.5px">reads their site, then names what this industry sells that isn't listed</span></div>
+    <div id="siteSvcOut" style="margin-top:7px"></div>
+    <div id="expandSvcOut" style="margin-top:6px"></div>
+
+    <label>Business description</label>
+    <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
+    <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+
+    <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+    <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
+    <div class="pillbox" data-for="spgeo"><input type="text" id="spgeo_in" placeholder="south jersey, fox cities"></div>
+    <button id="spgeo_suggest" style="margin-top:8px;background:#fff;color:var(--velocity);border:1px solid var(--velocity);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from markets</button>
+    <span class="help" style="display:inline;margin-left:8px">proposes the regional names locals use, then keeps only the ones with real search volume behind your first focus term</span>
+    <div id="spgeo_out" style="margin-top:8px"></div>
+
+    <div class="toggle-row" style="margin-top:10px">
+      <label class="switch"><input type="checkbox" id="natdemand"><span class="slider"></span></label>
+      <div>
+        <div style="font-size:13.5px;font-weight:600">Price on national demand
+          <span class="tipwrap"><i class="tipicon">i</i><div class="help">Looks up search volume nationally instead of per city, and prices off the national anchor with proportional tier steps. Product brands sell everywhere even when they list a home city — nobody searches "collagen gummies fairfax va". Turns on automatically for e-commerce / product-brand industries and for Nationwide scope; use this switch when the industry tag doesn't catch it. The city grid in the proposal is unchanged either way.</div></span>
+        </div>
+        <div class="help" id="natdemand_auto" style="margin:1px 0 0"></div>
+      </div>
+    </div>
 
     <!-- Retail margin moved out of the form (2026-08-07): the same control lives
          on the quote itself as "Client price · markup", where the number it
@@ -1548,6 +1575,11 @@ $('step1').addEventListener('click', async()=>{
     }
   }catch(e){ panel('p1',`<div class="err">${e.message}</div>`); }
   $('step1').disabled=false; $('step1').textContent='1 · Build keyword list';
+  // A built list is the signal that the order details are done: attention moves
+  // to the quote, and the form that produced it can get out of the way. Folded
+  // only when the build produced a list, and only the first time — reopening it
+  // by hand is a decision the tool should not keep undoing. (2026-08-11)
+  try{ if(ST.kw && (ST.kw.all||[]).length) collapseOrderPanel(); }catch(e){}
 });
 
 // Editable keyword list: removable chips per bucket + manual add. Step 2 reads
@@ -2734,8 +2766,71 @@ function closeCfg(){
   $('cfgBackdrop').style.display='none';
 }
 $('cfgBtn').addEventListener('click', openCfg);
+// ---- calibration drawer -----------------------------------------------------
+function closeCalib(){ $('calibPanel').style.display='none'; $('cfgBackdrop').style.display='none'; }
+async function openCalib(){
+  $('calibPanel').style.display='block';
+  $('cfgBackdrop').style.display='block';
+  const out=$('calibOut');
+  out.innerHTML='<div class="nf">Reading every saved quote…</div>';
+  try{
+    const r=await (await fetch('/api/calibration')).json();
+    if(r.error){ out.innerHTML=`<div class="nf">${escapeHtml(r.error)}</div>`; return; }
+    const money=v=>(v==null?'—':'$'+Number(v).toLocaleString());
+    const pc=v=>(v==null?'—':(v>0?'+':'')+v.toFixed(1)+'%');
+    const rows=r.rows||[], groups=r.groups||[], advice=r.advice||[];
+    if(!rows.length){
+      out.innerHTML=`<div class="calc">Nothing to compare yet. Fill in <b>Compare to actual quote</b> on a
+        quote and it lands here. A shape needs <b>${r.min_n}</b> quotes before the tool will suggest
+        changing anything — that threshold is the whole point: it is what separates a pattern from
+        one client's judgement call.</div>`;
+      return;
+    }
+    const TIP={floor:['#eef6ee','#bcd9bc','Raise it'],band:['#eef6ee','#bcd9bc','Change the rate'],
+               step:['#eef6ee','#bcd9bc','Separate constant'],blocked:['#fdf1d8','#e8c98a','Do not'],
+               ok:['var(--info-bg)','var(--line)','Leave it'],note:['var(--info-bg)','var(--line)','Read this first'],
+               wait:['#fdf1d8','#e8c98a','Not yet']};
+    out.innerHTML=`
+      <div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin:0 0 6px">Recommended tweaks</div>
+      ${advice.map(t=>{const c=TIP[t.kind]||TIP.note; return `<div style="background:${c[0]};border:1px solid ${c[1]};border-radius:8px;padding:8px 11px;margin-bottom:7px;font-size:12.5px">
+        <b>${c[2]}</b> — ${escapeHtml(t.text)}
+        ${t.constant?`<div class="nf" style="margin-top:4px;font-family:ui-monospace,monospace;font-size:11.5px">${escapeHtml(t.constant)}${t.to?`: ${t.from} → <b style="color:var(--ink)">${t.to}</b>`:''}</div>`:''}
+      </div>`;}).join('')}
+
+      <div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin:14px 0 6px">By shape</div>
+      <table style="font-size:12px;width:100%">
+        <thead><tr><th style="text-align:left">Shape</th><th>n</th><th>Base</th><th>Int</th><th>Adv</th><th>Step</th></tr></thead>
+        <tbody>${groups.map(g=>`<tr>
+          <td>${escapeHtml((g.band||'unset').replace(/_/g,' '))}${g.national_demand?' <span class="nf">+ national</span>':''}
+            ${g.enough?'':'<span class="nf" title="Below the threshold — no recommendation from this group"> (thin)</span>'}</td>
+          <td style="text-align:center">${g.n}</td>
+          <td style="text-align:right;${Math.abs(g.median_gap_pct.base||0)>=4?'color:#8a5a10;font-weight:600':''}">${pc(g.median_gap_pct.base)}</td>
+          <td style="text-align:right">${pc(g.median_gap_pct.intermediate)}</td>
+          <td style="text-align:right">${pc(g.median_gap_pct.advanced)}</td>
+          <td style="text-align:right" title="what each tier adds: formula vs actual">${money(g.median_step_formula)} → ${money(g.median_step_actual)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <div class="nf" style="font-size:11px;margin-top:4px">Positive means the price actually sent was HIGHER than the formula. Medians, so one outlier can't move a group.</div>
+
+      <details style="margin-top:14px"><summary style="cursor:pointer;user-select:none;font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas)">Every quote (${rows.length})</summary>
+      <table style="font-size:11.5px;width:100%;margin-top:6px">
+        <thead><tr><th style="text-align:left">Quote</th><th style="text-align:left">Shape</th><th>Formula</th><th>Actual</th><th>Base gap</th></tr></thead>
+        <tbody>${rows.map(x=>`<tr>
+          <td>${escapeHtml(x.name||x.client||'—')}</td>
+          <td class="nf">${escapeHtml((x.band||'').replace(/_/g,' '))}${x.national_demand?' +nat':''}</td>
+          <td style="text-align:right;white-space:nowrap">${money(x.formula.base)}</td>
+          <td style="text-align:right;white-space:nowrap">${money(x.actual.base)}</td>
+          <td style="text-align:right;${Math.abs(x.gap_pct.base||0)>=4?'color:#8a5a10':''}">${pc(x.gap_pct.base)}</td>
+        </tr>`).join('')}</tbody>
+      </table></details>`;
+  }catch(e){ out.innerHTML=`<div class="err">${escapeHtml(e.message)}</div>`; }
+}
+$('calibBtn').addEventListener('click', openCalib);
+$('calibClose').addEventListener('click', closeCalib);
+
+
 $('cfgClose').addEventListener('click', closeCfg);
-$('cfgBackdrop').addEventListener('click', closeCfg);
+$('cfgBackdrop').addEventListener('click', ()=>{ closeCfg(); try{ closeCalib(); }catch(e){} });
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape' && $('cfgPanel').style.display==='block') closeCfg();
 });
@@ -2994,6 +3089,7 @@ async function initReviewMode(){
     const cfg=document.querySelector('.wrap > .card[style*="margin-top"]'); if(cfg) cfg.style.display='none';
     const sb=document.getElementById('savedBtn'); if(sb) sb.style.display='none';
     const cb=document.getElementById('cfgBtn'); if(cb) cb.style.display='none';   // internal config never shows on a review link
+    const kb=document.getElementById('calibBtn'); if(kb) kb.style.display='none';  // nor the calibration view
     // neuter every pipeline/save button — view, don't re-run
     ['step1','step2','step3','step4','saveBtn','saveNewBtn','shareBtn','retryFailed'].forEach(id=>{
       const el=$(id); if(el){ el.disabled=true; el.style.display='none'; }
@@ -3677,6 +3773,11 @@ function refreshOrderPanel(){
         ? `${brand?`<b style="color:var(--ink)">${escapeHtml(brand)}</b>`:''}${(brand&&site)?' · ':''}${site?escapeHtml(site):''}`
         : 'not filled in yet';
   }
+  // A bare heading did not read as a control. Caret plus a labelled pill on the
+  // right, and the whole bar tints on hover. (2026-08-11)
+  const car=$('orderCaret'); if(car) car.textContent = det.open ? '▾' : '▸';
+  const hint=$('orderHint'); if(hint) hint.textContent = det.open ? 'Hide' : 'Edit';
+  const bar=$('orderBar'); if(bar) bar.style.background = det.open ? '' : 'var(--info-bg)';
   if(!out) return;
   // Amber and red blocks anywhere inside the panel. Detected by the colours the
   // rest of the page already uses, so a warning added later is mirrored without
@@ -3698,10 +3799,24 @@ function refreshOrderPanel(){
   if(b) b.onclick=()=>{ det.open=true; refreshOrderPanel(); det.scrollIntoView({behavior:'smooth',block:'start'}); };
 }
 
+// Folds once, then leaves it alone. ST.orderTouched is set the moment the
+// operator opens it by hand, so the next build does not fold it back under them.
+let _orderFolded=false;
+function collapseOrderPanel(){
+  const det=$('orderPanel');
+  if(!det || !det.open || _orderFolded || ST.orderTouched) return;
+  _orderFolded=true;
+  det.open=false;
+  refreshOrderPanel();
+}
+
 (function(){
   const det=document.getElementById('orderPanel');
   if(!det) return;
-  det.addEventListener('toggle', refreshOrderPanel);
+  det.addEventListener('toggle', ()=>{
+    if(det.open && _orderFolded) ST.orderTouched=true;   // reopened on purpose
+    refreshOrderPanel();
+  });
   const br=document.getElementById('brand');
   if(br) br.addEventListener('input', refreshOrderPanel);
   refreshOrderPanel();

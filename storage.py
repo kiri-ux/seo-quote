@@ -347,3 +347,23 @@ def delete_quote(quote_id):
         cur.execute("DELETE FROM quotes WHERE id=%s", (quote_id,))
         conn.commit()
         return True
+
+
+def all_payloads(tool="seo", limit=500):
+    """Every saved quote's full payload, newest first.
+
+    The calibration view needs the whole payload of every quote, not the display
+    columns list_quotes() returns — the formula-vs-actual comparison lives inside
+    `pricing` and `actual`. Read-only and bounded. (2026-08-12)
+    """
+    with _conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT id, name, client, payload, updated_at FROM quotes "
+            "WHERE tool=%s ORDER BY updated_at DESC LIMIT %s",
+            (tool or "seo", int(limit)))
+        out = []
+        for r in cur.fetchall():
+            d = dict(r)
+            d["updated_at"] = d["updated_at"].isoformat() if d["updated_at"] else None
+            out.append(d)
+        return out

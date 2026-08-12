@@ -9651,6 +9651,228 @@ Return ONLY JSON:
         out[t] = {"kind": k, "why": str((it or {}).get("why") or "")[:90]}
     return out
 
+
+# --- CALIBRATION: formula versus what was actually sent ----------------------
+# Every quote already stores the Actual column beside the formula's own numbers,
+# and until now nothing ever read them back. One client being 15% low is an
+# anecdote; the same 15% across every quote of that SHAPE is a rule, and the
+# difference between those two is the only thing standing between calibration and
+# overfitting. So the deltas are grouped by the things that plausibly drive them —
+# geo band and demand basis — and a recommendation is only offered once a group
+# has enough quotes to mean something. (2026-08-12)
+
+CALIB_MIN_N = 3            # below this a group is an anecdote, not a pattern
+CALIB_MIN_GAP_PCT = 4.0    # below this the formula is already within noise
+_TIERS = ("base", "intermediate", "advanced")
+
+
+def _median(xs):
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    n = len(xs)
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
+
+
+def calibration_rows(payloads):
+    """One row per saved quote that has an Actual price filled in."""
+    rows = []
+    for q in payloads or []:
+        p = q.get("payload") or {}
+        if isinstance(p, str):
+            try:
+                p = json.loads(p)
+            except Exception:
+                continue
+        actual = p.get("actual") or {}
+        pricing = p.get("pricing") or {}
+        # The tier cards show the COMBINED price on a Core SEO + AI Search quote,
+        # which is what the operator typed the actual against.
+        ai = pricing.get("ai_search") or {}
+        formula = ai.get("client_total") or pricing.get("client_tiers") or {}
+        pairs = {t: (formula.get(t), actual.get(t)) for t in _TIERS}
+        if not any(a and f for f, a in pairs.values()):
+            continue
+        inp = p.get("inputs") or {}
+        kw = p.get("kw") or {}
+        band = (inp.get("geo_scope") or pricing.get("band") or "").strip() or "unset"
+        nat = bool(inp.get("national_demand") or pricing.get("national_demand"))
+        rows.append({
+            "id": q.get("id"), "name": q.get("name") or "", "client": q.get("client") or "",
+            "updated_at": q.get("updated_at"),
+            "band": band, "national_demand": nat,
+            "strategy": inp.get("strategy") or "Core SEO",
+            "markets": len(inp.get("geo_values") or []),
+            "pct_not_ranking": pricing.get("pct_not_ranking"),
+            "total_volume": kw.get("total_volume") or pricing.get("total_volume"),
+            "formula": {t: pairs[t][0] for t in _TIERS},
+            "actual": {t: pairs[t][1] for t in _TIERS},
+            "gap": {t: (pairs[t][1] - pairs[t][0])
+                    if (pairs[t][0] and pairs[t][1]) else None for t in _TIERS},
+            "gap_pct": {t: round(100.0 * (pairs[t][1] - pairs[t][0]) / pairs[t][0], 1)
+                        if (pairs[t][0] and pairs[t][1]) else None for t in _TIERS},
+            # Step = what each tier adds. Base and step are different constants,
+            # and a single quote cannot tell you which one is wrong.
+            "step_formula": (pairs["intermediate"][0] - pairs["base"][0])
+            if (pairs["base"][0] and pairs["intermediate"][0]) else None,
+            "step_actual": (pairs["intermediate"][1] - pairs["base"][1])
+            if (pairs["base"][1] and pairs["intermediate"][1]) else None,
+        })
+    return rows
+
+
+def calibration_groups(rows):
+    """Group the deltas by band + demand basis and summarise each."""
+    buckets = {}
+    for r in rows:
+        key = (r["band"], bool(r["national_demand"]))
+        buckets.setdefault(key, []).append(r)
+    out = []
+    for (band, nat), rs in buckets.items():
+        base_gap = _median([r["gap_pct"]["base"] for r in rs])
+        out.append({
+            "band": band, "national_demand": nat, "n": len(rs),
+            "median_gap_pct": {t: _median([r["gap_pct"][t] for r in rs]) for t in _TIERS},
+            "median_gap": {t: _median([r["gap"][t] for r in rs]) for t in _TIERS},
+            "median_base_formula": _median([r["formula"]["base"] for r in rs]),
+            "median_base_actual": _median([r["actual"]["base"] for r in rs]),
+            "median_step_formula": _median([r["step_formula"] for r in rs]),
+            "median_step_actual": _median([r["step_actual"] for r in rs]),
+            "quotes": [r["name"] for r in rs][:8],
+            "enough": len(rs) >= CALIB_MIN_N,
+            "sort": abs(base_gap or 0),
+        })
+    out.sort(key=lambda g: (-g["n"], -g["sort"]))
+    return out
+
+
+def calibration_advice(groups, rows):
+    """Which constant to touch, and by how much — or explicitly nothing.
+
+    Deliberately conservative. A recommendation needs a group of at least
+    CALIB_MIN_N quotes and a median gap past CALIB_MIN_GAP_PCT, and it names the
+    constant rather than applying it: these move the price on every future quote
+    of that shape.
+    """
+    tips = []
+    strong = [g for g in groups if g["enough"]]
+    if not strong:
+        n = len(rows)
+        tips.append({
+            "kind": "wait", "constant": "", "from": None, "to": None,
+            "text": (f"{n} quote{'' if n == 1 else 's'} with an actual price filled in — "
+                     f"not enough to change anything. A group needs {CALIB_MIN_N} quotes "
+                     "of the same shape before a gap is a pattern rather than one "
+                     "client's judgement call."),
+        })
+        return tips
+
+    # Is the gap universal, or specific to a shape? If EVERY strong group leans
+    # the same way, the floor/anchor is the suspect. If one leans and the others
+    # do not, it is that shape's own rate.
+    leans = [g for g in strong if abs(g["median_gap_pct"]["base"] or 0) >= CALIB_MIN_GAP_PCT]
+    flat = [g for g in strong if g not in leans]
+
+    # THE FLOOR IS GLOBAL. It lifts every quote in every shape, so it can only be
+    # the answer when no OTHER shape is already correct AT the floor — otherwise
+    # raising it to fix nationwide would push the local quotes that currently match
+    # BE exactly straight past him. This is precisely the overfit the view exists
+    # to catch, so the check belongs here and not in whoever reads the output.
+    floor = CFG.get("client_floor", 2950)
+    floor_locked = [g for g in flat
+                    if (g["median_base_formula"] or 0) <= floor + 1]
+
+    for g in leans:
+        gap = g["median_gap_pct"]["base"]
+        d = g["median_gap"]["base"]
+        shape = _calib_shape(g)
+        on_floor = (g["median_base_formula"] or 0) <= floor + 1 and d and d > 0
+        if on_floor and floor_locked:
+            tips.append({
+                "kind": "blocked", "constant": "", "from": None, "to": None,
+                "text": (f"{shape}: median {gap:+.1f}% on base across {g['n']} quotes, and "
+                         f"the formula is sitting on the floor (${floor:,}) — but so is "
+                         + ", ".join(_calib_shape(x) for x in floor_locked)
+                         + ", which already matches. Raising client_floor would fix this "
+                           "shape and push those past the mark, so the floor is NOT the "
+                           "answer. This needs a rate that only applies to this shape "
+                           "(the geo_pct_tiers rung, or a national-demand anchor) — say "
+                           "the word and I'll add one."),
+            })
+        # The band rate is what sets the base on a geo-priced quote; the floor is
+        # what sets it when the formula lands under BE's observed minimum.
+        elif on_floor:
+            tips.append({
+                "kind": "floor", "constant": "client_floor",
+                "from": CFG.get("client_floor"),
+                "to": int(round(((g["median_base_actual"] or 0)) / 50.0) * 50),
+                "text": (f"{shape}: the formula is landing ON the floor "
+                         f"(${CFG.get('client_floor'):,}) and the actual is "
+                         f"${g['median_base_actual']:,.0f} — median {gap:+.1f}% across "
+                         f"{g['n']} quotes. The floor only ever lifts a price, so raising "
+                         "it cannot disturb any quote already above it."),
+            })
+        else:
+            tips.append({
+                "kind": "band", "constant": "geo_pct_tiers",
+                "from": None, "to": None,
+                "text": (f"{shape}: median {gap:+.1f}% on base across {g['n']} quotes "
+                         f"(${d:+,.0f}). This shape is priced off the band rate, so the "
+                         "rung of geo_pct_tiers these quotes land on is the constant to "
+                         "move — not the floor, which is not what set these prices."),
+            })
+        # Base and step are separate constants and can be wrong independently.
+        sf, sa = g["median_step_formula"], g["median_step_actual"]
+        if sf and sa and abs(sa - sf) >= 100:
+            tips.append({
+                "kind": "step", "constant": "tier_step_flat",
+                "from": CFG.get("tier_step_flat"),
+                "to": None,
+                "text": (f"{shape}: each tier adds ${sf:,.0f} in the formula and "
+                         f"${sa:,.0f} in the actual quotes. That is the tier STEP, not the "
+                         "base — a separate constant (tier_step_flat / "
+                         "tier_step_pct_of_base). Fixing the base alone would leave "
+                         "intermediate and advanced still off."),
+            })
+    for g in flat:
+        tips.append({
+            "kind": "ok", "constant": "", "from": None, "to": None,
+            "text": (f"{_calib_shape(g)}: median {g['median_gap_pct']['base']:+.1f}% across "
+                     f"{g['n']} quotes — inside noise. Leave it alone."),
+        })
+    if leans and flat:
+        tips.insert(0, {
+            "kind": "note", "constant": "", "from": None, "to": None,
+            "text": ("The gap is not universal: "
+                     + ", ".join(_calib_shape(g) for g in leans)
+                     + " lean, while " + ", ".join(_calib_shape(g) for g in flat)
+                     + " are already right. That is the signal to change a "
+                       "shape-specific rate rather than the base for everyone."),
+        })
+    return tips
+
+
+def _calib_shape(g):
+    band = (g["band"] or "unset").replace("_", " ")
+    return f"{band}{' + national demand' if g['national_demand'] else ''}"
+
+@app.route("/api/calibration")
+@_json_error_guard
+def api_calibration():
+    """Formula vs what was actually sent, across every saved quote."""
+    if not storage.enabled():
+        return jsonify({"rows": [], "groups": [], "advice": [], "error": "saving is off"})
+    rows = calibration_rows(storage.all_payloads("seo"))
+    groups = calibration_groups(rows)
+    return jsonify({"rows": rows, "groups": groups,
+                    "advice": calibration_advice(groups, rows),
+                    "min_n": CALIB_MIN_N,
+                    "constants": {"client_floor": CFG.get("client_floor"),
+                                  "tier_step_flat": CFG.get("tier_step_flat"),
+                                  "tier_step_pct_of_base": CFG.get("tier_step_pct_of_base"),
+                                  "geo_pct_tiers": CFG.get("geo_pct_tiers")}})
+
+
 @app.route("/api/rank_seeds", methods=["POST"])
 @_json_error_guard
 def api_rank_seeds():
