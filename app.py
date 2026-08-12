@@ -6003,6 +6003,12 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
+            # HOW FULL THE GRID IS. NPAIHB had room for 20 services and got 9 — a
+            # 9-keyword quote against BE's 20 for the same client — and the panel
+            # said nothing, because every check was about whether the terms were
+            # WRONG rather than whether there were enough of them. The slot count
+            # is known; the shortfall is worth naming. (2026-08-12)
+            "service_slots": n_services,
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
@@ -7498,6 +7504,7 @@ def api_refine():
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
+        "service_slots": s1.get("service_slots") or 0,
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
         "seed_services_dropped": s1.get("seed_services_dropped", 0),

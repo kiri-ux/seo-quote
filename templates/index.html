@@ -1260,10 +1260,22 @@ async function runSuggestServices(auto){
         business_desc:(document.getElementById('business_desc')||{}).value||'', seeds:stores.kw.slice()})});
     const data=await res.json();
     if(!res.ok) throw new Error(data.error||('Request failed ('+res.status+')'));
+    // AN EMPTY LIST HAS TWO CAUSES AND THEY NEED OPPOSITE ADVICE. Ski Barn's
+    // fetch returned "HTTP 200, 144 links" and then "No menu items or sitemap
+    // pages found. If links show 0 with HTTP 200, the site cloaks bots" —
+    // contradicting the 144 on the line above it. Nothing was cloaked: the fold
+    // had removed every menu item because 59 focus terms already covered them.
+    // (2026-08-12)
+    if(!(data.services||[]).length && (data.folded||[]).length){
+      out.innerHTML=`<div class="nf" style="font-size:12px">\u2713 Read their menu — <b>all ${data.folded.length} item${data.folded.length===1?'':'s'} are already covered by your focus terms</b>, so there is nothing to add.${tipOf('Folded out: '+data.folded.slice(0,25).map(escapeHtml).join(' &middot; ')+'.<br><br>Same containment rule the build uses: one service line cannot take two slots. Nothing was missing from the menu &mdash; your list already has it.')}</div>`;
+      return;
+    }
     if(!(data.services||[]).length){
       const why=(data.diag&&data.diag.length)?('<div class="nf" style="font-size:11px;margin:4px 0;font-family:ui-monospace,monospace">'+data.diag.map(d=>String(d).replace(/</g,'&lt;')).join('<br>')+'</div>'):'';
       out.innerHTML='<div class="nf" style="font-size:12px">No menu items or sitemap pages found. What the fetch saw:</div>'+why
-        +'<div class="nf" style="font-size:12px">If links show 0 with HTTP 200, the site cloaks bots or is fully JS-rendered. '
+        +'<div class="nf" style="font-size:12px">'+((data.n_nav_links||0)>0
+            ? `<b>${data.n_nav_links} links were found</b> — none of them looked like a service page, so this is the filter rejecting them rather than the site blocking us. `
+            : 'Links showing 0 with HTTP 200 means the site cloaks bots or is fully JS-rendered. ')
         +'<a href="#" id="pasteMenuLink" style="color:var(--atlas);font-weight:600">Paste their menu instead</a> — copy the nav/service list from the site and it runs through the same AI conversion.</div>'
         +'<div id="pasteMenuBox" style="display:none;margin-top:6px"><textarea id="pasteMenuTxt" rows="4" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px" placeholder="Managed IT Services\n24/7 Help Desk\nCloud Computing Migration\nCompliance"></textarea>'
         +'<button id="pasteMenuGo" style="margin-top:5px;background:var(--atlas);color:#fff;border:none;padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Convert to seeds</button></div>';
@@ -1541,6 +1553,11 @@ $('step1').addEventListener('click', async()=>{
   }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
+  // The Build button sits at the BOTTOM of a long form and the list appears at the
+  // TOP of the other column, so clicking it moved everything worth watching out of
+  // view — the operator stared at a greyed-out button instead of the thing being
+  // built. Scroll to the panel that is about to fill. (2026-08-12)
+  try{ const q=$('out')||$('p1'); if(q) q.scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){}
   try{
     const kw=await postJSON('/api/keywords',{
       keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
@@ -2708,6 +2725,58 @@ function renderStep4(p){
   };
 }
 
+// A RESTORED QUOTE RENDERS THE PRICE IT WAS SAVED WITH, and nothing recomputes
+// it — deliberately, because overwriting the numbers on a quote that has already
+// gone out would be worse. But Ski Barn reopened showing a base of $2,750 on a
+// build whose floor is $2,950: a figure the current formula cannot produce, with
+// nothing on screen saying so. Stale by design is fine; stale and silent is not.
+//
+// So the stored price is CHECKED, not replaced. One /api/price call — pure
+// arithmetic, no external API — with the inputs the quote carries, compared
+// against what it was saved with. (2026-08-12)
+function pricingSignature(){
+  const i=ST.inputs||{};
+  return JSON.stringify([i.geo_scope, ST.adder, ST.zero, i.addon_markets,
+                         i.markup_pct, ST.pctNotRanking, ST.totalVol,
+                         i.national_demand, i.strategy, ST.geoOverride,
+                         ST.addonOverride, ST.baseOverride]);
+}
+
+let _staleChecked = false;
+async function checkStoredPrice(){
+  if(_staleChecked || !ST.pricing || !ST.inputs) return;
+  _staleChecked = true;
+  const host=$('p4'); if(!host) return;
+  try{
+    const fresh=await postJSON('/api/price',{
+      geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'',
+      ecommerce:!!ST.inputs.ecommerce, national_demand:!!ST.inputs.national_demand,
+      goal:ST.inputs.goal||'', industry:ST.inputs.industry||'',
+      ai_search:(ST.inputs.strategy==='Core SEO + AI Search'),
+      band:ST.inputs.geo_scope, adder:ST.adder,
+      zero_ranking:(ST.rankUnmeasured?false:ST.zero),
+      addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
+      pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol});
+    const was=((ST.pricing.ai_search||{}).client_total)||ST.pricing.client_tiers||{};
+    const now=((fresh.ai_search||{}).client_total)||fresh.client_tiers||{};
+    const T=['base','intermediate','advanced'];
+    const diff=T.filter(k=>Number(was[k]||0)!==Number(now[k]||0));
+    if(!diff.length) return;
+    const money=v=>'$'+Number(v||0).toLocaleString();
+    const box=document.createElement('div');
+    box.className='calc';
+    box.style.cssText='background:#fdf1d8;border-color:#e8c98a;margin-bottom:10px';
+    box.innerHTML=`\u26a0 <b>These numbers were priced on an earlier build</b> \u2014 saved as
+      ${T.map(k=>money(was[k])).join(' / ')}, and the formula now gives
+      <b>${T.map(k=>money(now[k])).join(' / ')}</b> from the same inputs.
+      Nothing has been changed: a quote that has already gone out keeps the price it went out with.
+      <button type="button" id="repriceNow" class="btn2" style="padding:2px 10px;font-size:12px;margin-left:5px">Re-price now</button>`;
+    host.insertBefore(box, host.firstChild);
+    const b=$('repriceNow');
+    if(b) b.onclick=()=>{ _staleChecked=false; runStep4(); };
+  }catch(e){ /* a failed check is not a finding */ }
+}
+
 async function runStep4(){
   // No bid data from either endpoint means the adder is unknown, not zero.
   // Pricing anyway is how a restricted-vertical quote goes out with the whole
@@ -2755,6 +2824,7 @@ async function runStep4(){
       zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
       pct_not_ranking:pctNotRanking, total_volume:totalVol});
+    ST.pricedWith = pricingSignature();   // what this price was computed from
     renderStep4(p);
   }catch(e){ panel('p4',`<div class="err">${e.message}</div>`); }
   finally{
@@ -3300,7 +3370,8 @@ function restoreQuote(p){
     try{ panel('p3', step3Html()); panel('p3b', focusHtml()); $('step4')&&($('step4').onclick=()=>runStep4()); }catch(e){}
   }
   // Step 4 — pricing
-  if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){} }
+  if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){}
+                  try{ setTimeout(checkStoredPrice, 300); }catch(e){} }
   // re-enable auto-save shortly after the load settles
   setTimeout(()=>{ SUPPRESS_AUTOSAVE=false; }, 1500);
 }
@@ -4149,6 +4220,14 @@ function step1Grid(kw){
   // in ENTRY ORDER, not by volume — 80 focus terms against a 20-service grid
   // silently drops 60 on typing order alone, and the operator has no way to see
   // which. This is a warning, not a note. (2026-08-11)
+  // HALF-EMPTY GRID. NPAIHB: room for 20 services, 9 filled, so 9 keywords went
+  // out against BE's 20 for the same client — and nothing on the panel mentioned
+  // it. The seed list was 8 terms and the AI's additions did not survive the
+  // filters, which is a shortfall of INPUT, not a fault to hide. (2026-08-12)
+  const slots=Number(kw.service_slots||0);
+  if(slots && svcCount && svcCount < slots*0.75){
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>The grid had room for ${slots} services and filled ${svcCount}</b> — so this quote carries ${(kw.all||[]).length} keyword${(kw.all||[]).length===1?'':'s'} where the same client would normally get around ${slots}${((kw.dropped_ungrounded||[]).length||(kw.grounding_stood_down))?`, and ${(kw.dropped_ungrounded||[]).length||'some'} of the AI's suggestions were filtered out`:''}. Add more <b>Product / Vertical Focus</b> terms — the ✦ Suggest services panel measures them for you — and rebuild.${tipOf('The grid is services &times; cities and the service count scales to the number of cities, so a one-city client has the most slots to fill and needs the most seeds. Nothing here is broken: the list is as long as the input allowed. A short list also prices lower, because both the volume total and the tier mix are computed from the terms that exist.')}</div>`);
+  }
   const sr=kw.seed_ranking||{};
   // A quote saved before the build started ranking seeds carries no seed_ranking
   // at all, and its overflow is still arbitrary — report it rather than going
@@ -4344,6 +4423,13 @@ function acronymPanelHtml(ac){
   }).join('');
   const nRemove=items.filter(x=>{const sp=serps[x.acronym]; return sp&&!sp.error&&sp.client_pos==null;}).length;
   const nUn=items.filter(x=>x.untestable).length;
+  // THE SHARE HAS TO DESCRIBE THE TABLE UNDER IT. The server measured it on the
+  // list as built; every Remove drops rows here AND drops their grid variants
+  // from the list, so a stored percentage goes wrong in both directions at once.
+  // Recompute from what is on screen over what is currently priced. (2026-08-12)
+  const _flagNow=items.reduce((t,x)=>t+Number(x.volume||0),0);
+  const _volNow=Number((ST.kw||{}).total_volume||0)||Number(ac.total_volume||0);
+  const _share=_volNow?Math.round(_flagNow/_volNow*100):ac.share;
   // EVERY ROW CLEARED means there is nothing to warn about. The ratio raised a
   // suspicion, the SERP answered it, and leaving a red badge over a table of
   // green ticks trains the operator to ignore the badge. (2026-08-10)
@@ -4352,7 +4438,7 @@ function acronymPanelHtml(ac){
     // Tagged so the caller can fold it: a cleared check is provenance, not news.
     return `<div class="nf acr-clear" style="margin-top:4px">\u2713 <b>${items.length} acronym${items.length===1?'':'s'} checked and cleared</b> \u2014 ${items.map(x=>escapeHtml(x.acronym.toUpperCase())).join(', ')} ${items.length===1?'is':'are'} this client's; the SERP confirms it${tipOf('The volume gap flagged '+(items.length===1?'it':'them')+' as a suspect, then the result page settled it: the client ranks for the bare term, so the traffic is theirs and the volume counts.<br><br>'+items.map(x=>`<b>${escapeHtml(x.acronym.toUpperCase())}</b> ${Number(x.volume).toLocaleString()}/mo, gap ${x.ratio==null?'n/a':x.ratio+'\u00d7'} \u2014 ${escapeHtml(((serps[x.acronym]||{}).domains||[]).slice(0,3).join(', '))}`).join('<br>'))}</div>`;
   }
-  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${ac.share}% of the list's volume${nUn?` <span class="nf">(${nUn} with no qualified form to compare, so the SERP is the only evidence)</span>`:''}${tip}
+  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${items.length} acronym${items.length===1?'':'s'} may not be this client's</b> \u2014 ${_share}% of the list's volume${nUn?` <span class="nf">(${nUn} with no qualified form to compare, so the SERP is the only evidence)</span>`:''}${tip}
     <table style="border-collapse:collapse;font-size:12px;margin-top:4px">
       <thead><tr style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">
         <th style="text-align:left;padding:0 9px 2px 0;font-weight:700" title="The short term flagged. It is in the list because you seeded it, or because the site-menu miner found it on the client's own pages.">Acronym</th>
