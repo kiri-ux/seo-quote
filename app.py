@@ -10431,12 +10431,16 @@ def api_expand_services():
     return jsonify({"services": good,
                     "folded": [r["term"] for r in folded_rows],
                     "rejected": [r for r in rows if r["volume"] < floor],
+                    # The panel has to be able to ask "is this floor stricter than
+                    # the quote it is protecting?" — NPAIHB's own terms run at
+                    # 8/mo and this refused eight at under 20. (2026-08-12)
+                    "floor": floor,
                     "basis": "US national" if nat else "targeted cities",
                     "error": verr})
 
 
 
-def _split_proposal_kinds(items, d, dom, pages=None, ecom=False):
+def _split_proposal_kinds(items, d, dom, pages=None, ecom=False, alias=None):
     """Run claude_seed_kinds over PROPOSED chips and split them in two.
 
     A chip is a suggestion, so a wrong verdict costs nothing here — the operator
@@ -10445,9 +10449,23 @@ def _split_proposal_kinds(items, d, dom, pages=None, ecom=False):
     exactly how NPAIHB's quote was built. Same classifier the build now runs, so
     the two cannot disagree. (2026-08-12)
 
+    `alias` maps a chip's term to a LONGER name to be judged under. "CTWS" means
+    nothing to a classifier; "Confederated Tribes of Warm Springs" is the whole
+    answer. The acronym miner reads expansions off the page already and was the
+    one proposal source nothing vetted — it offered NPAIHB `ctws` at 260/mo, the
+    operator added it, and the build then set it aside as a member tribe. Both
+    calls were right and the operator did the work twice. (2026-08-12)
+
     Returns (services, not_services). Degrades to (items, []) on any failure.
     """
-    terms = [(x.get("term") or x.get("label") or "") for x in (items or [])]
+    alias = alias or {}
+    terms, back = [], {}
+    for x in items or []:
+        t = (x.get("term") or x.get("label") or "")
+        judged = alias.get(t) or alias.get(str(t).strip().lower()) or t
+        if judged and str(judged).strip().lower() not in back:
+            terms.append(judged)
+        back.setdefault(str(t).strip().lower(), str(judged).strip().lower())
     if not terms:
         return list(items or []), []
     try:
@@ -10464,7 +10482,7 @@ def _split_proposal_kinds(items, d, dom, pages=None, ecom=False):
     good, bad = [], []
     for x in items or []:
         t = str(x.get("term") or x.get("label") or "").strip().lower()
-        k = kinds.get(t)
+        k = kinds.get(t) or kinds.get(back.get(t, t))
         if k:
             bad.append(dict(x, kind=k.get("kind", "item"),
                             kind_why=k.get("why", "")))
@@ -10762,8 +10780,25 @@ def api_site_services():
             [h for _t, h in (list(p.nav_links) + list(p.other_links)) if h])
     except Exception:                                     # noqa: BLE001
         _ecom_chips = False
-    out, not_svc = _split_proposal_kinds(
-        out, d, dom, pages=[x.get("label") for x in out][:30], ecom=_ecom_chips)
+    # ONE call for BOTH proposal groups. The acronyms were exempt, which is how a
+    # member tribe's initials became a seed; and a second call would let the two
+    # groups disagree about the same client.
+    _acr_items = [dict(a, term=(a.get("term") or a.get("acronym") or "").lower())
+                  for a in acronyms if a.get("acronym")]
+    _alias = {}
+    for a in _acr_items:
+        ex = str(a.get("expansion") or "").strip()
+        if ex and len(ex.split()) > 1:
+            _alias[a["term"]] = ex.lower()
+    _all, _not = _split_proposal_kinds(
+        out + _acr_items, d, dom,
+        pages=[x.get("label") for x in out][:30], ecom=_ecom_chips, alias=_alias)
+    _menu_terms = {str(x.get("term") or x.get("label") or "").lower() for x in out}
+    _no_terms = {str(x.get("term") or "").lower() for x in _not}
+    out = [x for x in _all if str(x.get("term") or x.get("label") or "").lower() in _menu_terms]
+    acronyms = [a for a in acronyms
+                if (a.get("term") or a.get("acronym") or "").lower() not in _no_terms]
+    not_svc = _not
     return jsonify({"domain": dom, "services": out,
                     "not_services": not_svc,
                     "folded": [(x.get("term") or x.get("label") or "")
