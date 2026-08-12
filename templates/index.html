@@ -1140,8 +1140,17 @@ async function runExpandServices(){
       out.innerHTML=`<div class="nf" style="font-size:12px">Nothing missing clears the volume floor${bad.length?` — tried ${bad.slice(0,8).map(x=>escapeHtml(x.term)).join(', ')}`:''}${r.error?' ('+escapeHtml(r.error)+')':''}.</div>`;
       return;
     }
-    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.</div>`
-      + good.map(x=>`<span class="svc-chip" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
+    // The site-menu panel above has already proposed things; a chip appearing in
+    // both reads as two findings and is one.
+    const already=new Set([...document.querySelectorAll('#siteSvcOut .svc-chip')]
+      .map(c=>(c.getAttribute('data-label')||'').toLowerCase()));
+    const fresh=good.filter(x=>!already.has(String(x.term||'').toLowerCase()));
+    if(!fresh.length){
+      out.innerHTML=`<div class="nf" style="font-size:11.5px">Nothing the industry sells that isn't already above.</div>`;
+      return;
+    }
+    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.${((r.folded||[]).length||(good.length-fresh.length))?` <span style="opacity:.8">${(r.folded||[]).length+(good.length-fresh.length)} near-duplicate${((r.folded||[]).length+(good.length-fresh.length))===1?'':'s'} folded out.</span>`:''}</div>`
+      + fresh.map(x=>`<span class="svc-chip" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
       + (bad.length?`<div class="nf" style="font-size:11px;margin-top:3px">Below ${'20'}/mo, not offered: ${bad.slice(0,10).map(x=>escapeHtml(x.term)).join(' · ')}</div>`:'');
     wireSvcChips(out);
   }catch(e){ out.innerHTML=`<div class="err" style="font-size:12px">${escapeHtml(e.message)}</div>`; }
@@ -1188,7 +1197,7 @@ function renderSvcChips(data, out){
       const showLabel=s.label && s.label.toLowerCase()!==term;
       return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
     }).join('');
-  out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.from_headings?'Nav menu was generic (Work/About/Contact), so these came from the page\'s <b>service headings</b> instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.</div>${chips}`;
+  out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.from_headings?'Nav menu was generic (Work/About/Contact), so these came from the page\'s <b>service headings</b> instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.${(data.folded||[]).length?` <span style="opacity:.8">${data.folded.length} near-duplicate${data.folded.length===1?'':'s'} folded out${tipOf('Same rule the build uses on your focus terms: one service line cannot take two slots. Folded here: '+data.folded.slice(0,20).map(escapeHtml).join(' &middot; ')+'.')}</span>`:''}</div>${chips}`;
   // ---- the client's own SHORT names, with volume attached -----------------
   // The chips above are the menu converted to prose, which is how NASSCO ended
   // up with sixteen seeds carrying 10/mo between them. These are the acronyms
@@ -2797,6 +2806,23 @@ async function openCalib(){
         ${t.constant?`<div class="nf" style="margin-top:4px;font-family:ui-monospace,monospace;font-size:11.5px">${escapeHtml(t.constant)}${t.to?`: ${t.from} → <b style="color:var(--ink)">${t.to}</b>`:''}</div>`:''}
       </div>`;}).join('')}
 
+      ${(()=>{
+        // WHICH VARIABLE, not just which shape. Each candidate is tested on its
+        // own against the whole set rather than sliced together, because a
+        // four-way slice on two dozen quotes puts n=1 in every cell.
+        const ds=(r.drivers||[]).filter(d=>d.spread!=null);
+        const flat=(r.drivers||[]).filter(d=>d.constant_here);
+        const conf=r.confounds||[];
+        if(!ds.length && !conf.length) return '';
+        return `<div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin:14px 0 6px">What explains the spread</div>
+          ${ds.map(d=>`<div style="margin-bottom:6px;font-size:12.5px">
+            <b>${escapeHtml(d.variable)}</b> <span class="nf">— splits the gap by ${d.spread.toFixed(1)} points${d.fragile?' <span style="color:#8a5a10">(fragile — a median over fewer than four quotes moves if one of them moves)</span>':''}</span>
+            <div class="nf" style="margin-top:2px">${d.buckets.map(bk=>`${escapeHtml(bk.value)} <b style="color:${Math.abs(bk.median_gap_pct||0)>=4?'#8a5a10':'var(--ink)'}">${(bk.median_gap_pct>0?'+':'')+(bk.median_gap_pct||0).toFixed(1)}%</b> <span style="opacity:.7">(n=${bk.n})</span>`).join(' · ')}</div>
+          </div>`).join('')}
+          ${ds.length?`<div class="nf" style="font-size:11px;margin:-2px 0 6px">Biggest spread first. A variable whose buckets all show the same gap explains nothing, however plausible it sounded.</div>`:''}
+          ${conf.map(c=>`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;font-size:12.5px">⚠ <b>Can't be told apart:</b> ${c.variables.map(escapeHtml).join(', ')} split these quotes identically. No amount of extra quotes fixes that on its own — it needs a quote where one of them differs, so a gap credited to any one of them could belong to any of the others.</div>`).join('')}
+          ${flat.length?`<div class="nf" style="font-size:11px;margin-top:5px">Doesn't vary in this data: ${flat.map(d=>escapeHtml(d.variable)).join(', ')} — nothing to learn either way yet.</div>`:''}`;
+      })()}
       <div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin:14px 0 6px">By shape</div>
       <table style="font-size:12px;width:100%">
         <thead><tr><th style="text-align:left">Shape</th><th>n</th><th>Base</th><th>Int</th><th>Adv</th><th>Step</th></tr></thead>

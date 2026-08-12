@@ -657,6 +657,12 @@ CFG = {
     # Monthly national searches an acronym must clear to be offered as a seed.
     # Below it, it is an internal code rather than something buyers type.
     "acronym_min_volume": 20,
+    # A real industry program does not do six figures a month. Anything that big
+    # is a common word the miner mistook for an acronym — the volume ceiling is
+    # the second line of defence behind the lowercase-word test, because it
+    # catches the case where the word never appears in lowercase on the page.
+    # PACP, the biggest genuine one seen, is 2,400/mo. (2026-08-12)
+    "acronym_max_volume": 50000,
     # A bare acronym carrying this many times its qualified sibling's volume is
     # probably being searched for a different meaning. 8x is well clear of the
     # 1.5x a genuinely owned term shows and well under the 72x/147x of a
@@ -3133,6 +3139,8 @@ def services_needed(n_cities):
 # Words that describe the SHAPE of a service phrase, not its subject. Dropped
 # before folding, so "haul away" and "haul away service" collapse together.
 _SEED_SHAPE = frozenset("""
+mens men womens women kids kid child children childrens boys girls toddler baby
+adult adults junior juniors youth unisex family
 service services company companies contractor contractors business businesses
 pro pros professional professionals expert experts specialist specialists
 near me nearby local best top cheap affordable cost price prices pricing quote
@@ -3205,6 +3213,49 @@ def seed_norm(term, markets=None, state=""):
     """
     return clean_kw(strip_placeholders(strip_proximity(
         _strip_markets((term or "").lower(), list(markets or []), state)))).strip()
+
+
+def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
+    """Collapse a list of PROPOSED service terms the way rank_seeds folds seeds.
+
+    Ski Barn's menu produced 39 chips: ski jackets, boys ski jackets, girls ski
+    jackets, ski pants, boys ski pants, girls ski pants, ski socks, ski hats and
+    accessories, kids ski gear, toddler ski clothing... A grid holding 20 services
+    cannot use 39 near-duplicates, and "Add all 39" would have pushed the seed
+    list past 50 for the build to then rank back down again. Same containment rule
+    as the seed folder, so the two agree on what "the same service" means.
+
+    Keeps the FIRST form of each group rather than the longest: these arrive in
+    the client's own menu order, and "ski jackets" is the label they lead with.
+    Anything already covered by an existing seed drops out entirely — proposing a
+    term the operator has already got is not a suggestion.
+
+    Returns (kept, folded_away) preserving input order.
+    """
+    have = set()
+    for sd in seeds or []:
+        k = _seed_key(seed_norm(sd, markets, state))
+        if k:
+            have.add(k)
+    kept, folded, groups = [], [], []
+    for t in terms or []:
+        name = seed_norm(t if isinstance(t, str) else (t or {}).get("term", ""),
+                         markets, state)
+        k = _seed_key(name) or frozenset({name})
+        if not name:
+            continue
+        if any(k == h or k <= h or h <= k for h in have):
+            folded.append(t)
+            continue
+        hit = next((g for g in groups if k == g or k <= g or g <= k), None)
+        if hit is not None:
+            folded.append(t)
+            continue
+        groups.append(k)
+        kept.append(t)
+        if limit and len(kept) >= int(limit):
+            break
+    return kept, folded
 
 
 def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
@@ -9387,6 +9438,12 @@ _ACRONYM_STOP = {
     "LOGIN", "SIGN", "JOIN", "HOME", "ABOUT", "BLOG", "NEWS", "SHOP", "CART",
     "MENU", "NEXT", "PREV", "BACK", "SEND", "OPEN", "CLOSE", "VIEW", "READ",
     "COVID", "ADA", "GDPR", "CCPA", "TM", "LLC", "INC", "LTD", "CO",
+    # Currency and unit codes: a CLOSED list, unlike English words, so a blocklist
+    # is the right shape here. Ski Barn's site says "prices in USD" in caps and
+    # nowhere in lowercase, so the lowercase-word test cannot see it. (2026-08-12)
+    "USD", "EUR", "GBP", "CAD", "AUD", "NZD", "JPY", "CHF", "MXN", "INR",
+    "MPG", "MPH", "KPH", "PSI", "BTU", "KWH", "SQFT", "LBS", "OZS", "GAL",
+    "MIN", "MAX", "AVG", "QTY", "SKU", "UPC", "ISBN", "VIN", "ZIP",
 }
 
 
@@ -9422,10 +9479,23 @@ def mine_acronyms(html, brand="", limit=14):
     brand_up = re.sub(r"[^A-Z]", "", (brand or "").upper())
     found = {}
 
+    # A HAND-MAINTAINED BLOCKLIST ALWAYS MISSES THE NEXT ONE. Ski Barn offered
+    # "free" (550,000/mo), "here" (246,000/mo) and "usd" (135,000/mo) as its
+    # industry acronyms, because FREE / HERE / USD appear in caps somewhere on the
+    # page and none of them were on the list. Seeding one of those would have put
+    # half a million searches a month into the volume total.
+    #
+    # The page answers this itself: an industry program is referred to in CAPS and
+    # essentially never written out in lowercase running text on the same site.
+    # "free" and "here" are all over a retail page in lowercase; "PACP" never is.
+    # Measured against the document instead of guessed from a list. (2026-08-12)
+    lower_words = set(re.findall(r"\b[a-z]{3,6}\b", txt))
+
     def add(ac, expansion, source):
         ac = ac.strip().upper()
         if (len(ac) < 3 or len(ac) > 6 or ac in _ACRONYM_STOP
-                or not ac.isalpha() or (brand_up and ac == brand_up)):
+                or not ac.isalpha() or (brand_up and ac == brand_up)
+                or ac.lower() in lower_words):
             return
         e = found.setdefault(ac, {"acronym": ac, "expansion": "", "hits": 0,
                                   "source": source})
@@ -9746,7 +9816,7 @@ def calibration_groups(rows):
     return out
 
 
-def calibration_advice(groups, rows):
+def calibration_advice(groups, rows, drivers=None):
     """Which constant to touch, and by how much — or explicitly nothing.
 
     Deliberately conservative. A recommendation needs a group of at least
@@ -9781,6 +9851,7 @@ def calibration_advice(groups, rows):
     floor = CFG.get("client_floor", 2950)
     floor_locked = [g for g in flat
                     if (g["median_base_formula"] or 0) <= floor + 1]
+    floor_wants = []
 
     for g in leans:
         gap = g["median_gap_pct"]["base"]
@@ -9802,16 +9873,11 @@ def calibration_advice(groups, rows):
         # The band rate is what sets the base on a geo-priced quote; the floor is
         # what sets it when the formula lands under BE's observed minimum.
         elif on_floor:
-            tips.append({
-                "kind": "floor", "constant": "client_floor",
-                "from": CFG.get("client_floor"),
-                "to": int(round(((g["median_base_actual"] or 0)) / 50.0) * 50),
-                "text": (f"{shape}: the formula is landing ON the floor "
-                         f"(${CFG.get('client_floor'):,}) and the actual is "
-                         f"${g['median_base_actual']:,.0f} — median {gap:+.1f}% across "
-                         f"{g['n']} quotes. The floor only ever lifts a price, so raising "
-                         "it cannot disturb any quote already above it."),
-            })
+            # Collected, not emitted: client_floor is ONE number, and two shapes
+            # asking it for different values is not two recommendations — it is
+            # evidence the floor is the wrong lever for at least one of them.
+            floor_wants.append((shape, g,
+                                int(round((g["median_base_actual"] or 0) / 50.0) * 50)))
         else:
             tips.append({
                 "kind": "band", "constant": "geo_pct_tiers",
@@ -9834,6 +9900,46 @@ def calibration_advice(groups, rows):
                          "tier_step_pct_of_base). Fixing the base alone would leave "
                          "intermediate and advanced still off."),
             })
+    # ---- resolve the floor once ----
+    if len(floor_wants) == 1:
+        shape, g, want = floor_wants[0]
+        tips.append({
+            "kind": "floor", "constant": "client_floor", "from": floor, "to": want,
+            "text": (f"{shape}: the formula is landing ON the floor (${floor:,}) and the "
+                     f"actual is ${g['median_base_actual']:,.0f} — median "
+                     f"{g['median_gap_pct']['base']:+.1f}% across {g['n']} quotes. The floor "
+                     "only ever lifts a price, so raising it cannot disturb any quote "
+                     "already above it."),
+        })
+    elif len(floor_wants) > 1:
+        lo = min(w for _s, _g, w in floor_wants)
+        detail = "; ".join(f"{sh} wants ${w:,}" for sh, _g, w in floor_wants)
+        tips.append({
+            "kind": "floor", "constant": "client_floor", "from": floor, "to": lo,
+            "text": (f"Every leaning shape is sitting on the floor, but they disagree on "
+                     f"what it should be — {detail}. client_floor is one number, so it can "
+                     f"only go to the LOWEST of them (${lo:,}), which is safe for all of "
+                     "them and fixes none of them completely. The rest of each gap has to "
+                     "come from a rate that applies to that shape alone — raising the floor "
+                     "to the highest would overprice the others."),
+        })
+
+    # ---- the ranking rung IS the geo rate table ----
+    top = next((d for d in (drivers or []) if d.get("spread") is not None), None)
+    if top and top["variable"] == "ranking rung" and (top["spread"] or 0) >= CALIB_MIN_GAP_PCT:
+        bits = " · ".join(f"{b['value']} {b['median_gap_pct']:+.1f}% (n={b['n']})"
+                          for b in top["buckets"] if b["n"] >= 2)
+        tips.append({
+            "kind": "band", "constant": "geo_pct_tiers", "from": None, "to": None,
+            "text": ("The variable that best separates the gaps is how much of the client "
+                     f"already RANKS — {bits}. That is not a coincidence: geo_pct_tiers is "
+                     "literally a table keyed on that percentage, so these are its rungs "
+                     "reading wrong rather than the base being wrong for everyone. Move the "
+                     "rungs the leaning quotes land on."
+                     + (" Fragile — at least one bucket has fewer than four quotes."
+                        if top.get("fragile") else "")),
+        })
+
     for g in flat:
         tips.append({
             "kind": "ok", "constant": "", "from": None, "to": None,
@@ -9856,6 +9962,119 @@ def _calib_shape(g):
     band = (g["band"] or "unset").replace("_", " ")
     return f"{band}{' + national demand' if g['national_demand'] else ''}"
 
+
+# --- WHICH VARIABLE EXPLAINS THE SPREAD -------------------------------------
+# The groups above slice on band and demand basis, because that is where the
+# price anchor comes from. But those are two of at least eight things that could
+# be driving a gap, and the rest were being collected and ignored.
+#
+# The wrong fix is grouping by all of them: with a couple of dozen quotes, a
+# four-way slice puts n=1 in every cell and nothing clears the threshold. So each
+# candidate is tested ON ITS OWN, against the whole set, which keeps n as large as
+# it can be. The question per variable is narrow: split the quotes by it, and do
+# the halves disagree? A variable whose buckets all show the same gap explains
+# nothing, however plausible it sounded.
+#
+# It also reports what it CANNOT separate. If every nationwide quote is also
+# priced on national demand — which is the normal case — then those two variables
+# partition the set identically and no amount of data will tell them apart. Saying
+# so is the difference between a finding and a coincidence. (2026-08-12)
+
+def _rank_rung(pct):
+    """Which geo_pct_tiers rung a quote landed on — the table that sets the rate."""
+    if pct is None:
+        return "no ranking data"
+    for lo, rate in CFG.get("geo_pct_tiers") or []:
+        if pct >= lo:
+            return f"{lo}%+ not ranking ({rate}%)"
+    return "unknown"
+
+
+def _vol_bucket(v):
+    """Above or below the first volume bracket — below it, volume adds $0."""
+    brackets = CFG.get("volume_brackets") or []
+    first = brackets[0][0] if brackets else 10000
+    if not v:
+        return "no volume data"
+    return f"volume over {first:,}/mo" if v >= first else f"volume under {first:,}/mo"
+
+
+def _mkt_bucket(n):
+    return "1 market" if n <= 1 else ("2-5 markets" if n <= 5 else "6+ markets")
+
+
+CALIB_DRIVERS = [
+    ("geo band", lambda r: (r["band"] or "unset").replace("_", " ")),
+    ("demand basis", lambda r: "national" if r["national_demand"] else "local"),
+    ("ranking rung", lambda r: _rank_rung(r.get("pct_not_ranking"))),
+    ("strategy", lambda r: r.get("strategy") or "Core SEO"),
+    ("search volume", lambda r: _vol_bucket(r.get("total_volume"))),
+    ("market count", lambda r: _mkt_bucket(int(r.get("markets") or 0))),
+]
+
+
+def calibration_drivers(rows, min_bucket=2):
+    """Per variable: does splitting the quotes on it separate the gaps?
+
+    `spread` is the distance between the best and worst bucket median, counting
+    only buckets with at least `min_bucket` quotes. Big spread = this variable is
+    where the gap lives. Near zero = it explains nothing.
+    """
+    out = []
+    for label, fn in CALIB_DRIVERS:
+        buckets = {}
+        for r in rows:
+            if r["gap_pct"]["base"] is None:
+                continue
+            buckets.setdefault(fn(r), []).append(r["gap_pct"]["base"])
+        shown = [{"value": k, "n": len(v), "median_gap_pct": _median(v)}
+                 for k, v in buckets.items()]
+        shown.sort(key=lambda b: -(b["median_gap_pct"] or 0))
+        solid = [b for b in shown if b["n"] >= min_bucket]
+        spread = (max(b["median_gap_pct"] for b in solid)
+                  - min(b["median_gap_pct"] for b in solid)) if len(solid) > 1 else None
+        # A median over three quotes moves if one of them moves, so a variable can
+        # look like a perfect driver on composition alone. Flagged rather than
+        # hidden: the split may still be real, it just is not yet evidence.
+        fragile = bool(solid) and min(b["n"] for b in solid) < 4
+        out.append({"variable": label, "buckets": shown,
+                    "testable": len(solid) > 1, "spread": spread,
+                    "fragile": fragile,
+                    # One bucket holding everything means the variable does not
+                    # vary in this data at all — nothing to learn either way.
+                    "constant_here": len(shown) <= 1})
+    out.sort(key=lambda d: (d["spread"] is None, -(d["spread"] or 0)))
+    return out
+
+
+def calibration_confounds(rows):
+    """Pairs of variables that partition these quotes identically.
+
+    Two variables that always move together cannot be told apart no matter how
+    many quotes arrive — the data has no case where one changes and the other
+    does not. Reported so a finding attributed to one is not silently a finding
+    about the other.
+    """
+    if len(rows) < 2:
+        return []
+    sigs = {}
+    for label, fn in CALIB_DRIVERS:
+        vals = [fn(r) for r in rows]
+        # Partition signature: which rows share a value, independent of the names.
+        groups = {}
+        for i, v in enumerate(vals):
+            groups.setdefault(v, []).append(i)
+        if len(groups) <= 1:
+            continue                     # constant here, nothing to confound with
+        sigs[label] = frozenset(frozenset(g) for g in groups.values())
+    # Reported as CLASSES, not pairs. Five variables that all split the set the
+    # same way produce ten pairs and one fact, and the ten pairs bury it.
+    classes = {}
+    for label, sig in sigs.items():
+        classes.setdefault(sig, []).append(label)
+    return [{"variables": sorted(v), "n_groups": len(set(sig))}
+            for sig, v in classes.items() if len(v) > 1]
+
 @app.route("/api/calibration")
 @_json_error_guard
 def api_calibration():
@@ -9865,7 +10084,10 @@ def api_calibration():
     rows = calibration_rows(storage.all_payloads("seo"))
     groups = calibration_groups(rows)
     return jsonify({"rows": rows, "groups": groups,
-                    "advice": calibration_advice(groups, rows),
+                    "drivers": calibration_drivers(rows),
+                    "confounds": calibration_confounds(rows),
+                    "advice": calibration_advice(groups, rows,
+                                                  calibration_drivers(rows)),
                     "min_n": CALIB_MIN_N,
                     "constants": {"client_floor": CFG.get("client_floor"),
                                   "tier_step_flat": CFG.get("tier_step_flat"),
@@ -9940,7 +10162,11 @@ def api_expand_services():
     rows = [{"term": c["term"], "why": c["why"],
              "volume": int((vols or {}).get(c["term"], 0) or 0)} for c in cands]
     rows.sort(key=lambda r: -r["volume"])
-    return jsonify({"services": [r for r in rows if r["volume"] >= floor],
+    good, folded_rows = fold_proposals([r for r in rows if r["volume"] >= floor],
+                                       seeds=(d.get("seeds") or []),
+                                       markets=([] if nat else markets), state=state)
+    return jsonify({"services": good,
+                    "folded": [r["term"] for r in folded_rows],
                     "rejected": [r for r in rows if r["volume"] < floor],
                     "basis": "US national" if nat else "targeted cities",
                     "error": verr})
@@ -9992,7 +10218,10 @@ def api_site_services():
         else:
             for x in out:
                 x["term"] = x["label"].lower()
-        return jsonify({"domain": dom, "services": out, "ai_refined": ai_used,
+        # 39 chips off a retail menu is not 39 services — see fold_proposals().
+    out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
+    return jsonify({"domain": dom, "services": out,
+                    "folded": [(x.get("term") or x.get("label") or "") for x in folded_out], "ai_refined": ai_used,
                         "from_sitemap": False, "pasted": True, "n_nav_links": 0})
     # Two identities: some servers stub out bots, others' WAFs block a Chrome UA
     # that lacks full browser fingerprints while allowing honest bots through.
@@ -10189,6 +10418,7 @@ def api_site_services():
                         probes.append(form)
             vols, _pc, verr = fetch_local_volume(probes, [], "", national=True)
             floor = int(CFG.get("acronym_min_volume", 20))
+            ceil = int(CFG.get("acronym_max_volume", 50000))
             for a in mined:
                 lo = a["acronym"].lower()
                 forms = {f: int((vols or {}).get(f, 0) or 0)
@@ -10197,8 +10427,15 @@ def api_site_services():
                 a["volume"] = forms[best]
                 a["term"] = best
                 a["forms"] = forms
-                a["worth_it"] = (not verr) and forms[best] >= floor
-            acronyms = mined
+                # Too big to be this client's program. Reported with a reason
+                # rather than dropped silently, so a genuinely huge one can be
+                # argued with instead of vanishing.
+                a["too_big"] = forms[lo] > ceil
+                a["worth_it"] = ((not verr) and forms[best] >= floor
+                                 and not a["too_big"])
+            # A token doing six figures on its own is a common word the miner
+            # mistook for an acronym; it never reaches the chips.
+            acronyms = [a for a in mined if not a.get("too_big")]
             for a in acronyms:
                 a["qualifiers"] = quals
     except Exception as _ae:
