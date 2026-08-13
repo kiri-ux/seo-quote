@@ -454,9 +454,8 @@
     <div style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
       <label class="switch" style="flex:0 0 auto"><input type="checkbox" id="autoExpand" checked><span class="slider"></span></label>
       <span style="font-size:12.5px"><b>Expand on provided Product / Vertical Focus terms</b>
-        <span class="nf" id="autoExpandHint">— runs with Build keyword list and adds what it finds</span></span>
+</span>
     </div>
-    <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest services</button> <span class="nf" style="font-size:11.5px">reads their site, then names what this industry sells that isn't listed</span></div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
     <div id="rankedKwOut" style="margin-top:6px"></div>
@@ -1190,7 +1189,7 @@ function thinFloorHtml(bad, floor, typ, mkt){
 }
 
 async function runExpandServices(){
-  const btn=$('siteSvcBtn'), out=$('expandSvcOut');
+  const out=$('expandSvcOut');
   out.innerHTML='<div class="nf" style="font-size:12px">Checking what this industry sells that you haven\'t listed…</div>';
   try{
     const r=await postJSON('/api/expand_services',{
@@ -1207,7 +1206,7 @@ async function runExpandServices(){
       // and it names the input that would fix it — for a client whose site blocks
       // us this panel is the only source left. (2026-08-13)
       const miss=r.missing_inputs||[];
-      out.innerHTML=`<div style="margin-top:5px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;padding:7px 10px;font-size:12.5px">⚠ <b>Nothing was proposed</b> — this is the industry pass, not the volume floor; no term got as far as being measured.${miss.length?` It had no <b>${miss.map(escapeHtml).join('</b> and no <b>')}</b> to work from — fill ${miss.length>1?'those in':'that in'} and click ✦ Suggest services again.`:' Add a sentence to <b>Business description</b> saying what they sell and try again.'}${tipOf('This pass asks what businesses like this one sell, from the industry and the business description alone &mdash; it does not need their website. So it is the fallback when the site cannot be read, and a blank description is the one thing that stops it working.')}</div>`;
+      out.innerHTML=`<div style="margin-top:5px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;padding:7px 10px;font-size:12.5px">⚠ <b>Nothing was proposed</b> — this is the industry pass, not the volume floor; no term got as far as being measured.${miss.length?` It had no <b>${miss.map(escapeHtml).join('</b> and no <b>')}</b> to work from — fill ${miss.length>1?'those in':'that in'} and rebuild.`:' Add a sentence to <b>Business description</b> saying what they sell and try again.'}${tipOf('This pass asks what businesses like this one sell, from the industry and the business description alone &mdash; it does not need their website. So it is the fallback when the site cannot be read, and a blank description is the one thing that stops it working.')}</div>`;
       return;
     }
     if(!good.length){
@@ -1463,7 +1462,7 @@ async function runDescribeClient(){
     bd.value=r.text;
     if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.business_desc=r.text; }
     try{scheduleAutoSave();}catch(e){}
-    box.innerHTML='<div class="nf" style="margin-top:5px;font-size:11.5px">✓ Added to Business description below — edit it there, then click ✦ Suggest services again for the service lines.</div>';
+    box.innerHTML='<div class="nf" style="margin-top:5px;font-size:11.5px">✓ Added to Business description below — edit it there, then rebuild for the service lines.</div>';
   };
 }
 
@@ -1550,6 +1549,23 @@ async function runAllSuggestions(){
     runExpandServices().catch(()=>{}),
     runRankedKeywords().catch(()=>{}),
   ]);
+  // Regions come back already measured — the endpoint only returns the ones that
+  // carry real volume behind the client's first focus term, and reports the rest
+  // as too thin. So accepting them needs no judgement here. (2026-08-13)
+  let regions=[];
+  try{
+    if((stores.geo||[]).length && (stores.kw||[]).length){
+      const rr=await postJSON('/api/suggest_regions',{
+        geo_values:stores.geo.slice(), state:($('state')||{}).value||'',
+        keywords:stores.kw.slice(), brand:($('brand')||{}).value||'',
+        business_desc:($('business_desc')||{}).value||''});
+      for(const x of ((rr&&rr.regions)||[])){
+        const v=String(x.name||'').trim();
+        if(v && !stores.spgeo.includes(v)){ stores.spgeo.push(v); regions.push(v); }
+      }
+      if(regions.length){ try{ PILL_RENDER.spgeo(); }catch(e){} }
+    }
+  }catch(e){}
   const boxes=['siteSvcOut','expandSvcOut','rankedKwOut']
     .map(id=>document.getElementById(id)).filter(Boolean);
   const added=[];
@@ -1559,24 +1575,48 @@ async function runAllSuggestions(){
       if(v && !stores.kw.includes(v)){ stores.kw.push(v); added.push(v); }
     }
   }
+  // NOT HERE. With the toggle on, these three panels paint a wall above the
+  // Business description describing work that is already done — a 403 verdict, a
+  // dozen greyed chips already on the list, a line about top-100 rankings. Read
+  // the facts worth keeping, then clear them; Step 1 says it in one line.
+  // (2026-08-13)
+  const txt=id=>((document.getElementById(id)||{}).textContent||'');
+  const note={
+    blocked:(txt('siteSvcOut').match(/HTTP (\d{3})/)||[])[1]||'',
+    folded:Number((txt('siteSvcOut').match(/(\d+) near-duplicate/)||[])[1]||0),
+    floorHeld:Number((txt('expandSvcOut').match(/(\d+) held back/)||[])[1]||0),
+    ranked:document.querySelectorAll('#rankedKwOut .svc-chip').length,
+    noRank:/don.t rank for anything/.test(txt('rankedKwOut')),
+  };
+  // The paste-the-menu hatch is the one thing here that is an ACTION, so it stays
+  // in the DOM and the build note links to it rather than deleting it.
+  const paste=document.getElementById('pasteMenuBox');
+  const keep=paste?paste.outerHTML:'';
+  for(const id of ['siteSvcOut','expandSvcOut','rankedKwOut']){
+    const e=document.getElementById(id); if(e) e.innerHTML='';
+  }
+  if(keep && note.blocked){
+    const host=document.getElementById('siteSvcOut');
+    if(host) host.innerHTML='<div id="pasteHost" style="display:none">'+keep+'</div>';
+  }
   if(added.length){
     PILL_RENDER.kw();
     try{ scheduleAutoSave(); }catch(e){}
   }
-  return {added, before, after:(stores.kw||[]).length};
+  return {added, regions, note, before, after:(stores.kw||[]).length};
 }
 
 // ---- suggest services from the client site's nav menu ----
 async function runSuggestServices(auto){
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
-  const btn=document.getElementById('siteSvcBtn'), out=document.getElementById('siteSvcOut');
+  const btn=document.getElementById('siteSvcBtn')||{}, out=document.getElementById('siteSvcOut');
   const dom=stores.sites[0];
   if(!dom){
     // Silent when it fired itself — there is nothing to read yet and nobody asked.
     if(!auto) out.innerHTML='<div class="nf" style="font-size:12px">Add the client website above first.</div>';
     return;
   }
-  btn.disabled=true; btn.textContent='Reading their site…';
+  if('disabled' in btn){ btn.disabled=true; btn.textContent='Reading their site…'; }
   out.innerHTML='';
   // Both sources run: their own menu says what they sell, the industry pass says
   // what businesses like them sell that this list is missing. One question.
@@ -1648,10 +1688,11 @@ async function runSuggestServices(auto){
       ? `<div class="nf" style="font-size:11.5px">Couldn't read the site menu (${escapeHtml(String(e.message)).slice(0,90)}) — suggestions below come from the industry instead.</div>`
       : `<div class="err" style="font-size:12px">${escapeHtml(String(e.message))}</div>`;
   }finally{
-    btn.disabled=false; btn.textContent='✦ Suggest services';
+    if('disabled' in btn){ btn.disabled=false; btn.textContent='✦ Suggest services'; }
   }
 }
-document.getElementById('siteSvcBtn').addEventListener('click', ()=>runSuggestServices(false));
+// Button removed 2026-08-13 — the Expand toggle runs this with the build. The
+// function stays: runAllSuggestions() and the empty-list auto-fire both call it.
 
 // FIRES ITSELF ON AN EMPTY LIST. Product / Vertical Focus is required, so on a
 // new quote the operator is always going to fill it — leaving a suggest button
@@ -1902,9 +1943,12 @@ $('step1').addEventListener('click', async()=>{
     try{
       const ex=await runAllSuggestions();
       ST.autoExpanded=ex.added;
+      ST.autoRegions=ex.regions||[];
+      ST.autoNote=ex.note||{};
+      if((ex.regions||[]).length) inp.phrase_geos=stores.spgeo.slice();
       if(ex.added.length) inp.keywords=stores.kw.slice();
-    }catch(e){ ST.autoExpanded=[]; }
-  }else{ ST.autoExpanded=[]; }
+    }catch(e){ ST.autoExpanded=[]; ST.autoRegions=[]; ST.autoNote={}; }
+  }else{ ST.autoExpanded=[]; ST.autoRegions=[]; ST.autoNote={}; }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
   // The Build button sits at the BOTTOM of a long form and the list appears at the
@@ -4599,8 +4643,20 @@ function step1Grid(kw){
     const word=k=>k==='other_business'?'a different business':'an object, not work they perform';
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b>, not theirs to sell — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''}${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
   }
+  const _ar=(typeof ST!=='undefined' && ST.autoRegions)||[];
+  if(_ar.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F5FA} <b>${_ar.length} regional name${_ar.length===1?'':'s'} added</b> \u2014 ${_ar.slice(0,4).map(escapeHtml).join(' \u00b7 ')}${tipOf('Names locals search that are not map locations. Each was measured with your first focus term attached; the ones under 10 a month that way were left out.')}</div>`);
   const _ax=(typeof ST!=='undefined' && ST.autoExpanded)||[];
-  if(_ax.length) notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>${_ax.length} term${_ax.length===1?'':'s'} added by Expand before building</b>${tipOf('From their site, the industry pass and what they already rank for &mdash; everything those panels offered. Turn <b>Expand on provided Product / Vertical Focus terms</b> off to choose by hand.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; '))}</div>`);
+  const _an=(typeof ST!=='undefined' && ST.autoNote)||{};
+  if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank){
+    const bits=[];
+    if(_ax.length) bits.push(`<b>${_ax.length} term${_ax.length===1?'':'s'} added</b>`);
+    if(_an.ranked) bits.push(`${_an.ranked} they already rank for`);
+    if(_an.floorHeld) bits.push(`${_an.floorHeld} under the volume floor`);
+    if(_an.folded) bits.push(`${_an.folded} near-duplicate${_an.folded===1?'':'s'}`);
+    if(_an.noRank) bits.push('no top-100 rankings');
+    if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
+    notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):''}</div>`);
+  }
   const sr=kw.seed_ranking||{};
   // Sorted, not removed — they fill the tail when slots remain. (2026-08-13)
   if((sr.adjacent||[]).length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D0} <b>${sr.adjacent.length} term${sr.adjacent.length===1?'':'s'} sorted below the client's own wording</b>${tipOf('A neighbouring product type: searched, but not what this client sells, so it loses a slot to their own vocabulary before it loses one to anything else. Not removed &mdash; still quoted if the grid has room.<br><br>'+sr.adjacent.slice(0,20).map(escapeHtml).join(' &middot; '))}</div>`);
@@ -4623,6 +4679,12 @@ function step1Grid(kw){
     (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${tipOf('The grid fills from the front, so order decides what gets quoted. Measured against '+escapeHtml(sr.basis||'the targeted cities')+'; your focus list is untouched.'+(cut.length?' To quote more, raise <b>Grid max services</b> in Pricing config.':''))}${cut.length?'':'</div>'}`);
   }
 
+  // the one action from the cleared panels, reachable from the note
+  setTimeout(()=>{ const a=document.getElementById('pasteFromNote');
+    if(a) a.onclick=(e)=>{ e.preventDefault();
+      const h=document.getElementById('pasteHost'); if(h){ h.style.display='block';
+        h.querySelector('#pasteMenuBox').style.display='block';
+        h.scrollIntoView({behavior:'smooth',block:'center'}); } }; }, 0);
   if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);
 
   if(kw.grounding_stood_down){
