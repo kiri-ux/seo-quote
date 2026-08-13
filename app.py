@@ -10521,6 +10521,153 @@ def _split_proposal_kinds(items, d, dom, pages=None, ecom=False, alias=None):
     return good, bad
 
 
+def serp_snippets(query, loc, limit=8):
+    """Top organic titles + snippets for a query.
+
+    What everyone who has already described this business wrote about it — their
+    Google Business listing, the directories, the local press. One SERP call.
+    (2026-08-13)
+    """
+    payload = [{"keyword": query, "location_name": loc, "language_code": "en",
+                "depth": 10}]
+    data = dfs_post("/serp/google/organic/live/regular", payload, timeout=18)
+    task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+    if task0.get("status_code") not in (20000, None):
+        raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+    items = ((task0.get("result") or [{}])[0] or {}).get("items") or []
+    out = []
+    for it in items:
+        if it.get("type") != "organic":
+            continue
+        out.append({"title": (it.get("title") or "")[:160],
+                    "snippet": (it.get("description") or "")[:320],
+                    "domain": (it.get("domain") or "").lower(),
+                    "url": (it.get("url") or "")[:300]})
+        if len(out) >= int(limit):
+            break
+    return out
+
+
+def claude_business_desc(brand, markets, industry, snippets, domain=""):
+    """What this client IS, read off the SERP for their own name.
+
+    Amare Homes' site 403s every request, and the business description is the one
+    input the industry pass cannot work without — so a client whose server blocks
+    us had no route to a keyword list at all. Their name and their city are
+    already on the order, and the answer is on the first page of Google.
+
+    GROUNDED, NOT RECALLED. The model is given real current search results and
+    told to describe only what they say. Asking it to remember a specific small
+    business invents a plausible one, which is worse than nothing here: the
+    description feeds service expansion, so a confident wrong sentence produces a
+    confident wrong quote. It must return low confidence and say so rather than
+    guess, and the caller only ever OFFERS the result. (2026-08-13)
+
+    Returns {"text", "confidence": high|low, "why", "sources": [url]} or {}.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not snippets:
+        return {}
+    where = ", ".join(markets[:3]) if markets else ""
+    listing = "\n".join(
+        f"- {s.get('domain','')}: {s.get('title','')} — {s.get('snippet','')}"
+        for s in snippets[:8])
+    prompt = f"""Below are the top Google results for a business's own name.
+Write ONE sentence saying what the business is and what it sells, for use as the
+"business description" field on an SEO quote.
+
+Business name: {brand}
+{f'Website: {domain}' if domain else ''}
+{f'Market: {where}' if where else ''}
+{f'Industry (as tagged by the partner): {industry}' if industry else ''}
+
+SEARCH RESULTS
+{listing}
+
+Rules:
+- Use ONLY what these results say. Do not add anything you happen to know about
+  this company or infer from its name.
+- If the results are not clearly about THIS business in THIS market - they name a
+  different company, a directory page with no detail, or a similarly-named
+  business elsewhere - set confidence "low" and say what is missing in "why".
+  A wrong description produces a wrong keyword list, so an honest "not sure" is
+  worth more than a plausible sentence.
+- Name the specific things sold, not the category. "1-3 bedroom single-family
+  rental homes with garages" beats "residential property services".
+- One sentence, under 40 words, plain and factual. No marketing adjectives.
+
+Return ONLY JSON:
+{{"text": "...", "confidence": "high", "why": "", "sources": ["domain.com"]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 900, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=60)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        got = json.loads(text) or {}
+    except Exception:
+        app.logger.exception("claude_business_desc failed")
+        return {}
+    desc = re.sub(r"\s+", " ", str(got.get("text") or "")).strip()[:400]
+    if not desc:
+        return {}
+    # A CTA is not a description — same refusal the site meta-description path uses.
+    if _is_cta(desc):
+        return {}
+    return {"text": desc,
+            "confidence": ("high" if str(got.get("confidence") or "").lower()
+                           == "high" else "low"),
+            "why": str(got.get("why") or "")[:200],
+            "sources": [str(x)[:120] for x in (got.get("sources") or [])][:5]}
+
+
+@app.route("/api/describe_client", methods=["POST"])
+@_json_error_guard
+def api_describe_client():
+    """Business description from the client's NAME and MARKET — no site access.
+
+    The fallback for a site that refuses to be read. Offered to the operator with
+    its sources and its own confidence attached; never written into the field by
+    this endpoint.
+    """
+    d = request.get_json(force=True) or {}
+    brand = (d.get("brand") or "").strip()
+    if not brand:
+        return jsonify({"error": "Add the client name first."}), 400
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    dom = re.sub(r"^https?://", "", (d.get("domain") or "").strip()).strip("/")
+    loc = loc_string(markets, state) if markets else "United States"
+    # The name plus the place, which is what a person would type. The market goes
+    # in the QUERY as well as the location, because a national location with a
+    # bare brand name finds the biggest company sharing it.
+    query = f"{brand} {markets[0].split(',')[0]}" if markets else brand
+    try:
+        snippets = serp_snippets(query, loc)
+    except Exception as e:                                # noqa: BLE001
+        return jsonify({"error": f"the search lookup failed: {str(e)[:140]}"}), 502
+    if not snippets:
+        return jsonify({"query": query, "location": loc, "results": 0,
+                        "error": "nothing came back for that name and market."})
+    got = claude_business_desc(brand, markets, d.get("industry") or "",
+                              snippets, dom)
+    if not got:
+        return jsonify({"query": query, "location": loc,
+                        "results": len(snippets),
+                        "error": "the results didn't describe a business clearly."})
+    got.update({"query": query, "location": loc, "results": len(snippets),
+                "domains": [s["domain"] for s in snippets[:5]]})
+    return jsonify(got)
+
+
 @app.route("/api/site_services", methods=["POST"])
 @_json_error_guard
 def api_site_services():

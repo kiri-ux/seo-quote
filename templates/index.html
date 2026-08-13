@@ -1385,6 +1385,53 @@ function renderSvcChips(data, out){
   if(acrBox) wireSvcChips(acrBox);
 }
 
+// BUSINESS DESCRIPTION FROM THE CLIENT'S NAME + MARKET, when their site won't be
+// read. Grounded in a real SERP for their own name, not the model's memory of a
+// small business — the description feeds service expansion, so a confident wrong
+// sentence produces a confident wrong quote. Offered with its sources and its own
+// confidence showing; the operator applies it, never this. (2026-08-13)
+async function runDescribeClient(){
+  const box=document.getElementById('lookupBox');
+  const bd=document.getElementById('business_desc');
+  const brand=(($('brand')||{}).value||'').trim();
+  if(!box) return;
+  // Never overwrite a human, and nothing to search without a name.
+  if(!brand || (bd && bd.value.trim())) return;
+  box.innerHTML='<div class="nf" style="font-size:11.5px">Looking the client up by name + market instead…</div>';
+  let r;
+  try{
+    r=await postJSON('/api/describe_client',{
+      brand, domain:(stores.sites||[])[0]||'',
+      geo_values:stores.geo.slice(), state:($('state')||{}).value||'',
+      industry:(stores.industry||[]).join(', ')});
+  }catch(e){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">Couldn’t look them up either ('+escapeHtml(String(e.message)).slice(0,80)+') — type a line into Business description below.</div>';
+    return;
+  }
+  if(!r || !r.text){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">Searched <b>'+escapeHtml(String((r&&r.query)||brand))+'</b> — '+escapeHtml(String((r&&r.error)||'nothing usable came back.'))+' Type a line into Business description below.</div>';
+    return;
+  }
+  const low=r.confidence!=='high';
+  box.innerHTML='<div style="margin-top:4px;background:'+(low?'#fdf1d8':'#eef4fb')+';border:1px solid '+(low?'#e8c98a':'var(--atlas)')+';border-radius:8px;padding:8px 11px;font-size:12.5px">'
+    +(low?'⚠ ':'')+'<b>Read off Google for “'+escapeHtml(String(r.query||brand))+'”</b>'+(low?' — but check it':'')+':'
+    +'<div style="margin-top:3px"><i>“'+escapeHtml(String(r.text))+'”</i></div>'
+    +((low&&r.why)?'<div class="nf" style="margin-top:3px">'+escapeHtml(String(r.why))+'</div>':'')
+    +'<button id="useLookupDesc" type="button" style="margin-top:6px;background:var(--atlas);color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Use as business description</button>'
+    +'<span class="nf" style="font-size:11px;display:block;margin-top:3px">From the top '+Number(r.results||0)+' results'
+    +((r.domains||[]).length?' — '+(r.domains||[]).slice(0,4).map(escapeHtml).join(', '):'')
+    +'. Their own site never answered, so none of this came from the client'
+    +tipOf('The description feeds the industry pass, which is what proposes service lines when the site cannot be read &mdash; so it is worth ten seconds of reading. Sources are the organic results for the client&rsquo;s own name in their own market.')
+    +'</span></div>';
+  const btn=document.getElementById('useLookupDesc');
+  if(btn) btn.onclick=()=>{
+    bd.value=r.text;
+    if(typeof ST!=='undefined'&&ST.inputs){ ST.inputs.business_desc=r.text; }
+    try{scheduleAutoSave();}catch(e){}
+    box.innerHTML='<div class="nf" style="margin-top:5px;font-size:11.5px">✓ Added to Business description below — edit it there, then click ✦ Suggest services again for the service lines.</div>';
+  };
+}
+
 // ---- suggest services from the client site's nav menu ----
 async function runSuggestServices(auto){
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
@@ -1420,9 +1467,13 @@ async function runSuggestServices(auto){
       return;
     }
     if(!(data.services||[]).length){
-      const why=(data.diag&&data.diag.length)?('<div class="nf" style="font-size:11px;margin:4px 0;font-family:ui-monospace,monospace">'+data.diag.map(d=>String(d).replace(/</g,'&lt;')).join('<br>')+'</div>'):'';
-      out.innerHTML='<div class="nf" style="font-size:12px">No menu items or sitemap pages found. What the fetch saw:</div>'+why
-        +'<div class="nf" style="font-size:12px">'+(()=>{
+      // FOLDED. Six lines of URLs and HTTP codes is what you open when you doubt
+      // the verdict, not the verdict itself — and the verdict is the line below.
+      // (2026-08-13)
+      const why=(data.diag&&data.diag.length)
+        ? `<details style="margin:3px 0"><summary class="nf" style="font-size:11px;cursor:pointer;user-select:none">what the fetch saw (${data.diag.length} attempt${data.diag.length===1?'':'s'})</summary><div class="nf" style="font-size:11px;margin-top:3px;font-family:ui-monospace,monospace">${data.diag.map(d=>String(d).replace(/</g,'&lt;')).join('<br>')}</div></details>`
+        : '';
+      out.innerHTML='<div class="nf" style="font-size:12px">'+(()=>{
             // READ THE CODES IT ALREADY HAS. This said "links showing 0 with HTTP
             // 200 means the site cloaks bots" under four lines reading 403 and
             // SSLError — advice for a failure that had not happened.
@@ -1440,10 +1491,18 @@ async function runSuggestServices(auto){
             return 'Nothing was reachable at that domain. ';
           })()
         +'<a href="#" id="pasteMenuLink" style="color:var(--atlas);font-weight:600">Paste their menu instead</a> — copy the nav/service list from the site and it runs through the same AI conversion.</div>'
+        + why
+        + '<div id="lookupBox" style="margin-top:5px"></div>'
         +'<div id="pasteMenuBox" style="display:none;margin-top:6px"><textarea id="pasteMenuTxt" rows="4" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px" placeholder="Managed IT Services\n24/7 Help Desk\nCloud Computing Migration\nCompliance"></textarea>'
         +'<button id="pasteMenuGo" style="margin-top:5px;background:var(--atlas);color:#fff;border:none;padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Convert to seeds</button></div>';
       const link=document.getElementById('pasteMenuLink');
       link.onclick=(e)=>{e.preventDefault();document.getElementById('pasteMenuBox').style.display='block';};
+      // The site is the normal source for the business description, and it just
+      // refused. Their NAME and their MARKET are already on the order and the
+      // answer is on the first page of Google, so go and read that instead.
+      // Fires itself: the operator already asked once by clicking Suggest
+      // services, and this is the same question. (2026-08-13)
+      runDescribeClient().catch(()=>{});
       document.getElementById('pasteMenuGo').onclick=async()=>{
         const txt=document.getElementById('pasteMenuTxt').value.trim();
         if(!txt) return;
