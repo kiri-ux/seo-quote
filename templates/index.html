@@ -1090,7 +1090,24 @@ wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'
     try{
       const cfg=await (await fetch('/api/config')).json();
       const rules=cfg.industry_pricing||{};
-      const rows=Object.entries(rules).map(([k,r])=>{
+      // ONE RULE, ONE ROW. "ecommerce" and "e-commerce" are both needed as match
+      // keys — substring matching cannot see across the hyphen — but they price
+      // identically, so the table listed the same rule twice. Group on behaviour.
+      // (2026-08-13)
+      // SPELLING VARIANTS ONLY. Grouping on behaviour collapsed four distinct
+      // industries that happen to price alike; the duplicate was never that.
+      // "e-commerce" and "ecommerce" are one word twice — both are needed as
+      // match keys because substring matching cannot see across the hyphen.
+      const groups=new Map();
+      for(const [k,r] of Object.entries(rules)){
+        const sig=k.toLowerCase().replace(/[^a-z0-9]/g,'');
+        if(!groups.has(sig)) groups.set(sig, {keys:[], r});
+        const g=groups.get(sig);
+        g.keys.push(k);
+        if((r.note||'').length > (g.r.note||'').length) g.r=r;   // the fuller note
+      }
+      const rows=[...groups.values()].map(({keys,r})=>{
+        const k=keys.join('</code> · <code>');
         const bits=[`+$${r.anchor_add||0} anchor`];
         bits.push(r.step_mode==='ratio'?'38% ratio steps':'standard steps');
         if(r.extras_off) bits.push('volume + zero-ranking extras OFF');
@@ -4505,7 +4522,7 @@ function step1Grid(kw){
     // "ranked, and all 20 fit" changed nothing anyone can see — fold it. The
     // line earns its place on the panel only when the ranking DECIDED something,
     // i.e. some of the client's services are not in the quote.
-    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${tipOf('The grid fills from the front of this list, so the order decides which services get quoted. It used to be the order you typed &mdash; on this client that dropped hoarding cleanup, appliance removal, debris removal and tire disposal, all named on their own website, in favour of nothing better. Measured against '+escapeHtml(sr.basis||'the targeted cities')+'.<br><br>Nothing was deleted and your Product / Vertical Focus list is untouched &mdash; only the order the grid reads it in.'+(cut.length?'<br><br>To quote more of them: raise <b>Grid max services</b> in Pricing config, or spend the budget on services rather than geography. The grid is services &times; cities, so either one raises the keyword count and the price.':''))}${cut.length?'':'</div>'}`);
+    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${tipOf('The grid fills from the front, so order decides what gets quoted. Measured against '+escapeHtml(sr.basis||'the targeted cities')+'; your focus list is untouched.'+(cut.length?' To quote more, raise <b>Grid max services</b> in Pricing config.':''))}${cut.length?'':'</div>'}`);
   }
 
   if(kw.geo_filter_off) warn.push(`<div style="margin-top:4px" class="nf">⚠ <b>Out-of-area filter is off</b> — no state is set on any market, so the tool can't tell which states are foreign to this client. Tag one market as "City, ST" or set a fallback state, and terms naming other states will be removed automatically.</div>`);

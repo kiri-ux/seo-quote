@@ -5964,10 +5964,28 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 # to guarantee (2026-08-09). A multiplier keeps a shop term
                 # ahead of a comparable product term while letting a term with
                 # several times the demand take the slot it has earned.
-                _boost = float(CFG.get("store_intent_tier_boost", 3.0) or 1.0)
+                # STORE INTENT BREAKS TIES; IT DOES NOT OVERTAKE. It was a 3x
+                # multiplier, and its own note said the point was to keep a shop
+                # term ahead of a COMPARABLE product term while a term with
+                # several times the demand still takes the slot it earned. On a
+                # list where everything sits between 0 and 90/mo there is no
+                # "several times", so the multiplier stopped being a thumb and
+                # became the whole hand: "rental homes with pool" (10/mo, boosted
+                # to 30) outranked "luxury apartments" (20/mo), and three 4-to-5
+                # word qualifier phrases took Ultra Competitive on Amare Homes
+                # while Brendan put them in Long Tail. Comparable now means
+                # EQUAL, which is what the sentence always meant.
+                #
+                # BREADTH IS THE LAST WORD, because in a thin market volume
+                # cannot rank anything: fifteen of Amare's twenty terms measured
+                # 0-10/mo, so arrival order was deciding the tiers. Brendan tiers
+                # the same client on breadth — "homes for rent santa fe nm" Ultra
+                # at three words, "homes for rent with garage santa fe nm" Long
+                # Tail at six. (2026-08-13)
                 def _rank_key(x):
-                    v = service_volume.get(x["service"]) or 0
-                    return -(v * (_boost if is_store_intent(x["service"]) else 1.0))
+                    return (-(service_volume.get(x["service"]) or 0),
+                            0 if is_store_intent(x["service"]) else 1,
+                            len((x.get("service") or "").split()))
                 _ranked = sorted(_measured, key=_rank_key)
                 # Walk the ranked list, filling ultra first, then competitive.
                 # Unmeasured terms keep whatever tier they already had, so the
