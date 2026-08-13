@@ -383,7 +383,6 @@
     <input type="hidden" id="goal" value="">
 
     <label>Industry <span class="req">*</span></label>
-    <div class="help">In adtini the industry text arrives with the order. Matches admin pricing rules by substring: "Health Services - Hospital" carries the big-org card ($3,950/$5,450/$6,950 shape); "Insurance - *" carries the carrier premium. "Retail - General / E-commerce" and other product-brand tags set no price of their own — they switch the volume lookup to national demand and let volume, competition and current visibility do the pricing. Blank = standard formula.</div>
     <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
     <details id="indrules" style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:8px 0 2px;background:#faf6fc">
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — current industry pricing rules ▸ click to expand</summary>
@@ -464,10 +463,12 @@
     <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
     <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
 
-    <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-    <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
-    <div class="pillbox" data-for="spgeo"><input type="text" id="spgeo_in" placeholder="south jersey, fox cities"></div>
-    <div id="spgeo_out" style="margin-top:8px"></div>
+    <!-- SEARCH-PHRASE GEOS field removed 2026-08-13 — runAllSuggestions() calls
+         /api/suggest_regions with the build and adds every region carrying real
+         volume. The store and its renderer stay: the grid reads stores.spgeo, a
+         saved quote restores into it, and Step 1 reports what was added. -->
+    <div class="pillbox hidden" data-for="spgeo"><input type="text" id="spgeo_in"></div>
+    <div id="spgeo_out" class="hidden"></div>
 
     <div class="toggle-row" style="margin-top:10px">
       <label class="switch"><input type="checkbox" id="natdemand"><span class="slider"></span></label>
@@ -510,6 +511,7 @@
 <script>
 // ---- pill inputs ----
 const stores = {sites:[], kw:[], geo:[], spgeo:[], industry:[]};
+const PILL_FOLD = 20;          // pills shown before 'Show all'
 // Each pillbox's render() lives inside wirePills' closure; register them here so
 // loading a saved quote can redraw the pills after repopulating the stores.
 const PILL_RENDER = {};
@@ -914,15 +916,30 @@ function wirePills(key, inputId){
     const n=stores[key].length, noun=NOUN[key]||'item';
     tag.textContent = n ? `${n} ${noun}${n===1?'':'s'}` : '';
   }
+  // FIFTY-ONE PILLS IS A WALL. Expand can take the focus list past the point
+  // where you can see the field it is attached to, so it shows the first
+  // PILL_FOLD and a button for the rest. Fold state is per-box and survives a
+  // re-render. (2026-08-13)
+  let _showAll=false;
   function render(){
-    box.querySelectorAll('.pill').forEach(p=>p.remove());
-    stores[key].forEach((v,i)=>{
+    box.querySelectorAll('.pill, .pillmore').forEach(p=>p.remove());
+    const all=stores[key], fold=(all.length>PILL_FOLD+3 && !_showAll);
+    const shown=fold?all.slice(0,PILL_FOLD):all;
+    shown.forEach((v,i)=>{
       const el=document.createElement('span');
       el.className='pill'+(key==='geo'?' geo-pill':'');
       el.innerHTML=`${v} <b data-i="${i}">×</b>`;
       el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
       box.insertBefore(el,input);
     });
+    if(fold||_showAll){
+      const more=document.createElement('button');
+      more.type='button'; more.className='pillmore';
+      more.style.cssText='margin:2px 4px;padding:2px 10px;border-radius:12px;border:1px dashed var(--atlas);background:#fff;color:var(--atlas);font-size:11.5px;font-weight:600;cursor:pointer';
+      more.textContent=fold?`Show all ${all.length}`:'Show fewer';
+      more.onclick=()=>{ _showAll=!_showAll; render(); };
+      box.insertBefore(more,input);
+    }
     renderCount();
     // The market summary has to follow the pills on EVERY path. It used to be
     // scheduled by a wrapper around PILL_RENDER.geo, which only EXTERNAL callers
@@ -4410,7 +4427,7 @@ async function refreshMarketSummary(){
       return;
     }
     const same = entered === r.markets;
-    const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Areas within <b>${r.radius} miles</b> of each other count as one market, named after the largest town. A <b>county</b> is a container, not a peer: it never merges two markets, and if a town you entered sits inside it, it adds no market of its own.<br><br>This is what the geos <b>cover</b> — not the add-on count, though everything downstream counts markets rather than entries.<br><br>Straight-line distance, not drive time, so overrule it when you know better. Radius is set in Pricing config.</div></span>`;
+    const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Areas within ${r.radius||25} miles of each other count as one market, named after the largest town. Counties and Cities are deduplicated.</div></span>`;
     box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${entered} ${entered===1?'area':'areas'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`
       + overlapHtml(r)
       + scopeSuggestionHtml(r.scope_suggestion);
@@ -4663,7 +4680,7 @@ function step1Grid(kw){
     // "ranked, and all 20 fit" changed nothing anyone can see — fold it. The
     // line earns its place on the panel only when the ranking DECIDED something,
     // i.e. some of the client's services are not in the quote.
-    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${tipOf('The grid fills from the front, so order decides what gets quoted. Measured against '+escapeHtml(sr.basis||'the targeted cities')+'; your focus list is untouched.'+(cut.length?' To quote more, raise <b>Grid max services</b> in Pricing config.':''))}${cut.length?'':'</div>'}`);
+    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
   }
 
   // the one action from the cleared panels, reachable from the note
@@ -4704,17 +4721,7 @@ function step1Grid(kw){
   if(kw.market_volume_gaps&&kw.market_volume_gaps.length) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;font-size:12.5px">⚠ <b>${kw.market_volume_gaps.length} of ${(kw.grid_cities||[]).length||kw.market_volume_gaps.length} market${kw.market_volume_gaps.length===1?'':'s'} contributed no volume</b><div class="nf" style="margin-top:3px">${kw.market_volume_gaps.map(g=>`<div>${escapeHtml(g.market)}${g.suggestion?` — Google calls this <b>${escapeHtml(g.suggestion)}</b>; use that spelling in Geographic targeting areas and rebuild to price it`:` — Google has no targetable location for this name`}</div>`).join('')}</div><div class="nf" style="margin-top:4px">These markets still appear in the grid and still get rank-checked — they just add nothing to the volume component, so the quote is priced on the remaining markets only.</div></div>`);
 
   // ---------- folded: how this list was built ----------
-
-  // THE BUILD RE-TIERS BY MEASURED VOLUME AND STOPPED SAYING SO. The server has
-  // sent tier_moves all along; the line that rendered it was lost in the Step 1
-  // rewrite, so a reconciliation that changes the tier MIX — and the tier mix is
-  // an input to the price — happened silently. tiers.js had been printing
-  // "(not found)" ever since and nobody read past its errors line. (2026-08-13)
-  if(kw.tier_moves&&kw.tier_moves.length){
-    const T={ultra:'Ultra',competitive:'Competitive',long_tail:'Long Tail'};
-    const nm=t=>T[t]||t||'unsorted';
-    notes.push(`<div class="nf" style="margin-top:4px">\u2696 <b>${kw.tier_moves.length} service${kw.tier_moves.length===1?'':'s'} re-tiered by measured demand</b>${tipOf(kw.tier_moves.slice(0,14).map(m=>escapeHtml(String(m.service||''))+' &mdash; '+escapeHtml(nm(m.from))+' \u2192 '+escapeHtml(nm(m.to))+' ('+Number(m.volume||0).toLocaleString()+'/mo)').join('<br>')+'<br><br>The AI proposes a tier per service; this ranks them by the volume actually measured and reconciles the two, keeping the tier COUNTS the mix asked for. It moves the mix, and the mix feeds the price &mdash; so it is on the record rather than implied.')}</div>`);
-  }
+  // Re-tiering note removed 2026-08-13 — the tier columns already show the result.
   if(kw.near_me_added&&kw.near_me_added.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4CD} <b>${kw.near_me_added.length} “near me” term${kw.near_me_added.length>1?'s':''} added</b> — ${kw.near_me_added.map(x=>escapeHtml(x[0])+' ('+Number(x[1]).toLocaleString()+'/mo)').join(' · ')}${tipOf('Measured like any other term, so a form nobody searches never reaches the list. These carry no city because Google resolves &quot;near me&quot; from the location of the person searching, which is why they sit outside the city grid.')}</div>`);
 
   // Silenced when the budget went to services: the axis line above already
@@ -4746,8 +4753,7 @@ function step1Grid(kw){
   if(kw.topics&&kw.topics.length>1)
     notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> — ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% → ${t.services} service${t.services===1?'':'s'})</span>`).join(' · ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words — the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears${tipOf(kw.topic_fixes.map(x=>'<b>'+escapeHtml(x.added)+'</b> in, '+escapeHtml(x.replaced)+' out').join('<br>')+'<br><br>Services are chosen by search volume, so without this every slot would have gone to <b>'+escapeHtml((kw.topics[0]||{}).label||'the biggest topic')+'</b>.')}</div>`:''}</div>`);
 
-  if(kw.service_swaps&&kw.service_swaps.length)
-    notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F50D} <b>${kw.service_swaps.length} service${kw.service_swaps.length===1?'':'s'} replaced by measured demand</b>${tipOf('Replacements come from your own Product / Vertical Focus list and stay inside the same topic, so a patio-furniture slot is never filled by a ski term. A dead slot cannot win traffic and drags the volume total that sets the price; an upgrade only fires when the alternative is at least '+(kw.service_upgrade_ratio||10)+'&times; bigger, never on a close call. A shop term is only ever replaced by another shop term, and a manufacturer&rsquo;s brand is never swapped in.')}<div class="nf" style="margin-top:3px">${kw.service_swaps.map(x=>`<div>→ <b>${escapeHtml(x['in'])}</b> <span style="opacity:.75">(${Number(x.in_volume||0).toLocaleString()}/mo)</span> replaced ${escapeHtml(x.out)} <span style="opacity:.75">(${Number(x.out_volume||0).toLocaleString()}/mo${x.kind==='upgrade'?', '+Math.round((x.in_volume||0)/Math.max(x.out_volume||1,1))+'× lower':' — nobody searches it'})</span></div>`).join('')}</div></div>`);
+  // Service-swap note removed 2026-08-13 — the list itself is the result.
 
   if(kw.dropped_ungrounded&&kw.dropped_ungrounded.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6AB} <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. ${tipOf("Wording found nowhere in the client's seeds, description or site. Usually a competitor riding high in the keyword data, sometimes an unrelated product sharing a word. If one is real, add it to Product / Vertical Focus and rebuild.")}</div>`);
 
@@ -4804,7 +4810,7 @@ function step1Grid(kw){
     const thinVol = thinRows.reduce((a,x)=>a+Number(x.vol||0),0);
     const thinPct = kw.total_volume ? Math.round(100*thinVol/Number(kw.total_volume)) : 0;
     const thinBit = (thinRows.length>1 && thinPct>=20)
-      ? ` <span style="color:#8a5a10">· ${Number(thinVol).toLocaleString()} of it (${thinPct}%) from ${thinRows.length} terms under ${vfloor}/mo</span>${tipOf('Google Ads reports a floor figure &mdash; usually 10/mo &mdash; for a phrase it holds no real data on, so a grid padded with unmeasurable terms adds volume without adding demand: '+thinRows.length+' terms here are worth '+Number(thinVol).toLocaleString()+'/mo on paper and close to nothing in practice.<br><br><b>This is about the proposal, not the price.</b> Volume only starts adding money above the first bracket in Pricing config (10,000/mo), so on a local list this size it contributes $0 either way and padding costs nothing &mdash; measured, not assumed. What it does affect is the headline number the client reads, and whether the grid is buying real demand or copies of one market.<br><br>Nothing is deducted here. Use it to judge whether the total is real before you quote.')}`
+      ? ` <span style="color:#8a5a10">· ${Number(thinVol).toLocaleString()} of it (${thinPct}%) from ${thinRows.length} terms under ${vfloor}/mo</span>${tipOf('Phrases Google Ads holds no data on report as 10/mo.')}`
       : '';
     const head=`<b>${kw.national_demand?'National keyword list:':'Grid:'}</b> ${kw.national_demand?kw.all.length:kw.services.length} ${kw.national_demand?'terms':'services'}${kw.national_demand?'':' × cities'}${kw.total_volume?` · <b>Total monthly volume:</b> ${Number(kw.total_volume).toLocaleString()}${kw.national_demand?' <span class="nf">(US national)</span>':''}${tipOf(kw.national_demand?'The US national figure for each term, summed. Drives the volume component of price.':'Summed across all targeted cities. The number beside each keyword is that city&rsquo;s demand for the service, not the volume of the geo-modified phrase (local phrases mostly report zero). A tag like &middot; statewide means Google holds no data for that city, so a wider area answered &mdash; excluded from the pricing total.')}${thinBit}`:''}`;
     const tail=`${kw.total_volume?'':(kw.volume_error

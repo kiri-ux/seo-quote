@@ -2679,12 +2679,21 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
         pool = [s for s in t["seeds"] if str(s).lower() not in used]
         pool.sort(key=lambda s: (-vol.get(str(s).lower(), 0), t["seeds"].index(s)))
         for s in pool[:need]:
-            donor_lab = max(quota, key=lambda k: len([x for x in out if x.get("_topic") == k])
-                            - quota.get(k, 1))
-            donors = [x for x in out if x.get("_topic") == donor_lab]
-            if len(donors) <= quota.get(donor_lab, 1) or len(donors) <= 1:
-                break
-            drop = donors[-1]
+            # A SERVICE NO TOPIC CLAIMS IS THE CHEAPEST SLOT IN THE LIST. It used
+            # to be untouchable: donors were drawn only from topics that were OVER
+            # quota, so five unclaimed services sat protected while the apartment
+            # topic — quota 6 — got 2 and the loop stopped. Nothing is defending
+            # an unclaimed service, so it goes first. (2026-08-13)
+            orphans = [x for x in out if not x.get("_topic")]
+            if orphans:
+                drop = orphans[-1]
+            else:
+                donor_lab = max(quota, key=lambda k: len([x for x in out if x.get("_topic") == k])
+                                - quota.get(k, 1))
+                donors = [x for x in out if x.get("_topic") == donor_lab]
+                if len(donors) <= quota.get(donor_lab, 1) or len(donors) <= 1:
+                    break
+                drop = donors[-1]
             # Scrub on the way in. This function runs AFTER the last
             # scrub_services pass, so a seed added here is the only service that
             # never gets cleaned — which is exactly how "bbq grill store
@@ -2698,7 +2707,7 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                         "_topic": lab})
             report.append({"added": name, "topic": lab,
                            "replaced": drop.get("service", ""),
-                           "from_topic": donor_lab})
+                           "from_topic": drop.get("_topic") or "unclaimed"})
     for x in out:
         x.pop("_topic", None)
     return out, report
