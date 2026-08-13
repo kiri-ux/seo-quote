@@ -4435,6 +4435,16 @@ function step1Grid(kw){
 
   // ---------- folded: how this list was built ----------
 
+  // THE BUILD RE-TIERS BY MEASURED VOLUME AND STOPPED SAYING SO. The server has
+  // sent tier_moves all along; the line that rendered it was lost in the Step 1
+  // rewrite, so a reconciliation that changes the tier MIX — and the tier mix is
+  // an input to the price — happened silently. tiers.js had been printing
+  // "(not found)" ever since and nobody read past its errors line. (2026-08-13)
+  if(kw.tier_moves&&kw.tier_moves.length){
+    const T={ultra:'Ultra',competitive:'Competitive',long_tail:'Long Tail'};
+    const nm=t=>T[t]||t||'unsorted';
+    notes.push(`<div class="nf" style="margin-top:4px">\u2696 <b>${kw.tier_moves.length} service${kw.tier_moves.length===1?'':'s'} re-tiered by measured demand</b>${tipOf(kw.tier_moves.slice(0,14).map(m=>escapeHtml(String(m.service||''))+' &mdash; '+escapeHtml(nm(m.from))+' \u2192 '+escapeHtml(nm(m.to))+' ('+Number(m.volume||0).toLocaleString()+'/mo)').join('<br>')+'<br><br>The AI proposes a tier per service; this ranks them by the volume actually measured and reconciles the two, keeping the tier COUNTS the mix asked for. It moves the mix, and the mix feeds the price &mdash; so it is on the record rather than implied.')}</div>`);
+  }
   if(kw.near_me_added&&kw.near_me_added.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4CD} <b>${kw.near_me_added.length} “near me” term${kw.near_me_added.length>1?'s':''} added</b> — ${kw.near_me_added.map(x=>escapeHtml(x[0])+' ('+Number(x[1]).toLocaleString()+'/mo)').join(' · ')}${tipOf('Measured like any other term, so a form nobody searches never reaches the list. These carry no city because Google resolves &quot;near me&quot; from the location of the person searching, which is why they sit outside the city grid.')}</div>`);
 
   // Silenced when the budget went to services: the axis line above already

@@ -493,7 +493,22 @@ CFG = {
     "geo_min_term_months": 12,                # legacy card mode only
     "ai_search_uplift_pct": 75,               # legacy flat-pct mode only
     "ecom_anchor_add": 0,                     # RETIRED 2026-07-25 (Brendan): ecommerce carries no anchor add
-    "tier_step_flat": 700,                    # hard-cost $ per tier; null -> use step_ratio
+    # CALIBRATED ON BE'S SIX FLOOR-BOUND PROPOSALS (2026-08-13). 700 produced a
+    # $900 client step; BE steps $1,000 in four of the six quotes whose base sits
+    # on the $2,950 floor (Nob Hill, Keller, Visit Central PA, Red Shoes), $900 in
+    # one (Junk Bee Gone) and $1,110 in the last (Media Venue). 750 gives $1,000.
+    # Scored by pricebench.py: total error on Intermediate + Advanced 1,790 -> 590,
+    # exact ladders 1 of 6 -> 4 of 6. The cost is Junk Bee Gone, which was the
+    # exact match and is now $100/$200 high — a deliberate trade of one match for
+    # four. Only the FLAT path moves: manual overrides and the nationwide card
+    # step on step_ratio and are untouched (verified both ways).
+    #
+    # This is why "too low" got worse up the ladder — NPAIHB read -17% at base and
+    # -20% at advanced. It does NOT lift a base off the floor; nothing measurable
+    # in BE's proposals separates his $2,950 clients from his $3,550 ones (Nob Hill
+    # and Amare Homes are both 20 terms, one city, 80% not ranking, and $600
+    # apart), so that gap stays a judgement call on the override.
+    "tier_step_flat": 750,                    # hard-cost $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
     # CALIBRATED ON 12 BE PROPOSALS (2026-08-10). His base has never gone below
