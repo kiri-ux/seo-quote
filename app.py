@@ -3394,7 +3394,7 @@ def demote_nonservices(seeds, kinds, markets=None, state=""):
             n = seed_norm(t, markets, state)
             if n:
                 k = kinds.get(n) or kinds.get(n.strip().lower())
-        if k:
+        if k and k.get("kind") in ("item", "other_business"):
             demoted.append({"term": t, "kind": k.get("kind", "item"),
                             "why": k.get("why", "")})
         else:
@@ -3459,7 +3459,15 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     # so keying "demolition services" gives one token and the penalty below would
     # hand its group to "shed demolition" (90/mo) over the real label (880/mo).
     ntok = lambda t: len((t or "").split())                # noqa: E731
-    ranked = sorted(clean, key=lambda t: (ntok(t) < 2, -vol(t), order[t]))
+    # THE CLIENT'S OWN NOUN OUTRANKS A NEIGHBOUR'S BIGGER NUMBER. Amare typed
+    # thirteen "homes for rent" seeds and got a quote made of apartments, because
+    # "apartments for rent" measures 90/mo and "3 bedroom homes for rent" measures
+    # 10 — so volume alone spent every slot on a product they do not rent. Not a
+    # filter: an adjacent term still gets quoted when slots remain, which is how
+    # Brendan's own list carries two apartment terms among eighteen homes.
+    # (2026-08-13)
+    adj = lambda t: 1 if (kinds.get(t) or {}).get("kind") == "adjacent" else 0
+    ranked = sorted(clean, key=lambda t: (adj(t), ntok(t) < 2, -vol(t), order[t]))
     groups = []                                   # [{"keep":t, "fold":[t,...], "key":set}]
     for t in ranked:
         # A seed made entirely of shape words ("services", "near me") keys to the
@@ -3493,6 +3501,7 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
                    for g in groups if g["fold"] and g["keep"] in keptset],
         "folded_total": sum(len(g["fold"]) for g in groups),
         "demoted": demoted,
+        "adjacent": [t for t in clean if adj(t)],
         "limit": limit, "total": len(clean) + len(demoted), "measured": measured,
         "basis": "US national" if national or not markets else "targeted cities",
         "error": err or "",
@@ -5471,8 +5480,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # tribes the heading miner scraped off npaihb.org became the quote.
         # claude_seed_kinds is an Anthropic call; the gate never applied to it.
         # (2026-08-12)
+        _kinds = {}
         if seeds:
-            _kinds = {}
             try:
                 _kinds = claude_seed_kinds(
                     seeds, brand, domain, industry, biz, site_pages,
@@ -5490,7 +5499,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     seeds = _keep
         if seeds and len(seeds) > _slots:
             _sr = rank_seeds(seeds, markets, state, national=national_demand,
-                             limit=len(seeds))
+                             limit=len(seeds), kinds=_kinds)
             if _sr.get("measured"):
                 _ordered = [r["term"] for r in _sr["kept"]]
                 _folded = [f["term"] for g in _sr["folded"] for f in g["fold"]]
@@ -5507,6 +5516,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 if _ordered:
                     seed_ranking = {
                         "basis": _sr.get("basis", ""),
+                        "adjacent": _sr.get("adjacent") or [],
                         "order": [[r["term"], r["volume"]] for r in _sr["kept"]],
                         "folded": _sr.get("folded") or [],
                         "was": list(seeds),
@@ -9862,6 +9872,22 @@ EVERY term as exactly one of:
                      "furniture movers" for a junk removal company; "roofing"
                      for a plumber. Also use this for a competitor's company name.
 
+Then, SEPARATELY, mark each term's vocabulary as "client" or "adjacent":
+
+  "client"   - it uses the words this client uses for what they sell. THE NORMAL
+               CASE.
+  "adjacent" - a real, searched term for the NEIGHBOURING product type, which
+               this client does not actually offer. They may still be worth
+               quoting, so this is not a rejection - it decides ORDER when there
+               are more terms than slots.
+
+Amare Homes is the case: a build-for-rent community of detached single-family
+homes. "3 bedroom homes for rent" is client vocabulary; "studio apartments" and
+"apartment leasing" are adjacent - more searched, but they do not rent
+apartments and will never rank for them. Ranking on volume alone put fourteen
+apartment terms in the quote and dropped every homes-for-rent term the partner
+had typed. (2026-08-13)
+
 Rules:
 - Default to "service". These three buckets are not balanced: most terms are
   services, and "item" is the rare case.
@@ -9875,11 +9901,14 @@ Rules:
 - Never say "item" when the phrase already contains the work ("mattress removal",
   "tv disposal", "appliance pickup") - that is a service whatever the client is.
 - "why" must be under 12 words and say what the term actually is.
+- "vocab" is about WORDING, not quality. Most terms are "client". Only mark
+  "adjacent" when the term names a different product type from the one the
+  business above describes.
 
 TERMS: {json.dumps(terms, ensure_ascii=False)}
 
 Return ONLY JSON:
-{{"terms": [{{"term": "old tvs", "kind": "item", "why": "an object, not work the company performs"}}]}}"""
+{{"terms": [{{"term": "old tvs", "kind": "item", "vocab": "client", "why": "an object, not work the company performs"}}]}}"""
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -9908,7 +9937,14 @@ Return ONLY JSON:
     for it in raw:
         t = str((it or {}).get("term") or "").strip().lower()
         k = str((it or {}).get("kind") or "").strip().lower()
-        if not t or k not in ("item", "other_business"):
+        if not t:
+            continue
+        # Vocabulary is recorded for EVERY term, including the ones whose kind is
+        # unremarkable — it decides seed order, not membership.
+        if str((it or {}).get("vocab") or "").strip().lower() == "adjacent":
+            out[t] = {"kind": "adjacent",
+                      "why": str((it or {}).get("why") or "")[:90]}
+        if k not in ("item", "other_business"):
             continue
         if k == "item" and sells_products:
             continue

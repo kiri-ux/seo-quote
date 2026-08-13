@@ -4487,6 +4487,8 @@ function step1Grid(kw){
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b>, not theirs to sell — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''}${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
   }
   const sr=kw.seed_ranking||{};
+  // Sorted, not removed — they fill the tail when slots remain. (2026-08-13)
+  if((sr.adjacent||[]).length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D0} <b>${sr.adjacent.length} term${sr.adjacent.length===1?'':'s'} sorted below the client's own wording</b>${tipOf('A neighbouring product type: searched, but not what this client sells, so it loses a slot to their own vocabulary before it loses one to anything else. Not removed &mdash; still quoted if the grid has room.<br><br>'+sr.adjacent.slice(0,20).map(escapeHtml).join(' &middot; '))}</div>`);
   // A quote saved before the build started ranking seeds carries no seed_ranking
   // at all, and its overflow is still arbitrary — report it rather than going
   // quiet on restored work.
