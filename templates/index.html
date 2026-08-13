@@ -2863,9 +2863,11 @@ function focusHtml(){
       <td style="padding:4px 10px 4px 0">${s.tag}</td>
       <td style="padding:4px 0" class="nf">${bits.join(' · ')||'—'}${s.cpc?` · CPC ~$${s.cpc.toFixed(0)}`:''}</td></tr>`;
   }).join('');
-  return `<details style="border:2px solid var(--gold);background:#fffaf0;border-radius:10px;padding:11px 13px;margin:12px 0">
+  // Gold + amber is this app's warning palette, and this panel is a reading aid,
+  // not a problem. Neutral card treatment instead. (2026-08-13)
+  return `<details style="border:1px solid var(--line);background:var(--info-bg);border-radius:10px;padding:11px 13px;margin:12px 0">
   <summary style="cursor:pointer;user-select:none;list-style:none">
-    <span style="font-size:11px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.5px">Internal read — not used in proposals</span>
+    <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Internal read — not used in proposals</span>
     <span class="nf" style="font-size:11.5px"> · ${top.length} service${top.length===1?'':'s'} ranked</span>
     <h4 class="sec" style="margin:2px 0 0;display:inline-block">Recommended focus <span class="nf">(demand × rank opportunity × click value)</span></h4>
   </summary>
@@ -4735,6 +4737,8 @@ function step1Grid(kw){
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
     notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):''}</div>`);
   }
+  const _sf=kw.seeds_folded||[];
+  if(_sf.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F500} <b>${_sf.length} duplicate focus term${_sf.length===1?'':'s'} folded</b>${tipOf(_sf.slice(0,14).map(x=>escapeHtml(String(x[0]))+' &rarr; '+escapeHtml(String(x[1]))).join('<br>')+'<br><br>One service line cannot take two grid slots. Singular/plural and containment count as the same term.')}</div>`);
   const sr=kw.seed_ranking||{};
   // Sorted, not removed — they fill the tail when slots remain. (2026-08-13)
   if((sr.adjacent||[]).length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D0} <b>${sr.adjacent.length} term${sr.adjacent.length===1?'':'s'} sorted below the client's own wording</b>${tipOf('A neighbouring product type: searched, but not what this client sells, so it loses a slot to their own vocabulary before it loses one to anything else. Not removed &mdash; still quoted if the grid has room.<br><br>'+sr.adjacent.slice(0,20).map(escapeHtml).join(' &middot; '))}</div>`);

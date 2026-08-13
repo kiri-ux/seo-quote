@@ -3485,6 +3485,41 @@ def demote_nonservices(seeds, kinds, markets=None, state=""):
     return keep, demoted
 
 
+def fold_seed_duplicates(seeds, markets=None, state=""):
+    """Collapse near-duplicate seeds. NO volume call — pure string work.
+
+    The fold lived inside rank_seeds(), which needs a DataForSEO lookup, so the
+    build only ran it when there were more seeds than slots. At exactly twenty
+    seeds for twenty slots the gate is false and nothing folded: Amare quoted
+    "home for rent santa fe nm" and "homes for rent santa fe nm" as two of its
+    twenty terms. Folding costs nothing; only the RANKING needs the API, so they
+    are separated. Same containment rule as everywhere else. (2026-08-13)
+
+    EQUALITY, NOT CONTAINMENT. Containment is what rank_seeds uses, and it works
+    there because measured volume picks the survivor. With no volumes it is far
+    too blunt: "home for rent" keys to {home, rent}, a subset of every qualified
+    variant, so the bare head term swallowed "homes for rent no deposit",
+    "month to month home rental" and the rest of the list. Equal keys is the case
+    this function exists for — singular/plural and word order — and the
+    broader/narrower question stays with the passes that can measure it.
+
+    Keeps the first form the operator typed. Returns (kept, [(dropped, kept_as)]).
+    """
+    kept, folded, groups = [], [], []      # groups: [(key, term)]
+    for raw in seeds or []:
+        t = seed_norm(raw, markets, state)
+        if not t:
+            continue
+        k = _seed_key(t) or frozenset({t})
+        hit = next((g for g in groups if k == g[0]), None)
+        if hit is not None:
+            folded.append((raw, hit[1]))
+            continue
+        groups.append((k, raw))
+        kept.append(raw)
+    return kept, folded
+
+
 def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     """Fold near-duplicate seeds, rank the survivors by measured demand, and
     say which ones fit the grid.
@@ -5503,6 +5538,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         cands = ultra + competitive + long_tail
         seed_ranking = {}
         seeds_demoted = []
+        seeds_folded = []
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
@@ -5578,6 +5614,12 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 if _dem:
                     seeds_demoted = _dem
                     seeds = _keep
+        # FOLD ALWAYS; RANK ONLY WHEN IT DECIDES SOMETHING. (2026-08-13)
+        if seeds:
+            _fk, _ff = fold_seed_duplicates(seeds, markets, state)
+            if _ff and _fk:
+                seeds_folded = [[a, b] for a, b in _ff]
+                seeds = _fk
         if seeds and len(seeds) > _slots:
             _sr = rank_seeds(seeds, markets, state, national=national_demand,
                              limit=len(seeds), kinds=_kinds)
@@ -6240,6 +6282,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
             "seeds_demoted": seeds_demoted,
+            "seeds_folded": seeds_folded,
             # HOW FULL THE GRID IS. NPAIHB had room for 20 services and got 9 — a
             # 9-keyword quote against BE's 20 for the same client — and the panel
             # said nothing, because every check was about whether the terms were
@@ -7753,6 +7796,7 @@ def api_refine():
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
         "seeds_demoted": s1.get("seeds_demoted") or [],
+        "seeds_folded": s1.get("seeds_folded") or [],
         "service_slots": s1.get("service_slots") or 0,
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
