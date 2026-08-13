@@ -451,6 +451,11 @@
     <label>Product / Vertical Focus<span class="req">*</span></label>
     <div class="help">Products or services this client wants to focus SEO on. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="kw"><input type="text" id="kw_in" placeholder="deck building, pergola installation"></div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+      <label class="switch" style="flex:0 0 auto"><input type="checkbox" id="autoExpand" checked><span class="slider"></span></label>
+      <span style="font-size:12.5px"><b>Expand on provided Product / Vertical Focus terms</b>
+        <span class="nf" id="autoExpandHint">— runs with Build keyword list and adds what it finds</span></span>
+    </div>
     <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest services</button> <span class="nf" style="font-size:11.5px">reads their site, then names what this industry sells that isn't listed</span></div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
@@ -1526,6 +1531,41 @@ async function runRankedKeywords(){
   wireSvcChips(box);
 }
 
+// EXPAND BEFORE BUILDING, ON BY DEFAULT. Three sources sat behind one button and
+// then behind a chip-click each: reading the site, asking the industry, and reading
+// what the client already ranks for. On Amare that was a click plus fourteen more
+// to accept what the tool had already decided was worth having. With the toggle on
+// the build runs all three first and takes everything they offered.
+//
+// It takes the CHIPS the panels rendered rather than the raw responses, so what
+// gets added is exactly what you would have seen and clicked — the dedupe, the
+// volume floor and the not-a-service gate all still apply, and this cannot drift
+// from them. (2026-08-13)
+async function runAllSuggestions(){
+  const before=(stores.kw||[]).length;
+  // Each awaited explicitly: runSuggestServices fires the industry pass without
+  // awaiting it, so relying on that alone read the chips before they existed.
+  await Promise.all([
+    runSuggestServices(true).catch(()=>{}),
+    runExpandServices().catch(()=>{}),
+    runRankedKeywords().catch(()=>{}),
+  ]);
+  const boxes=['siteSvcOut','expandSvcOut','rankedKwOut']
+    .map(id=>document.getElementById(id)).filter(Boolean);
+  const added=[];
+  for(const box of boxes){
+    for(const ch of box.querySelectorAll('.svc-chip')){
+      const v=(ch.getAttribute('data-label')||'').toLowerCase();
+      if(v && !stores.kw.includes(v)){ stores.kw.push(v); added.push(v); }
+    }
+  }
+  if(added.length){
+    PILL_RENDER.kw();
+    try{ scheduleAutoSave(); }catch(e){}
+  }
+  return {added, before, after:(stores.kw||[]).length};
+}
+
 // ---- suggest services from the client site's nav menu ----
 async function runSuggestServices(auto){
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
@@ -1854,6 +1894,17 @@ $('step1').addEventListener('click', async()=>{
       <summary style="cursor:pointer;user-select:none"><b>✈ Pre-flight suggestions (${tips.length})</b> <span class="nf">— patterns from actual proposals; the run continues either way. Click to expand.</span></summary>
       <ul style="margin:6px 0 0 18px;padding:0">${tips.map(t=>`<li style="margin:3px 0">${t}</li>`).join('')}</ul></details>`);
   }
+  const _auto=$('autoExpand');
+  if(_auto && _auto.checked){
+    $('step1').disabled=true; $('step1').textContent='Expanding your terms…';
+    panel('p1','<p style="color:var(--muted)">Reading their site, the industry, and what they already rank for…</p>');
+    try{ aimAtList(true); }catch(e){}
+    try{
+      const ex=await runAllSuggestions();
+      ST.autoExpanded=ex.added;
+      if(ex.added.length) inp.keywords=stores.kw.slice();
+    }catch(e){ ST.autoExpanded=[]; }
+  }else{ ST.autoExpanded=[]; }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
   // The Build button sits at the BOTTOM of a long form and the list appears at the
@@ -4548,6 +4599,8 @@ function step1Grid(kw){
     const word=k=>k==='other_business'?'a different business':'an object, not work they perform';
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b>, not theirs to sell — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''}${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
   }
+  const _ax=(typeof ST!=='undefined' && ST.autoExpanded)||[];
+  if(_ax.length) notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>${_ax.length} term${_ax.length===1?'':'s'} added by Expand before building</b>${tipOf('From their site, the industry pass and what they already rank for &mdash; everything those panels offered. Turn <b>Expand on provided Product / Vertical Focus terms</b> off to choose by hand.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; '))}</div>`);
   const sr=kw.seed_ranking||{};
   // Sorted, not removed — they fill the tail when slots remain. (2026-08-13)
   if((sr.adjacent||[]).length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D0} <b>${sr.adjacent.length} term${sr.adjacent.length===1?'':'s'} sorted below the client's own wording</b>${tipOf('A neighbouring product type: searched, but not what this client sells, so it loses a slot to their own vocabulary before it loses one to anything else. Not removed &mdash; still quoted if the grid has room.<br><br>'+sr.adjacent.slice(0,20).map(escapeHtml).join(' &middot; '))}</div>`);
