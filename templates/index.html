@@ -467,8 +467,6 @@
     <label>Search-phrase geos <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
     <div class="help">Regional names people actually search but that aren't real map locations — "south jersey", "fox cities", "northeast wisconsin". These cross into keyword text like any city ("it support south jersey") but never touch a location lookup: no volume, no validation, no rank-check geography. In adtini this is its own free-text field beside the validated geo pickers.</div>
     <div class="pillbox" data-for="spgeo"><input type="text" id="spgeo_in" placeholder="south jersey, fox cities"></div>
-    <button id="spgeo_suggest" style="margin-top:8px;background:#fff;color:var(--velocity);border:1px solid var(--velocity);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest from markets</button>
-    <span class="help" style="display:inline;margin-left:8px">proposes the regional names locals use, then keeps only the ones with real search volume behind your first focus term</span>
     <div id="spgeo_out" style="margin-top:8px"></div>
 
     <div class="toggle-row" style="margin-top:10px">
@@ -4150,46 +4148,9 @@ $('kwlock').addEventListener('change',()=>{
   }
 });
 
-$('spgeo_suggest').addEventListener('click', async()=>{
-  const btn=$('spgeo_suggest'), out=$('spgeo_out');
-  const geos=(stores.geo||[]), kws=(stores.kw||[]);
-  btn.disabled=true; btn.textContent='Checking…';
-  out.innerHTML='<span class="nf" style="font-size:12.5px">Proposing names, then measuring each one against real search volume…</span>';
-  try{
-    const r=await postJSON('/api/suggest_regions',{
-      geo_values:geos, state:$('state')?$('state').value:'',
-      keywords:kws, brand:($('brand')?$('brand').value:''),
-      business_desc:($('business_desc')?$('business_desc').value:'')});
-    let h='';
-    if(r.regions&&r.regions.length){
-      h+=`<div class="nf" style="font-size:12.5px;margin-bottom:5px">Tested as “${escapeHtml(r.tested_with||'')} + region”. Click to add:</div>`;
-      h+=r.regions.map(x=>`<button class="strat spgeo_add" data-n="${escapeHtml(x.name)}" style="margin:0 6px 6px 0">+ ${escapeHtml(x.name)} <span class="nf">(${Number(x.volume).toLocaleString()}/mo)</span></button>`).join('');
-    }
-    // ONE FACT, ONCE. The rejected list and r.note were the same sentence twice:
-    // "Not added — too little search volume with a service attached: northern new
-    // mexico (0/mo)." then "Suggested northern new mexico — but none reach 10 a
-    // month with 'apartments for rent' attached." (2026-08-13)
-    if(r.rejected&&r.rejected.length){
-      const names=r.rejected.map(x=>escapeHtml(x.name)+(x.volume==null?'':` (${x.volume}/mo)`)).join(', ');
-      h+=`<div class="nf" style="font-size:12px;margin-top:4px">Too thin to quote: ${names}${tipOf('Each region was measured with your first focus term attached, which is how it would appear in a keyword. Under 10 searches a month that way, it is not worth a grid slot.'+(r.note?'<br><br>'+escapeHtml(r.note):''))}</div>`;
-    }else if(r.note){
-      h+=`<div class="nf" style="font-size:12.5px;margin-top:4px">${escapeHtml(r.note)}</div>`;
-    }
-    out.innerHTML=h||'<span class="nf" style="font-size:12.5px">Nothing to suggest.</span>';
-    out.querySelectorAll('.spgeo_add').forEach(b=>b.onclick=()=>{
-      const v=b.dataset.n;
-      if(!stores.spgeo.includes(v)){
-        stores.spgeo.push(v);
-        try{ PILL_RENDER.spgeo(); }catch(e){}
-        try{ scheduleAutoSave(); }catch(e){}
-      }
-      b.remove();
-    });
-  }catch(e){
-    out.innerHTML='<span class="err" style="display:block;font-size:12.5px">Couldn\u2019t check regions: '+escapeHtml(String(e&&e.message||e))+'</span>';
-  }
-  btn.disabled=false; btn.textContent='✦ Suggest from markets';
-});
+// Button removed 2026-08-13 — runAllSuggestions() calls /api/suggest_regions with
+// the build and adds every region that carries real volume.
+
 
 // Steps 2 and 3 localise to one market. Step 1 already worked out which one
 // carries the most demand for this client's service, so use that answer
@@ -5204,7 +5165,10 @@ function scopeSuggestionHtml(sg){
   if(!sug){
     return `<div class="nf" style="font-size:12px;margin-top:3px">\u{1F9ED} ${escapeHtml(sg.reason)}</div>`;
   }
+  // A MATCH IS NOT NEWS. The band agreeing with the markets is the normal case and
+  // needs no box; only the disagreement is worth a line. (2026-08-13)
   const agrees = cur===sug;
+  if(agrees) return '';
   const head = agrees
     ? `✓ <b>Geo scope matches the markets</b> — ${escapeHtml(SCOPE_LABEL[sug]||sug)}.`
     : `⚠ <b>Markets suggest ${escapeHtml(SCOPE_LABEL[sug]||sug)}</b>, not ${escapeHtml(SCOPE_LABEL[cur]||cur||'—')} <button type="button" id="applyScope" class="btn2" style="padding:2px 9px;font-size:11.5px;margin-left:4px">Use ${escapeHtml(SCOPE_LABEL[sug]||sug)}</button>`;
