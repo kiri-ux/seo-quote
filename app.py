@@ -652,6 +652,11 @@ CFG = {
     "near_me_probe_cap": 12,
     # Monthly searches a proposed extra service must clear to be offered.
     "expand_min_volume": 20,
+    # Above this multiple of the floor a vertical has real demand somewhere, so
+    # the sub-floor terms are genuinely the dregs and the floor should hold. Below
+    # it the whole market is small and the floor is refusing the only terms that
+    # exist — Santa Fe apartment rentals top out at 90/mo. (2026-08-13)
+    "expand_thin_market_mult": 10,
     "near_me_min_volume": 30,
     "axis_city_volume_floor": 20,
     "axis_min_seeds_for_services": 8,
@@ -10454,6 +10459,27 @@ def api_expand_services():
     good, folded_rows = fold_proposals([r for r in rows if r["volume"] >= floor],
                                        seeds=(d.get("seeds") or []),
                                        markets=([] if nat else markets), state=state)
+    # IS THIS A THIN MARKET, OR A THIN PROPOSAL SET? The panel could already relax
+    # the floor when the CLIENT'S OWN built list came in under it — but on Amare
+    # Homes no build existed yet, which is exactly when the operator is assembling
+    # seeds and the floor is silently withholding the whole vertical. It offered
+    # one term (apartments for rent, 90/mo) and held back the ten Brendan actually
+    # quoted on.
+    #
+    # The candidate pool answers it with no build needed. Two conditions, and the
+    # second is what stops a FAT client's junk tail triggering this: the typical
+    # candidate must be under the floor, AND the best term the vertical has in
+    # this market must itself be small. Santa Fe apartments top out at 90/mo, so
+    # 10/mo is the tail of a small market. Junk removal in Knoxville tops out at
+    # 2,400/mo, so 10/mo is noise and the floor stands. (2026-08-13)
+    _v = sorted(r["volume"] for r in rows)
+    _typ = _best = 0
+    thin_market = False
+    if _v:
+        _typ = _v[len(_v) // 2]
+        _best = _v[-1]
+        _mult = float(CFG.get("expand_thin_market_mult", 10) or 10)
+        thin_market = bool(_typ < floor and _best < floor * _mult)
     return jsonify({"services": good,
                     "folded": [r["term"] for r in folded_rows],
                     "rejected": [r for r in rows if r["volume"] < floor],
@@ -10461,6 +10487,8 @@ def api_expand_services():
                     # the quote it is protecting?" — NPAIHB's own terms run at
                     # 8/mo and this refused eight at under 20. (2026-08-12)
                     "floor": floor,
+                    "thin_market": thin_market,
+                    "market_typical": _typ, "market_best": _best,
                     "basis": "US national" if nat else "targeted cities",
                     "error": verr})
 

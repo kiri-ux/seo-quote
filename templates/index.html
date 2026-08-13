@@ -1143,13 +1143,23 @@ function listTypicalVolume(){
   if(!v.length) return null;
   return v[Math.floor(v.length/2)];
 }
-function thinFloorHtml(bad, floor, typ){
+function thinFloorHtml(bad, floor, typ, mkt){
   if(!bad.length) return '';
+  // TWO REASONS TO RELAX, AND THEY APPLY AT DIFFERENT MOMENTS. The client's own
+  // built list being thin only exists AFTER a build; the market being thin is
+  // knowable from the proposals themselves, which is the case that matters while
+  // the operator is still assembling seeds. Amare Homes hit exactly that gap.
+  // (2026-08-13)
+  const thinMkt = !!(mkt && mkt.thin_market);
   const chip=x=>`<span class="svc-chip" data-label="${escapeHtml(String(x.term||''))}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px dashed #c9a227;color:#7a6410;font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(String(x.term||''))} <span class="nf" style="font-size:10.5px">(${Number(x.volume||0).toLocaleString()}/mo)</span></span>`;
-  if(typ===null || typ>=floor)
+  const own = (typ!==null && typ<floor);
+  if(!own && !thinMkt)
     return `<div class="nf" style="font-size:11px;margin-top:3px">Below ${floor}/mo, not offered: ${bad.slice(0,10).map(x=>escapeHtml(String(x.term||''))).join(' · ')}</div>`;
+  const why = own
+    ? `this client's own terms run at <b>${Number(typ).toLocaleString()}/mo</b>, so the floor is refusing terms no thinner than the quote itself`
+    : `the best term this vertical has in your market is <b>${Number((mkt||{}).market_best||0).toLocaleString()}/mo</b>, so the floor is refusing most of a small market rather than filtering noise out of a big one`;
   return `<div id="thinFloorBox" style="margin-top:6px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;padding:7px 10px;font-size:12.5px">
-    <div class="nf" style="font-size:11.5px">⚠ <b>${bad.length} service line${bad.length===1?'':'s'} held back by the ${floor}/mo floor</b> — but this client's own terms run at <b>${Number(typ).toLocaleString()}/mo</b>, so the floor is refusing terms no thinner than the quote itself. Click to add as a seed.${tipOf('The floor exists to stop a fat client&rsquo;s list filling with noise. On a client this thin it removes the only service lines available &mdash; and the AI expansion then reaches for the same phrases anyway, which is how a list of &ldquo;no data&rdquo; terms gets built while this panel reports nothing to add. Volumes shown are what they measured, not estimates.')}</div>
+    <div class="nf" style="font-size:11.5px">⚠ <b>${bad.length} service line${bad.length===1?'':'s'} held back by the ${floor}/mo floor</b> — but ${why}. Click to add as a seed.${tipOf('The floor exists to stop a fat client&rsquo;s list filling with noise, and it is measured against this client rather than applied flat. Two things can relax it: the client&rsquo;s own built list coming in under it, or the whole vertical topping out near it in this market. A client with real demand somewhere keeps the floor, because there the sub-floor terms really are the dregs. Volumes shown are what they measured, not estimates.')}</div>
     ${bad.slice(0,14).map(chip).join('')}
   </div>`;
 }
@@ -1176,10 +1186,10 @@ async function runExpandServices(){
       return;
     }
     if(!good.length){
-      const thin=thinFloorHtml(bad, floor, typ);
+      const thin=thinFloorHtml(bad, floor, typ, r);
       // "Nothing clears the floor" is only the whole story when the floor is
       // above this client's own ground. When it isn't, the terms ARE the answer.
-      out.innerHTML=(typ!==null && typ<floor && bad.length)
+      out.innerHTML=(bad.length && ((typ!==null && typ<floor) || r.thin_market))
         ? thin
         : `<div class="nf" style="font-size:12px">Nothing missing clears the volume floor${bad.length?` — tried ${bad.slice(0,8).map(x=>escapeHtml(x.term)).join(', ')}`:''}${r.error?' ('+escapeHtml(r.error)+')':''}.</div>`;
       const tb=document.getElementById('thinFloorBox');
@@ -1197,7 +1207,7 @@ async function runExpandServices(){
     }
     out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.${((r.folded||[]).length||(good.length-fresh.length))?` <span style="opacity:.8">${(r.folded||[]).length+(good.length-fresh.length)} near-duplicate${((r.folded||[]).length+(good.length-fresh.length))===1?'':'s'} folded out.</span>`:''}</div>`
       + fresh.map(x=>`<span class="svc-chip" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
-      + thinFloorHtml(bad, floor, typ);
+      + thinFloorHtml(bad, floor, typ, r);
     wireSvcChips(out, ':scope > .svc-chip');
     const tb=document.getElementById('thinFloorBox');
     if(tb) wireSvcChips(tb);
