@@ -8942,6 +8942,10 @@ def api_markets():
         # The band the markets themselves imply. A suggestion, not an
         # assignment: the operator's dropdown still picks the pricing anchor.
         "scope_suggestion": suggest_geo_scope(mk, state, _nat, _nat_why),
+        # How many service slots this many markets buys. Expand needs it to know
+        # when to stop: 51 seeds for 20 slots is 31 terms nobody will ever quote.
+        # (2026-08-13)
+        "service_slots": services_needed(len(mk)),
     })
 
 

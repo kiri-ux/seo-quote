@@ -1173,7 +1173,7 @@ function thinFloorHtml(bad, floor, typ, mkt){
   // the operator is still assembling seeds. Amare Homes hit exactly that gap.
   // (2026-08-13)
   const thinMkt = !!(mkt && mkt.thin_market);
-  const chip=x=>`<span class="svc-chip" data-label="${escapeHtml(String(x.term||''))}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px dashed #c9a227;color:#7a6410;font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(String(x.term||''))} <span class="nf" style="font-size:10.5px">(${Number(x.volume||0).toLocaleString()}/mo)</span></span>`;
+  const chip=x=>`<span class="svc-chip" data-vol="${Number(x.volume||0)}" data-src="floor" data-label="${escapeHtml(String(x.term||''))}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px dashed #c9a227;color:#7a6410;font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(String(x.term||''))} <span class="nf" style="font-size:10.5px">(${Number(x.volume||0).toLocaleString()}/mo)</span></span>`;
   // A "best term" of 0/mo is not a readable sentence. (2026-08-13)
   const best = Number((mkt||{}).market_best||0);
   const own = (typ!==null && typ<floor);
@@ -1230,7 +1230,7 @@ async function runExpandServices(){
       return;
     }
     out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.${((r.folded||[]).length||(good.length-fresh.length))?` <span style="opacity:.8">${(r.folded||[]).length+(good.length-fresh.length)} near-duplicate${((r.folded||[]).length+(good.length-fresh.length))===1?'':'s'} folded out.</span>`:''}</div>`
-      + fresh.map(x=>`<span class="svc-chip" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
+      + fresh.map(x=>`<span class="svc-chip" data-vol="${Number(x.volume||0)}" data-src="industry" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
       + thinFloorHtml(bad, floor, typ, r);
     wireSvcChips(out, ':scope > .svc-chip');
     const tb=document.getElementById('thinFloorBox');
@@ -1363,7 +1363,7 @@ function renderSvcChips(data, out){
   const chips=data.services.map((s,i)=>{
       const term=(s.term||s.label).toLowerCase();
       const showLabel=s.label && s.label.toLowerCase()!==term;
-      return `<span class="svc-chip" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
+      return `<span class="svc-chip" data-vol="0" data-src="menu" data-label="${term.replace(/"/g,'&quot;')}" title="${showLabel?('menu item: '+s.label.replace(/"/g,'&quot;')+' — '):''}${s.service_path?'from a services/markets link':'from the nav menu'}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px ${s.service_path?'solid var(--atlas)':'dashed #9db3c8'};color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${s.service_path?'★ ':''}${term}${showLabel?`<span class="nf" style="font-size:10.5px"> · ${s.label}</span>`:''}</span>`;
     }).join('');
   out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">${data.from_sitemap?'Menu is JavaScript-rendered, so these came from the site\'s <b>sitemap</b> page structure instead. ':''}${data.from_headings?'Nav menu was generic (Work/About/Contact), so these came from the page\'s <b>service headings</b> instead. ':''}${data.ai_refined?'Converted to how customers actually search — hover a chip to see the original. ':'⚠ AI unavailable — showing raw labels; edit them into search phrases. '}Click to add as a seed; ★ came from a services/markets link. These cross with your cities like any other seed.${(()=>{
       // ONE VOICE. Near-duplicates and things that are not this client's to sell
@@ -1516,7 +1516,7 @@ async function runRankedKeywords(){
   }
   const chip=x=>{
     const pos=x.position, hot=pos&&pos<=20;
-    return '<span class="svc-chip" data-label="'+escapeHtml(String(x.bare||x.term)).replace(/"/g,'&quot;')+'"'
+    return '<span class="svc-chip" data-vol="'+Number(x.volume||0)+'" data-rank="'+(pos||0)+'" data-src="ranked" data-label="'+escapeHtml(String(x.bare||x.term)).replace(/"/g,'&quot;')+'"'
       +' title="'+escapeHtml('ranks #'+(pos||'?')+' for “'+x.term+'”')+'"'
       +' style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid '+(hot?'var(--atlas)':'#9db3c8')+';color:var(--atlas);font-size:12.5px;cursor:pointer;background:'+(hot?'#eef4fb':'#fff')+'">'
       +escapeHtml(String(x.bare||x.term))
@@ -1568,13 +1568,34 @@ async function runAllSuggestions(){
   }catch(e){}
   const boxes=['siteSvcOut','expandSvcOut','rankedKwOut']
     .map(id=>document.getElementById(id)).filter(Boolean);
-  const added=[];
+  // STOP AT THE SLOT COUNT, BEST FIRST. Taking everything grew Amare to 51 seeds
+  // for 20 slots — 31 terms nobody will ever quote, and the gap-finder had started
+  // permuting features (with dishwasher, with carport, with laundry room) all at
+  // 0/mo. Brendan's list is twenty terms on purpose.
+  //
+  // Order: a term they ALREADY RANK for first, because a position is proof the
+  // rest of the list only has demand for; then measured volume; then their own
+  // site's menu, which carries no volume but is the client's own taxonomy.
+  // (2026-08-13)
+  const cand=[];
+  const seen=new Set((stores.kw||[]).map(v=>String(v).toLowerCase()));
   for(const box of boxes){
     for(const ch of box.querySelectorAll('.svc-chip')){
       const v=(ch.getAttribute('data-label')||'').toLowerCase();
-      if(v && !stores.kw.includes(v)){ stores.kw.push(v); added.push(v); }
+      if(!v || seen.has(v)) continue;
+      seen.add(v);
+      cand.push({v, vol:Number(ch.getAttribute('data-vol')||0),
+                 rank:Number(ch.getAttribute('data-rank')||0),
+                 src:ch.getAttribute('data-src')||''});
     }
   }
+  cand.sort((a,b)=> (b.rank?1:0)-(a.rank?1:0) || (a.rank&&b.rank ? a.rank-b.rank : 0)
+                 || b.vol-a.vol
+                 || (a.src==='menu'?0:1)-(b.src==='menu'?0:1));
+  const room=Math.max(0, (ST.serviceSlots||20) - (stores.kw||[]).length);
+  const added=[];
+  for(const c of cand.slice(0, room)){ stores.kw.push(c.v); added.push(c.v); }
+  const heldBack=cand.length-added.length;
   // NOT HERE. With the toggle on, these three panels paint a wall above the
   // Business description describing work that is already done — a 403 verdict, a
   // dozen greyed chips already on the list, a line about top-100 rankings. Read
@@ -1603,6 +1624,8 @@ async function runAllSuggestions(){
     PILL_RENDER.kw();
     try{ scheduleAutoSave(); }catch(e){}
   }
+  note.heldBack=heldBack;
+  note.slots=ST.serviceSlots||20;
   return {added, regions, note, before, after:(stores.kw||[]).length};
 }
 
@@ -4408,6 +4431,8 @@ async function refreshMarketSummary(){
        goal: ($('goal') ? $('goal').value : ''),
        geo_scope: ($('geo_scope') ? $('geo_scope').value : '')});
     if(seq !== _mktSeq) return;              // superseded while in flight
+    // How many services this many markets buys — Expand caps itself on it.
+    if(r.service_slots) ST.serviceSlots=Number(r.service_slots);
     const parts = (r.groups||[]).map(g=>{
       const a = escapeHtml(String(g.anchor).split(',')[0]);
       return g.size > 1
@@ -4654,6 +4679,7 @@ function step1Grid(kw){
     if(_an.floorHeld) bits.push(`${_an.floorHeld} under the volume floor`);
     if(_an.folded) bits.push(`${_an.folded} near-duplicate${_an.folded===1?'':'s'}`);
     if(_an.noRank) bits.push('no top-100 rankings');
+    if(_an.heldBack) bits.push(`${_an.heldBack} left out — no room past ${_an.slots} slots`);
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
     notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):''}</div>`);
   }
