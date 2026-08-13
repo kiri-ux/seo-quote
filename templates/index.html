@@ -454,6 +454,7 @@
     <div style="margin-top:8px"><button id="siteSvcBtn" type="button" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">✦ Suggest services</button> <span class="nf" style="font-size:11.5px">reads their site, then names what this industry sells that isn't listed</span></div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
+    <div id="rankedKwOut" style="margin-top:6px"></div>
 
     <label>Business description</label>
     <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
@@ -1482,6 +1483,49 @@ function fetchVerdict(data){
   return 'Nothing was reachable at that domain. ';
 }
 
+// WHAT THEY ALREADY RANK FOR. The other panels guess terms and then check them;
+// this reads the client's own positions and needs no keywords at all. Four of
+// Brendan's twenty Amare terms already ranked, and they are the specific ones
+// nobody guesses. Offered as chips through the same gate, so already-seeded terms
+// grey out and Add-all cannot double anything. (2026-08-13)
+async function runRankedKeywords(){
+  const box=document.getElementById('rankedKwOut');
+  const dom=(stores.sites||[])[0];
+  if(!box || !dom) return;
+  box.innerHTML='<div class="nf" style="font-size:11.5px">Reading what they already rank for…</div>';
+  let r;
+  try{
+    r=await postJSON('/api/ranked_keywords',{domain:dom, seeds:stores.kw.slice(),
+      brand:($('brand')||{}).value||'',
+      geo_values:stores.geo.slice(), state:($('state')||{}).value||''});
+  }catch(e){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">Couldn’t read their positions ('+escapeHtml(String(e.message)).slice(0,70)+').</div>';
+    return;
+  }
+  const kws=(r&&r.keywords)||[];
+  if(!kws.length){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">'
+      +(r&&r.total ? 'All '+r.total+' terms they rank for are already on your list.'
+                   : 'They don’t rank for anything in the top 100 yet.')
+      +tipOf('Read straight off their own positions &mdash; no keywords needed as input. A brand-new site returns nothing, which is itself the answer.')+'</div>';
+    return;
+  }
+  const chip=x=>{
+    const pos=x.position, hot=pos&&pos<=20;
+    return '<span class="svc-chip" data-label="'+escapeHtml(String(x.bare||x.term)).replace(/"/g,'&quot;')+'"'
+      +' title="'+escapeHtml('ranks #'+(pos||'?')+' for “'+x.term+'”')+'"'
+      +' style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid '+(hot?'var(--atlas)':'#9db3c8')+';color:var(--atlas);font-size:12.5px;cursor:pointer;background:'+(hot?'#eef4fb':'#fff')+'">'
+      +escapeHtml(String(x.bare||x.term))
+      +' <span class="nf" style="font-size:10.5px">#'+(pos||'?')+(x.volume?' · '+Number(x.volume).toLocaleString()+'/mo':'')+'</span></span>';
+  };
+  box.innerHTML='<div class="nf" style="font-size:11.5px;margin-bottom:4px">\u{1F4C8} <b>'+kws.length+' term'+(kws.length===1?'':'s')+' they already rank for</b>'
+    +(r.top20?' — '+r.top20+' in the top 20':'')
+    +(r.already_seeded?' · '+r.already_seeded+' already on your list':'')
+    +tipOf('Read off their own positions, so no keywords were needed to find them. The city is stripped on the way in because the grid appends one of its own; hover a chip for the phrase as it ranks.')+'</div>'
+    + kws.slice(0,24).map(chip).join('');
+  wireSvcChips(box);
+}
+
 // ---- suggest services from the client site's nav menu ----
 async function runSuggestServices(auto){
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
@@ -1497,6 +1541,7 @@ async function runSuggestServices(auto){
   // Both sources run: their own menu says what they sell, the industry pass says
   // what businesses like them sell that this list is missing. One question.
   runExpandServices().catch(()=>{});
+  runRankedKeywords().catch(()=>{});
   try{
     document.getElementById('brand') && document.getElementById('brand').dispatchEvent(new Event('blur'));
     const res=await fetch('/api/site_services',{method:'POST',headers:{'Content-Type':'application/json'},

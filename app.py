@@ -652,6 +652,7 @@ CFG = {
     "near_me_probe_cap": 12,
     # Monthly searches a proposed extra service must clear to be offered.
     "expand_min_volume": 20,
+    "ranked_keywords_limit": 80,   # Labs rows pulled per client
     # Above this multiple of the floor a vertical has real demand somewhere, so
     # the sub-floor terms are genuinely the dregs and the floor should hold. Below
     # it the whole market is small and the floor is refusing the only terms that
@@ -10744,6 +10745,91 @@ Return ONLY JSON:
                            == "high" else "low"),
             "why": str(got.get("why") or "")[:200],
             "sources": [str(x)[:120] for x in (got.get("sources") or [])][:5]}
+
+
+def fetch_ranked_keywords(domain, markets=None, state="", limit=None):
+    """What the client ALREADY RANKS FOR — no keywords needed as input.
+
+    The whole tool has run the other way round: guess terms, then check whether
+    they rank. Brendan's Amare list has "gated community homes for rent santa fe
+    nm" at #21 and "homes for rent with garage santa fe nm" at #19, and nobody
+    guesses those — they are read off a ranked-keywords report. Four of his twenty
+    already ranked, which is also why his nouns were right: the client's real
+    positions say "homes for rent", not "apartments".
+
+    Labs, so location_code and not location_name — 2840 is the US, and the city
+    stays INSIDE the returned phrase, which is the shape a local list wants.
+    Returns the phrase both as-found and geo-stripped, because the grid appends a
+    city of its own and would otherwise double it. (2026-08-13)
+
+    Returns [{"term", "bare", "position", "volume", "url"}], best position first.
+    """
+    dom = re.sub(r"^https?://", "", (domain or "").strip()).strip("/")
+    dom = re.sub(r"^www\.", "", dom)
+    if not dom:
+        return []
+    lim = int(limit or CFG.get("ranked_keywords_limit", 80))
+    payload = [{"target": dom, "location_code": 2840, "language_code": "en",
+                "limit": lim, "load_rank_absolute": True,
+                "order_by": ["ranked_serp_element.serp_item.rank_group,asc"],
+                "filters": [["ranked_serp_element.serp_item.rank_group", "<=",
+                             int(CFG.get("zero_ranking_top_n", 100))]]}]
+    data = dfs_post("/dataforseo_labs/google/ranked_keywords/live", payload,
+                    timeout=25)
+    task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+    if task0.get("status_code") not in (20000, None):
+        raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+    out, seen = [], set()
+    for block in (task0.get("result") or []):
+        for it in (block.get("items") or []):
+            kd = (it or {}).get("keyword_data") or {}
+            kw = str(kd.get("keyword") or "").strip().lower()
+            if not kw or kw in seen:
+                continue
+            seen.add(kw)
+            se = ((it.get("ranked_serp_element") or {}).get("serp_item") or {})
+            pos = se.get("rank_group") or se.get("rank_absolute")
+            bare = seed_norm(kw, markets or [], state) or kw
+            out.append({"term": kw, "bare": bare,
+                        "position": int(pos) if pos else None,
+                        "volume": int(((kd.get("keyword_info") or {})
+                                       .get("search_volume")) or 0),
+                        "url": str(se.get("url") or "")[:300]})
+    out.sort(key=lambda r: (r["position"] or 999, -r["volume"]))
+    return out
+
+
+@app.route("/api/ranked_keywords", methods=["POST"])
+@_json_error_guard
+def api_ranked_keywords():
+    """Seeds read off the client's OWN positions. Needs a domain and nothing else."""
+    d = request.get_json(force=True) or {}
+    dom = (d.get("domain") or "").strip()
+    if not dom:
+        return jsonify({"error": "Add the client website first."}), 400
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    try:
+        rows = fetch_ranked_keywords(dom, markets, state, d.get("limit"))
+    except Exception as e:                                # noqa: BLE001
+        return jsonify({"error": str(e)[:160]}), 502
+    have = {seed_norm(x, markets, state) for x in (d.get("seeds") or []) if x}
+    # THEIR OWN NAME IS NOT A KEYWORD TO WIN. Amare ranks #4 for "amare santa fe"
+    # — there is no work to sell there, and seeding it would add its volume to a
+    # total the price is computed from. (2026-08-13)
+    _bw = {w for w in re.split(r"[^a-z0-9]+", (d.get("brand") or "").lower())
+           if len(w) > 2 and w not in _GROUNDING_STOP}
+    def _is_brand(term):
+        toks = [t for t in re.split(r"[^a-z0-9]+", term) if t]
+        return bool(toks) and bool(_bw) and all(t in _bw for t in toks)
+    fresh = [r for r in rows if r["bare"] not in have and not _is_brand(r["bare"])]
+    brandy = [r["bare"] for r in rows if _is_brand(r["bare"])]
+    return jsonify({"keywords": fresh, "total": len(rows),
+                    "brand_terms": brandy,
+                    "already_seeded": len([r for r in rows
+                                           if r["bare"] in have]),
+                    "top20": sum(1 for r in rows
+                                 if (r["position"] or 999) <= 20)})
 
 
 @app.route("/api/describe_client", methods=["POST"])
