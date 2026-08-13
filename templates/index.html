@@ -4712,16 +4712,7 @@ function step1Grid(kw){
   if(slots && svcCount && svcCount < slots*0.75){
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>The grid had room for ${slots} services and filled ${svcCount}</b> — so this quote carries ${(kw.all||[]).length} keyword${(kw.all||[]).length===1?'':'s'} where the same client would normally get around ${slots}${((kw.dropped_ungrounded||[]).length||(kw.grounding_stood_down))?`, and ${(kw.dropped_ungrounded||[]).length||'some'} of the AI's suggestions were filtered out`:''}. Add more <b>Product / Vertical Focus</b> terms — the ✦ Suggest services panel measures them for you — and rebuild.${tipOf('The grid is services &times; cities and the service count scales to the number of cities, so a one-city client has the most slots to fill and needs the most seeds. Nothing here is broken: the list is as long as the input allowed. A short list also prices lower, because both the volume total and the tier mix are computed from the terms that exist.')}</div>`);
   }
-  // SET ASIDE BEFORE THE GRID SAW THEM. Amber, because a list a human typed was
-  // overruled and only they can say whether the call was right — but ONE LINE,
-  // with the reasons on the hover. The chip panel no longer reports this at all
-  // (it simply doesn't propose them), so this is the only place it appears and
-  // it is always about terms a person chose. (2026-08-12)
-  const dem=kw.seeds_demoted||[];
-  if(dem.length){
-    const word=k=>k==='other_business'?'a different business':'an object, not work they perform';
-    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b>, not theirs to sell — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''}${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
-  }
+  // "N focus terms left out" warning removed 2026-08-13 on request.
   const _ar=(typeof ST!=='undefined' && ST.autoRegions)||[];
   if(_ar.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F5FA} <b>${_ar.length} regional name${_ar.length===1?'':'s'} added</b> \u2014 ${_ar.slice(0,4).map(escapeHtml).join(' \u00b7 ')}${tipOf('Names locals search that are not map locations. Each was measured with your first focus term attached; the ones under 10 a month that way were left out.')}</div>`);
   const _ax=(typeof ST!=='undefined' && ST.autoExpanded)||[];
@@ -4736,6 +4727,15 @@ function step1Grid(kw){
     if(_an.heldBack) bits.push(`${_an.heldBack} left out — no room past ${_an.slots} slots`);
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
     notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):''}</div>`);
+  }
+  // WHAT YOUR OWN TERMS ARE WORTH. Seeds still win — this only says what they
+  // cost. (2026-08-13)
+  const _sq=kw.seed_quality||{}, _z=(_sq.zero||[]), _q=(_sq.question||[]);
+  if(_z.length || _q.length){
+    const bits=[];
+    if(_z.length) bits.push(`<b>${_z.length}</b> with no measurable demand`);
+    if(_q.length) bits.push(`<b>${_q.length}</b> people look up, not buy`);
+    notes.push(`<div class="nf" style="margin-top:4px">\u{1F50E} <b>Of your own focus terms</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf('Seeds are never filtered &mdash; you typed them, they win. This is only what they are costing: a term measuring 0/mo brings no traffic to the grid, and a definition lookup ("what does lcf stand for") is someone researching an abbreviation rather than buying.<br><br>'+[].concat(_z.map(x=>escapeHtml(String(x))+' &mdash; 0/mo'), _q.map(x=>escapeHtml(String(x))+' &mdash; lookup')).slice(0,20).join('<br>'))}</div>`);
   }
   const _sf=kw.seeds_folded||[];
   if(_sf.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F500} <b>${_sf.length} duplicate focus term${_sf.length===1?'':'s'} folded</b>${tipOf(_sf.slice(0,14).map(x=>escapeHtml(String(x[0]))+' &rarr; '+escapeHtml(String(x[1]))).join('<br>')+'<br><br>One service line cannot take two grid slots. Singular/plural and containment count as the same term.')}</div>`);

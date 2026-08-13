@@ -2242,6 +2242,15 @@ _AUX_LEAD = re.compile(r"^(?:is|are|was|were|do|does|did|can|could|should|"
 _AUX_MIN_WORDS = 4
 
 
+# Looking a term UP, not buying it. Used only to warn on the operator's own
+# seeds, never to filter: "l/c/f meaning" and "what does lcf stand for" took two
+# of PEO Brokers' twenty slots and is_question_kw sees neither, because neither
+# leads with a question word. (2026-08-13)
+_DEFINITIONAL = re.compile(
+    r"\b(?:meaning|meanings|definition|defined|stand[s]? for|abbreviation|"
+    r"acronym|explained|explain|means)\b", re.I)
+
+
 def is_question_kw(text):
     """Is this a question phrase rather than a service a client could sell?"""
     t = (text or "").strip().lower()
@@ -5649,6 +5658,32 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 seed_ranking = {"failed": _sr.get("error") or "no volume data",
                                 "was": list(seeds)}
 
+        # WHAT THE OPERATOR'S OWN SEEDS ARE WORTH. Seeds are exempt from every
+        # filter — someone who knows the account typed them, and that rule stays.
+        # But nothing told them what they were spending slots on: PEO Brokers put
+        # five "... workers comp peo" terms that measure nothing and four LCF
+        # abbreviation lookups into a twenty-term quote, and the panel reported
+        # neither. A warning, not a filter. (2026-08-13)
+        seed_quality = {"zero": [], "question": []}
+        try:
+            _sv = {}
+            if seeds:
+                _sv, _pc2, _ = fetch_local_volume(
+                    [seed_norm(x, markets, state) for x in seeds if x],
+                    [] if national_demand else markets, state,
+                    national=national_demand)
+            for _s in (seeds or []):
+                _n = seed_norm(_s, markets, state)
+                if not _n:
+                    continue
+                if is_question_kw(_n) or _DEFINITIONAL.search(_n):
+                    seed_quality["question"].append(_s)
+                elif not int((_sv or {}).get(_n, 0) or 0):
+                    seed_quality["zero"].append(_s)
+        except Exception:                                 # noqa: BLE001
+            app.logger.exception("seed quality read failed")
+            seed_quality = {"zero": [], "question": []}
+
         n_services = services_needed(len(grid_cities))
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
                                           cands, n_services,
@@ -6291,6 +6326,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "seed_ranking": seed_ranking,
             "seeds_demoted": seeds_demoted,
             "seeds_folded": seeds_folded,
+            "seed_quality": seed_quality,
             # HOW FULL THE GRID IS. NPAIHB had room for 20 services and got 9 — a
             # 9-keyword quote against BE's 20 for the same client — and the panel
             # said nothing, because every check was about whether the terms were
@@ -7805,6 +7841,7 @@ def api_refine():
         "seed_ranking": s1.get("seed_ranking") or {},
         "seeds_demoted": s1.get("seeds_demoted") or [],
         "seeds_folded": s1.get("seeds_folded") or [],
+        "seed_quality": s1.get("seed_quality") or {},
         "service_slots": s1.get("service_slots") or 0,
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
