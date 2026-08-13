@@ -1167,6 +1167,14 @@ async function runExpandServices(){
       national_demand:!!($('natdemand')&&$('natdemand').checked)});
     const good=r.services||[], bad=r.rejected||[];
     const floor=Number(r.floor||20), typ=listTypicalVolume();
+    if(!good.length && r.no_candidates){
+      // The AI proposed NOTHING, so no floor was ever applied. Distinct message,
+      // and it names the input that would fix it — for a client whose site blocks
+      // us this panel is the only source left. (2026-08-13)
+      const miss=r.missing_inputs||[];
+      out.innerHTML=`<div style="margin-top:5px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;padding:7px 10px;font-size:12.5px">⚠ <b>Nothing was proposed</b> — this is the industry pass, not the volume floor; no term got as far as being measured.${miss.length?` It had no <b>${miss.map(escapeHtml).join('</b> and no <b>')}</b> to work from — fill ${miss.length>1?'those in':'that in'} and click ✦ Suggest services again.`:' Add a sentence to <b>Business description</b> saying what they sell and try again.'}${tipOf('This pass asks what businesses like this one sell, from the industry and the business description alone &mdash; it does not need their website. So it is the fallback when the site cannot be read, and a blank description is the one thing that stops it working.')}</div>`;
+      return;
+    }
     if(!good.length){
       const thin=thinFloorHtml(bad, floor, typ);
       // "Nothing clears the floor" is only the whole story when the floor is
@@ -1414,9 +1422,23 @@ async function runSuggestServices(auto){
     if(!(data.services||[]).length){
       const why=(data.diag&&data.diag.length)?('<div class="nf" style="font-size:11px;margin:4px 0;font-family:ui-monospace,monospace">'+data.diag.map(d=>String(d).replace(/</g,'&lt;')).join('<br>')+'</div>'):'';
       out.innerHTML='<div class="nf" style="font-size:12px">No menu items or sitemap pages found. What the fetch saw:</div>'+why
-        +'<div class="nf" style="font-size:12px">'+((data.n_nav_links||0)>0
-            ? `<b>${data.n_nav_links} links were found</b> — none of them looked like a service page, so this is the filter rejecting them rather than the site blocking us. `
-            : 'Links showing 0 with HTTP 200 means the site cloaks bots or is fully JS-rendered. ')
+        +'<div class="nf" style="font-size:12px">'+(()=>{
+            // READ THE CODES IT ALREADY HAS. This said "links showing 0 with HTTP
+            // 200 means the site cloaks bots" under four lines reading 403 and
+            // SSLError — advice for a failure that had not happened.
+            // (2026-08-13)
+            if((data.n_nav_links||0)>0)
+              return `<b>${data.n_nav_links} links were found</b> — none of them looked like a service page, so this is the filter rejecting them rather than the site blocking us. `;
+            const st=(data.statuses||[]);
+            const blocked=st.filter(c=>[401,403,406,429].includes(c));
+            if(blocked.length)
+              return `<b>The site refused us — HTTP ${[...new Set(blocked)].join('/')}.</b> That is bot protection, not cloaking: the page serves normally to a real browser. No setting here gets past it. `;
+            if(st.some(c=>c>=200&&c<300))
+              return 'Served HTTP 200 with no links, so the menu is either JavaScript-rendered or shown only to browsers. ';
+            if(st.length)
+              return `The site answered HTTP ${[...new Set(st)].join('/')}. `;
+            return 'Nothing was reachable at that domain. ';
+          })()
         +'<a href="#" id="pasteMenuLink" style="color:var(--atlas);font-weight:600">Paste their menu instead</a> — copy the nav/service list from the site and it runs through the same AI conversion.</div>'
         +'<div id="pasteMenuBox" style="display:none;margin-top:6px"><textarea id="pasteMenuTxt" rows="4" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px" placeholder="Managed IT Services\n24/7 Help Desk\nCloud Computing Migration\nCompliance"></textarea>'
         +'<button id="pasteMenuGo" style="margin-top:5px;background:var(--atlas);color:#fff;border:none;padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">Convert to seeds</button></div>';

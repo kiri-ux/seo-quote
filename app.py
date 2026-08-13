@@ -10429,7 +10429,18 @@ def api_expand_services():
         [x for x in (d.get("seeds") or []) if x],
         ", ".join(markets[:4]))
     if not cands:
-        return jsonify({"services": [], "error": "no suggestions returned"})
+        # NOT the same as "nothing cleared the volume floor" — the floor was never
+        # reached. Amare Homes read that line while the gap-finder was the ONLY
+        # source left (their site 403s), so the one thing that could still help
+        # failed silently. Name the input that is missing. (2026-08-13)
+        missing = [lbl for lbl, v in (("Industry", d.get("industry")),
+                                      ("Business description", d.get("business_desc")))
+                   if not (v or "").strip()]
+        return jsonify({"services": [], "no_candidates": True,
+                        "missing_inputs": missing,
+                        "error": ("nothing was proposed"
+                                  + (" — no " + " or ".join(missing) + " to go on"
+                                     if missing else ""))})
     terms = [c["term"] for c in cands]
     try:
         vols, _pc, verr = fetch_local_volume(terms, [] if nat else markets, state,
@@ -10568,28 +10579,61 @@ def api_site_services():
     # Two identities: some servers stub out bots, others' WAFs block a Chrome UA
     # that lacks full browser fingerprints while allowing honest bots through.
     # Try both per URL and keep whichever returns a page with real links.
-    _UAS = [("browser", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"),
-            ("bot", "Mozilla/5.0 (compatible; adtini-seo-quote/1.0)")]
+    # A BARE UA STRING IS NOT A BROWSER FINGERPRINT. The comment above has said
+    # for weeks that WAFs block a Chrome UA "that lacks full browser
+    # fingerprints", and both identities sent exactly that: one header. Cloudflare
+    # 403'd both on santafe.amare-homes.com while the page served fine to other
+    # clients. The third identity sends what a real Chrome navigation sends —
+    # Sec-Fetch-*, Upgrade-Insecure-Requests, a full Accept and Accept-Encoding —
+    # which is the cheap half of getting past a default WAF ruleset. (2026-08-13)
+    _CHROME = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+    _UAS = [
+        ("browser", {"User-Agent": _CHROME}),
+        ("bot", {"User-Agent": "Mozilla/5.0 (compatible; adtini-seo-quote/1.0)"}),
+        ("chrome-full", {
+            "User-Agent": _CHROME,
+            "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,"
+                       "image/avif,image/webp,*/*;q=0.8"),
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Sec-Ch-Ua": '"Chromium";v="126", "Not:A-Brand";v="24"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Cache-Control": "max-age=0",
+            "Connection": "keep-alive",
+        }),
+    ]
     html = ""
     fetch_err = None
     diag = []
+    statuses = []                 # every HTTP code seen, so the panel can explain
     # try both host variants regardless of how the pill was entered — and never
     # double the www. prefix (www.www.example.org is how that bug looks)
     bare = re.sub(r"^www\.", "", dom)
     for url in dict.fromkeys([f"https://{dom}", f"https://{bare}", f"https://www.{bare}"]):
-        for ua_name, ua in _UAS:
+        for ua_name, hdrs in _UAS:
             try:
-                r, insecure = get_client_site(
-                    url, timeout=10, allow_redirects=True,
-                    headers={"User-Agent": ua,
-                             "Accept": "text/html,application/xhtml+xml",
-                             "Accept-Language": "en-US,en;q=0.9"})
+                r, insecure = get_client_site(url, timeout=10, allow_redirects=True,
+                                              headers=dict(hdrs))
                 candidate = r.text[:800_000]
                 nlinks = candidate.lower().count("<a")
+                statuses.append(r.status_code)
                 diag.append(f"{url} [{ua_name}] -> HTTP {r.status_code}, {nlinks} links"
                             + (" (TLS chain incomplete — read without verifying)"
                                if insecure else ""))
+                # A 403 BODY IS THE WAF'S PAGE, NOT THE CLIENT'S. It used to be
+                # accepted as `html`, so the heading miner scraped Cloudflare's
+                # block page and reported "no menu items found" — describing a
+                # document the client never wrote. Only a 2xx is the site.
+                # (2026-08-13)
+                if not (200 <= r.status_code < 300):
+                    continue
                 if nlinks >= 5:
                     html = candidate
                     break
@@ -10601,6 +10645,20 @@ def api_site_services():
         if html and html.lower().count("<a") >= 5:
             break
     if not html:
+        # THE ADVICE HAS TO MATCH THE FAILURE. A 403 is an explicit refusal and no
+        # header trick the operator can perform will change it; the panel was
+        # telling them "links showing 0 with HTTP 200 means the site cloaks bots"
+        # under four lines that said 403 and SSLError. (2026-08-13)
+        # ONE PATH, AND IT ALWAYS KEEPS THE ESCAPE HATCH. A 403 used to 502 into a
+        # red box with no way forward; the panel that offers "paste their menu
+        # instead" only renders on a 200 with an empty list. So a server that
+        # ANSWERED — refused, missing, erroring — comes back 200 with no services
+        # and the codes attached, and the operator still gets the paste box. Only a
+        # domain that could not be reached at all is a hard failure. (2026-08-13)
+        if statuses:
+            return jsonify({"domain": dom, "services": [], "folded": [],
+                            "acronyms": [], "n_nav_links": 0,
+                            "statuses": statuses, "diag": diag})
         _fe = str(fetch_err)
         if "CERTIFICATE_VERIFY_FAILED" in _fe or "SSLError" in _fe:
             _fe = ("the site's HTTPS certificate chain is incomplete, and reading it "
