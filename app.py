@@ -6110,19 +6110,27 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                             0 if is_store_intent(x["service"]) else 1,
                             len((x.get("service") or "").split()))
                 _ranked = sorted(_measured, key=_rank_key)
-                # Walk the ranked list, filling ultra first, then competitive.
-                # Unmeasured terms keep whatever tier they already had, so the
-                # per-tier capacity has to account for them.
-                _unmeasured_in = {t: sum(1 for x in services
-                                         if x.get("tier") == t and x not in _measured)
-                                  for t in _order}
-                _cap = {t: max(0, _counts[t] - _unmeasured_in[t]) for t in _order}
+                # UNMEASURED TERMS SINK; THEY DO NOT SQUAT. They used to keep
+                # whatever tier the model gave them, and the per-tier capacity was
+                # reduced to make room — so on PEO Brokers five "no data" terms
+                # held five of six Ultra slots, capacity fell to one, and
+                # "professional employer organization" at 49,500/mo was the only
+                # real term that fitted while "peo services" at 4,400 sat in
+                # Competitive. A column whose top rows have no numbers is exactly
+                # what this pass exists to prevent.
+                #
+                # Measured terms are placed first, best to worst, across the tier
+                # counts the mix asked for. Whatever is left over is unmeasured,
+                # and it fills from the bottom up. No term is dropped and the
+                # counts do not change. (2026-08-13)
+                _unmeasured = [x for x in services if x not in _measured]
+                _fill = _ranked + _unmeasured
                 _i = 0
                 for t in _order:
-                    for _ in range(_cap[t]):
-                        if _i >= len(_ranked):
+                    for _ in range(_counts[t]):
+                        if _i >= len(_fill):
                             break
-                        _svc = _ranked[_i]
+                        _svc = _fill[_i]
                         if _svc.get("tier") != t:
                             tier_moves.append({"service": _svc["service"],
                                                "from": _svc.get("tier"), "to": t,
