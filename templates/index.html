@@ -375,19 +375,16 @@
          a hidden <select id="goal"> is kept in sync so every existing reader
          (collectInputs, restoreQuote, the six API payloads) keeps working off
          one field. (2026-08-09) -->
-    <select id="goal_sel" multiple size="6" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:14px 'Barlow',sans-serif;background:#FCFCFB;color:var(--ink);min-width:280px;max-width:420px">
-      <option value="In-Store Sales">In-Store Sales</option>
-      <option value="B2B Sales">B2B Sales</option>
-      <option value="Information Requests">Information Requests</option>
-      <option value="Branding &amp; Awareness">Branding &amp; Awareness</option>
-      <option value="Mobile App Download">Mobile App Download</option>
-      <option value="Website Traffic">Website Traffic</option>
-      <option value="Leads/Form Fillouts">Leads/Form Fillouts</option>
-      <option value="Online Sales">Online Sales</option>
-      <option value="Phone Calls">Phone Calls</option>
-      <option value="Job Recruitment">Job Recruitment</option>
-      <option value="Event Attendance">Event Attendance</option>
-    </select>
+    <!-- A native multiple-select is an always-open scrolling list. This is a
+         closed control that opens a checkbox menu, with the picks shown as pills
+         — same shape as the other pill fields. The hidden #goals checkboxes stay
+         the value layer. (2026-08-13) -->
+    <div id="goalPick" style="position:relative;max-width:520px">
+      <div id="goalPills" class="pillbox" style="cursor:pointer"></div>
+      <div id="goalMenu" class="hidden" style="position:absolute;left:0;right:0;top:100%;z-index:60;
+        background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:4px;padding:4px;
+        box-shadow:0 8px 22px rgba(0,45,88,.16);max-height:260px;overflow:auto"></div>
+    </div>
     <div id="goals" class="hidden">
       <label class="strat"><input type="checkbox" name="goal" value="In-Store Sales"> In-Store Sales</label>
       <label class="strat"><input type="checkbox" name="goal" value="B2B Sales"> B2B Sales</label>
@@ -1839,19 +1836,39 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
     box.addEventListener('change', e=>{ if(e.target&&e.target.name==='goal') syncGoals(); });
     // The dropdowns are the control; the chips underneath are the value every
     // existing reader already works off. One direction each way. (2026-08-13)
-    const gsel=document.getElementById('goal_sel');
-    if(gsel){
-      gsel.addEventListener('change', ()=>{
-        const want=new Set([...gsel.selectedOptions].map(o=>o.value));
-        boxes().forEach(b=>{ b.checked=want.has(b.value); });
-        syncGoals();
+    const pills=document.getElementById('goalPills');
+    const menu=document.getElementById('goalMenu');
+    if(pills && menu){
+      const paint=()=>{
+        const on=boxes().filter(b=>b.checked).map(b=>b.value);
+        pills.innerHTML = on.length
+          ? on.map(v=>`<span class="pill">${v} <b data-g="${v.replace(/"/g,'&quot;')}">\u00d7</b></span>`).join('')
+          : '<span class="nf" style="padding:4px 6px">Select campaign goals…</span>';
+        pills.querySelectorAll('b[data-g]').forEach(x=>{
+          x.onclick=(e)=>{ e.stopPropagation();
+            const b=boxes().find(b=>b.value===x.dataset.g);
+            if(b){ b.checked=false; syncGoals(); paint(); drawMenu(); } };
+        });
+      };
+      const drawMenu=()=>{
+        menu.innerHTML=boxes().map(b=>
+          `<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font:400 13px 'Barlow',sans-serif;text-transform:none;letter-spacing:normal;color:var(--ink);margin:0">
+             <input type="checkbox" data-g="${b.value.replace(/"/g,'&quot;')}"${b.checked?' checked':''}> ${b.value}</label>`).join('');
+        menu.querySelectorAll('input[data-g]').forEach(cb=>{
+          cb.onchange=()=>{
+            const b=boxes().find(b=>b.value===cb.dataset.g);
+            if(b){ b.checked=cb.checked; syncGoals(); paint(); }
+          };
+        });
+      };
+      pills.onclick=()=>{ const open=!menu.classList.contains('hidden');
+        if(open) menu.classList.add('hidden'); else { drawMenu(); menu.classList.remove('hidden'); } };
+      document.addEventListener('click', e=>{
+        if(!document.getElementById('goalPick').contains(e.target)) menu.classList.add('hidden');
       });
       const _rg=window.reflectGoals;
-      window.reflectGoals=function(){
-        _rg();
-        const on=new Set(boxes().filter(b=>b.checked).map(b=>b.value));
-        [...gsel.options].forEach(o=>{ o.selected=on.has(o.value); });
-      };
+      window.reflectGoals=function(){ _rg(); paint(); drawMenu(); };
+      paint(); drawMenu();
     }
     const ssel=document.getElementById('strategy_sel');
     if(ssel){
