@@ -89,6 +89,12 @@
   .pill b{cursor:pointer;color:var(--velocity);font-weight:700;padding:0 4px;line-height:1}
   .pill b:hover{color:var(--bad)}
   .geo-pill{background:#E4EAF0;color:var(--atlas)}
+  /* A term the TOOL proposed, not one the operator typed. The distinction is not
+     cosmetic: "you typed it, it wins" exempts a focus term from every filter in
+     the build, and that exemption was covering the tool's own suggestions.
+     (2026-08-13) */
+  .pill.sugg{background:#fff;border:1px dashed #c9d3dc;color:#5c6b78;font-weight:400}
+  .pill.sugg .sgmark{color:var(--velocity);font-size:10.5px;margin-right:-3px}
   .acwrap{position:relative}
   .acdrop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#fff;
     border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 22px rgba(0,45,88,.16);
@@ -585,6 +591,21 @@ function _reportGeo(){
 
 const _PROX_RE=/\b(near me|nearby|near by|close to me|around me|in my area|near my location|closest|near you)\b/g;
 
+// Someone READING, not someone buying. Mirrors is_lookup_kw in app.py — keep the
+// two in step. Used only to decide what the tool may PROPOSE: a term the operator
+// types is still quoted, and a chip they click on purpose is a choice, not an
+// accident. (2026-08-13)
+const _LOOKUP_Q=/^(?:how|what|why|when|where|which|who|whose)\b/i;
+const _LOOKUP_AUX=/^(?:is|are|was|were|do|does|did|can|could|should|would|will|has|have|had|am)\b/i;
+const _LOOKUP_DEF=/\b(?:meaning|meanings|definition|defined|stands? for|abbreviation|acronym|explained|explain|means)\b/i;
+function isLookupKw(v){
+  const t=String(v||'').trim().toLowerCase();
+  if(!t) return false;
+  if(t.includes('?')||t.includes('how to')) return true;
+  if(_LOOKUP_Q.test(t)||_LOOKUP_DEF.test(t)) return true;
+  return _LOOKUP_AUX.test(t) && t.split(/\s+/).length>=4;
+}
+
 // Agency reports print one keyword row with a token standing in for the city —
 // "bbq grill store <cityname>" covers a dozen markets in one line. Imported
 // verbatim the token becomes a literal word, nobody searches it, so it is
@@ -932,7 +953,13 @@ function wirePills(key, inputId){
       target.appendChild(tag);
     }
     const n=stores[key].length, noun=NOUN[key]||'item';
-    tag.textContent = n ? `${n} ${noun}${n===1?'':'s'}` : '';
+    let extra='';
+    if(key==='kw' && n && typeof ST!=='undefined'){
+      const sg=new Set((ST.expandedSeeds||[]).map(x=>String(x).toLowerCase()));
+      const c=stores.kw.filter(v=>sg.has(String(v).toLowerCase())).length;
+      if(c) extra=` \u00b7 ${c} suggested`;
+    }
+    tag.textContent = n ? `${n} ${noun}${n===1?'':'s'}${extra}` : '';
   }
   // FIFTY-ONE PILLS IS A WALL. Expand can take the focus list past the point
   // where you can see the field it is attached to, so it shows the first
@@ -943,10 +970,14 @@ function wirePills(key, inputId){
     box.querySelectorAll('.pill, .pillmore').forEach(p=>p.remove());
     const all=stores[key], fold=(all.length>PILL_FOLD+3 && !_showAll);
     const shown=fold?all.slice(0,PILL_FOLD):all;
+    const sugg=(key==='kw' && typeof ST!=='undefined')
+      ? new Set((ST.expandedSeeds||[]).map(x=>String(x).toLowerCase())) : null;
     shown.forEach((v,i)=>{
       const el=document.createElement('span');
-      el.className='pill'+(key==='geo'?' geo-pill':'');
-      el.innerHTML=`${v} <b data-i="${i}">×</b>`;
+      const isSugg=!!(sugg && sugg.has(String(v).toLowerCase()));
+      el.className='pill'+(key==='geo'?' geo-pill':'')+(isSugg?' sugg':'');
+      if(isSugg) el.title='Suggested by the tool, not typed by you';
+      el.innerHTML=`${isSugg?'<span class="sgmark">\u2726</span> ':''}${v} <b data-i="${i}">×</b>`;
       el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
       box.insertBefore(el,input);
     });
@@ -1616,13 +1647,20 @@ async function runAllSuggestions(){
   // rest of the list only has demand for; then measured volume; then their own
   // site's menu, which carries no volume but is the client's own taxonomy.
   // (2026-08-13)
-  const cand=[];
+  const cand=[], lookups=[];
   const seen=new Set((stores.kw||[]).map(v=>String(v).toLowerCase()));
   for(const box of boxes){
     for(const ch of box.querySelectorAll('.svc-chip')){
       const v=(ch.getAttribute('data-label')||'').toLowerCase();
       if(!v || seen.has(v)) continue;
       seen.add(v);
+      // NOT THIS ONE. "what does lcf mean" reached PEO Brokers' focus list from
+      // the ranked-keywords pass — they DO rank for it — and then sat there
+      // protected by the rule that a focus term is never filtered, because
+      // nothing recorded that the tool had put it there. A definition lookup is
+      // a blog post, not a service line, and it cannot cross with a city.
+      // The panels still SHOW it: clicking one is a decision. (2026-08-13)
+      if(isLookupKw(v)){ lookups.push(v); continue; }
       cand.push({v, vol:Number(ch.getAttribute('data-vol')||0),
                  rank:Number(ch.getAttribute('data-rank')||0),
                  src:ch.getAttribute('data-src')||''});
@@ -1670,6 +1708,7 @@ async function runAllSuggestions(){
     try{ scheduleAutoSave(); }catch(e){}
   }
   note.heldBack=heldBack;
+  note.lookups=lookups;
   note.slots=ST.serviceSlots||20;
   return {added, regions, note, before, after:(stores.kw||[]).length};
 }
@@ -2060,12 +2099,26 @@ $('step1').addEventListener('click', async()=>{
   // A list already at the slot count is the same case arriving by another route:
   // there is no room to add to, so the four calls would be pure cost. (2026-08-13)
   const _prev=new Set((ST.expandedSeeds||[]).map(v=>String(v).toLowerCase()));
+  // RETROACTIVE, for a list assembled before the tool stopped proposing these.
+  // A lookup the TOOL put on the board is still the tool's, so it comes back off
+  // and the note says so. A term the operator typed is never touched by this —
+  // that rule is older and it still wins. (2026-08-13)
+  const _pulled=(stores.kw||[]).filter(v=>_prev.has(String(v).toLowerCase()) && isLookupKw(v));
+  if(_pulled.length){
+    const _gone=new Set(_pulled.map(v=>String(v).toLowerCase()));
+    stores.kw=stores.kw.filter(v=>!_gone.has(String(v).toLowerCase()));
+    ST.expandedSeeds=(ST.expandedSeeds||[]).filter(v=>!_gone.has(String(v).toLowerCase()));
+    try{ PILL_RENDER.kw(); }catch(e){}
+    inp.keywords=stores.kw.slice();
+    try{ scheduleAutoSave(); }catch(e){}
+  }
   const _held=(stores.kw||[]).filter(v=>_prev.has(String(v).toLowerCase()));
   const _room=Math.max(0,(ST.serviceSlots||20)-(stores.kw||[]).length);
   const _skipExpand = _held.length ? 'already' : (_room<=0 ? 'full' : '');
   if(_auto && _auto.checked && _skipExpand){
     ST.autoExpanded=[]; ST.autoRegions=[];
-    ST.autoNote={skipped:_skipExpand, held:_held.length, slots:ST.serviceSlots||20};
+    ST.autoNote={skipped:_skipExpand, held:_held.length, pulled:_pulled,
+                 slots:ST.serviceSlots||20};
   }else if(_auto && _auto.checked){
     $('step1').disabled=true; $('step1').textContent='Expanding your terms…';
     panel('p1','<p style="color:var(--muted)">Reading their site, the industry, and what they already rank for…</p>');
@@ -2074,11 +2127,11 @@ $('step1').addEventListener('click', async()=>{
       const ex=await runAllSuggestions();
       ST.autoExpanded=ex.added;
       ST.autoRegions=ex.regions||[];
-      ST.autoNote=ex.note||{};
+      ST.autoNote=Object.assign({}, ex.note||{}, {pulled:_pulled});
       if((ex.regions||[]).length) inp.phrase_geos=stores.spgeo.slice();
       if(ex.added.length) inp.keywords=stores.kw.slice();
-    }catch(e){ ST.autoExpanded=[]; ST.autoRegions=[]; ST.autoNote={}; }
-  }else{ ST.autoExpanded=[]; ST.autoRegions=[]; ST.autoNote={}; }
+    }catch(e){ ST.autoExpanded=[]; ST.autoRegions=[]; ST.autoNote={pulled:_pulled}; }
+  }else{ ST.autoExpanded=[]; ST.autoRegions=[]; ST.autoNote={pulled:_pulled}; }
   $('step1').disabled=true; $('step1').textContent='Building keyword list…';
   panel('p1','<p style="color:var(--muted)">Pulling keyword ideas + suggestions…</p>');
   // The Build button sits at the BOTTOM of a long form and the list appears at the
@@ -4739,7 +4792,9 @@ function step1Grid(kw){
   if(_ar.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F5FA} <b>${_ar.length} regional name${_ar.length===1?'':'s'} added</b> \u2014 ${_ar.slice(0,4).map(escapeHtml).join(' \u00b7 ')}${tipOf('Names locals search that are not map locations. Each was measured with your first focus term attached; the ones under 10 a month that way were left out.')}</div>`);
   const _ax=(typeof ST!=='undefined' && ST.autoExpanded)||[];
   const _an=(typeof ST!=='undefined' && ST.autoNote)||{};
-  if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped){
+  const _lk=_an.lookups||[], _pl=_an.pulled||[];
+  if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped
+     || _lk.length || _pl.length){
     const bits=[];
     if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded`);
     else if(_an.skipped==='full') bits.push(`<b>off</b> \u2014 all ${_an.slots} slots are full`);
@@ -4749,11 +4804,15 @@ function step1Grid(kw){
     if(_an.folded) bits.push(`${_an.folded} near-duplicate${_an.folded===1?'':'s'}`);
     if(_an.noRank) bits.push('no top-100 rankings');
     if(_an.heldBack) bits.push(`${_an.heldBack} left out — no room past ${_an.slots} slots`);
+    if(_lk.length) bits.push(`${_lk.length} lookup${_lk.length===1?'':'s'} not offered`);
+    if(_pl.length) bits.push(`${_pl.length} lookup${_pl.length===1?'':'s'} taken back off`);
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
-    notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_an.skipped?tipOf(_an.skipped==='already'
-        ? 'Expansion runs once per list. '+_an.held+' of the terms below were added by the last one, so this build quoted the list as it stands. Remove them and it expands again.'
-        : 'The grid holds '+_an.slots+' services and the list already fills them, so there was nothing to add.')
-      :(_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):'')}</div>`);
+    notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf([
+        _an.skipped==='already' ? 'Expansion runs once per list. '+_an.held+' of the terms below came from the last one, so this build quoted the list as it stands. Remove them and it expands again.' : '',
+        _an.skipped==='full' ? 'The grid holds '+_an.slots+' services and the list already fills them, so there was nothing to add.' : '',
+        _ax.length ? 'Read off their site, the industry pass and their own rankings, then added.<br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ') : '',
+        (_lk.length||_pl.length) ? 'A definition or question is someone reading, not buying &mdash; it cannot cross with a city, so the tool no longer proposes one. Type it yourself and it is quoted like any other focus term.<br>'+[].concat(_lk,_pl).slice(0,14).map(x=>escapeHtml(String(x))).join(' &middot; ') : '',
+      ].filter(Boolean).join('<br><br>'))}</div>`);
   }
   // WHAT YOUR OWN TERMS ARE WORTH. Seeds still win — this only says what they
   // cost. (2026-08-13)
