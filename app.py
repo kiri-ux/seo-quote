@@ -652,6 +652,9 @@ CFG = {
     "near_me_probe_cap": 12,
     # Monthly searches a proposed extra service must clear to be offered.
     "expand_min_volume": 20,
+    # A word in more than this share of the seeds cannot partition them.
+    "topic_token_max_share": 0.5,
+    "topic_min_seeds": 2,          # below this it is a term, not a topic
     "ranked_keywords_limit": 80,   # Labs rows pulled per client
     # Above this multiple of the floor a vertical has real demand somewhere, so
     # the sub-floor terms are genuinely the dregs and the floor should hold. Below
@@ -2559,32 +2562,54 @@ def topic_clusters(seeds):
 
     items = [(s, toks(s)) for s in (seeds or []) if str(s).strip()]
     items = [(s, t) for s, t in items if t]
-    groups = []                       # [ {seeds:[], tokens:set()} ]
-    for s, t in items:
-        hits = [g for g in groups if g["tokens"] & t]
-        if not hits:
-            groups.append({"seeds": [s], "tokens": set(t)})
-            continue
-        keep = hits[0]
-        keep["seeds"].append(s)
-        keep["tokens"] |= t
-        for g in hits[1:]:            # this seed bridges two groups — merge them
-            keep["seeds"] += g["seeds"]
-            keep["tokens"] |= g["tokens"]
-            groups.remove(g)
+    if not items:
+        return []
+    n = len(items)
+    df = {}
+    for _s, t in items:
+        for tok in t:
+            df[tok] = df.get(tok, 0) + 1
 
-    # Label each topic with its most frequent subject word.
-    out = []
-    for g in groups:
-        counts = {}
-        for s in g["seeds"]:
-            for t in toks(s):
-                counts[t] = counts.get(t, 0) + 1
-        label = max(sorted(counts), key=lambda t: (counts[t], len(t))) if counts else ""
-        out.append({"label": label, "seeds": g["seeds"], "tokens": g["tokens"],
-                    "size": len(g["seeds"])})
+    # WAS SINGLE-LINK, WHICH CHAINS. A seed joined any group sharing one token, so
+    # on Amare Homes "pet friendly apartments" and "pet friendly homes for rent"
+    # bridged the two halves on the word "pet", "rent" bridged nearly everything
+    # else, and 25 of 27 seeds collapsed into one topic — leaving the coverage
+    # guarantee with nothing to guarantee on exactly the client that needed it.
+    #
+    # A seed now belongs to the topic of the most common token that is not in most
+    # of the seeds. Two ideas, both about what a topic IS: the thing being sold is
+    # the word that recurs (apartment, home), and a word present in most of the
+    # list cannot tell any of it apart (rent). Modifiers like "pet friendly" are
+    # rare, so they no longer decide membership. Deterministic, same as before.
+    # (2026-08-13)
+    cap = max(1, int(n * float(CFG.get("topic_token_max_share", 0.5) or 0.5)))
+    common = {tok for tok, c in df.items() if c > cap}
+
+    def key(t):
+        cands = [tok for tok in t if tok not in common] or sorted(t)
+        return max(sorted(cands), key=lambda tok: (df[tok], len(tok)))
+
+    groups = {}
+    for s, t in items:
+        g = groups.setdefault(key(t), {"seeds": [], "tokens": set()})
+        g["seeds"].append(s)
+        # High-frequency words are left OUT of the topic's token set too, or
+        # service_topic() would match every service to every topic on "rent".
+        g["tokens"] |= (t - common)
+
+    out = [{"label": k, "seeds": g["seeds"], "tokens": (g["tokens"] or {k}),
+            "size": len(g["seeds"])} for k, g in groups.items()]
     out.sort(key=lambda g: (-g["size"], g["label"]))
-    return out
+    # A TOPIC BACKED BY ONE SEED IS A TERM, NOT A TOPIC. Keying is sharper than the
+    # old chaining, which is the point — but sharp enough to turn Ski Barn's two
+    # halves into six, and every topic claims a service slot, so a 7-slot grid
+    # would have been decided entirely by the guarantee with nothing left for
+    # demand. Coverage is for a part of the business the ranking would otherwise
+    # eliminate; one term is not that, and the volume ranking can be trusted with
+    # it. Kept if it is all there is. (2026-08-13)
+    _min = int(CFG.get("topic_min_seeds", 2) or 1)
+    real = [g for g in out if g["size"] >= _min]
+    return real or out[:1]
 
 
 def service_topic(service, topics):
