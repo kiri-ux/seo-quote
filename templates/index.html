@@ -1661,6 +1661,11 @@ async function runAllSuggestions(){
   }
   for(const id of PANELS){ const e=document.getElementById(id); if(e) e.classList.remove('hidden'); }
   if(added.length){
+    // WHAT EXPAND PUT THERE, so the next build can tell it apart from what the
+    // operator typed. Kept lowercased and additive; terms the operator later
+    // deletes fall out on their own because the check below reads the live box.
+    ST.expandedSeeds=[...new Set([...(ST.expandedSeeds||[]),
+                                  ...added.map(v=>String(v).toLowerCase())])];
     PILL_RENDER.kw();
     try{ scheduleAutoSave(); }catch(e){}
   }
@@ -2048,7 +2053,20 @@ $('step1').addEventListener('click', async()=>{
   $('out').innerHTML='';
   // Pre-flight suggestions panel removed 2026-08-13 on request.
   const _auto=$('autoExpand');
-  if(_auto && _auto.checked){
+  // ONCE PER LIST, NOT ONCE PER BUILD. The twenty terms sitting in the box on a
+  // rebuild ARE the last build's expansion — expanding them again reaches for
+  // neighbours of neighbours, pushes the list past the slot count, and spends
+  // four lookups doing it. It runs again as soon as those terms are gone.
+  // A list already at the slot count is the same case arriving by another route:
+  // there is no room to add to, so the four calls would be pure cost. (2026-08-13)
+  const _prev=new Set((ST.expandedSeeds||[]).map(v=>String(v).toLowerCase()));
+  const _held=(stores.kw||[]).filter(v=>_prev.has(String(v).toLowerCase()));
+  const _room=Math.max(0,(ST.serviceSlots||20)-(stores.kw||[]).length);
+  const _skipExpand = _held.length ? 'already' : (_room<=0 ? 'full' : '');
+  if(_auto && _auto.checked && _skipExpand){
+    ST.autoExpanded=[]; ST.autoRegions=[];
+    ST.autoNote={skipped:_skipExpand, held:_held.length, slots:ST.serviceSlots||20};
+  }else if(_auto && _auto.checked){
     $('step1').disabled=true; $('step1').textContent='Expanding your terms…';
     panel('p1','<p style="color:var(--muted)">Reading their site, the industry, and what they already rank for…</p>');
     try{ aimAtList(true); }catch(e){}
@@ -3838,6 +3856,9 @@ function snapshotQuote(){
     addonOn: !!ST.addonOn,
     addonPicked: (ST.inputs&&ST.inputs.addon_picked)||[],
     actual: ST.actual||null,
+    // Which focus terms Expand contributed, so reopening a quote and rebuilding
+    // does not expand an already-expanded list a second time.
+    expandedSeeds: ST.expandedSeeds||[],
     // Imported incumbent reports (extraction only — see rememberReport).
     reports: ST.reports||[]
   };
@@ -3864,6 +3885,7 @@ function restoreQuote(p){
              : (((p.inputs&&p.inputs.addon_markets)||0) > 0);
   if(ST.inputs) ST.inputs.addon_picked=p.addonPicked||[];
   ST.actual=p.actual||{};
+  ST.expandedSeeds=p.expandedSeeds||[];
   ST.reports=p.reports||[];
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
@@ -4717,8 +4739,10 @@ function step1Grid(kw){
   if(_ar.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F5FA} <b>${_ar.length} regional name${_ar.length===1?'':'s'} added</b> \u2014 ${_ar.slice(0,4).map(escapeHtml).join(' \u00b7 ')}${tipOf('Names locals search that are not map locations. Each was measured with your first focus term attached; the ones under 10 a month that way were left out.')}</div>`);
   const _ax=(typeof ST!=='undefined' && ST.autoExpanded)||[];
   const _an=(typeof ST!=='undefined' && ST.autoNote)||{};
-  if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank){
+  if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped){
     const bits=[];
+    if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded`);
+    else if(_an.skipped==='full') bits.push(`<b>off</b> \u2014 all ${_an.slots} slots are full`);
     if(_ax.length) bits.push(`<b>${_ax.length} term${_ax.length===1?'':'s'} added</b>`);
     if(_an.ranked) bits.push(`${_an.ranked} they already rank for`);
     if(_an.floorHeld) bits.push(`${_an.floorHeld} under the volume floor`);
@@ -4726,7 +4750,10 @@ function step1Grid(kw){
     if(_an.noRank) bits.push('no top-100 rankings');
     if(_an.heldBack) bits.push(`${_an.heldBack} left out — no room past ${_an.slots} slots`);
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
-    notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):''}</div>`);
+    notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${_an.skipped?tipOf(_an.skipped==='already'
+        ? 'Expansion runs once per list. '+_an.held+' of the terms below were added by the last one, so this build quoted the list as it stands. Remove them and it expands again.'
+        : 'The grid holds '+_an.slots+' services and the list already fills them, so there was nothing to add.')
+      :(_ax.length?tipOf('Read off their site, the industry pass and their own rankings, then added.<br><br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ')):'')}</div>`);
   }
   // WHAT YOUR OWN TERMS ARE WORTH. Seeds still win — this only says what they
   // cost. (2026-08-13)

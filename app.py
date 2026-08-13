@@ -2263,6 +2263,18 @@ def is_question_kw(text):
     return bool(_AUX_LEAD.search(t)) and len(t.split()) >= _AUX_MIN_WORDS
 
 
+def is_lookup_kw(text):
+    """Someone reading, not someone buying — a question or a definition.
+
+    The two tests were already here and already agreed; nothing had joined them
+    into the one idea they describe, so each caller re-wrote the pair. Never a
+    filter: a seed the operator typed is quoted whatever this says. It decides
+    what a term is allowed to EARN. (2026-08-13)
+    """
+    t = (text or "").strip()
+    return bool(t) and (is_question_kw(t) or bool(_DEFINITIONAL.search(t)))
+
+
 def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, domain):
     """Drop model-invented services containing a word the client never used.
 
@@ -2680,7 +2692,18 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
         return services, []
 
     n_slots = min(int(max_services or len(services)), len(services)) or len(services)
-    total_seeds = sum(t["size"] for t in topics) or 1
+    # SHARE IS OUT OF WHAT WAS TYPED, not out of what clustered. topic_clusters
+    # drops a group backed by one seed (it is a term, not a topic), so those seeds
+    # left the denominator too and the survivors' shares inflated to fill the gap:
+    # PEO Brokers' nine industry terms each keyed on a unique word once "worker"
+    # crossed the common-token threshold, leaving three topics holding 8 of 17
+    # seeds and claiming 38%, 38% and 25% of a grid they are 18% of. Quotas then
+    # reserved every slot in the grid. Counting the seeds themselves leaves the
+    # unclustered ones to the volume ranking, which is the correct owner of a term
+    # no topic claims. No effect when the model assigns the topics: it assigns
+    # every term, so the two counts agree. (2026-08-13)
+    total_seeds = max(sum(t["size"] for t in topics),
+                      len([x for x in (seeds or []) if str(x).strip()])) or 1
 
     # A topic only earns a guaranteed slot if the operator's input actually
     # weights it that far. One seed out of 29 is 3% of the input; handing it one
@@ -2704,7 +2727,12 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
 
     out = [dict(x) for x in services]
     for x in out:
-        x["_topic"] = service_topic(x.get("service", ""), topics)
+        svc = x.get("service", "")
+        # A LOOKUP CLAIMS NO TOPIC. Even with the definitional seeds kept out of
+        # the clustering, "what does lcf stand for" can still land in a topic on a
+        # shared stem and then sit there defended by the quota. It is unclaimed by
+        # construction, which also makes it the first slot donated below.
+        x["_topic"] = "" if is_lookup_kw(svc) else service_topic(svc, topics)
 
     vol = {str(r.get("keyword", "")).lower(): (r.get("volume") or 0)
            for r in (cands or [])}
@@ -2719,6 +2747,35 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
         used = {str(x.get("service", "")).lower() for x in out}
         pool = [s for s in t["seeds"] if str(s).lower() not in used]
         pool.sort(key=lambda s: (-vol.get(str(s).lower(), 0), t["seeds"].index(s)))
+        # WHEN THE TOPIC HAS NO SEED LEFT TO PROMOTE. PEO Brokers typed 21 terms
+        # for 20 slots, so freeing three of them from abbreviation lookups freed
+        # nothing: every remaining seed was already in the grid and the loop had
+        # no candidate. Fall back to the MEASURED keyword pool, filtered to this
+        # topic — a coverage guarantee that can only reshuffle the operator's own
+        # typing is not covering anything the typing already missed. Measured and
+        # topic-matched only, never a lookup, so it cannot reintroduce what the
+        # slot was just taken back from. (2026-08-13)
+        if len(pool) < need:
+            extra = []
+            for r in (cands or []):
+                kw = str(r.get("keyword", "")).strip()
+                if not kw or not (r.get("volume") or 0):
+                    continue
+                lo = kw.lower()
+                if lo in used or lo in {str(x).lower() for x in pool}:
+                    continue
+                if is_lookup_kw(kw) or service_topic(kw, topics) != lab:
+                    continue
+                extra.append((-(r.get("volume") or 0), kw))
+            extra.sort()
+            seen_x = set()
+            for _v, kw in extra:
+                if kw.lower() in seen_x:
+                    continue
+                seen_x.add(kw.lower())
+                pool.append(kw)
+                if len(pool) >= need:
+                    break
         for s in pool[:need]:
             # A SERVICE NO TOPIC CLAIMS IS THE CHEAPEST SLOT IN THE LIST. It used
             # to be untouchable: donors were drawn only from topics that were OVER
@@ -2727,6 +2784,10 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
             # an unclaimed service, so it goes first. (2026-08-13)
             orphans = [x for x in out if not x.get("_topic")]
             if orphans:
+                # Last one first is "cheapest slot"; a lookup is cheaper still,
+                # so it goes ahead of any other unclaimed service. Stable, so
+                # rank order still decides within each group.
+                orphans.sort(key=lambda x: 1 if is_lookup_kw(x.get("service", "")) else 0)
                 drop = orphans[-1]
             else:
                 donor_lab = max(quota, key=lambda k: len([x for x in out if x.get("_topic") == k])
@@ -5676,7 +5737,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 _n = seed_norm(_s, markets, state)
                 if not _n:
                     continue
-                if is_question_kw(_n) or _DEFINITIONAL.search(_n):
+                if is_lookup_kw(_n):
                     seed_quality["question"].append(_s)
                 elif not int((_sv or {}).get(_n, 0) or 0):
                     seed_quality["zero"].append(_s)
@@ -5728,10 +5789,22 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # swapped-in service can still have its tier corrected.
         # The model partitions and names; token clustering is the fallback so a
         # dead API can't remove the guarantee, only its granularity.
-        topics = claude_topics(seeds, biz, brand) or topic_clusters(seeds)
+        # SHARE IS COMPUTED OVER TERMS SOMEONE COULD BUY. PEO Brokers typed four
+        # abbreviation lookups; one line of the panel flagged them as lookups and
+        # two lines down the coverage guarantee reserved three of twenty slots for
+        # them, because 17% of the seed list earns 17% of the grid no matter what
+        # the seeds are. The two mechanisms were reading the same terms and
+        # disagreeing. Lookups are still QUOTED — seeds are never filtered — they
+        # just stop reserving slots against the topics that sell something.
+        # Falls back to the whole list rather than leaving nothing to cluster.
+        # (2026-08-13)
+        _buyable = [s for s in (seeds or []) if not is_lookup_kw(str(s))]
+        topic_seeds = _buyable if len(_buyable) >= 2 else list(seeds or [])
+        topics = (claude_topics(topic_seeds, biz, brand)
+                  or topic_clusters(topic_seeds))
         topic_source = ("ai" if topics and topics[0].get("source") == "ai"
                         else "words")
-        services, topic_fixes = enforce_topic_coverage(services, seeds,
+        services, topic_fixes = enforce_topic_coverage(services, topic_seeds,
                                                       n_services, cands,
                                                       topics=topics)
         services = rebalance_tiers(services)
