@@ -2305,6 +2305,30 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
             return w[:-1]
         return w
 
+    # THE CLIENT'S OWN NOUN, SPELLED THE OTHER WAY. Brendan's Amare list has
+    # "houses for rent santa fe nm"; the description says "homes", so "houses"
+    # read as foreign and the term was refused. These are head nouns for what a
+    # business sells, where the two words are the same offer — not a blocklist of
+    # bad terms but a short, closed list of commercial synonyms. It will need
+    # extending; that is the honest cost of the approach. (2026-08-13)
+    _SYN = [
+        {"home", "house", "housing", "residence"},
+        {"apartment", "apt", "flat", "condo", "condominium"},
+        {"rent", "rental", "lease", "leasing", "letting"},
+        {"auto", "car", "vehicle", "automotive"},
+        {"doctor", "physician", "medical", "clinic"},
+        {"dentist", "dental"},
+        {"attorney", "lawyer", "legal"},
+        {"realtor", "realty", "estate", "broker"},
+        {"restaurant", "dining", "eatery", "cafe"},
+        {"store", "shop", "retail", "boutique"},
+        {"repair", "fix", "service", "servicing"},
+        {"removal", "haul", "hauling", "disposal", "pickup"},
+        {"cleaning", "cleaner", "janitorial", "maid"},
+        {"builder", "contractor", "construction", "building"},
+        {"salon", "spa", "barber"},
+        {"vet", "veterinary", "veterinarian", "animal"},
+    ]
     known = set()
     # HYPHENS SPLIT. "build-for-rent" is one token, so "build for rent homes" was
     # dropped on the word "build" — a term describing the client's own business
@@ -2312,6 +2336,14 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
     for w in corpus.replace(",", " ").replace("-", " ").replace("/", " ").split():
         known.add(w.strip("-/"))
         known.add(_stem(w))
+
+    # Fold in every synonym of a word the client DID use.
+    for grp in _SYN:
+        if known & grp:
+            for w in grp:
+                # The plural's stem too: "houses" stems to "hous", which is not
+                # what _stem("house") returns.
+                known.update({w, _stem(w), w + "s", _stem(w + "s")})
 
     def _alien(svc):
         return [w for w in (svc.get("service") or "").lower().split()
@@ -3384,7 +3416,21 @@ def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
         k = _seed_key(name) or frozenset({name})
         if not name:
             continue
-        if any(k == h or k <= h or h <= k for h in have):
+        # A HEAD TERM IS NOT A DUPLICATE OF ITS OWN QUALIFIER. "homes for rent"
+        # keys to {hom, rent}, a subset of "single family homes for rent"
+        # {hom, rent, singl}, so containment folded the BROAD term away as
+        # already-covered — and the broad term is the one with the volume: 40/mo
+        # against 10 for every qualified variant, straight into Ultra when the
+        # operator finally typed it by hand. Brendan's Amare list leads with it.
+        #
+        # Kept only when it carries two or more meaningful tokens. That is the
+        # existing bare-head guard, reused: "junk" ({junk}, one token) is still
+        # folded into "junk removal", which is the case this fold was written for.
+        # (2026-08-13)
+        _broader = any(k < h for h in have)
+        if _broader and len(k) >= 2:
+            pass
+        elif any(k == h or k <= h or h <= k for h in have):
             folded.append(t)
             continue
         hit = next((g for g in groups if k == g or k <= g or g <= k), None)
