@@ -2198,6 +2198,27 @@ how what why when where which who whose can could should would will does did
 is are was were do has have had am get gets getting rid without into from
 about after before during over under you your they them their there here
 that this these those not new more most less much many any all out off per
+# HOW MUCH / WHAT KIND, not WHO. The filter exists to catch a competitor's company
+# name — Turner, Clark — and a proper noun is what it should be testing. Ordinary
+# commercial modifiers fail the "did the client ever say this word" test for
+# reasons that have nothing to do with competitors: Brendan's own Amare list has
+# "luxury rentals", "pet friendly homes for rent", "gated community homes for
+# rent" and "homes for rent with garage", and a two-sentence business description
+# contains none of those adjectives. Every one was refused. (2026-08-13)
+luxury luxurious upscale premium deluxe modern updated renovated remodeled
+furnished unfurnished available now open immediate ready vacant
+small large big little mini compact spacious oversized
+cheap budget discount value low high mid upper lower
+gated private secure safe quiet
+pet friendly pets dog dogs cat cats family friendly
+senior seniors student students corporate
+short long term temporary permanent monthly weekly daily nightly
+single double triple multi one two three four five bedroom bedrooms bed beds
+bath baths bathroom bathrooms studio unit units
+emergency urgent same day next 24 hour hours weekend evening
+licensed insured bonded certified accredited approved
+custom bespoke standard basic full partial complete
+indoor outdoor interior exterior residential commercial
 """.split())
 
 # Questions, as opposed to services. The service-list prompt has always said
@@ -2281,7 +2302,10 @@ def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, 
         return w
 
     known = set()
-    for w in corpus.replace(",", " ").split():
+    # HYPHENS SPLIT. "build-for-rent" is one token, so "build for rent homes" was
+    # dropped on the word "build" — a term describing the client's own business
+    # model, refused because their description hyphenated it. (2026-08-13)
+    for w in corpus.replace(",", " ").replace("-", " ").replace("/", " ").split():
         known.add(w.strip("-/"))
         known.add(_stem(w))
 
@@ -9738,6 +9762,17 @@ search for, and that are NOT already covered above. Rules:
 3. Only services this business plausibly sells. If the website pages or the
    description name something, prefer it.
 4. Order by how commonly the service is bought, most common first.
+5. USE THE CLIENT'S OWN NOUN FOR WHAT THEY SELL, taken from the description
+   above — not the category's noun. A description saying "single-family rental
+   homes" means the searched noun is "homes for rent" / "houses for rent" /
+   "rental homes", NOT "apartments": those are a neighbouring industry and the
+   client ranks for none of them. Getting this wrong replaces the client's entire
+   vocabulary, which is worse than returning nothing.
+6. If they sell INVENTORY rather than services — rentals, property, vehicles,
+   stock — the equivalent of a service line is what a buyer types: their noun
+   plus one distinguishing attribute. Bedroom count, size, feature, condition.
+   "3 bedroom homes for rent", "homes for rent with garage", "pet friendly
+   rentals".
 
 Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on their site"}}]}}"""
     try:

@@ -1152,14 +1152,16 @@ function thinFloorHtml(bad, floor, typ, mkt){
   // (2026-08-13)
   const thinMkt = !!(mkt && mkt.thin_market);
   const chip=x=>`<span class="svc-chip" data-label="${escapeHtml(String(x.term||''))}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px dashed #c9a227;color:#7a6410;font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(String(x.term||''))} <span class="nf" style="font-size:10.5px">(${Number(x.volume||0).toLocaleString()}/mo)</span></span>`;
+  // A "best term" of 0/mo is not a readable sentence. (2026-08-13)
+  const best = Number((mkt||{}).market_best||0);
   const own = (typ!==null && typ<floor);
   if(!own && !thinMkt)
     return `<div class="nf" style="font-size:11px;margin-top:3px">Below ${floor}/mo, not offered: ${bad.slice(0,10).map(x=>escapeHtml(String(x.term||''))).join(' · ')}</div>`;
-  const why = own
-    ? `this client's own terms run at <b>${Number(typ).toLocaleString()}/mo</b>, so the floor is refusing terms no thinner than the quote itself`
-    : `the best term this vertical has in your market is <b>${Number((mkt||{}).market_best||0).toLocaleString()}/mo</b>, so the floor is refusing most of a small market rather than filtering noise out of a big one`;
+  const why = own ? `this client's own terms run at ${Number(typ).toLocaleString()}/mo`
+           : best ? `nothing in this vertical beats ${best.toLocaleString()}/mo here`
+                  : `nothing in this vertical registers any volume here`;
   return `<div id="thinFloorBox" style="margin-top:6px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;padding:7px 10px;font-size:12.5px">
-    <div class="nf" style="font-size:11.5px">⚠ <b>${bad.length} service line${bad.length===1?'':'s'} held back by the ${floor}/mo floor</b> — but ${why}. Click to add as a seed.${tipOf('The floor exists to stop a fat client&rsquo;s list filling with noise, and it is measured against this client rather than applied flat. Two things can relax it: the client&rsquo;s own built list coming in under it, or the whole vertical topping out near it in this market. A client with real demand somewhere keeps the floor, because there the sub-floor terms really are the dregs. Volumes shown are what they measured, not estimates.')}</div>
+    <div class="nf" style="font-size:11.5px">⚠ <b>${bad.length} held back by the ${floor}/mo floor</b> — ${why}.${tipOf('The floor stops a fat client&rsquo;s list filling with noise, so it is measured against this client rather than applied flat. It relaxes when the client&rsquo;s own list comes in under it, or the whole vertical tops out near it here. A client with real demand somewhere keeps the floor. Volumes are measured, not estimated.')}</div>
     ${bad.slice(0,14).map(chip).join('')}
   </div>`;
 }
@@ -1442,6 +1444,27 @@ async function runDescribeClient(){
   };
 }
 
+// One sentence for what the fetch saw, detail on the hover. Named so blocked.js
+// asserts on the SHIPPED logic instead of its own copy of it. (2026-08-13)
+function fetchVerdict(data){
+
+  // READ THE CODES IT ALREADY HAS. This said "links showing 0 with HTTP
+  // 200 means the site cloaks bots" under four lines reading 403 and
+  // SSLError — advice for a failure that had not happened.
+  // (2026-08-13)
+  if((data.n_nav_links||0)>0)
+  return `<b>${data.n_nav_links} links, none service-shaped.</b>${tipOf('Not the site blocking us &mdash; the filter rejected every link, so their nav has no services or markets pages to read.')} `;
+  const st=(data.statuses||[]);
+  const blocked=st.filter(c=>[401,403,406,429].includes(c));
+  if(blocked.length)
+  return `<b>Site refused us — HTTP ${[...new Set(blocked)].join('/')}.</b>${tipOf('Bot protection, not cloaking &mdash; the page serves normally to a real browser and no setting here gets past it.')} `;
+  if(st.some(c=>c>=200&&c<300))
+  return `No links on the page.${tipOf('HTTP 200 with zero links: the menu is JavaScript-rendered, or served only to browsers.')} `;
+  if(st.length)
+  return `The site answered HTTP ${[...new Set(st)].join('/')}. `;
+  return 'Nothing was reachable at that domain. ';
+}
+
 // ---- suggest services from the client site's nav menu ----
 async function runSuggestServices(auto){
   document.getElementById('sites_in').dispatchEvent(new Event('blur'));
@@ -1483,23 +1506,7 @@ async function runSuggestServices(auto){
       const why=(data.diag&&data.diag.length)
         ? `<details style="margin:3px 0"><summary class="nf" style="font-size:11px;cursor:pointer;user-select:none">what the fetch saw (${data.diag.length} attempt${data.diag.length===1?'':'s'})</summary><div class="nf" style="font-size:11px;margin-top:3px;font-family:ui-monospace,monospace">${data.diag.map(d=>String(d).replace(/</g,'&lt;')).join('<br>')}</div></details>`
         : '';
-      out.innerHTML='<div class="nf" style="font-size:12px">'+(()=>{
-            // READ THE CODES IT ALREADY HAS. This said "links showing 0 with HTTP
-            // 200 means the site cloaks bots" under four lines reading 403 and
-            // SSLError — advice for a failure that had not happened.
-            // (2026-08-13)
-            if((data.n_nav_links||0)>0)
-              return `<b>${data.n_nav_links} links were found</b> — none of them looked like a service page, so this is the filter rejecting them rather than the site blocking us. `;
-            const st=(data.statuses||[]);
-            const blocked=st.filter(c=>[401,403,406,429].includes(c));
-            if(blocked.length)
-              return `<b>The site refused us — HTTP ${[...new Set(blocked)].join('/')}.</b> That is bot protection, not cloaking: the page serves normally to a real browser. No setting here gets past it. `;
-            if(st.some(c=>c>=200&&c<300))
-              return 'Served HTTP 200 with no links, so the menu is either JavaScript-rendered or shown only to browsers. ';
-            if(st.length)
-              return `The site answered HTTP ${[...new Set(st)].join('/')}. `;
-            return 'Nothing was reachable at that domain. ';
-          })()
+      out.innerHTML='<div class="nf" style="font-size:12px">'+fetchVerdict(data)
         +'<a href="#" id="pasteMenuLink" style="color:var(--atlas);font-weight:600">Paste their menu instead</a> — copy the nav/service list from the site and it runs through the same AI conversion.</div>'
         + why
         + '<div id="lookupBox" style="margin-top:5px"></div>'
@@ -1977,7 +1984,7 @@ function step2Html(m){
   const kdLine = (m.adder_basis==='kd')
     ? ``
     : (m.median_kd!=null)
-    ? `<div class="calc">median organic keyword difficulty <code>${m.median_kd}</code>/100 <span class="nf">(Labs organic data — independent of Google Ads bid data)</span></div>`
+    ? `<div class="calc">organic difficulty <code>${m.median_kd}</code>/100${tipOf('Labs organic data, independent of Google Ads bid data.')}</div>`
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
   const bs=m.bid_stats;
   // The suggestion branch used to key off m.kd_suggested_adder alone, so when
@@ -2045,10 +2052,10 @@ function step2Html(m){
         ? `${m.cpc_low_confidence?`<details style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 11px;border-radius:7px;font-size:12.5px;margin-bottom:8px">
           <summary style="cursor:pointer;user-select:none">⚠ <b>This adder rests on ${m.cpc_n_bids} bid${m.cpc_n_bids===1?'':'s'}</b></summary>
           <div style="margin-top:6px">The adder scales off the <i>median</i> top-of-page bid, and above $62 every extra dollar of CPC adds several hundred to the quote — reliable on a real median, an extrapolation on a sample this thin. Spot-check the bid in Google Ads Keyword Planner before quoting, or add head terms so the median has something to sit on.</div>
-        </details>`:''}median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(scaled by click value — high-CPC verticals price higher)</span>`
+        </details>`:''}median CPC <code>$${(m.cpc_used||0).toFixed(2)}</code> → adder <code>+${money(m.adder)}</code>${tipOf('Scaled by click value: where a click costs more, ranking is worth more.')}`
         : m.adder_basis==='kd'
-        ? `organic difficulty <code>${m.median_kd}</code>/100 → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(applied automatically — no bid data exists in this vertical, so difficulty is scored on the same ladder bids use)</span>`
-        : `median head-term bid score <code>${m.score}</code> → competitive adder <code>+${money(m.adder)}</code> <span class="nf">(flat — no CPC data to scale on)</span>`}</div>
+        ? `organic difficulty <code>${m.median_kd}</code>/100 → adder <code>+${money(m.adder)}</code>${tipOf('No Google Ads bid data in this vertical, so difficulty is scored on the ladder bids would use. Applied automatically.')}`
+        : `bid score <code>${m.score}</code> → adder <code>+${money(m.adder)}</code>${tipOf('Flat &mdash; no CPC data to scale on.')}`}</div>
       ${kdLine}
       ${stepBtn('step3','3 · Check rankings')}`;
 }
@@ -3978,10 +3985,16 @@ $('spgeo_suggest').addEventListener('click', async()=>{
       h+=`<div class="nf" style="font-size:12.5px;margin-bottom:5px">Tested as “${escapeHtml(r.tested_with||'')} + region”. Click to add:</div>`;
       h+=r.regions.map(x=>`<button class="strat spgeo_add" data-n="${escapeHtml(x.name)}" style="margin:0 6px 6px 0">+ ${escapeHtml(x.name)} <span class="nf">(${Number(x.volume).toLocaleString()}/mo)</span></button>`).join('');
     }
+    // ONE FACT, ONCE. The rejected list and r.note were the same sentence twice:
+    // "Not added — too little search volume with a service attached: northern new
+    // mexico (0/mo)." then "Suggested northern new mexico — but none reach 10 a
+    // month with 'apartments for rent' attached." (2026-08-13)
     if(r.rejected&&r.rejected.length){
-      h+=`<div class="nf" style="font-size:12px;margin-top:4px">Not added — too little search volume with a service attached: ${r.rejected.map(x=>escapeHtml(x.name)+(x.volume==null?'':` (${x.volume}/mo)`)).join(', ')}.</div>`;
+      const names=r.rejected.map(x=>escapeHtml(x.name)+(x.volume==null?'':` (${x.volume}/mo)`)).join(', ');
+      h+=`<div class="nf" style="font-size:12px;margin-top:4px">Too thin to quote: ${names}${tipOf('Each region was measured with your first focus term attached, which is how it would appear in a keyword. Under 10 searches a month that way, it is not worth a grid slot.'+(r.note?'<br><br>'+escapeHtml(r.note):''))}</div>`;
+    }else if(r.note){
+      h+=`<div class="nf" style="font-size:12.5px;margin-top:4px">${escapeHtml(r.note)}</div>`;
     }
-    if(r.note) h+=`<div class="nf" style="font-size:12.5px;margin-top:4px">${escapeHtml(r.note)}</div>`;
     out.innerHTML=h||'<span class="nf" style="font-size:12.5px">Nothing to suggest.</span>';
     out.querySelectorAll('.spgeo_add').forEach(b=>b.onclick=()=>{
       const v=b.dataset.n;
@@ -4471,7 +4484,7 @@ function step1Grid(kw){
   const dem=kw.seeds_demoted||[];
   if(dem.length){
     const word=k=>k==='other_business'?'a different business':'an object, not work they perform';
-    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b> — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''} ${dem.length===1?'is':'are'} not something this client sells${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>${dem.length} focus term${dem.length===1?'':'s'} left out</b>, not theirs to sell — ${dem.slice(0,6).map(x=>`<i>${escapeHtml(String(x.term||''))}</i>`).join(', ')}${dem.length>6?` +${dem.length-6} more`:''}${tipOf(dem.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(word(x.kind))+(x.why?': '+escapeHtml(String(x.why)):'')).join('<br>')+'<br><br>Asked per client with the business in front of it, never matched against a word list &mdash; the same phrase is a service for one business and somebody else&rsquo;s for the next. Set aside BEFORE the grid filled, so none of them could take a slot from a real service line. Nothing was deleted: put one back in Product / Vertical Focus and rebuild if the call was wrong.')}</div>`);
   }
   const sr=kw.seed_ranking||{};
   // A quote saved before the build started ranking seeds carries no seed_ranking
