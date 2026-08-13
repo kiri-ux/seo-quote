@@ -354,7 +354,15 @@
 
     <label>Strategy</label>
     <div class="help">Pulls from RZ line item. In adtini the strategy arrives with the order — this selector is the demo stand-in. Core SEO is the priced product; the AI Search add-on and Website Audit are captured for the reviewer and the proposal, with pricing hooks to be added priced once actual quotes exist.</div>
-    <div id="strategies">
+    <!-- Dropdown 2026-08-13. The hidden radios stay because collectInputs reads
+         '#strategies input:checked' and the demo rail toggles them; the select is
+         the control, they are the value. -->
+    <select id="strategy_sel" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:14px 'Barlow',sans-serif;background:#FCFCFB;color:var(--ink);min-width:240px">
+      <option value="Core SEO" selected>Core SEO</option>
+      <option value="Core SEO + AI Search">Core SEO + AI Search</option>
+      <option value="Website Audit">Website Audit</option>
+    </select>
+    <div id="strategies" class="hidden">
       <label class="strat"><input type="radio" name="strategy" value="Core SEO" checked> Core SEO</label>
       <label class="strat"><input type="radio" name="strategy" value="Core SEO + AI Search"> Core SEO + AI Search</label>
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
@@ -367,7 +375,20 @@
          a hidden <select id="goal"> is kept in sync so every existing reader
          (collectInputs, restoreQuote, the six API payloads) keeps working off
          one field. (2026-08-09) -->
-    <div id="goals">
+    <select id="goal_sel" multiple size="6" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:14px 'Barlow',sans-serif;background:#FCFCFB;color:var(--ink);min-width:280px;max-width:420px">
+      <option value="In-Store Sales">In-Store Sales</option>
+      <option value="B2B Sales">B2B Sales</option>
+      <option value="Information Requests">Information Requests</option>
+      <option value="Branding &amp; Awareness">Branding &amp; Awareness</option>
+      <option value="Mobile App Download">Mobile App Download</option>
+      <option value="Website Traffic">Website Traffic</option>
+      <option value="Leads/Form Fillouts">Leads/Form Fillouts</option>
+      <option value="Online Sales">Online Sales</option>
+      <option value="Phone Calls">Phone Calls</option>
+      <option value="Job Recruitment">Job Recruitment</option>
+      <option value="Event Attendance">Event Attendance</option>
+    </select>
+    <div id="goals" class="hidden">
       <label class="strat"><input type="checkbox" name="goal" value="In-Store Sales"> In-Store Sales</label>
       <label class="strat"><input type="checkbox" name="goal" value="B2B Sales"> B2B Sales</label>
       <label class="strat"><input type="checkbox" name="goal" value="Information Requests"> Information Requests</label>
@@ -1557,6 +1578,12 @@ async function runRankedKeywords(){
 // from them. (2026-08-13)
 async function runAllSuggestions(){
   const before=(stores.kw||[]).length;
+  // NOTHING FLASHES. The three panels still render — the chips are how the terms
+  // are collected — but they render out of sight, so "Checking what this industry
+  // sells…" and a 403 verdict don't appear for three seconds and vanish again.
+  // (2026-08-13)
+  const PANELS=['siteSvcOut','expandSvcOut','rankedKwOut'];
+  for(const id of PANELS){ const e=document.getElementById(id); if(e) e.classList.add('hidden'); }
   // Each awaited explicitly: runSuggestServices fires the industry pass without
   // awaiting it, so relying on that alone read the chips before they existed.
   await Promise.all([
@@ -1635,6 +1662,7 @@ async function runAllSuggestions(){
     const host=document.getElementById('siteSvcOut');
     if(host) host.innerHTML='<div id="pasteHost" style="display:none">'+keep+'</div>';
   }
+  for(const id of PANELS){ const e=document.getElementById(id); if(e) e.classList.remove('hidden'); }
   if(added.length){
     PILL_RENDER.kw();
     try{ scheduleAutoSave(); }catch(e){}
@@ -1809,6 +1837,40 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
       boxes().forEach(b=>{ b.checked=want.has(b.value); });
     };
     box.addEventListener('change', e=>{ if(e.target&&e.target.name==='goal') syncGoals(); });
+    // The dropdowns are the control; the chips underneath are the value every
+    // existing reader already works off. One direction each way. (2026-08-13)
+    const gsel=document.getElementById('goal_sel');
+    if(gsel){
+      gsel.addEventListener('change', ()=>{
+        const want=new Set([...gsel.selectedOptions].map(o=>o.value));
+        boxes().forEach(b=>{ b.checked=want.has(b.value); });
+        syncGoals();
+      });
+      const _rg=window.reflectGoals;
+      window.reflectGoals=function(){
+        _rg();
+        const on=new Set(boxes().filter(b=>b.checked).map(b=>b.value));
+        [...gsel.options].forEach(o=>{ o.selected=on.has(o.value); });
+      };
+    }
+    const ssel=document.getElementById('strategy_sel');
+    if(ssel){
+      const radios=()=>[...document.querySelectorAll('#strategies input[name="strategy"]')];
+      ssel.addEventListener('change', ()=>{
+        radios().forEach(r=>{ r.checked = (r.value===ssel.value); });
+        radios().find(r=>r.checked)?.dispatchEvent(new Event('change',{bubbles:true}));
+        try{scheduleAutoSave();}catch(e){}
+      });
+      // a restore or the demo rail sets the radio — follow it
+      document.getElementById('strategies').addEventListener('change', ()=>{
+        const on=radios().find(r=>r.checked);
+        if(on && ssel.value!==on.value) ssel.value=on.value;
+      });
+      window.reflectStrategy=function(){
+        const on=radios().find(r=>r.checked);
+        if(on) ssel.value=on.value;
+      };
+    }
   })();
   bind('pastseo_spend','past_seo_spend', el=>{
     const n=parseFloat(String(el.value||'').replace(/[^0-9.]/g,''));
@@ -1967,12 +2029,7 @@ $('step1').addEventListener('click', async()=>{
   const inp=collectInputs(); if(!inp) return;
   ST.inputs=inp;
   $('out').innerHTML='';
-  const tips=preflightAdvice(inp);
-  if(tips.length){
-    panel('p0adv',`<details style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:9px 12px;border-radius:9px;font-size:12.5px;margin-bottom:10px">
-      <summary style="cursor:pointer;user-select:none"><b>✈ Pre-flight suggestions (${tips.length})</b> <span class="nf">— patterns from actual proposals; the run continues either way. Click to expand.</span></summary>
-      <ul style="margin:6px 0 0 18px;padding:0">${tips.map(t=>`<li style="margin:3px 0">${t}</li>`).join('')}</ul></details>`);
-  }
+  // Pre-flight suggestions panel removed 2026-08-13 on request.
   const _auto=$('autoExpand');
   if(_auto && _auto.checked){
     $('step1').disabled=true; $('step1').textContent='Expanding your terms…';
