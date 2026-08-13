@@ -2164,6 +2164,10 @@ $('step1').addEventListener('click', async()=>{
           // decision resumes on the next one.
           grid_axis:(ST.gridAxis||''),
           ultra:kw.ultra, competitive:kw.competitive, long_tail:kw.long_tail,
+          // WHICH OF THESE THE TOOL PROPOSED. Without it the build cannot tell
+          // its own guesses from the operator's judgement, so "you typed it, it
+          // wins" was exempting both. (2026-08-13)
+          suggested:(ST.expandedSeeds||[]).slice(),
           site_terms:kw.site_terms||[]});
         ST.gridAxis='';
         if(ref && ref.all){
@@ -2176,6 +2180,16 @@ $('step1').addEventListener('click', async()=>{
             if(n) n.textContent = 'On — ' + (ref.national_demand_reason||'auto') + '. Volume pulled nationally.';
           } else {
             const n=$('natdemand_auto'); if(n) n.textContent='';
+          }
+          // The build took these off the list; the box has to agree with it, or
+          // the next rebuild sends them straight back.
+          const _ds=(ref.seeds_dropped_suggested||[]).map(x=>String(x.term||'').toLowerCase());
+          if(_ds.length){
+            const g=new Set(_ds);
+            stores.kw=stores.kw.filter(v=>!g.has(String(v).toLowerCase()));
+            ST.expandedSeeds=(ST.expandedSeeds||[]).filter(v=>!g.has(String(v).toLowerCase()));
+            try{ PILL_RENDER.kw(); }catch(e){}
+            try{ scheduleAutoSave(); }catch(e){}
           }
           renderStep1(); kwBuiltNote();
         }
@@ -4823,6 +4837,8 @@ function step1Grid(kw){
     if(_q.length) bits.push(`<b>${_q.length}</b> people look up, not buy`);
     notes.push(`<div class="nf" style="margin-top:4px">\u{1F50E} <b>Of your own focus terms</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf('Seeds are never filtered &mdash; you typed them, they win. This is only what they are costing: a term measuring 0/mo brings no traffic to the grid, and a definition lookup ("what does lcf stand for") is someone researching an abbreviation rather than buying.<br><br>'+[].concat(_z.map(x=>escapeHtml(String(x))+' &mdash; 0/mo'), _q.map(x=>escapeHtml(String(x))+' &mdash; lookup')).slice(0,20).join('<br>'))}</div>`);
   }
+  const _dsg=kw.seeds_dropped_suggested||[];
+  if(_dsg.length) notes.push(`<div class="nf" style="margin-top:4px">\u2702 <b>${_dsg.length} suggested term${_dsg.length===1?'':'s'} taken back off</b> \u2014 company names${tipOf('A term the TOOL proposed does not get the exemption that protects one you typed &mdash; a company is not a service line, and you already rank #1 for your own name.<br><br>'+_dsg.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(String(x.why||''))).join('<br>'))}</div>`);
   const _sf=kw.seeds_folded||[];
   if(_sf.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F500} <b>${_sf.length} duplicate focus term${_sf.length===1?'':'s'} folded</b>${tipOf(_sf.slice(0,14).map(x=>escapeHtml(String(x[0]))+' &rarr; '+escapeHtml(String(x[1]))).join('<br>')+'<br><br>One service line cannot take two grid slots. Singular/plural and containment count as the same term.')}</div>`);
   const sr=kw.seed_ranking||{};

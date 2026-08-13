@@ -2474,11 +2474,23 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     def norm(t):
         return " ".join((t or "").lower().split())
 
+    # KEYED ON MEANING, NOT SPELLING. This deduped on the exact string, so the
+    # refinement pass could hand the grid "new york state fund workers comp" AND
+    # "new york state fund workers compensation", and "usl&h" alongside "usl&h
+    # insurance" — four of PEO Brokers' twenty slots on two services, each pair
+    # then splitting its own rankings across two grid rows. Same key the seed fold
+    # uses, so the two agree on what "the same service" is, and equality-only, so
+    # "auto insurance" and "bundle home and auto insurance" still both belong.
+    # A skipped duplicate frees its slot for the next pick rather than shortening
+    # the grid. (2026-08-13)
+    def key(t):
+        return _seed_key(t) or frozenset({norm(t)})
+
     out, taken = [], set()
     for term in clean[:max_services]:
-        if norm(term) in taken:
+        if key(term) in taken:
             continue
-        taken.add(norm(term))
+        taken.add(key(term))
         # Tier assigned below, once the final length is known.
         out.append({"service": term, "tier": "competitive", "from_seed": True})
     used = len(out)
@@ -2489,9 +2501,9 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
         if len(out) >= max_services:
             break
         n = norm(svc.get("service"))
-        if not n or n in taken:
+        if not n or key(n) in taken:
             continue
-        taken.add(n)
+        taken.add(key(n))
         out.append(dict(svc))
     out = out[:max_services]
 
@@ -3391,6 +3403,20 @@ or for of in my your our
 """.split())
 
 
+# COMPENSATION IS COMP. The stemmer takes "workers compensation" to `compens`
+# and "workers comp" to `comp`, so PEO Brokers carried four near-duplicate pairs
+# into a twenty-slot grid — swif workers compensation / swif workers comp,
+# workers comp insurance for staffing agencies / workers compensation for
+# staffing agencies, new york state fund workers comp / ...compensation. Four
+# slots, and each pair splits its own rankings in the grid. (2026-08-13)
+_SEED_SYN = {"compens": "comp"}
+
+# Words that QUALIFY the subject without changing it. Dropped from the key only
+# when something else survives, so "insurance" on its own is still a key — this
+# folds "usl&h insurance" into "usl&h", not every insurance term into one.
+_SEED_QUALIFY = frozenset("insurance insurances coverage coverages".split())
+
+
 def _seed_stem(word):
     """Crude, deterministic stemmer. A real one is not worth the dependency:
     the only job is making 'hauling', 'haulers' and 'haul' the same token."""
@@ -3435,15 +3461,21 @@ _SEED_ACTION = {
 def _seed_key(term):
     """Stemmed token set with shape words removed and action verbs canonicalised
     — the near-duplicate key."""
-    toks = set()
+    toks, quals = set(), set()
     for w in (term or "").lower().split():
         if w in _SEED_SHAPE:
             continue
         st = _seed_stem(w)
         st = _SEED_ACTION.get(st, st)
-        if st and st not in _SEED_SHAPE:
+        st = _SEED_SYN.get(st, st)
+        if not st or st in _SEED_SHAPE:
+            continue
+        if w in _SEED_QUALIFY:
+            quals.add(st)
+        else:
             toks.add(st)
-    return frozenset(toks)
+    # Qualifiers only count when they are all there is.
+    return frozenset(toks or quals)
 
 
 def seed_norm(term, markets=None, state=""):
@@ -3512,6 +3544,81 @@ def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
         if limit and len(kept) >= int(limit):
             break
     return kept, folded
+
+
+# A company name wearing its own suffix. Only the LAST token counts, so "llc
+# formation services" — a real thing a lawyer sells — is untouched.
+_CORP_SUFFIX = frozenset("""llc l.l.c. inc inc. incorporated corp corp. corporation
+ltd ltd. limited llp lllp pllc lp gmbh""".split())
+
+
+def _name_tokens(text):
+    """Significant stemmed tokens of a name, shape words removed."""
+    raw = re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower())
+    out = set()
+    for w in raw.split():
+        if w in _SEED_SHAPE:
+            continue
+        st = _seed_stem(w)
+        if st and len(st) > 1 and st not in _SEED_SHAPE:
+            out.add(st)
+    return out
+
+
+def is_brand_term(term, brand):
+    """Is this the client's OWN name?
+
+    PEO Brokers' focus list came back holding "peo insurance brokers network" —
+    their own company — proposed by the ranked-keywords pass, which of course
+    found it: they rank #1 for their name and always will. There is no work to
+    sell against a term you already own, and it takes a slot from one you don't.
+    Needs two significant words in the brand, so a one-word brand that doubles as
+    a service ("Amare", "Prime") cannot swallow the list. (2026-08-13)
+    """
+    bt = _name_tokens(brand)
+    if len(bt) < 2:
+        return False
+    return bt <= _name_tokens(term)
+
+
+def drop_suggested_nonservices(seeds, suggested, kinds, brand,
+                               markets=None, state=""):
+    """Terms the TOOL proposed do not get the operator's exemption.
+
+    "You typed it, it wins" exempts a focus term from every filter in the build.
+    It was written to protect the judgement of someone who knows the account —
+    and it was covering the tool's own guesses, because nothing recorded which
+    terms those were. Now something does.
+
+    Only touches terms in `suggested`. Anything typed is returned untouched, and
+    the list is never emptied. Returns (keep, dropped).
+    """
+    sug = {str(x).strip().lower() for x in (suggested or []) if str(x).strip()}
+    if not sug:
+        return list(seeds or []), []
+    kinds = kinds or {}
+    keep, dropped = [], []
+    for t in seeds or []:
+        raw = str(t or "").strip().lower()
+        norm = seed_norm(t, markets, state)
+        if raw not in sug and norm not in sug:
+            keep.append(t)
+            continue
+        k = kinds.get(raw) or kinds.get(norm) or {}
+        why = ""
+        if k.get("kind") == "other_business":
+            why = k.get("why") or "another company, not a service"
+        elif raw.split() and raw.split()[-1] in _CORP_SUFFIX:
+            why = "a company name"
+        elif is_brand_term(t, brand):
+            why = "their own name — they already rank for it"
+        if why:
+            dropped.append({"term": t, "why": why})
+        else:
+            keep.append(t)
+    if not keep:
+        return list(seeds or []), []
+    return keep, dropped
 
 
 def demote_nonservices(seeds, kinds, markets=None, state=""):
@@ -5543,7 +5650,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
                    national_demand=False, goal="", band="",
                    national_reason="", grid_axis="", industry="",
-                   product_demand=False):
+                   product_demand=False, suggested=None):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -5609,6 +5716,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         seed_ranking = {}
         seeds_demoted = []
         seeds_folded = []
+        seeds_dropped_suggested = []
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
@@ -5684,6 +5792,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 if _dem:
                     seeds_demoted = _dem
                     seeds = _keep
+        # AND THE ONES THE TOOL PROPOSED GET NO EXEMPTION. Runs whether or not the
+        # classifier answered — the brand and corporate-suffix rules are code, so
+        # a dead API still catches "peo insurance brokers network". (2026-08-13)
+        if seeds and suggested:
+            _sk, _sd = drop_suggested_nonservices(seeds, suggested, _kinds,
+                                                  brand, markets, state)
+            if _sd:
+                seeds_dropped_suggested = _sd
+                seeds = _sk
         # FOLD ALWAYS; RANK ONLY WHEN IT DECIDES SOMETHING. (2026-08-13)
         if seeds:
             _fk, _ff = fold_seed_duplicates(seeds, markets, state)
@@ -6398,6 +6515,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
             "seeds_demoted": seeds_demoted,
+            "seeds_dropped_suggested": seeds_dropped_suggested,
             "seeds_folded": seeds_folded,
             "seed_quality": seed_quality,
             # HOW FULL THE GRID IS. NPAIHB had room for 20 services and got 9 — a
@@ -7867,6 +7985,7 @@ def api_refine():
                             product_demand=bool(d.get("national_demand"))
                                            or bool(d.get("ecommerce")),
                             goal=(d.get("goal") or ""),
+                            suggested=d.get("suggested") or [],
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
@@ -7913,6 +8032,7 @@ def api_refine():
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
         "seeds_demoted": s1.get("seeds_demoted") or [],
+        "seeds_dropped_suggested": s1.get("seeds_dropped_suggested") or [],
         "seeds_folded": s1.get("seeds_folded") or [],
         "seed_quality": s1.get("seed_quality") or {},
         "service_slots": s1.get("service_slots") or 0,
