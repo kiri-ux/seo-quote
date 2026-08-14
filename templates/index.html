@@ -483,9 +483,16 @@
     <div id="expandSvcOut" style="margin-top:6px"></div>
     <div id="rankedKwOut" style="margin-top:6px"></div>
 
-    <label>Business description</label>
-    <div class="help">What the client does and doesn't do. Leave blank to auto-infer from their website. E.g. "Therapy practice offering counseling; does NOT prescribe medication."</div>
-    <textarea id="business_desc" rows="2" placeholder="Leave blank to auto-infer from the website…" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+    <!-- BUSINESS DESCRIPTION came off the form 2026-08-13. It was never really an
+         input: it is the vocabulary sample the grounding filter measures every AI
+         proposal against, and we were asking a human to copy it off the website
+         the tool already reads. The build fills it in now (their site first, a
+         SERP read second) and reports what it concluded on the Step 1 panel.
+         The textarea stays in the DOM, hidden, because collectInputs, the six API
+         payloads and every saved quote read this one field — a quote saved with a
+         hand-written description still sends it, and the build still prefers it
+         over anything it would infer. -->
+    <textarea id="business_desc" class="hidden" rows="2"></textarea>
 
     <!-- SEARCH-PHRASE GEOS field removed 2026-08-13 — runAllSuggestions() calls
          /api/suggest_regions with the build and adds every region carrying real
@@ -4837,6 +4844,8 @@ function step1Grid(kw){
     if(_q.length) bits.push(`<b>${_q.length}</b> people look up, not buy`);
     notes.push(`<div class="nf" style="margin-top:4px">\u{1F50E} <b>Of your own focus terms</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf('Seeds are never filtered &mdash; you typed them, they win. This is only what they are costing: a term measuring 0/mo brings no traffic to the grid, and a definition lookup ("what does lcf stand for") is someone researching an abbreviation rather than buying.<br><br>'+[].concat(_z.map(x=>escapeHtml(String(x))+' &mdash; 0/mo'), _q.map(x=>escapeHtml(String(x))+' &mdash; lookup')).slice(0,20).join('<br>'))}</div>`);
   }
+  const _bdi=(kw.business_desc_inferred||'').trim();
+  if(_bdi) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D6} <b>Read of the business</b> \u2014 ${escapeHtml(_bdi.split(/(?<=[.!?])\s/)[0]).slice(0,110)}${tipOf('Written by the tool from their own site, or from a Google read of their name and market when the site cannot be crawled. It is not just a summary: it is the vocabulary the filter measures every AI-proposed service against, so a service using a word that never appears here or in your terms is treated as somebody else&rsquo;s. It no longer guesses what they do NOT sell &mdash; that comes from Negative terms.<br><br>'+escapeHtml(_bdi))}</div>`);
   const _dsg=kw.seeds_dropped_suggested||[];
   if(_dsg.length) notes.push(`<div class="nf" style="margin-top:4px">\u2702 <b>${_dsg.length} suggested term${_dsg.length===1?'':'s'} taken back off</b> \u2014 company names${tipOf('A term the TOOL proposed does not get the exemption that protects one you typed &mdash; a company is not a service line, and you already rank #1 for your own name.<br><br>'+_dsg.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(String(x.why||''))).join('<br>'))}</div>`);
   const _sf=kw.seeds_folded||[];

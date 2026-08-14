@@ -2064,24 +2064,46 @@ def fetch_exact_volume(keywords, markets, state, national=False):
     except Exception:
         return {}
 
-def infer_business(domain, seeds, site_terms):
-    """Infer a short description of what the client's business does (and doesn't),
-    from its domain + site keywords, so Claude can exclude off-target terms
-    (e.g. 'medication' for a therapy practice that doesn't prescribe). Returns a
-    short string, or '' if unavailable. Uses Claude; non-fatal."""
+def infer_business(domain, seeds, site_terms, industry="", pages=None):
+    """What this client SELLS, in one or two sentences, read off their own site.
+
+    IT NO LONGER GUESSES EXCLUSIONS (2026-08-13). The old prompt asked for what
+    the business "does NOT offer", and a website almost never says what it does
+    not do — so that clause was invented, and then enforced as a filter, quietly
+    removing good keywords whenever the guess was wrong. Exclusions now come from
+    the operator's Negative terms; this call supplies VOCABULARY.
+
+    Vocabulary is the job. The text returned here joins the seeds, the site pages
+    and the brand as the corpus the grounding filter checks every AI-proposed
+    service against, so it wants the client's OWN words and enough of them — a
+    thin description makes the filter trigger-happy, which is how NPAIHB's whole
+    proposal set got stood down. Returns '' if unavailable; non-fatal.
+    """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key or not (domain or site_terms):
         return ""
     site_list = [s["keyword"] for s in site_terms][:40]
-    prompt = f"""Based on this client's website and the keywords their site ranks for, write ONE sentence describing what the business does and, importantly, what related services it does NOT offer (for SEO targeting).
+    page_list = [str(p) for p in (pages or [])][:30]
+    prompt = f"""Describe what this business SELLS, in one or two sentences, for SEO targeting.
 
 WEBSITE: {domain or "(none)"}
-SERVICES/VERTICAL: {", ".join(seeds)}
-KEYWORDS FROM THEIR SITE: {json.dumps(site_list, ensure_ascii=False)}
+INDUSTRY: {industry or "not given"}
+SERVICES/VERTICAL THE PARTNER ENTERED: {", ".join(seeds)}
+PAGES ON THEIR SITE: {json.dumps(page_list, ensure_ascii=False)}
+KEYWORDS THEIR SITE SURFACES FOR: {json.dumps(site_list, ensure_ascii=False)}
 
-Example output: "A therapy and counseling practice providing talk therapy for mental health conditions; does NOT prescribe medication or offer psychiatric drug treatment."
+Rules:
+1. Say what they SELL. Do NOT say what they do not sell, do not offer, or do not
+   provide — that is supplied separately by a human and guessing it removes real
+   keywords.
+2. Use THEIR words, the ones on their site, not a synonym you prefer. If their
+   pages say "tribal", write "tribal", not "native american".
+3. Name the actual service lines. "A home services company" is useless; "a
+   build-for-rent community renting detached single-family homes" is the answer.
+4. If the evidence is too thin to say anything specific, return an empty string
+   rather than a generic sentence.
 
-Return ONLY the one-sentence description, no preamble."""
+Return ONLY the description, no preamble."""
     try:
         resp = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
@@ -5740,7 +5762,38 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     for c in gbp_cities:
         if c.lower() not in {l.lower() for l in site_locations}:
             site_locations.append(c)
+    # THE OPERATOR NO LONGER TYPES THIS (2026-08-13). The field came off the form
+    # and the build fills it in, because the description is not really an input —
+    # it is the vocabulary sample the grounding filter needs, and it was being
+    # asked of a human who could only copy it off the site the tool already reads.
+    #
+    # It has to happen HERE, before the filter runs. infer_business existed but
+    # nothing called it: the only inference lived inside claude_refine_keywords
+    # and came back in its 'business' field, which never reached the corpus. So a
+    # blank description meant the filter judged every proposal against seeds and
+    # page titles alone — the thin-corpus case that stood the whole thing down on
+    # NPAIHB. Two sources, cheapest first: their own site, then a SERP read for
+    # the clients whose site refuses to be crawled at all.
     biz = business_desc.strip() if business_desc else ""
+    biz_inferred = ""
+    if not biz:
+        try:
+            biz = (infer_business(domain, seeds, site_terms, industry,
+                                  site_pages) or "").strip()
+            biz_inferred = biz
+        except Exception:
+            app.logger.exception("infer_business failed")
+        if not biz and (brand or domain):
+            # Site unreadable (403, JS-only, dead host). Their name and market are
+            # on the order and the answer is on page one of Google.
+            try:
+                _q = " ".join(x for x in [brand, (markets or [""])[0]] if x).strip()
+                _sn = serp_snippets(_q, loc_string(markets, state)) if _q else []
+                _bd = claude_business_desc(brand, markets, industry, _sn, domain) or {}
+                biz = (_bd.get("text") or "").strip()
+                biz_inferred = biz
+            except Exception:
+                app.logger.exception("claude_business_desc failed during build")
 
     # ---- GRID MODE: build a service x city grid like the real proposals -----
     if CFG.get("grid_mode"):
@@ -6553,6 +6606,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
+            "business_desc_inferred": biz_inferred,
             "seeds_demoted": seeds_demoted,
             "seeds_dropped_suggested": seeds_dropped_suggested,
             "seeds_folded": seeds_folded,
@@ -8074,6 +8128,7 @@ def api_refine():
         "gbp_locations": s1.get("gbp_locations"),
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
+        "business_desc_inferred": s1.get("business_desc_inferred") or "",
         "seeds_demoted": s1.get("seeds_demoted") or [],
         "seeds_dropped_suggested": s1.get("seeds_dropped_suggested") or [],
         "seeds_folded": s1.get("seeds_folded") or [],
