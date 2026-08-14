@@ -3636,7 +3636,7 @@ def is_brand_term(term, brand):
 
 
 def drop_suggested_nonservices(seeds, suggested, kinds, brand,
-                               markets=None, state=""):
+                               markets=None, state="", ranked=None):
     """Terms the TOOL proposed do not get the operator's exemption.
 
     "You typed it, it wins" exempts a focus term from every filter in the build.
@@ -3648,6 +3648,7 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
     the list is never emptied. Returns (keep, dropped).
     """
     sug = {str(x).strip().lower() for x in (suggested or []) if str(x).strip()}
+    _rank = {str(x).strip().lower() for x in (ranked or []) if str(x).strip()}
     if not sug:
         return list(seeds or []), []
     kinds = kinds or {}
@@ -3660,7 +3661,17 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
             continue
         k = kinds.get(raw) or kinds.get(norm) or {}
         why = ""
-        if k.get("kind") == "other_business":
+        # A POSITION IS PROOF OF OWNERSHIP, and it beats a name-shaped guess.
+        # PEO Brokers lost five SWIF terms in one build: SWIF is Pennsylvania's
+        # State Workers' Insurance Fund, a program this broker places business
+        # into, and the classifier read the capitalised name and called it another
+        # business. The evidence against that was already in the same build —
+        # those terms surfaced from the ranked-keywords pass, which means the
+        # client RANKS for them. The two deterministic rules below still apply:
+        # a corporate suffix and the client's own brand name do not guess.
+        # (2026-08-13)
+        if k.get("kind") == "other_business" and not (
+                raw in _rank or norm in _rank):
             why = k.get("why") or "another company, not a service"
         elif raw.split() and raw.split()[-1] in _CORP_SUFFIX:
             why = "a company name"
@@ -5802,7 +5813,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
                    national_demand=False, goal="", band="",
                    national_reason="", grid_axis="", industry="",
-                   product_demand=False, suggested=None, negatives=None):
+                   product_demand=False, suggested=None, negatives=None,
+                   ranked=None):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -5984,7 +5996,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # the operator typed still only ever gets DEMOTED below. (2026-08-13)
         if seeds and suggested:
             _sk, _sd = drop_suggested_nonservices(seeds, suggested, _kinds,
-                                                  brand, markets, state)
+                                                  brand, markets, state, ranked)
             if _sd:
                 seeds_dropped_suggested = _sd
                 seeds = _sk
@@ -8194,6 +8206,7 @@ def api_refine():
                             suggested=d.get("suggested") or [],
                             negatives=[x.strip() for x in (d.get("negatives") or [])
                                        if str(x).strip()],
+                            ranked=d.get("ranked") or [],
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works

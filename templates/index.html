@@ -1682,8 +1682,19 @@ async function runAllSuggestions(){
                  || b.vol-a.vol
                  || (a.src==='menu'?0:1)-(b.src==='menu'?0:1));
   const room=Math.max(0, (ST.serviceSlots||20) - (stores.kw||[]).length);
-  const added=[];
-  for(const c of cand.slice(0, room)){ stores.kw.push(c.v); added.push(c.v); }
+  const added=[], rankedAdded=[];
+  for(const c of cand.slice(0, room)){
+    stores.kw.push(c.v); added.push(c.v);
+    // A POSITION IS PROOF OF OWNERSHIP. Kept so the build can tell a term the
+    // client already ranks for apart from one the classifier merely thinks looks
+    // like somebody's company. SWIF is Pennsylvania's state fund and this broker
+    // places business into it; the classifier read the name and called it another
+    // business, and five of them left the quote. (2026-08-13)
+    if(c.rank) rankedAdded.push(c.v);
+  }
+  if(rankedAdded.length){
+    ST.rankedSeeds=[...new Set([...(ST.rankedSeeds||[]), ...rankedAdded])];
+  }
   const heldBack=cand.length-added.length;
   // NOT HERE. With the toggle on, these three panels paint a wall above the
   // Business description describing work that is already done — a 403 verdict, a
@@ -2181,6 +2192,7 @@ $('step1').addEventListener('click', async()=>{
           // its own guesses from the operator's judgement, so "you typed it, it
           // wins" was exempting both. (2026-08-13)
           suggested:(ST.expandedSeeds||[]).slice(),
+          ranked:(ST.rankedSeeds||[]).slice(),
           negatives:inp.negatives||[],
           site_terms:kw.site_terms||[]});
         ST.gridAxis='';
@@ -3941,6 +3953,7 @@ function snapshotQuote(){
     // Which focus terms Expand contributed, so reopening a quote and rebuilding
     // does not expand an already-expanded list a second time.
     expandedSeeds: ST.expandedSeeds||[],
+    rankedSeeds: ST.rankedSeeds||[],
     // Imported incumbent reports (extraction only — see rememberReport).
     reports: ST.reports||[]
   };
@@ -3968,6 +3981,7 @@ function restoreQuote(p){
   if(ST.inputs) ST.inputs.addon_picked=p.addonPicked||[];
   ST.actual=p.actual||{};
   ST.expandedSeeds=p.expandedSeeds||[];
+  ST.rankedSeeds=p.rankedSeeds||[];
   ST.reports=p.reports||[];
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
