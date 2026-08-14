@@ -5807,20 +5807,27 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     sells_products=bool(product_demand or ecom_found))
             except Exception:                             # noqa: BLE001
                 app.logger.exception("claude_seed_kinds failed during build")
-            if _kinds:
-                _keep, _dem = demote_nonservices(seeds, _kinds, markets, state)
-                if _dem:
-                    seeds_demoted = _dem
-                    seeds = _keep
-        # AND THE ONES THE TOOL PROPOSED GET NO EXEMPTION. Runs whether or not the
-        # classifier answered — the brand and corporate-suffix rules are code, so
-        # a dead API still catches "peo insurance brokers network". (2026-08-13)
+        # THE TOOL'S OWN PROPOSALS GO FIRST, and they get no exemption. Order
+        # matters and it was wrong: demote_nonservices ran ahead of this and
+        # removed ANY seed the classifier called another business — including a
+        # suggested one — into seeds_demoted, whose panel line was removed on
+        # request. So PEO Brokers' two company names split between a silent path
+        # and a reported one, the ✂ line said "1 taken back off" when two had
+        # gone, and the demoted pill stayed in the box to be re-quoted on the
+        # next build. A suggested term is the tool's to retract, so it is
+        # retracted here, named on the panel, and its pill goes with it. What
+        # the operator typed still only ever gets DEMOTED below. (2026-08-13)
         if seeds and suggested:
             _sk, _sd = drop_suggested_nonservices(seeds, suggested, _kinds,
                                                   brand, markets, state)
             if _sd:
                 seeds_dropped_suggested = _sd
                 seeds = _sk
+        if _kinds and seeds:
+            _keep, _dem = demote_nonservices(seeds, _kinds, markets, state)
+            if _dem:
+                seeds_demoted = _dem
+                seeds = _keep
         # FOLD ALWAYS; RANK ONLY WHEN IT DECIDES SOMETHING. (2026-08-13)
         if seeds:
             _fk, _ff = fold_seed_duplicates(seeds, markets, state)
