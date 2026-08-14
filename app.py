@@ -2756,8 +2756,24 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
         if need <= 0:
             continue
         # Best unused seed from this topic, by measured volume then by order.
+        # KEYED, NOT STRING-MATCHED. PEO Brokers came back with "new york state
+        # fund workers comp" AND "new york state fund workers compensation" in
+        # the same six-slot top tier, both at 880/mo. enforce_seed_services had
+        # already folded them — this pass put the second one back, because it
+        # only checked the exact spelling of what was already there. A guarantee
+        # that fills a topic with a rewording of a service the grid already
+        # holds has covered nothing. (2026-08-13)
         used = {str(x.get("service", "")).lower() for x in out}
-        pool = [s for s in t["seeds"] if str(s).lower() not in used]
+        used_keys = {_seed_key(str(x.get("service", ""))) or
+                     frozenset({str(x.get("service", "")).lower()}) for x in out}
+
+        def _dupe(term):
+            t2 = str(term).strip()
+            if not t2 or t2.lower() in used:
+                return True
+            return (_seed_key(t2) or frozenset({t2.lower()})) in used_keys
+
+        pool = [s for s in t["seeds"] if not _dupe(s)]
         pool.sort(key=lambda s: (-vol.get(str(s).lower(), 0), t["seeds"].index(s)))
         # WHEN THE TOPIC HAS NO SEED LEFT TO PROMOTE. PEO Brokers typed 21 terms
         # for 20 slots, so freeing three of them from abbreviation lookups freed
@@ -2774,7 +2790,11 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                 if not kw or not (r.get("volume") or 0):
                     continue
                 lo = kw.lower()
-                if lo in used or lo in {str(x).lower() for x in pool}:
+                if _dupe(kw) or lo in {str(x).lower() for x in pool}:
+                    continue
+                if any((_seed_key(kw) or frozenset({lo})) ==
+                       (_seed_key(str(x)) or frozenset({str(x).lower()}))
+                       for x in pool):
                     continue
                 if is_lookup_kw(kw) or service_topic(kw, topics) != lab:
                     continue
