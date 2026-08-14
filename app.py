@@ -180,16 +180,26 @@ CFG = {
     # rank check scored his page-3-5 footholds as "not ranking" and fired the
     # +14% zero-ranking uplift. Fix: top-N deepened to 100 (see below) — without
     # the uplift the formula lands $3,037/$3,983/$4,928, within ~4% per tier.
+    # ================= EVERY DOLLAR BELOW IS PARTNER COST =================
+    # Converted 2026-08-13. These used to be a "calibration basis" — an
+    # intermediate unit, back-solved from Brendan's quoted CLIENT prices, that
+    # was multiplied by 0.8775 to reach partner cost and then divided by
+    # (1 - margin) to reach retail. Nobody could reason about it: the doc said
+    # "a flat $750 on partner cost" when 750 was basis and $650 was the partner
+    # figure. Each constant is now the partner-cost dollar itself, and the
+    # client price is that divided by (1 - margin). The conversion was applied
+    # as value x 0.8775 rounded to $50, then verified against 1,875 input
+    # combinations and the thirteen-proposal bench.
     "geo_anchor": {
         # single_city raised to match contiguous after the Dental Excellence
         # datapoint (2026-07-20): Brendan's single-city Philadelphia quote was
         # his HIGHEST base ($3,350) — he prices the market, not the pin count.
         # A genuinely tiny single-town client may deserve less; no datapoint
         # yet — use the manual hard-base override until one exists.
-        "single_city":          2100,
-        "contiguous_region":    2100,
-        "non_contiguous_region":2350,
-        "statewide":            2350,
+        "single_city":          1850,
+        "contiguous_region":    1850,
+        "non_contiguous_region":2050,
+        "statewide":            2050,
         # RECALIBRATED 2026-07-25 (2,900 -> 2,050). The 2,900 figure was
         # back-solved from Brendan's national card WITH the extras muted, so
         # it silently contained the volume add and the zero-ranking uplift —
@@ -205,9 +215,9 @@ CFG = {
         # An established national brand that already ranks now prices BELOW
         # the card, which is the behaviour Brendan described and the old
         # constant made impossible.
-        "nationwide":           2050,
+        "nationwide":           1800,
     },
-    "competitive_adder": {0: 0, 1: 150, 2: 300},   # FLAT fallback (used when no bid data)
+    "competitive_adder": {0: 0, 1: 150, 2: 250},   # partner $. FLAT fallback (used when no bid data)
     "bid_score_breaks": [5.0, 15.0],          # <5->0, 5-15->1, >=15->2 (for the fallback)
     # Organic-difficulty breaks, used ONLY when no bid data exists anywhere (a
     # Google Ads restricted vertical). KD scores onto the SAME 0/1/2 ladder as
@@ -221,7 +231,7 @@ CFG = {
     # SEO is worth more. adder = median_cpc × cpc_adder_mult, rounded to $50, capped.
     # When there's NO bid data, fall back to the flat score buckets above.
     "cpc_adder_enabled": True,
-    "cpc_adder_mult": 3.0,                     # $ of hard-cost adder per $1 of median CPC (up to the knee)
+    "cpc_adder_mult": 2.6,                     # partner $ of adder per $1 of median CPC (up to the knee)
     # CONFIDENCE FLOOR (2026-07-27). The adder scales off the MEDIAN
     # top-of-page bid, and above the knee each extra dollar of CPC adds $14 —
     # so an outlier is amplified enormously. That is fine on a real median and
@@ -258,8 +268,8 @@ CFG = {
     "cpc_adder_min_samples": 1,          # apply the CPC adder at/above this n
     "cpc_adder_low_confidence_n": 3,     # warn below this n
     "cpc_adder_knee": 62.0,                    # CPC above this earns the premium rate (just above Waytek's $60 — the highest "normal" client observed)
-    "cpc_adder_mult_high": 14.0,               # $/CPC above the knee (insurance-carrier tier)
-    "cpc_adder_cap": 1500,                     # max adder (hard cost) so a freak CPC can't explode price
+    "cpc_adder_mult_high": 12.3,               # partner $/CPC above the knee (insurance-carrier tier)
+    "cpc_adder_cap": 1300,                     # max adder (partner $) so a freak CPC can't explode price
     "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
     # Now a MARGIN OF GROSS (agency share of retail), matching rep_pricing and
@@ -357,15 +367,17 @@ CFG = {
     # Skidmore 88 and MPG 100 -> full) with no discontinuity in between.
     "vol_add_ramp": [40, 60],           # [no opportunity, full opportunity] % not ranking
     "vol_free_below": 10000,            # normalized: base already covers this
-    "volume_add_cap": 500,              # max hard-$ from volume: Brendan's quotes
+    "volume_add_cap": 450,              # max partner $ from volume: Brendan's quotes
                                         # flex a few hundred for market size, never
                                         # thousands (Waytek: his +$500 total vs the
                                         # formula's former +$1,400-4,500 vol adds)
+    # Rates are PARTNER $ per search (scaled from the old basis rates by 0.8775
+    # when the constants were converted, 2026-08-13).
     "volume_brackets": [
-        [10000, 20000, 0.08],
-        [20000, 35000, 0.05],
-        [35000, 50000, 0.04],
-        [50000, None,  0.03],           # open-ended top bracket so it keeps escalating
+        [10000, 20000, 0.0702],
+        [20000, 35000, 0.0439],
+        [35000, 50000, 0.0351],
+        [50000, None,  0.0263],         # open-ended top bracket so it keeps escalating
     ],
     # NATIONWIDE service clients (Skidmore Studio datapoint, 2026-07-20):
     # Brendan's national ladder $3,950/$5,450/$6,950 backs out to hard
@@ -432,10 +444,10 @@ CFG = {
         # deliberately misses "B2B - Insurance Business Solutions". OPEN
         # QUESTION for Brendan: RZ doesn't distinguish carriers from two-agent
         # local agencies; confirm whether small agencies carry the same +$800.
-        "insurance -":       {"anchor_add": 450, "note": "Carrier premium — Rockingham re-calibration 2026-07-20 at the CURRENT piecewise CPC adder (which already carries ~$1,000 of insurance click value at a $120 median; the original +$800 was fit against the old +$350-capped adder and double-counted). Contiguous NoVA 9-city scope; lands 5,450/6,750/8,050 vs his 5,450/6,750/7,950. Open: do small agencies carry it too?"},
-        "hospital":          {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card ($3,950/$5,450/$6,950 shape) — Serene Health calibration via RZ “Health Services - Hospital”."},
-        "telehealth":        {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
-        "behavioral health": {"anchor_add": 800, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
+        "insurance -":       {"anchor_add": 395, "note": "Carrier premium — Rockingham re-calibration 2026-07-20 at the CURRENT piecewise CPC adder (which already carries ~$1,000 of insurance click value at a $120 median; the original +$800 was fit against the old +$350-capped adder and double-counted). Contiguous NoVA 9-city scope; lands 5,450/6,750/8,050 vs his 5,450/6,750/7,950. Open: do small agencies carry it too?"},
+        "hospital":          {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card ($3,950/$5,450/$6,950 shape) — Serene Health calibration via RZ “Health Services - Hospital”."},
+        "telehealth":        {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
+        "behavioral health": {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
     },
     # Core SEO + AI Search — GEO PRICING.
     # (2026-07-25 REVISION — Brendan meeting) The $2,950/$4,050/$5,250 card was
@@ -508,7 +520,7 @@ CFG = {
     # in BE's proposals separates his $2,950 clients from his $3,550 ones (Nob Hill
     # and Amare Homes are both 20 terms, one city, 80% not ranking, and $600
     # apart), so that gap stays a judgement call on the override.
-    "tier_step_flat": 750,                    # hard-cost $ per tier; null -> use step_ratio
+    "tier_step_flat": 650,                    # partner $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
     # CALIBRATED ON 12 BE PROPOSALS (2026-08-10). His base has never gone below
@@ -7373,8 +7385,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # calibrated 35% this is algebraically identical to the old x1.35, so every
     # client price is unchanged; away from 35% it now moves the way a
     # margin-of-gross should. CAL_* are frozen history, not business inputs.
+    # CONSTANTS ARE PARTNER COST NOW (2026-08-13), so there is nothing to
+    # convert — this factor stays as a named 1.0 rather than disappearing,
+    # because every comment below is written in terms of it and the old
+    # calibration history is only readable with it in view.
     CAL_MARKUP, CAL_MARGIN = 1.35, 0.35
-    cal_to_hard = CAL_MARKUP * (1.0 - CAL_MARGIN)          # 0.8775
+    cal_to_hard = 1.0                                      # was 0.8775
     mg = min(0.95, max(0.0, markup_pct / 100.0))           # margin OF GROSS
     m = cal_to_hard / (1.0 - mg)                           # basis -> retail
     to_true_hard = 1.0 - mg                                # retail -> true cost
