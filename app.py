@@ -2848,7 +2848,18 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
             # quota, so five unclaimed services sat protected while the apartment
             # topic — quota 6 — got 2 and the loop stopped. Nothing is defending
             # an unclaimed service, so it goes first. (2026-08-13)
-            orphans = [x for x in out if not x.get("_topic")]
+            # A TERM THE OPERATOR TYPED IS NOT A SPARE SLOT. Every other filter
+            # in the build exempts a seed; this pass did not, and it is the one
+            # pass that REMOVES a service to make room for another. PEO Brokers
+            # put five SWIF terms on the focus list, they survived the classifier
+            # and the grounding filter, and then none of them reached the grid —
+            # three swaps, three seeds gone. Whether a seed is "unclaimed"
+            # depends on labels a model wrote that build; it says nothing about
+            # whether the operator meant it. Donate machine picks only, and if
+            # there are none, leave the topic short rather than overrule them.
+            # (2026-08-14)
+            orphans = [x for x in out
+                       if not x.get("_topic") and not x.get("from_seed")]
             if orphans:
                 # Last one first is "cheapest slot"; a lookup is cheaper still,
                 # so it goes ahead of any other unclaimed service. Stable, so
@@ -2856,10 +2867,17 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                 orphans.sort(key=lambda x: 1 if is_lookup_kw(x.get("service", "")) else 0)
                 drop = orphans[-1]
             else:
-                donor_lab = max(quota, key=lambda k: len([x for x in out if x.get("_topic") == k])
+                _over = [k for k in quota
+                         if len([x for x in out if x.get("_topic") == k
+                                 and not x.get("from_seed")]) > 0]
+                if not _over:
+                    break
+                donor_lab = max(_over, key=lambda k: len([x for x in out if x.get("_topic") == k])
                                 - quota.get(k, 1))
-                donors = [x for x in out if x.get("_topic") == donor_lab]
-                if len(donors) <= quota.get(donor_lab, 1) or len(donors) <= 1:
+                donors = [x for x in out if x.get("_topic") == donor_lab
+                          and not x.get("from_seed")]
+                if len(donors) <= 1 or len(
+                        [x for x in out if x.get("_topic") == donor_lab]) <= quota.get(donor_lab, 1):
                     break
                 drop = donors[-1]
             # Scrub on the way in. This function runs AFTER the last
