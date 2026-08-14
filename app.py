@@ -5913,6 +5913,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         seeds_folded = []
         seeds_dropped_suggested = []
         negatives_dropped = []
+        services_deduped = []
         negative_conflicts = negative_seed_conflicts(seeds, negatives)
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
@@ -6136,6 +6137,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                                       n_services, cands,
                                                       topics=topics)
         services = rebalance_tiers(services)
+        # LAST WORD ON DUPLICATES. enforce_seed_services folds on the shared key
+        # and so does the topic guarantee, and PEO Brokers still came back with
+        # "workers compensation nysif" AND "nysif workers compensation" — the
+        # same three words, the same key, three of six Ultra slots on one state
+        # fund. Something between those stages and the grid reintroduces it and
+        # the isolated repro does not show which. This is the backstop: one pass
+        # over the FINAL list, same key as everywhere else, first occurrence
+        # wins so pins and seeds keep their place. Reported, not silent — if it
+        # ever catches anything the stage above it is still wrong. (2026-08-14)
+        _seen_final, _final, services_deduped = set(), [], []
+        for _x in services:
+            _n = (_x.get("service") or "").strip()
+            _k = _seed_key(_n) or frozenset({_n.lower()})
+            if _k in _seen_final:
+                services_deduped.append(_n)
+                continue
+            _seen_final.add(_k)
+            _final.append(_x)
+        if services_deduped:
+            services = _final
         if geo_dropped is None and geo_dropped2 is None:
             geo_dropped = None
         else:
@@ -6726,6 +6747,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
             "business_desc_inferred": biz_inferred,
+            "services_deduped": services_deduped,
             "negatives_dropped": negatives_dropped,
             "negative_conflicts": negative_conflicts,
             "seeds_demoted": seeds_demoted,
@@ -8253,6 +8275,7 @@ def api_refine():
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
         "business_desc_inferred": s1.get("business_desc_inferred") or "",
+        "services_deduped": s1.get("services_deduped") or [],
         "negatives_dropped": s1.get("negatives_dropped") or [],
         "negative_conflicts": s1.get("negative_conflicts") or [],
         "seeds_demoted": s1.get("seeds_demoted") or [],
