@@ -2138,7 +2138,16 @@ $('step1').addEventListener('click', async()=>{
   }
   const _held=(stores.kw||[]).filter(v=>_prev.has(String(v).toLowerCase()));
   const _room=Math.max(0,(ST.serviceSlots||20)-(stores.kw||[]).length);
-  const _skipExpand = _held.length ? 'already' : (_room<=0 ? 'full' : '');
+  // ONE SHOT, FROM THE PANEL. "Runs once per list" is right, and the only way
+  // back out of it was to delete the expanded terms — destructive, and nobody
+  // would guess it. PEO Brokers needed exactly this: the list had lost its
+  // state-fund terms in an earlier build and the rule then refused to look for
+  // them again. The flag overrides the skip for ONE build and clears itself; the
+  // provenance record is untouched, so those terms keep their ✦ and stay subject
+  // to every filter a suggested term gets. (2026-08-14)
+  const _again = !!ST.expandAgain; ST.expandAgain = false;
+  const _skipExpand = (_held.length && !_again) ? 'already'
+                    : (_room<=0 ? 'full' : '');
   if(_auto && _auto.checked && _skipExpand){
     ST.autoExpanded=[]; ST.autoRegions=[];
     ST.autoNote={skipped:_skipExpand, held:_held.length, pulled:_pulled,
@@ -4840,7 +4849,7 @@ function step1Grid(kw){
   if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped
      || _lk.length || _pl.length){
     const bits=[];
-    if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded`);
+    if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded <a href="#" id="expandAgain" style="color:var(--atlas);font-weight:600">expand again</a>`);
     else if(_an.skipped==='full') bits.push(`<b>off</b> \u2014 all ${_an.slots} slots are full`);
     if(_ax.length) bits.push(`<b>${_ax.length} term${_ax.length===1?'':'s'} added</b>`);
     if(_an.ranked) bits.push(`${_an.ranked} they already rank for`);
@@ -4852,7 +4861,7 @@ function step1Grid(kw){
     if(_pl.length) bits.push(`${_pl.length} lookup${_pl.length===1?'':'s'} taken back off`);
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
     notes.push(`<div class="nf" style="margin-top:4px">\u2795 <b>Expand</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf([
-        _an.skipped==='already' ? 'Expansion runs once per list. '+_an.held+' of the terms below came from the last one, so this build quoted the list as it stands. Remove them and it expands again.' : '',
+        _an.skipped==='already' ? 'Expansion runs once per list. '+_an.held+' of the terms below came from the last one, so this build quoted the list as it stands. <b>Expand again</b> rebuilds with it back on for one run &mdash; nothing is deleted and the terms keep their &#10022;, so they stay subject to the same filters.' : '',
         _an.skipped==='full' ? 'The grid holds '+_an.slots+' services and the list already fills them, so there was nothing to add.' : '',
         _ax.length ? 'Read off their site, the industry pass and their own rankings, then added.<br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ') : '',
         (_lk.length||_pl.length) ? 'A definition or question is someone reading, not buying &mdash; it cannot cross with a city, so the tool no longer proposes one. Type it yourself and it is quoted like any other focus term.<br>'+[].concat(_lk,_pl).slice(0,14).map(x=>escapeHtml(String(x))).join(' &middot; ') : '',
@@ -4899,6 +4908,11 @@ function step1Grid(kw){
   }
 
   // the one action from the cleared panels, reachable from the note
+  setTimeout(()=>{ const ea=document.getElementById('expandAgain');
+    if(ea) ea.onclick=(e)=>{ e.preventDefault();
+      ST.expandAgain=true;
+      const b=document.getElementById('step1');
+      if(b && !b.disabled){ try{ aimAtList(true); }catch(_e){} b.click(); } }; }, 0);
   setTimeout(()=>{ const a=document.getElementById('pasteFromNote');
     if(a) a.onclick=(e)=>{ e.preventDefault();
       const h=document.getElementById('pasteHost'); if(h){ h.style.display='block';
