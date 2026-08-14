@@ -3802,7 +3802,7 @@ def negative_seed_conflicts(seeds, negatives):
     return out
 
 
-def demote_nonservices(seeds, kinds, markets=None, state=""):
+def demote_nonservices(seeds, kinds, markets=None, state="", ranked=None):
     """Split seeds into what this client actually sells and what belongs to
     somebody else, per claude_seed_kinds().
 
@@ -3825,6 +3825,7 @@ def demote_nonservices(seeds, kinds, markets=None, state=""):
     kinds = kinds or {}
     if not kinds:
         return list(seeds or []), []
+    _rank = {str(x).strip().lower() for x in (ranked or []) if str(x).strip()}
     keep, demoted = [], []
     for t in seeds or []:
         raw = str(t or "").strip().lower()
@@ -3833,7 +3834,22 @@ def demote_nonservices(seeds, kinds, markets=None, state=""):
             n = seed_norm(t, markets, state)
             if n:
                 k = kinds.get(n) or kinds.get(n.strip().lower())
-        if k and k.get("kind") in ("item", "other_business"):
+        # A POSITION OUTRANKS THE CLASSIFIER HERE TOO. The same exemption went
+        # into drop_suggested_nonservices and stopped there, so PEO Brokers' SWIF
+        # terms were spared by that filter and then removed by this one, three
+        # builds running — silently, because this path's panel line was taken out
+        # on request and a demoted term keeps its pill. It survived every filter
+        # the operator could see and never reached the grid. (2026-08-14)
+        # The exemption covers "other_business" ONLY. Ranking for a term says
+        # somebody at this domain owns it, which answers "is this somebody
+        # else's company" and answers nothing about "is this a thing rather
+        # than a service" — a shop ranks for "old tvs" precisely because it is
+        # an object it sells, and that verdict should still stand.
+        _kind = (k or {}).get("kind")
+        if (_kind in ("item", "other_business")
+                and not (_kind == "other_business"
+                         and (raw in _rank
+                              or seed_norm(t, markets, state) in _rank))):
             demoted.append({"term": t, "kind": k.get("kind", "item"),
                             "why": k.get("why", "")})
         else:
@@ -6020,7 +6036,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 seeds_dropped_suggested = _sd
                 seeds = _sk
         if _kinds and seeds:
-            _keep, _dem = demote_nonservices(seeds, _kinds, markets, state)
+            _keep, _dem = demote_nonservices(seeds, _kinds, markets, state, ranked)
             if _dem:
                 seeds_demoted = _dem
                 seeds = _keep
