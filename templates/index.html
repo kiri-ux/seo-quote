@@ -4887,6 +4887,8 @@ function step1Grid(kw){
   // of this line came out on request; nothing replaced it, and PEO Brokers then
   // lost five focus terms to it across three builds with the panel saying
   // nothing. One line, count only, names on the hover. (2026-08-14)
+  const _pr=kw.pins_refused||[];
+  if(_pr.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F6E1} <b>${_pr.length} pin refused</b> \u2014 ${_pr.slice(0,3).map(x=>escapeHtml(String(x[0]))).join(' \u00b7 ')}${tipOf('A pin holds a high-volume term in the top tier to keep the price steady, and it is pulled from a pool ranked nationally &mdash; where the biggest names in the trade sit at the top looking exactly like head terms. A rival&rsquo;s brand doing that job is worse than an empty slot.<br><br>'+_pr.slice(0,8).map(x=>escapeHtml(String(x[0]))+(x[1]?' &mdash; '+escapeHtml(String(x[1])):'')).join('<br>'))}</div>`);
   const _sdm=kw.seeds_demoted||[];
   if(_sdm.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4E4} <b>${_sdm.length} focus term${_sdm.length===1?'':'s'} set aside</b> \u2014 not services this client sells${tipOf('Kept on your list, left out of the grid. The classifier reads these as another company or an object rather than something this client sells &mdash; a term they already RANK for is exempt. If one of these is wrong, it is worth telling me.<br><br>'+_sdm.slice(0,14).map(x=>escapeHtml(String(x.term||''))+(x.why?' &mdash; '+escapeHtml(String(x.why)):'')).join('<br>'))}</div>`);
   const _dsg=kw.seeds_dropped_suggested||[];

@@ -3654,7 +3654,7 @@ def is_brand_term(term, brand):
 
 
 def drop_suggested_nonservices(seeds, suggested, kinds, brand,
-                               markets=None, state="", ranked=None):
+                               markets=None, state="", ranked=None, rivals=None):
     """Terms the TOOL proposed do not get the operator's exemption.
 
     "You typed it, it wins" exempts a focus term from every filter in the build.
@@ -3667,6 +3667,7 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
     """
     sug = {str(x).strip().lower() for x in (suggested or []) if str(x).strip()}
     _rank = {str(x).strip().lower() for x in (ranked or []) if str(x).strip()}
+    _rival = {str(x).strip().lower() for x in (rivals or []) if str(x).strip()}
     if not sug:
         return list(seeds or []), []
     kinds = kinds or {}
@@ -3689,7 +3690,7 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
         # a corporate suffix and the client's own brand name do not guess.
         # (2026-08-13)
         if k.get("kind") == "other_business" and not (
-                raw in _rank or norm in _rank):
+                (raw in _rank or norm in _rank) and raw not in _rival):
             why = k.get("why") or "another company, not a service"
         elif raw.split() and raw.split()[-1] in _CORP_SUFFIX:
             why = "a company name"
@@ -3802,7 +3803,107 @@ def negative_seed_conflicts(seeds, negatives):
     return out
 
 
-def demote_nonservices(seeds, kinds, markets=None, state="", ranked=None):
+def claude_competitor_check(terms, brand="", domain="", industry="", business_desc=""):
+    """Of the named companies in this list, which are RIVALS and which are things
+    the client sells or places business into?
+
+    The distinction the build needs and the kinds classifier does not draw. It
+    answers "is this somebody else's company", which is true of both a competitor
+    and a carrier — and those two want opposite treatment. PEO Brokers rank for
+    "swif pa" because SWIF is the Pennsylvania state fund they place business
+    into; they rank for "prime peo brokers" because a rival is a rival. Ranking
+    for a term earned both of them an exemption, and one of them put a
+    competitor's name in front of a client.
+
+    Returns {term: {"verdict": "competitor"|"offering"|"neither", "why": str}}.
+    Empty on any failure, and every caller treats empty as "no opinion" — a dead
+    API must not start quoting rivals OR start deleting the client's own
+    products. (2026-08-14)
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    tl = [str(t).strip() for t in (terms or []) if str(t).strip()]
+    if not api_key or not tl:
+        return {}
+    prompt = f"""Each term below names a company, brand, programme or fund. For THIS client,
+say whether each one is a COMPETITOR or something they OFFER.
+
+CLIENT: {brand or '(not given)'}
+WEBSITE: {domain or '(not given)'}
+INDUSTRY: {industry or '(not given)'}
+WHAT THEY DO: {(business_desc or '').strip()[:500] or '(not given)'}
+
+TERMS:
+{chr(10).join('- ' + t for t in tl[:25])}
+
+Verdicts:
+  "competitor" - a firm selling the SAME service to the SAME buyer. This client
+                 competes with them for the customer. Never worth quoting: the
+                 searcher is looking for that firm by name.
+  "offering"   - a third-party product, carrier, fund, programme, platform or
+                 network that this client SELLS, PLACES BUSINESS INTO, RESELLS,
+                 IS APPOINTED WITH or otherwise works through. Their own
+                 customers search for it, and this client can legitimately rank
+                 for and win it.
+  "neither"    - not a company or programme at all.
+
+Worked example. An insurance broker who places workers' compensation:
+  "prime peo brokers"  -> competitor (another broker chasing the same client)
+  "swif pa"            -> offering  (the state fund they place business into)
+  "the hartford"       -> offering  (a carrier they are appointed with)
+  "workers comp peo"   -> neither   (a service, not a company)
+
+Be careful in both directions. Calling an offering a competitor deletes a real
+service line. Calling a competitor an offering puts a rival's name in a client
+proposal. If you genuinely cannot tell, answer "neither".
+
+Return ONLY JSON, no prose:
+{{"verdicts": [{{"term": "swif pa", "verdict": "offering", "why": "PA state fund"}}]}}"""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 1200, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=25)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+        rows = json.loads(text).get("verdicts") or []
+    except Exception:
+        app.logger.exception("claude_competitor_check failed")
+        return {}
+    out = {}
+    for r in rows:
+        t = str(r.get("term", "")).strip().lower()
+        v = str(r.get("verdict", "")).strip().lower()
+        if t and v in ("competitor", "offering", "neither"):
+            out[t] = {"verdict": v, "why": str(r.get("why", "")).strip()}
+    return out
+
+
+def rival_terms(terms, kinds, brand="", domain="", industry="", business_desc=""):
+    """The subset of `terms` that are COMPETITORS. Everything else is spared.
+
+    Only asks about terms the kinds classifier already flagged as another
+    business — at most a handful — so this is one small call, not a pass over
+    the list.
+    """
+    ask = [t for t in (terms or [])
+           if ((kinds or {}).get(str(t).strip().lower()) or {}).get("kind")
+           == "other_business"]
+    if not ask:
+        return set()
+    v = claude_competitor_check(ask, brand, domain, industry, business_desc)
+    return {t for t in ask
+            if (v.get(str(t).strip().lower()) or {}).get("verdict") == "competitor"}
+
+
+def demote_nonservices(seeds, kinds, markets=None, state="", ranked=None,
+                       rivals=None):
     """Split seeds into what this client actually sells and what belongs to
     somebody else, per claude_seed_kinds().
 
@@ -3826,6 +3927,7 @@ def demote_nonservices(seeds, kinds, markets=None, state="", ranked=None):
     if not kinds:
         return list(seeds or []), []
     _rank = {str(x).strip().lower() for x in (ranked or []) if str(x).strip()}
+    _rival = {str(x).strip().lower() for x in (rivals or []) if str(x).strip()}
     keep, demoted = [], []
     for t in seeds or []:
         raw = str(t or "").strip().lower()
@@ -3846,10 +3948,13 @@ def demote_nonservices(seeds, kinds, markets=None, state="", ranked=None):
         # than a service" — a shop ranks for "old tvs" precisely because it is
         # an object it sells, and that verdict should still stand.
         _kind = (k or {}).get("kind")
-        if (_kind in ("item", "other_business")
-                and not (_kind == "other_business"
-                         and (raw in _rank
-                              or seed_norm(t, markets, state) in _rank))):
+        # ...and ranking does not save a RIVAL. Both a competitor and a carrier
+        # read as "another business" and both can be ranked for; only one of them
+        # is a service line. (2026-08-14)
+        _exempt = (_kind == "other_business"
+                   and (raw in _rank or seed_norm(t, markets, state) in _rank)
+                   and raw not in _rival)
+        if _kind in ("item", "other_business") and not _exempt:
             demoted.append({"term": t, "kind": k.get("kind", "item"),
                             "why": k.get("why", "")})
         else:
@@ -6019,6 +6124,22 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     sells_products=bool(product_demand or ecom_found))
             except Exception:                             # noqa: BLE001
                 app.logger.exception("claude_seed_kinds failed during build")
+        # WHICH OF THE FLAGGED NAMES ARE ACTUALLY RIVALS. Asked once, only about
+        # terms the classifier already called another business, and only when a
+        # ranking would otherwise exempt them — so on most builds this costs
+        # nothing. Without it the ranked exemption spares a competitor for the
+        # same reason it spares a carrier, and PEO Brokers got "prime peo
+        # brokers" quoted at 30/mo. (2026-08-14)
+        _rivals = set()
+        if _kinds and ranked:
+            try:
+                _rivals = rival_terms(
+                    [t for t in seeds
+                     if str(t).strip().lower() in
+                     {str(x).strip().lower() for x in (ranked or [])}],
+                    _kinds, brand, domain, industry, biz)
+            except Exception:
+                app.logger.exception("rival_terms failed")
         # THE TOOL'S OWN PROPOSALS GO FIRST, and they get no exemption. Order
         # matters and it was wrong: demote_nonservices ran ahead of this and
         # removed ANY seed the classifier called another business — including a
@@ -6031,12 +6152,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # the operator typed still only ever gets DEMOTED below. (2026-08-13)
         if seeds and suggested:
             _sk, _sd = drop_suggested_nonservices(seeds, suggested, _kinds,
-                                                  brand, markets, state, ranked)
+                                                  brand, markets, state, ranked,
+                                                  _rivals)
             if _sd:
                 seeds_dropped_suggested = _sd
                 seeds = _sk
         if _kinds and seeds:
-            _keep, _dem = demote_nonservices(seeds, _kinds, markets, state, ranked)
+            _keep, _dem = demote_nonservices(seeds, _kinds, markets, state,
+                                             ranked, _rivals)
             if _dem:
                 seeds_demoted = _dem
                 seeds = _keep
@@ -6120,6 +6243,35 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services, geo_dropped = drop_foreign_geo_services(services, markets, state)
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
+        # A PIN IS THE HIGHEST-LEVERAGE SLOT AND NOTHING WAS CHECKING IT. Pins
+        # are pulled straight from the keyword pool by volume, and the pool is
+        # ranked nationally, so the biggest names in the trade sit at the top of
+        # it looking exactly like head terms. PEO Brokers got "the hartford
+        # workers compensation insurance" pinned into Ultra at 2,900/mo — a
+        # carrier's brand, in front of a client. The grounding filter could not
+        # catch it either, because the client's own site names the carriers they
+        # place with, so "hartford" reads as their vocabulary. A pin's whole job
+        # is to hold the price steady; a rival's name doing that job is worse
+        # than an empty slot. (2026-08-14)
+        pins_refused = []
+        if pinned:
+            try:
+                _pk = claude_seed_kinds(list(pinned), brand, domain, industry,
+                                        biz, site_pages)
+                _pr = rival_terms(list(pinned), _pk, brand, domain, industry, biz)
+                if _pr:
+                    _lost = {str(x).strip().lower() for x in _pr}
+                    pins_refused = [[t, ((_pk.get(str(t).strip().lower()) or {})
+                                         .get("why") or "a competitor")]
+                                    for t in pinned
+                                    if str(t).strip().lower() in _lost]
+                    services = [x for x in services
+                                if str(x.get("service", "")).strip().lower()
+                                not in _lost]
+                    pinned = [t for t in pinned
+                              if str(t).strip().lower() not in _lost]
+            except Exception:
+                app.logger.exception("pin rival check failed")
         services = scrub_services(services, markets, state, phrase_geos)
         # Pinning pulls straight from the keyword-idea pool, which is exactly
         # where out-of-area terms live — so a term filtered out above can be
@@ -6781,6 +6933,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
             "business_desc_inferred": biz_inferred,
+            "pins_refused": pins_refused,
             "services_deduped": services_deduped,
             "negatives_dropped": negatives_dropped,
             "negative_conflicts": negative_conflicts,
@@ -8309,6 +8462,7 @@ def api_refine():
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
         "business_desc_inferred": s1.get("business_desc_inferred") or "",
+        "pins_refused": s1.get("pins_refused") or [],
         "services_deduped": s1.get("services_deduped") or [],
         "negatives_dropped": s1.get("negatives_dropped") or [],
         "negative_conflicts": s1.get("negative_conflicts") or [],
