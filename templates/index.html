@@ -483,6 +483,10 @@
     <div id="expandSvcOut" style="margin-top:6px"></div>
     <div id="rankedKwOut" style="margin-top:6px"></div>
 
+    <label>Negative terms</label>
+    <div class="help">Words this client should never be quoted for. Type and press comma/Enter. Matched on whole words, so &ldquo;carrier&rdquo; will not catch &ldquo;career&rdquo;; a phrase matches as a phrase. Applies to what the TOOL proposes &mdash; a focus term you typed always wins, and the panel tells you when the two disagree.</div>
+    <div class="pillbox" data-for="neg"><input type="text" id="neg_in" placeholder="carrier, underwriting, jobs"></div>
+
     <!-- BUSINESS DESCRIPTION came off the form 2026-08-13. It was never really an
          input: it is the vocabulary sample the grounding filter measures every AI
          proposal against, and we were asking a human to copy it off the website
@@ -541,7 +545,7 @@
 
 <script>
 // ---- pill inputs ----
-const stores = {sites:[], kw:[], geo:[], spgeo:[], industry:[]};
+const stores = {sites:[], kw:[], geo:[], spgeo:[], industry:[], neg:[]};
 const PILL_FOLD = 20;          // pills shown before 'Show all'
 // Each pillbox's render() lives inside wirePills' closure; register them here so
 // loading a saved quote can redraw the pills after repopulating the stores.
@@ -943,7 +947,7 @@ function wirePills(key, inputId){
   // Live count in the label. Once a list runs to two dozen terms the pills wrap
   // to six rows and there is no way to know how many are in there — and the
   // count matters, because it sets the grid size and the rank-check denominator.
-  const NOUN={kw:'term',geo:'area',sites:'site',spgeo:'geo',industry:'category'};
+  const NOUN={kw:'term',geo:'area',sites:'site',spgeo:'geo',industry:'category',neg:'negative'};
   function renderCount(){
     const lbl=box.previousElementSibling && box.previousElementSibling.classList &&
       box.previousElementSibling.classList.contains('help')
@@ -1050,6 +1054,7 @@ function wirePills(key, inputId){
   box.addEventListener('click',()=>input.focus());
 }
 wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'); wirePills('spgeo','spgeo_in');
+wirePills('neg','neg_in');
 
 // Industry gets bespoke wiring: same pills, but a styled autocomplete instead
 // of the browser's native datalist popup (unstyled, screen-filling in Chrome).
@@ -1987,6 +1992,7 @@ function collectInputs(){
                             || ((ST.inputs&&ST.inputs.addon_markets)||0), 10) || 0,
     markup_pct: parseFloat($('markup').value||'35'),
     phrase_geos: stores.spgeo.slice(),
+    negatives: stores.neg.slice(),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||'Core SEO',
     ecommerce: false,   // legacy flag — superseded by the "Retail - General / E-commerce" RZ industry
     national_demand: !!($('natdemand')&&$('natdemand').checked),
@@ -2149,7 +2155,7 @@ $('step1').addEventListener('click', async()=>{
   try{
     const kw=await postJSON('/api/keywords',{
       keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
-      domain:inp.domain, business_desc:inp.business_desc});
+      domain:inp.domain, business_desc:inp.business_desc, negatives:inp.negatives});
     ST.kw=kw;
     renderStep1();
     try{ aimAtList(false); }catch(e){}
@@ -2175,6 +2181,7 @@ $('step1').addEventListener('click', async()=>{
           // its own guesses from the operator's judgement, so "you typed it, it
           // wins" was exempting both. (2026-08-13)
           suggested:(ST.expandedSeeds||[]).slice(),
+          negatives:inp.negatives||[],
           site_terms:kw.site_terms||[]});
         ST.gridAxis='';
         if(ref && ref.all){
@@ -3905,6 +3912,7 @@ function snapshotQuote(){
     sites: stores.sites.slice(), domain: stores.sites[0]||'',
     keywords: stores.kw.slice(), geo_values: stores.geo.slice(),
     phrase_geos: stores.spgeo.slice(),
+    negatives: stores.neg.slice(),
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
     strategy: (document.querySelector('#strategies input:checked')||{}).value||ST.inputs.strategy||'Core SEO',
@@ -4003,6 +4011,7 @@ function reflectInputs(inp){
   fill('kw',    inp.keywords);
   fill('geo',   inp.geo_values);
   fill('spgeo', inp.phrase_geos||[]);
+  fill('neg',   inp.negatives||[]);
   try{ syncStateSummary(); }catch(e){}
   Object.keys(PILL_RENDER).forEach(k=>{ try{ PILL_RENDER[k](); }catch(e){} });
 
@@ -4844,6 +4853,9 @@ function step1Grid(kw){
     if(_q.length) bits.push(`<b>${_q.length}</b> people look up, not buy`);
     notes.push(`<div class="nf" style="margin-top:4px">\u{1F50E} <b>Of your own focus terms</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf('Seeds are never filtered &mdash; you typed them, they win. This is only what they are costing: a term measuring 0/mo brings no traffic to the grid, and a definition lookup ("what does lcf stand for") is someone researching an abbreviation rather than buying.<br><br>'+[].concat(_z.map(x=>escapeHtml(String(x))+' &mdash; 0/mo'), _q.map(x=>escapeHtml(String(x))+' &mdash; lookup')).slice(0,20).join('<br>'))}</div>`);
   }
+  const _nd=kw.negatives_dropped||[], _nc=kw.negative_conflicts||[];
+  if(_nd.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F6AB} <b>${_nd.length} term${_nd.length===1?'':'s'} removed by your negatives</b>${tipOf('Matched on whole words, never on a fragment. Applies to what the tool proposed, not to what you typed.<br><br>'+_nd.slice(0,16).map(x=>escapeHtml(String(x[0]))+' &mdash; matched <b>'+escapeHtml(String(x[1]))+'</b>').join('<br>'))}</div>`);
+  if(_nc.length) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${_nc.length} focus term${_nc.length===1?' matches':'s match'} a negative</b> \u2014 ${_nc.slice(0,4).map(x=>escapeHtml(String(x[0]))+' vs <b>'+escapeHtml(String(x[1]))+'</b>').join(' \u00b7 ')}. <b>Kept</b>, because you typed ${_nc.length===1?'it':'them'}.${tipOf('Both of these are you speaking, so the tool will not pick a winner silently. A focus term is the more specific instruction, so it stays in the quote &mdash; remove the term or the negative if that is not what you meant.')}</div>`);
   const _bdi=(kw.business_desc_inferred||'').trim();
   if(_bdi) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D6} <b>Read of the business</b> \u2014 ${escapeHtml(_bdi.split(/(?<=[.!?])\s/)[0]).slice(0,110)}${tipOf('Written by the tool from their own site, or from a Google read of their name and market when the site cannot be crawled. It is not just a summary: it is the vocabulary the filter measures every AI-proposed service against, so a service using a word that never appears here or in your terms is treated as somebody else&rsquo;s. It no longer guesses what they do NOT sell &mdash; that comes from Negative terms.<br><br>'+escapeHtml(_bdi))}</div>`);
   const _dsg=kw.seeds_dropped_suggested||[];

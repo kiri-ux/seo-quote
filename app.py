@@ -3675,6 +3675,104 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
     return keep, dropped
 
 
+def _neg_tokens(text):
+    """Stemmed tokens of a term, punctuation flattened, order kept.
+
+    One extra fold on top of the shared stemmer, local to this matcher: a
+    trailing 'y' is dropped, because _seed_stem takes "policies" to `polic` and
+    "policy" to `policy` and a negative has to catch both spellings of its own
+    word. Kept out of _seed_stem itself so the duplicate fold, which every grid
+    slot depends on, is not moved by a change made for this.
+    """
+    raw = re.sub(r"[^a-z0-9]+", " ", (text or "").lower())
+    out = []
+    for w in raw.split():
+        # "policies" -> "policy" BEFORE stemming. Folding the trailing y off the
+        # stem instead was the obvious fix and it collided "policy" with
+        # "policing", which is the exact class of over-match this whole function
+        # exists to avoid. Undoing the plural first keeps them apart:
+        # policies -> policy -> policy, policing -> polic.
+        if len(w) > 4 and w.endswith("ies"):
+            w = w[:-3] + "y"
+        out.append(_seed_stem(w))
+    return out
+
+
+def negative_hit(term, negatives):
+    """Which negative this term trips, or ''.
+
+    WHOLE WORDS, NEVER FRAGMENTS. A substring test is the obvious implementation
+    and it is wrong in a way that is hard to see afterwards: negating "carrier"
+    would also take out "career", and "auto" would take "automotive" and
+    "automation" with it. Everything is compared on the same stems the duplicate
+    fold uses, so "policy" catches "policies" without catching "policing".
+
+    A multi-word negative matches as a PHRASE — consecutive tokens, in order —
+    so "workers comp" does not fire on every term containing "workers".
+    (2026-08-13)
+    """
+    toks = _neg_tokens(term)
+    if not toks:
+        return ""
+    for neg in negatives or []:
+        nt = _neg_tokens(neg)
+        if not nt:
+            continue
+        n = len(nt)
+        if any(toks[i:i + n] == nt for i in range(len(toks) - n + 1)):
+            return str(neg).strip()
+    return ""
+
+
+def drop_negative_services(services, negatives, seeds=None):
+    """Remove proposed services that trip a negative. Returns (kept, dropped).
+
+    Deterministic and in code, not in a prompt — the same class of rule as the
+    out-of-area filter. A model can be talked out of an instruction; this cannot.
+
+    A FOCUS TERM IS EXEMPT. It reaches this list through enforce_seed_services
+    like anything else, so without `seeds` the filter deletes the operator's own
+    term and the panel reports it as a conflict that was "kept" — which it then
+    would not be. Both the term and the negative are the operator speaking; the
+    term is the more specific instruction, so it stays and the disagreement is
+    reported instead. Never empties the list either: if every service trips a
+    negative, the negatives are what is wrong, not the build. (2026-08-13)
+    """
+    if not negatives:
+        return list(services or []), []
+    mine = {str(t).strip().lower() for t in (seeds or []) if str(t).strip()}
+    kept, dropped = [], []
+    for x in services or []:
+        name = x.get("service", "") if isinstance(x, dict) else str(x)
+        if str(name).strip().lower() in mine:
+            kept.append(x)
+            continue
+        hit = negative_hit(name, negatives)
+        if hit:
+            dropped.append([name, hit])
+        else:
+            kept.append(x)
+    if not kept:
+        return list(services or []), []
+    return kept, dropped
+
+
+def negative_seed_conflicts(seeds, negatives):
+    """Focus terms that trip a negative. REPORTED, never removed.
+
+    Both of these are the operator speaking, so the tool does not pick a winner
+    quietly. The focus term is the more specific instruction and stays in the
+    quote; the panel says so, because a planner deleting their own focus term by
+    typing a negative is the worse failure. (2026-08-13)
+    """
+    out = []
+    for t in seeds or []:
+        hit = negative_hit(t, negatives)
+        if hit:
+            out.append([str(t), hit])
+    return out
+
+
 def demote_nonservices(seeds, kinds, markets=None, state=""):
     """Split seeds into what this client actually sells and what belongs to
     somebody else, per claude_seed_kinds().
@@ -5704,7 +5802,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    ultra, competitive, long_tail, site_terms_kw, phrase_geos=None,
                    national_demand=False, goal="", band="",
                    national_reason="", grid_axis="", industry="",
-                   product_demand=False, suggested=None):
+                   product_demand=False, suggested=None, negatives=None):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -5802,6 +5900,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         seeds_demoted = []
         seeds_folded = []
         seeds_dropped_suggested = []
+        negatives_dropped = []
+        negative_conflicts = negative_seed_conflicts(seeds, negatives)
         # Decide the city set FIRST so the service count can scale to it.
         city_pick = {}
         cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
@@ -5998,6 +6098,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # swapped-in service can still have its tier corrected.
         # The model partitions and names; token clustering is the fallback so a
         # dead API can't remove the guarantee, only its granularity.
+        # WHAT THE OPERATOR SAID NOT TO SELL. Runs after the grounding filter and
+        # before the topic guarantee, so a freed slot gets refilled rather than
+        # left empty. Only reaches what the TOOL proposed — a focus term that
+        # trips a negative is reported on the panel and kept. (2026-08-13)
+        if negatives:
+            services, negatives_dropped = drop_negative_services(
+                services, negatives, seeds)
         # SHARE IS COMPUTED OVER TERMS SOMEONE COULD BUY. PEO Brokers typed four
         # abbreviation lookups; one line of the panel flagged them as lookups and
         # two lines down the coverage guarantee reserved three of twenty slots for
@@ -6607,6 +6714,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
             "seed_ranking": seed_ranking,
             "business_desc_inferred": biz_inferred,
+            "negatives_dropped": negatives_dropped,
+            "negative_conflicts": negative_conflicts,
             "seeds_demoted": seeds_demoted,
             "seeds_dropped_suggested": seeds_dropped_suggested,
             "seeds_folded": seeds_folded,
@@ -8083,6 +8192,8 @@ def api_refine():
                                            or bool(d.get("ecommerce")),
                             goal=(d.get("goal") or ""),
                             suggested=d.get("suggested") or [],
+                            negatives=[x.strip() for x in (d.get("negatives") or [])
+                                       if str(x).strip()],
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
@@ -8129,6 +8240,8 @@ def api_refine():
         "gbp_cities": s1.get("gbp_cities") or [],
         "seed_ranking": s1.get("seed_ranking") or {},
         "business_desc_inferred": s1.get("business_desc_inferred") or "",
+        "negatives_dropped": s1.get("negatives_dropped") or [],
+        "negative_conflicts": s1.get("negative_conflicts") or [],
         "seeds_demoted": s1.get("seeds_demoted") or [],
         "seeds_dropped_suggested": s1.get("seeds_dropped_suggested") or [],
         "seeds_folded": s1.get("seeds_folded") or [],
