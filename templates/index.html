@@ -5106,6 +5106,23 @@ function step1Grid(kw){
     }
   }
 
+  // QUALIFIERS THE MARKET DOES NOT USE. Reported in full — these are slots the
+  // tool took back, and an operator who disagrees can type the term into the
+  // focus box, where it becomes exempt. Says so when the pool was too thin to
+  // judge from, because "checked and found nothing" and "could not check" have
+  // to look different. (2026-08-16)
+  if((kw.pool_dropped&&kw.pool_dropped.length)||/^(thin|held):/.test(kw.pool_status||'')){
+    const pd=kw.pool_dropped||[];
+    const st=String(kw.pool_status||'');
+    if(pd.length){
+      auto.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F3F7} <b>${pd.length} term${pd.length===1?'':'s'} dropped — the market never uses that qualifier</b>${tipOf('Every word a term adds on top of the head term is checked against the keyword pool this build already pulled &mdash; a few hundred phrases people really type here. A qualifier nobody searches is padding, and it takes a slot from one that carries demand. Anything you typed yourself is exempt; type a term into Product / Vertical Focus to keep it.')}<div class="nf" style="margin-top:3px">${pd.map(x=>escapeHtml(x.service)+' <span style="opacity:.7">&mdash; &ldquo;'+escapeHtml(x.word)+'&rdquo; is not used in this market</span>').join('<br>')}</div></div>`);
+    } else if(st.indexOf('thin:')===0){
+      notes.push(`<div style="margin-top:4px" class="nf">\u{1F3F7} <b>Qualifier check stood down</b> — the keyword pool came back with only ${escapeHtml(st.split(':')[1]||'')} distinct words, too few to prove a phrase is unused. Nothing was removed.</div>`);
+    } else if(st.indexOf('held:')===0){
+      notes.push(`<div style="margin-top:4px" class="nf">\u{1F3F7} <b>Qualifier check held back</b> — it would have removed ${escapeHtml(st.split(':')[1]||'')} of the services, which means the pool and the list are about different things rather than that the list is wrong. Nothing was removed.</div>`);
+    }
+  }
+
   // SINGULAR OR PLURAL. Same shape as the market-wording note above and silent
   // for the same reason: "checked, already correct" is the absence of a note.
   // Only a re-spelling changes the keyword text, and only an error means the

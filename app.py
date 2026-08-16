@@ -694,6 +694,9 @@ CFG = {
     # on top of the core is its qualification, and that is what breaks the ties
     # the tier reconciliation cannot break on volume.
     "shape_core_share": 0.4,
+    # Below this many distinct stems the keyword pool is too small to prove a
+    # qualifier is unused — see drop_ungrounded_services.
+    "pool_vocab_min": 60,
     "service_form_min_ratio": 2.0,
     "service_form_min_volume": 50,
     "axis_city_volume_floor": 20,
@@ -3042,6 +3045,106 @@ _NARROW_QUALIFIER = re.compile(
     r"that (?:allow|accept)|accepting|allowing|includes?|including)\b", re.I)
 
 
+def pool_vocabulary(candidates, seeds=None, site_terms=None):
+    """Every word the MARKET uses, from the keyword pool this build already paid
+    for, plus the operator's own terms.
+
+    `keywords_for_keywords` and `keyword_suggestions` come back with a few
+    hundred phrases people really type. The expansion prompt has always been
+    handed that pool as "evidence of real demand", and advisory is exactly what
+    it stayed: the model reads it and still writes "rental homes with washer
+    dryer" whether or not anything resembling it is in there. That is where the
+    feature permutations come from — plausible variants, generated rather than
+    observed, spending slots Brendan gives to bedroom counts and landmarks.
+
+    Returns the stemmed token set. The operator's seeds are in it because a
+    planner who knows the account outranks the pool, and the site's own terms
+    because a service a client sells is legitimate whether or not Google's idea
+    list happened to surface it. (2026-08-16)
+    """
+    out = set()
+    for src in (candidates or [], seeds or [], site_terms or []):
+        for c in src:
+            t = c.get("keyword", "") if isinstance(c, dict) else c
+            for w in re.split(r"[^a-z0-9]+", str(t or "").lower()):
+                st = _seed_stem(w)
+                if st and len(st) > 1:
+                    out.add(st)
+    return out
+
+
+def ungrounded_qualifiers(service, core, vocab):
+    """The words this service adds on top of the head term that the market never
+    uses. Empty when the service is grounded, or when there is nothing to add."""
+    words = [w for w in re.split(r"[^a-z0-9]+", (service or "").lower()) if w]
+    bad = []
+    for w in words:
+        if w in _SEED_SHAPE or w in _FORM_SKIP or w in _PREPOSITIONS:
+            continue
+        st = _seed_stem(w)
+        if not st or len(st) < 2 or st in core or st in vocab:
+            continue
+        bad.append(w)
+    return bad
+
+
+def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None,
+                               pinned=None):
+    """Take back the slots spent on qualifiers nobody searches.
+
+    NOT to be confused with drop_ungrounded_services() above, which asks whether
+    the SERVICE is something this client sells, read off their own site and
+    description. This asks whether the QUALIFIER is a word this market uses,
+    read off the keyword pool. Different question, different evidence.
+
+    A service survives when every word it adds on top of the list's own core
+    appears somewhere in the market's vocabulary. "3 bedroom homes for rent"
+    survives if the pool anywhere says "bedroom"; "rental homes with washer
+    dryer" does not if it never says "washer".
+
+    THREE THINGS IT WILL NOT DO. It never touches a term the operator typed or
+    the build pinned — same exemption every other filter gives them. It never
+    judges the head term itself, only the qualification. And below
+    `pool_vocab_min` distinct tokens the pool is too thin to be evidence of
+    anything, so it stands down entirely and says so rather than quietly
+    narrowing the list on a small sample.
+
+    Returns (kept, dropped, status). (2026-08-16)
+    """
+    out = [dict(x) for x in (services or [])]
+    vocab = pool_vocabulary(candidates, seeds, site_terms)
+    floor = int(CFG.get("pool_vocab_min", 60))
+    if len(vocab) < floor:
+        return out, [], f"thin:{len(vocab)}"
+    shape = service_shape(out)
+    names = [(x.get("service") or "").strip().lower() for x in out]
+    keys = {n: _seed_key(n) for n in names}
+    tally = {}
+    for k in keys.values():
+        for tok in k:
+            tally[tok] = tally.get(tok, 0) + 1
+    core = {tok for tok, c in tally.items()
+            if c >= len(names) * float(CFG.get("shape_core_share", 0.4))}
+    safe = {seed_norm(str(t)).lower() for t in (seeds or [])}
+    safe |= {str(t).strip().lower() for t in (pinned or [])}
+    kept, dropped = [], []
+    for x in out:
+        n = (x.get("service") or "").strip().lower()
+        if n in safe or not shape:
+            kept.append(x)
+            continue
+        bad = ungrounded_qualifiers(n, core, vocab)
+        if bad:
+            dropped.append((n, bad[0]))
+        else:
+            kept.append(x)
+    # It cannot empty the list, and it cannot cut so deep that the grid has
+    # nothing to quote. Same instinct as every other filter here.
+    if len(kept) < max(3, int(len(out) * 0.4)):
+        return out, [], f"held:{len(dropped)}"
+    return kept, dropped, "ok"
+
+
 def service_shape(services):
     """How QUALIFIED each service is, relative to the list it sits in.
 
@@ -3380,9 +3483,14 @@ RULES:
 1. A SERVICE is a short, generic phrase with NO city and NO brand — e.g. "auto insurance", "home insurance", "insurance agency", "umbrella insurance". {"This is a NATIONAL product brand: these terms are the final keyword list and will NOT be crossed with cities. Qualify the long-tail entries by AUDIENCE or USE CASE instead of location (e.g. \'electrolyte gummies for athletes\', \'energy gummies for teen athletes\'), never by place." if national else "It will be crossed with city names later, so do NOT include any location."}
 2. Only services this business actually offers. Exclude anything they don't do.
 2g. {_goal_rule}
-2p. NEVER include "near me", "nearby", "closest" or any other proximity phrase. Every service is
+2p. NEVER include "near me", "nearby", "closest" or any other RELATIVE proximity phrase. Every service is
    crossed with a city later, and "mattress store near me acworth ga" is not a phrase any human
    types — "near me" IS the location. Write the bare service; the grid adds the place.
+2n. A NAMED LANDMARK IS DIFFERENT, and is allowed. "homes for rent near meow wolf", "apartments near
+   the university", "storage near the airport" — a specific place a local would name is real local
+   phrasing and reads as knowledge of the market, which is why Brendan puts two of them in a
+   twenty-term list. Only use a landmark that appears in the keyword-idea list below; a landmark
+   nobody searches is worse than a plain term, and inventing one is obvious to the reader.
 2s. THE PARTNER'S SEED TERMS COME FIRST. They were typed by someone who knows the account, so treat
    them as the client's own service list. Any seed that is already a clean, bare service belongs in the
    output essentially as written. Only when you have fewer seeds than {max_services} should you add
@@ -3447,7 +3555,7 @@ RULES:
    Aim for at least one multi-word compound in the long_tail tier. These must still be real services the business offers —
    never invent a service, and never turn it into a question.
 7. VARIETY: these will be crossed with {n_cities} cit{"y" if n_cities == 1 else "ies"}, so you must supply {max_services} DISTINCT services.
-   {"Because there are few or no cities to cross against, the variety has to come from the services themselves. Include close variants and qualified forms the way a real proposal does — e.g. for a supplement brand: 'energy gummies', 'electrolyte gummies', 'hydration gummies', 'energy gummies for athletes', 'electrolyte gummies for kids sports', 'best energy gummies'. For a clinic: 'adhd treatment', 'anxiety treatment', 'depression counseling', 'couples therapy', 'family therapy', 'mental health clinic', 'behavioral health services'. Synonyms, sub-services, audience qualifiers and 'best X' forms all count as distinct services." if n_cities <= 2 else "With several cities to cross against, keep the services broad and distinct rather than near-duplicates."}
+   {"Because there are few or no cities to cross against, the variety has to come from the services themselves. Include close variants and qualified forms the way a real proposal does — but ONLY WITH QUALIFIERS THE KEYWORD-IDEA LIST ABOVE ACTUALLY USES. That list is what people really type in this market, and it is the difference between a real long-tail term and an invented one: '3 bedroom homes for rent' and 'pet friendly rentals' are in it, 'rental homes with washer dryer' and 'move in ready rentals' are phrases nobody searches that read as padding. If you cannot find a qualifier in that list, use a barer form of the head term rather than making one up — e.g. for a supplement brand: 'energy gummies', 'electrolyte gummies', 'hydration gummies', 'energy gummies for athletes', 'electrolyte gummies for kids sports', 'best energy gummies'. For a clinic: 'adhd treatment', 'anxiety treatment', 'depression counseling', 'couples therapy', 'family therapy', 'mental health clinic', 'behavioral health services'. Synonyms, sub-services, audience qualifiers and 'best X' forms all count as distinct services." if n_cities <= 2 else "With several cities to cross against, keep the services broad and distinct rather than near-duplicates."}
 
 Return ONLY valid JSON, no prose:
 {{"services": [{{"service": "auto insurance", "tier": "ultra"}}, {{"service": "umbrella insurance", "tier": "long_tail"}}]}}"""
@@ -5664,17 +5772,29 @@ def service_form_probes(service_terms, cap=None):
     return out
 
 
-def choose_service_forms(service_terms, vols, err="", cap=None):
-    """Choose each service's spelling from volumes ALREADY MEASURED.
+def choose_service_forms(service_terms, vols, err="", cap=None, pool=None):
+    """Choose each service's spelling — by the MARKET'S OWN PHRASING first, and
+    by measured volume only where that is silent.
 
-    Pure — `vols` is the map the build's own volume call returned. Only
-    spellings of services already chosen, so this cannot add or remove a
-    service, only re-spell one.
+    THE VOLUME TEST CANNOT ANSWER THIS QUESTION. Google Ads groups close
+    variants, so it returns one figure for both spellings: Amare came back
+    "apartment for rent 90 vs apartments for rent 90 · home for rent 10 vs homes
+    for rent 10 · 3 bedroom homes for rent 10 vs 3 bedroom home for rent 10" —
+    six pairs, six exact ties, including the zeros. A test that ties every time
+    is not a strict test, it is no test, and it had quietly decided nothing on
+    two consecutive builds.
 
-    A variant has to CLEARLY win: `service_form_min_ratio` times the incumbent
-    and above `service_form_min_volume`. A tie or a near-miss keeps what the
-    model wrote, because a coin-flip rewrite of the operator's own phrasing is
-    worse than a slightly smaller number.
+    So ask the keyword pool instead. `keywords_for_keywords` and
+    `keyword_suggestions` return phrases people really type, carrying their
+    natural number: if the pool says "homes for rent" and never "home for rent",
+    that IS the market's spelling, and it costs nothing to read because the
+    build already fetched it. It also generalises where a rule could not —
+    "roof repair" stays singular and "homes for rent" goes plural without
+    anyone writing down which nouns pluralise.
+
+    Volume remains the tie-break for the case the pool has no opinion on, under
+    the same bar as before: `service_form_min_ratio` times the incumbent and
+    above `service_form_min_volume`.
 
     Returns (forms, report). `forms` maps the original service -> the spelling
     to use. `report` carries one entry per service that was TESTED, with a
@@ -5692,6 +5812,19 @@ def choose_service_forms(service_terms, vols, err="", cap=None):
         return {}, [{"service": t, "status": "error", "detail": str(err)[:120]}
                     for t in terms if variants[t]]
     vols = {str(k).lower(): v for k, v in (vols or {}).items()}
+    seen = set()
+    for c in (pool or []):
+        t = c.get("keyword", "") if isinstance(c, dict) else c
+        t = clean_kw(str(t or "").lower()).strip()
+        if t:
+            seen.add(t)
+
+    def _in_pool(phrase):
+        """The pool holds whole keywords, usually with a place on the end, so a
+        containment test on word boundaries is the honest one."""
+        return any(p == phrase or p.startswith(phrase + " ")
+                   or p.endswith(" " + phrase) or (" " + phrase + " ") in p
+                   for p in seen)
 
     ratio = float(CFG.get("service_form_min_ratio", 2.0))
     floor = int(CFG.get("service_form_min_volume", 50))
@@ -5705,6 +5838,29 @@ def choose_service_forms(service_terms, vols, err="", cap=None):
                         key=lambda x: -x[1])
         table = [{"form": f, "volume": v} for f, v in [(t, base)] + scored]
         best, best_v = scored[0]
+        # THE POOL GETS THE FIRST WORD. Only when it names one spelling and not
+        # the other has it actually said something.
+        pool_says = ""
+        if seen:
+            _has_t, _has_v = _in_pool(t), _in_pool(best)
+            if _has_v and not _has_t:
+                pool_says = best
+            elif _has_t and not _has_v:
+                pool_says = t
+        if pool_says and pool_says != t and best.lower() not in taken:
+            forms_out[t] = pool_says
+            taken.discard(t.lower())
+            taken.add(pool_says.lower())
+            report.append({"service": t, "status": "changed", "chose": pool_says,
+                           "instead_of": t, "volume": best_v,
+                           "default_volume": base, "tested": table,
+                           "basis": "the market's own phrasing"})
+            continue
+        if pool_says == t:
+            report.append({"service": t, "status": "confirmed", "chose": t,
+                           "volume": base, "tested": table,
+                           "basis": "the market's own phrasing"})
+            continue
         if best_v <= 0 and base <= 0:
             report.append({"service": t, "status": "no data", "tested": table})
             continue
@@ -6564,6 +6720,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # the crossing.
         services = scrub_services(services, markets, state, phrase_geos)
         services, geo_dropped = drop_foreign_geo_services(services, markets, state)
+        # QUALIFIERS THE MARKET DOES NOT USE. The prompt has always been handed
+        # the keyword pool as "evidence of real demand" and advisory is what it
+        # stayed — Amare spent five of twenty slots on "rental homes with washer
+        # dryer", "move in ready rentals", "rental homes no credit check",
+        # "with pool" and "with yard", none of which anyone types, while
+        # Brendan's list for the same client spends them on bedroom counts and
+        # two named landmarks. Enforced here rather than asked for, because a
+        # prompt cannot be checked and this can. (2026-08-16)
+        services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
+            services, cands, seeds, site_terms_kw, pinned=None)
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
         # A PIN IS THE HIGHEST-LEVERAGE SLOT AND NOTHING WAS CHECKING IT. Pins
@@ -6768,7 +6934,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         if form_probes:
             try:
                 service_forms, service_form_report = choose_service_forms(
-                    svc_names, vols, vol_err)
+                    svc_names, vols, vol_err, pool=cands)
             except Exception:                                 # noqa: BLE001
                 app.logger.exception("service form choice failed")
                 service_forms, service_form_report = {}, []
@@ -7371,6 +7537,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "topic_fixes": topic_fixes,
             "geo_forms": geo_form_report,
             "service_forms": service_form_report,
+            "pool_dropped": [{"service": d[0], "word": d[1]} for d in (pool_dropped or [])],
+            "pool_status": pool_status,
         }
 
     refined = claude_refine_keywords(seeds, markets, brand, domain,
@@ -8893,6 +9061,8 @@ def api_refine():
         "topic_fixes": s1.get("topic_fixes") or [],
         "geo_forms": s1.get("geo_forms") or [],
         "service_forms": s1.get("service_forms") or [],
+        "pool_dropped": s1.get("pool_dropped") or [],
+        "pool_status": s1.get("pool_status") or "",
     })
 
 # ---------------------------------------------------------------------------
