@@ -697,6 +697,10 @@ CFG = {
     # Below this many distinct stems the keyword pool is too small to prove a
     # qualifier is unused — see drop_ungrounded_services.
     "pool_vocab_min": 60,
+    # A pool row has to be a keyword someone actually runs before its words
+    # count as the market's vocabulary — see pool_vocabulary. Same bar the
+    # near-me forms clear.
+    "pool_min_volume": 30,
     "service_form_min_ratio": 2.0,
     "service_form_min_volume": 50,
     "axis_city_volume_floor": 20,
@@ -3045,9 +3049,21 @@ _NARROW_QUALIFIER = re.compile(
     r"that (?:allow|accept)|accepting|allowing|includes?|including)\b", re.I)
 
 
-def pool_vocabulary(candidates, seeds=None, site_terms=None):
+def pool_vocabulary(candidates, seeds=None, site_terms=None, min_volume=None):
     """Every word the MARKET uses, from the keyword pool this build already paid
     for, plus the operator's own terms.
+
+    WEIGHTED BY VOLUME, because the pool is not an independent sample. It comes
+    from `keywords_for_keywords` and `keyword_suggestions` SEEDED WITH THE
+    SERVICE LIST — and keyword_suggestions in particular returns queries
+    containing the seed. Ask it about "rental homes no credit check" and it will
+    hand back phrasings of that, which then appear in the vocabulary and vouch
+    for the term that produced them. Amare judged all seventeen qualifiers and
+    grounded all seventeen on exactly that loop.
+    Existence is not the test — a phrase can be real, returned by Google, and
+    still be searched by nobody. A qualifier earns its place from a keyword
+    someone actually runs, so only rows clearing `pool_min_volume` count.
+    (2026-08-16)
 
     `keywords_for_keywords` and `keyword_suggestions` come back with a few
     hundred phrases people really type. The expansion prompt has always been
@@ -3062,10 +3078,21 @@ def pool_vocabulary(candidates, seeds=None, site_terms=None):
     because a service a client sells is legitimate whether or not Google's idea
     list happened to surface it. (2026-08-16)
     """
+    floor = int(min_volume if min_volume is not None
+                else CFG.get("pool_min_volume", 30))
     out = set()
-    for src in (candidates or [], seeds or [], site_terms or []):
+    for src, weighed in ((candidates or [], True), (seeds or [], False),
+                         (site_terms or [], False)):
         for c in src:
-            t = c.get("keyword", "") if isinstance(c, dict) else c
+            if isinstance(c, dict):
+                t = c.get("keyword", "")
+                # The operator's terms and the client's own pages are not
+                # measured against demand — they are statements about the
+                # business. Only the keyword POOL has to earn its way in.
+                if weighed and int(c.get("volume") or 0) < floor:
+                    continue
+            else:
+                t = c
             for w in re.split(r"[^a-z0-9]+", str(t or "").lower()):
                 st = _seed_stem(w)
                 if st and len(st) > 1:
@@ -3086,6 +3113,64 @@ def ungrounded_qualifiers(service, core, vocab):
             continue
         bad.append(w)
     return bad
+
+
+def backfill_services(services, candidates, want, markets=None, state="",
+                      brand="", vocab=None, tier="long_tail"):
+    """Refill slots the qualifier filter took back.
+
+    Removing a service without replacing it shortens the grid, and the grid
+    length is what the volume total — and therefore the price — is built from.
+    A filter that quietly makes a quote cheaper is worse than no filter: the
+    operator asked for twenty terms and would get thirteen with nothing on
+    screen connecting the two.
+
+    Fills from the keyword pool by measured volume, skipping anything already
+    covered, the client's own name, questions, and — the point of the exercise —
+    anything whose own qualifiers are ungrounded, so the backfill cannot walk
+    straight back into what was just removed. Returns (services, added).
+    (2026-08-16)
+    """
+    want = int(want or 0)
+    if want <= 0 or not candidates:
+        return services, []
+    out = [dict(x) for x in (services or [])]
+    have = [(x.get("service") or "").lower() for x in out]
+
+    def covered(term):
+        return any(term == h or term in h or h in term for h in have if h)
+
+    floor = int(CFG.get("pool_min_volume", 30))
+    b = (brand or "").strip().lower()
+    keys = {n: _seed_key(n) for n in have if n}
+    tally = {}
+    for k in keys.values():
+        for tok in k:
+            tally[tok] = tally.get(tok, 0) + 1
+    core = {tok for tok, c in tally.items()
+            if c >= len(have) * float(CFG.get("shape_core_share", 0.4))} if have else set()
+
+    added = []
+    for c in sorted(candidates, key=lambda r: (-(r.get("volume") or 0),
+                                               str(r.get("keyword") or ""))):
+        if len(added) >= want:
+            break
+        vol = int(c.get("volume") or 0)
+        if vol < floor:
+            break                       # sorted, so nothing below here qualifies
+        term = clean_kw(strip_placeholders(strip_proximity(
+            _strip_markets((c.get("keyword") or "").lower(),
+                           list(markets or []), state)))).strip()
+        if not term or covered(term) or is_lookup_kw(term):
+            continue
+        if b and is_brand_term(term, brand):
+            continue
+        if vocab and ungrounded_qualifiers(term, core, vocab):
+            continue
+        out.append({"service": term, "tier": tier})
+        have.append(term)
+        added.append((term, vol))
+    return out, added
 
 
 def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None,
@@ -6752,6 +6837,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
             services, cands, seeds, site_terms_kw, pinned=None,
             suggested=suggested)
+        # And put the slots back. A shorter grid is a cheaper quote, and nothing
+        # on screen would have connected the two — see backfill_services.
+        pool_added = []
+        if pool_dropped:
+            _typed = [t for t in (seeds or [])
+                      if str(t).strip().lower() not in
+                      {str(x).strip().lower() for x in (suggested or [])}]
+            services, pool_added = backfill_services(
+                services, cands, len(pool_dropped), markets, state, brand,
+                vocab=pool_vocabulary(cands, _typed, site_terms_kw))
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
         # A PIN IS THE HIGHEST-LEVERAGE SLOT AND NOTHING WAS CHECKING IT. Pins
@@ -7560,6 +7655,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "geo_forms": geo_form_report,
             "service_forms": service_form_report,
             "pool_dropped": [{"service": d[0], "word": d[1]} for d in (pool_dropped or [])],
+            "pool_added": [{"service": a[0], "volume": a[1]} for a in (pool_added or [])],
             "pool_status": pool_status,
         }
 
@@ -9084,6 +9180,7 @@ def api_refine():
         "geo_forms": s1.get("geo_forms") or [],
         "service_forms": s1.get("service_forms") or [],
         "pool_dropped": s1.get("pool_dropped") or [],
+        "pool_added": s1.get("pool_added") or [],
         "pool_status": s1.get("pool_status") or "",
     })
 
