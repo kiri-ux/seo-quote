@@ -624,6 +624,16 @@ CFG = {
     "list_cap": 60,
     "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
     # Long-tail sourcing
+    # HOW MANY SEEDS keyword_suggestions is asked about. It is one request each,
+    # so this is a real cost — but it was ALREADY capped, by a hardcoded
+    # seeds[:6] buried in the function, which is why the call count never looked
+    # like the seed count. What changes here is WHICH seeds: the slice took the
+    # first six in typing order, and this takes the BROADEST, fewest words first,
+    # because a broad seed has far more long-tail children than a specific one.
+    # "home for rent" yields pages of them; "rental homes with washer dryer"
+    # yields almost nothing and Amare was spending a call on it. The saving is
+    # one call; the point is which five. (2026-08-14)
+    "suggest_seed_cap": 5,
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
@@ -1320,10 +1330,21 @@ def is_longtail(kw):
 
 def fetch_suggestions(seeds, markets, state):
     """keyword_suggestions returns queries CONTAINING the seed — structurally
-    longer than keyword_ideas. Calls run in parallel; failures are non-fatal."""
+    longer than keyword_ideas. Calls run in parallel; failures are non-fatal.
+
+    Only the broadest few seeds are asked — see suggest_seed_cap. This was
+    already capped at six by a hardcoded slice; the cap is now named, config-
+    editable, and picks by BREADTH rather than by typing order. Fewest words
+    first, ties on the order they were typed, so two builds of the same list ask
+    the same questions. (2026-08-14)
+    """
     out = []
     if not CFG["use_suggestions"]:
         return out
+    cap = int(CFG.get("suggest_seed_cap") or 0)
+    if cap > 0 and len(seeds or []) > cap:
+        _order = {s: i for i, s in enumerate(seeds)}
+        seeds = sorted(seeds, key=lambda s: (len(str(s).split()), _order[s]))[:cap]
     loc = loc_string(markets, state)
 
     def one(s):
@@ -1344,7 +1365,7 @@ def fetch_suggestions(seeds, markets, state):
             return []
 
     with ThreadPoolExecutor(max_workers=min(len(seeds), CFG["rank_check_workers"]) or 1) as ex:
-        for rows in ex.map(one, seeds[:6]):
+        for rows in ex.map(one, seeds):
             out.extend(rows)
     return out
 

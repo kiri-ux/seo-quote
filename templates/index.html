@@ -484,7 +484,7 @@
     <div id="rankedKwOut" style="margin-top:6px"></div>
 
     <label>Negative terms</label>
-    <div class="help">Words this client should never be quoted for. Type and press comma/Enter. Matched on whole words, so &ldquo;carrier&rdquo; will not catch &ldquo;career&rdquo;; a phrase matches as a phrase. Applies to what the TOOL proposes &mdash; a focus term you typed always wins, and the panel tells you when the two disagree.</div>
+    <div class="help">Words this client should never be quoted for. Whole words only, so &ldquo;carrier&rdquo; won&rsquo;t catch &ldquo;career&rdquo;. A focus term you typed still wins.</div>
     <div class="pillbox" data-for="neg"><input type="text" id="neg_in" placeholder="carrier, underwriting, jobs"></div>
 
     <!-- BUSINESS DESCRIPTION came off the form 2026-08-13. It was never really an
@@ -3096,6 +3096,9 @@ function renderStep4(p){
             <span class="tipwrap"><i class="tipicon">i</i><div class="help">Sets the partner hard cost directly for clients the formula doesn't fit; tiers and client price recompute from it. Overrides are recorded with a reason so a pattern in them can be read as a pricing-model gap rather than disappearing into individual quotes — if the same reason keeps coming up, the formula should change instead.</div></span>
           </div>
           <div class="help" style="margin:1px 0 0">${p.manual_base?'Active — the formula is not setting this price.':'Off — price comes from the formula.'}</div>
+          ${(p.manual_base && typeof ST!=='undefined' && ST.baseOverride && !ST.pricingUnits)
+            ? `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:6px;font-size:12.5px">\u26a0 <b>This override was entered in the old unit</b> — before partner cost became the figure you type, so it is reading about 14% high. The same ladder now comes from <b>${Math.round(Number(ST.baseOverride)*0.8775/50)*50}</b>. Re-enter it to clear this.</div>`
+            : ''}
         </div>
       </div>
       <div id="base_ovr_fields" class="${p.manual_base?'':'hidden'}" style="margin-top:11px;border-top:1px solid var(--line);padding-top:11px">
@@ -3953,6 +3956,10 @@ function snapshotQuote(){
     pricing: ST.pricing,
     totalVol: ST.totalVol, pctNotRanking: ST.pctNotRanking,
     baseOverride: ST.baseOverride||'',
+    // Which unit the override above is written in. Absent on anything saved
+    // before 2026-08-13, when the constants became partner cost — and an old
+    // override reads ~14% high against the new maths, silently. (2026-08-14)
+    pricingUnits: 'partner',
     baseReason: ST.baseReason||'',
     geoOverride: ST.geoOverride||'',
     addonOverride: ST.addonOverride||'',
@@ -3980,6 +3987,7 @@ function restoreQuote(p){
   ST.zero=p.zero; ST.longtail=p.longtail; ST.cpc=p.cpc||{}; ST.kd=p.kd||{};
   ST.pricing=p.pricing; ST.totalVol=p.totalVol; ST.pctNotRanking=p.pctNotRanking;
   ST.baseOverride=p.baseOverride||'';
+  ST.pricingUnits=p.pricingUnits||'';
   ST.baseReason=p.baseReason||'';
   ST.geoOverride=p.geoOverride||'';
   ST.addonOverride=p.addonOverride||'';
