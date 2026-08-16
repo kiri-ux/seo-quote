@@ -2284,6 +2284,21 @@ _DEFINITIONAL = re.compile(
     r"\b(?:meaning|meanings|definition|defined|stand[s]? for|abbreviation|"
     r"acronym|explained|explain|means)\b", re.I)
 
+# LOOKING SOMETHING UP, NOT BUYING IT — the support-desk twin of the definition
+# case. PEO Brokers came back with "new york state insurance fund workers comp
+# phone number" in Competitive: a real search with real volume, made by somebody
+# who already deals with that fund and wants its switchboard. Same shape as an
+# abbreviation lookup and just as unquotable, and no volume floor catches either.
+# (2026-08-14)
+# Every pattern here is at least two words or an unambiguous one. A bare "phone"
+# or "portal" reads as support intent and is not: "phone systems for business"
+# and "portal cranes for sale" are both real service lines, and both were caught
+# by the first draft of this.
+_SUPPORT_INTENT = re.compile(
+    r"\b(?:phone number|telephone number|customer service|customer support|"
+    r"contact (?:number|info|information|us)|mailing address|"
+    r"hours of operation|opening hours|log ?in page|sign in page)\b", re.I)
+
 
 def is_question_kw(text):
     """Is this a question phrase rather than a service a client could sell?"""
@@ -2306,7 +2321,8 @@ def is_lookup_kw(text):
     what a term is allowed to EARN. (2026-08-13)
     """
     t = (text or "").strip()
-    return bool(t) and (is_question_kw(t) or bool(_DEFINITIONAL.search(t)))
+    return bool(t) and (is_question_kw(t) or bool(_DEFINITIONAL.search(t))
+                        or bool(_SUPPORT_INTENT.search(t)))
 
 
 def drop_ungrounded_services(services, seeds, business_desc, site_pages, brand, domain):
@@ -3530,11 +3546,55 @@ _SEED_ACTION = {
 }
 
 
-def _seed_key(term):
+def acronym_aliases(terms):
+    """{acronym: [words it stands for]} — worked out from the list itself.
+
+    "new york state fund workers comp" and "workers compensation nysif" are the
+    same fund and share no token, so every fold in the build looks straight past
+    them and PEO Brokers spends two of six Ultra slots on one thing. Nothing here
+    is a lookup table: if some term in the list contains consecutive words whose
+    initials spell a single word in another term, that is the expansion.
+
+    Deliberately strict — four letters or more, three consecutive words or more,
+    exact initials. "peo" is three letters and would otherwise swallow anything
+    starting p-e-o; "usl&h" flattens to "uslh" and matches nothing. False
+    positives here merge two real services, so the bar is high. (2026-08-14)
+    """
+    words, singles = [], set()
+    for t in terms or []:
+        ws = [w for w in re.sub(r"[^a-z0-9 ]+", " ", str(t).lower()).split() if w]
+        words.append(ws)
+        for w in ws:
+            if len(w) >= 4 and w.isalpha():
+                singles.add(w)
+    out = {}
+    for acr in singles:
+        n = len(acr)
+        for ws in words:
+            if acr in ws:
+                continue                      # its own term proves nothing
+            for i in range(len(ws) - n + 1):
+                run = ws[i:i + n]
+                if len(run) >= 3 and "".join(w[0] for w in run) == acr:
+                    out[acr] = run
+                    break
+            if acr in out:
+                break
+    return out
+
+
+def _seed_key(term, alias=None):
     """Stemmed token set with shape words removed and action verbs canonicalised
-    — the near-duplicate key."""
+    — the near-duplicate key. `alias` expands acronyms first (see
+    acronym_aliases), so "nysif" and "new york state insurance fund" key alike."""
     toks, quals = set(), set()
+    _words = []
     for w in (term or "").lower().split():
+        # An acronym stands in for the words it abbreviates, so both spellings
+        # reach the same key. Everything downstream — the fold, the grid dedupe,
+        # the topic guarantee — inherits this for free.
+        _words.extend((alias or {}).get(w, [w]))
+    for w in _words:
         if w in _SEED_SHAPE:
             continue
         st = _seed_stem(w)
@@ -3985,11 +4045,14 @@ def fold_seed_duplicates(seeds, markets=None, state=""):
     Keeps the first form the operator typed. Returns (kept, [(dropped, kept_as)]).
     """
     kept, folded, groups = [], [], []      # groups: [(key, term)]
+    # Acronyms first, worked out from this list alone, so "nysif" and the words
+    # it stands for reach the same key here as everywhere else. (2026-08-14)
+    _alias = acronym_aliases([seed_norm(x, markets, state) for x in (seeds or [])])
     for raw in seeds or []:
         t = seed_norm(raw, markets, state)
         if not t:
             continue
-        k = _seed_key(t) or frozenset({t})
+        k = _seed_key(t, _alias) or frozenset({t})
         hit = next((g for g in groups if k == g[0]), None)
         if hit is not None:
             folded.append((raw, hit[1]))
@@ -6332,10 +6395,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # over the FINAL list, same key as everywhere else, first occurrence
         # wins so pins and seeds keep their place. Reported, not silent — if it
         # ever catches anything the stage above it is still wrong. (2026-08-14)
+        _alias = acronym_aliases([(x.get("service") or "") for x in services])
         _seen_final, _final, services_deduped = set(), [], []
         for _x in services:
             _n = (_x.get("service") or "").strip()
-            _k = _seed_key(_n) or frozenset({_n.lower()})
+            _k = _seed_key(_n, _alias) or frozenset({_n.lower()})
             if _k in _seen_final:
                 services_deduped.append(_n)
                 continue
