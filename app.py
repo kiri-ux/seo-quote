@@ -701,6 +701,10 @@ CFG = {
     # count as the market's vocabulary — see pool_vocabulary. Same bar the
     # near-me forms clear.
     "pool_min_volume": 30,
+    # OFF until the backfill stops drawing New York and San Antonio terms out of
+    # a nationally-ranked pool for a Santa Fe client. The filter half is sound;
+    # the refill half is not. (2026-08-16)
+    "pool_qualifier_filter": False,
     "service_form_min_ratio": 2.0,
     "service_form_min_volume": 50,
     "axis_city_volume_floor": 20,
@@ -6834,19 +6838,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # Brendan's list for the same client spends them on bedroom counts and
         # two named landmarks. Enforced here rather than asked for, because a
         # prompt cannot be checked and this can. (2026-08-16)
-        services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
-            services, cands, seeds, site_terms_kw, pinned=None,
-            suggested=suggested)
-        # And put the slots back. A shorter grid is a cheaper quote, and nothing
-        # on screen would have connected the two — see backfill_services.
-        pool_added = []
-        if pool_dropped:
-            _typed = [t for t in (seeds or [])
-                      if str(t).strip().lower() not in
-                      {str(x).strip().lower() for x in (suggested or [])}]
-            services, pool_added = backfill_services(
-                services, cands, len(pool_dropped), markets, state, brand,
-                vocab=pool_vocabulary(cands, _typed, site_terms_kw))
+        pool_dropped, pool_added, pool_status = [], [], ""
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
         # A PIN IS THE HIGHEST-LEVERAGE SLOT AND NOTHING WAS CHECKING IT. Pins
@@ -6889,6 +6881,41 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                         markets, state, phrase_geos)
                                if seeds else (services, 0, 0))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
+        # QUALIFIERS THE MARKET DOES NOT USE — and it has to run HERE, after
+        # enforce_seed_services, not before it. Every term this filter took out
+        # was a seed, and enforce_seed_services rebuilds the list FROM the seeds:
+        # it put all seven straight back. The panel reported seven drops and
+        # seven refills and the quote shipped with neither, which is worse than
+        # the filter not existing — a report nobody can act on, about work that
+        # did not happen. (2026-08-16)
+        #
+        # OFF BY DEFAULT until the backfill is trustworthy. Its first outing
+        # offered "new york city apartments for rent", "apartments in san
+        # antonio tx" and "budget rental santa fe" — the car hire company — for
+        # a Santa Fe rental community, because it ranked the keyword pool by
+        # NATIONAL volume, which is the exact trap drop_foreign_geo_services and
+        # the competitor rules were written for.
+        if CFG.get("pool_qualifier_filter"):
+            services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
+                services, cands, seeds, site_terms_kw, pinned=pinned,
+                suggested=suggested)
+            if pool_dropped:
+                _typed = [t for t in (seeds or [])
+                          if str(t).strip().lower() not in
+                          {str(x).strip().lower() for x in (suggested or [])}]
+                services, pool_added = backfill_services(
+                    services, cands, len(pool_dropped), markets, state, brand,
+                    vocab=pool_vocabulary(cands, _typed, site_terms_kw))
+                # Anything the backfill brought in goes through the out-of-area
+                # filter like everything else. It is drawing from the same
+                # nationally-ranked pool that produced "state of california fire
+                # insurance" for a Virginia insurer.
+                services, _bf_geo = drop_foreign_geo_services(services, markets,
+                                                              state)
+                if _bf_geo:
+                    _gone = {d[0] for d in _bf_geo}
+                    pool_added = [a for a in pool_added if a[0] not in _gone]
+                    geo_dropped2 = list(geo_dropped2 or []) + list(_bf_geo)
         # Counted HERE, not off the final payload: several more filters run below
         # and "11 of 15" has to mean 15 as the grounding filter saw it.
         _gtotal = len([x for x in (services or []) if not x.get("pinned")])
