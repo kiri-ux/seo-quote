@@ -700,6 +700,7 @@ CFG = {
     # The absolute floor under the median — see pool_vocabulary. Google Ads
     # reports 10/mo for a phrase it holds no data on, so 11 is "measured at all".
     "pool_min_volume": 11,
+    "market_pool_cap": 60,          # local rows carried forward for the refill
     # OFF until the backfill stops drawing New York and San Antonio terms out of
     # a nationally-ranked pool for a Santa Fe client. The filter half is sound;
     # the refill half is not. (2026-08-16)
@@ -3222,7 +3223,7 @@ def backfill_services(services, candidates, want, markets=None, state="",
 
 
 def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None,
-                               pinned=None, suggested=None):
+                               pinned=None, suggested=None, vocab=None):
     """Take back the slots spent on qualifiers nobody searches.
 
     NOT to be confused with drop_ungrounded_services() above, which asks whether
@@ -3262,7 +3263,9 @@ def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None
     # words, and then found nothing ungrounded. (2026-08-16)
     _sug = {str(t).strip().lower() for t in (suggested or []) if str(t).strip()}
     typed = [t for t in (seeds or []) if str(t).strip().lower() not in _sug]
-    vocab = pool_vocabulary(candidates, typed, site_terms)
+    # A vocabulary read at stage 1, where provenance still existed, beats one
+    # rebuilt here from rows that no longer know where they were measured.
+    vocab = set(vocab) if vocab else pool_vocabulary(candidates, typed, site_terms)
     floor = int(CFG.get("pool_vocab_min", 60))
     if len(vocab) < floor:
         return out, [], f"thin:{len(vocab)}"
@@ -6473,6 +6476,21 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     kept.sort(key=lambda r: (-(r["volume"] or 0), r["keyword"]))
     with_vol = [r for r in kept if r["volume"] > 0]
 
+    # THE MARKET'S OWN WORDS, READ HERE BECAUSE HERE IS THE ONLY PLACE THEY CAN
+    # BE READ. The refine step rebuilds its candidate rows from what the browser
+    # posts back — {kw, vol} and nothing else — so `src` and every other trace of
+    # where a row came from is gone by the time the qualifier check runs. It was
+    # therefore reading "apartments in san antonio tx" and "apartments for rent
+    # los angeles" as this market's vocabulary: those come from
+    # keywords_for_site, which is a Labs call at location_code 2840 — the whole
+    # United States — while everything else here is measured at the client's own
+    # city. Three builds of this filter were judging Santa Fe by Los Angeles
+    # numbers. Computed once, carried forward as a token list. (2026-08-16)
+    _local = [r for r in kept if r.get("src") != "site"]
+    market_vocab = sorted(pool_vocabulary(_local))
+    market_pool = [{"keyword": r["keyword"], "volume": r["volume"]}
+                   for r in _local[:int(CFG.get("market_pool_cap", 60))]]
+
     # Bucket sizes come from the measured tier mix, not fixed counts — see
     # CFG["tier_mix"] for the eight-proposal sample behind the proportions.
     _target = min(int(CFG.get("list_cap", 60) or 60), max(len(kept), 20))
@@ -6579,6 +6597,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
         "business_desc": "",
         "site_pages_found": 0,
         "site_terms":  [r["keyword"] for r in site_terms],   # passed to refine step
+        "market_vocab": market_vocab,        # both passed to refine step, because
+        "market_pool":  market_pool,         # the pool itself cannot survive the trip
     }
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
@@ -6586,7 +6606,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    national_demand=False, goal="", band="",
                    national_reason="", grid_axis="", industry="",
                    product_demand=False, suggested=None, negatives=None,
-                   ranked=None):
+                   ranked=None, market_vocab=None, market_pool=None):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -6947,16 +6967,23 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # decides everything and applies nothing. (2026-08-16)
             _dry = (str(_pq).lower() == "report")
             _before = [dict(x) for x in services]
+            _typed = [t for t in (seeds or [])
+                      if str(t).strip().lower() not in
+                      {str(x).strip().lower() for x in (suggested or [])}]
+            # The vocabulary and the refill pool BOTH come from stage 1, where
+            # the rows still knew where they were measured. `cands` here is the
+            # browser's round-trip — keyword and volume, no provenance — so it
+            # cannot be used for either. (2026-08-16)
+            _vocab = set(market_vocab or [])
+            if _vocab:
+                _vocab |= pool_vocabulary([], _typed, site_terms_kw)
             services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
                 services, cands, seeds, site_terms_kw, pinned=pinned,
-                suggested=suggested)
-            if pool_dropped:
-                _typed = [t for t in (seeds or [])
-                          if str(t).strip().lower() not in
-                          {str(x).strip().lower() for x in (suggested or [])}]
+                suggested=suggested, vocab=_vocab)
+            if pool_dropped and market_pool:
                 services, pool_added = backfill_services(
-                    services, cands, len(pool_dropped), markets, state, brand,
-                    vocab=pool_vocabulary(cands, _typed, site_terms_kw))
+                    services, market_pool, len(pool_dropped), markets, state,
+                    brand, vocab=_vocab)
                 # Anything the backfill brought in goes through the out-of-area
                 # filter like everything else. It is drawing from the same
                 # nationally-ranked pool that produced "state of california fire
@@ -9109,6 +9136,8 @@ def api_keywords():
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
         "site_terms": s1.get("site_terms", []),
+        "market_vocab": s1.get("market_vocab", []),
+        "market_pool": s1.get("market_pool", []),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short
     # list. Flag it so the partner can add more seed terms for a fuller table.
@@ -9134,6 +9163,8 @@ def api_refine():
     domain  = (d.get("domain") or "").strip()
     business_desc = (d.get("business_desc") or "").strip()
     site_terms_kw = d.get("site_terms", [])
+    market_vocab = d.get("market_vocab") or []
+    market_pool = [x for x in (d.get("market_pool") or []) if x.get("keyword")]
     phrase_geos = [p.strip() for p in d.get("phrase_geos", []) if p and p.strip()]
     # National demand: RZ industry (ecommerce family) OR nationwide scope OR
     # the operator's manual checkbox. Flips the volume pull to geo-less; the
@@ -9155,6 +9186,7 @@ def api_refine():
                             national_reason=nat_reason,
                             grid_axis=(d.get("grid_axis") or ""),
                             industry=(d.get("industry") or ""),
+                            market_vocab=market_vocab, market_pool=market_pool,
                             product_demand=bool(d.get("national_demand"))
                                            or bool(d.get("ecommerce")),
                             goal=(d.get("goal") or ""),

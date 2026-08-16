@@ -2273,7 +2273,12 @@ $('step1').addEventListener('click', async()=>{
           suggested:(ST.expandedSeeds||[]).slice(),
           ranked:(ST.rankedSeeds||[]).slice(),
           negatives:inp.negatives||[],
-          site_terms:kw.site_terms||[]});
+          site_terms:kw.site_terms||[],
+          // Read at stage 1, where the rows still knew whether they were
+          // measured in this city or across the whole country. Rebuilt rows
+          // carry {kw, vol} and nothing else. (2026-08-16)
+          market_vocab:kw.market_vocab||[],
+          market_pool:kw.market_pool||[]});
         ST.gridAxis='';
         if(ref && ref.all){
           ref.built_at = new Date().toISOString();
