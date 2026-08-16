@@ -3089,7 +3089,7 @@ def ungrounded_qualifiers(service, core, vocab):
 
 
 def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None,
-                               pinned=None):
+                               pinned=None, suggested=None):
     """Take back the slots spent on qualifiers nobody searches.
 
     NOT to be confused with drop_ungrounded_services() above, which asks whether
@@ -3102,17 +3102,34 @@ def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None
     survives if the pool anywhere says "bedroom"; "rental homes with washer
     dryer" does not if it never says "washer".
 
-    THREE THINGS IT WILL NOT DO. It never touches a term the operator typed or
+    THREE THINGS IT WILL NOT DO. It never touches a term the operator TYPED or
     the build pinned — same exemption every other filter gives them. It never
     judges the head term itself, only the qualification. And below
     `pool_vocab_min` distinct tokens the pool is too thin to be evidence of
     anything, so it stands down entirely and says so rather than quietly
     narrowing the list on a small sample.
 
+    TYPED, NOT MERELY PRESENT. The first version exempted every seed, and on
+    Amare every seed WAS the tool's own suggestion sitting in the focus box with
+    a ✦ on it — seventeen of seventeen. So the filter ran, found nothing it was
+    allowed to touch, and reported honestly that it had changed nothing, which
+    read exactly like the pool having no objection. `suggested` is the same
+    record drop_suggested_nonservices uses for the same reason: a term the tool
+    proposed does not get the credit for the operator's judgement.
+    (2026-08-16)
+
     Returns (kept, dropped, status). (2026-08-16)
     """
     out = [dict(x) for x in (services or [])]
-    vocab = pool_vocabulary(candidates, seeds, site_terms)
+    # TYPED seeds only, in BOTH places. They join the market's vocabulary because
+    # a planner who knows the account outranks the pool — but a seed the tool
+    # suggested is the tool's own guess, and letting it into the vocabulary lets
+    # every guess vouch for itself. That is the whole filter defeated in one
+    # line: on Amare it put "credit", "pool", "yard" and "move" into the market's
+    # words, and then found nothing ungrounded. (2026-08-16)
+    _sug = {str(t).strip().lower() for t in (suggested or []) if str(t).strip()}
+    typed = [t for t in (seeds or []) if str(t).strip().lower() not in _sug]
+    vocab = pool_vocabulary(candidates, typed, site_terms)
     floor = int(CFG.get("pool_vocab_min", 60))
     if len(vocab) < floor:
         return out, [], f"thin:{len(vocab)}"
@@ -3125,8 +3142,9 @@ def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None
             tally[tok] = tally.get(tok, 0) + 1
     core = {tok for tok, c in tally.items()
             if c >= len(names) * float(CFG.get("shape_core_share", 0.4))}
-    safe = {seed_norm(str(t)).lower() for t in (seeds or [])}
+    safe = {seed_norm(str(t)).lower() for t in typed}
     safe |= {str(t).strip().lower() for t in (pinned or [])}
+    safe.discard("")
     kept, dropped = [], []
     for x in out:
         n = (x.get("service") or "").strip().lower()
@@ -3142,7 +3160,10 @@ def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None
     # nothing to quote. Same instinct as every other filter here.
     if len(kept) < max(3, int(len(out) * 0.4)):
         return out, [], f"held:{len(dropped)}"
-    return kept, dropped, "ok"
+    # How many were actually JUDGED, not how many exist. Silence has cost two
+    # builds on this feature already: "ran and found nothing" has to be
+    # distinguishable from "never got to run".
+    return kept, dropped, f"ok:{len(out) - len(safe & set(names))}"
 
 
 def service_shape(services):
@@ -6729,7 +6750,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # two named landmarks. Enforced here rather than asked for, because a
         # prompt cannot be checked and this can. (2026-08-16)
         services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
-            services, cands, seeds, site_terms_kw, pinned=None)
+            services, cands, seeds, site_terms_kw, pinned=None,
+            suggested=suggested)
         services, pinned = pin_head_services(services, cands, markets, state,
                                              brand, n_services)
         # A PIN IS THE HIGHEST-LEVERAGE SLOT AND NOTHING WAS CHECKING IT. Pins
