@@ -3265,10 +3265,21 @@ def drop_ungrounded_qualifiers(services, candidates, seeds=None, site_terms=None
     typed = [t for t in (seeds or []) if str(t).strip().lower() not in _sug]
     # A vocabulary read at stage 1, where provenance still existed, beats one
     # rebuilt here from rows that no longer know where they were measured.
-    vocab = set(vocab) if vocab else pool_vocabulary(candidates, typed, site_terms)
+    # `vocab` is THE POOL'S CONTRIBUTION ALONE.
+    market = set(vocab) if vocab else pool_vocabulary(candidates)
+    # THE STAND-DOWN IS MEASURED ON THE POOL, NOT ON THE UNION. The client's own
+    # seeds and site pages join the vocabulary for the membership test — they are
+    # statements about the business and outrank the pool — but they must not
+    # count towards "is there enough here to judge from". Amare cleared a
+    # sixty-word bar almost entirely on its own website's words while the Santa
+    # Fe pool contributed nothing above the no-data floor, so a filter with no
+    # evidence behind it went ahead and condemned eight terms, including
+    # "luxury" — which is Brendan's, and the client's, own framing.
+    # (2026-08-16)
     floor = int(CFG.get("pool_vocab_min", 60))
-    if len(vocab) < floor:
-        return out, [], f"thin:{len(vocab)}"
+    if len(market) < floor:
+        return out, [], f"thin:{len(market)}"
+    vocab = market | pool_vocabulary([], typed, site_terms)
     shape = service_shape(out)
     names = [(x.get("service") or "").strip().lower() for x in out]
     keys = {n: _seed_key(n) for n in names}
@@ -6974,16 +6985,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # the rows still knew where they were measured. `cands` here is the
             # browser's round-trip — keyword and volume, no provenance — so it
             # cannot be used for either. (2026-08-16)
-            _vocab = set(market_vocab or [])
-            if _vocab:
-                _vocab |= pool_vocabulary([], _typed, site_terms_kw)
             services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
                 services, cands, seeds, site_terms_kw, pinned=pinned,
-                suggested=suggested, vocab=_vocab)
+                suggested=suggested, vocab=set(market_vocab or []))
             if pool_dropped and market_pool:
                 services, pool_added = backfill_services(
                     services, market_pool, len(pool_dropped), markets, state,
-                    brand, vocab=_vocab)
+                    brand, vocab=set(market_vocab or []))
                 # Anything the backfill brought in goes through the out-of-area
                 # filter like everything else. It is drawing from the same
                 # nationally-ranked pool that produced "state of california fire
