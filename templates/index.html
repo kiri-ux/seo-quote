@@ -114,6 +114,24 @@
     border-radius:50%;transition:.2s}
   .switch input:checked + .slider{background:var(--velocity)}
   .switch input:checked + .slider:before{transform:translateX(20px)}
+  /* A SECONDARY switch, deliberately not the primary one. It overrides a rule
+     for a single build rather than setting a standing preference, so it reads
+     as smaller and lighter than the toggle above it and comes up amber rather
+     than blue — the colour this app already uses for "this run is unusual".
+     (2026-08-16) */
+  .switch.sm{width:32px;height:18px}
+  .switch.sm .slider{background:transparent;border:1.5px solid #C3CDD7}
+  .switch.sm .slider:before{height:12px;width:12px;left:2px;top:2px;background:#C3CDD7}
+  .switch.sm input:checked + .slider{background:transparent;border-color:#B7791F}
+  .switch.sm input:checked + .slider:before{transform:translateX(14px);background:#B7791F}
+  #expandAgainWrap{display:none;align-items:center;gap:7px;font-size:12px;
+    padding:3px 9px 3px 6px;border:1px dashed var(--line);border-radius:99px}
+  #expandAgainWrap.on{border-color:#B7791F;background:#FFFBF2}
+  /* The form's label rule uppercases and letterspaces; this is an inline
+     control, not a field label. */
+  #expandAgainWrap label{color:#8a5a10;font-weight:600;cursor:pointer;
+    text-transform:none;letter-spacing:0;font-size:12px;margin:0;display:inline}
+  #expandAgainWrap label.switch{display:inline-block}
 
   /* ---- buttons ------------------------------------------------ */
   button{font-family:'Barlow',sans-serif}
@@ -478,10 +496,15 @@
       <label class="switch" style="flex:0 0 auto"><input type="checkbox" id="autoExpand" checked><span class="slider"></span></label>
       <span style="font-size:12.5px"><b>Expand on provided Product / Vertical Focus terms</b>
 </span>
-      <!-- The way back in, next to the switch it overrides rather than buried in
-           the build notes. Shown only when a build actually sat the expansion
-           out; wired and toggled in the Step 1 panel render. (2026-08-16) -->
-      <span id="expandAgainWrap" style="display:none;font-size:12.5px">· <a href="#" id="expandAgain" style="color:var(--atlas);font-weight:600">expand again</a><span class="tipwrap"><i class="tipicon">i</i><div class="help">Expansion runs once per list. The terms below came from the last build, so this one quoted the list as it stands. <b>Expand again</b> rebuilds with it back on for one run — nothing is deleted and the terms keep their ✦, so they stay subject to the same filters.</div></span></span>
+      <!-- The way back in, beside the switch it overrides. Offered as soon as the
+           list carries expanded terms — BEFORE the build, not after one has
+           already come back without them. Finding out that expansion sat this
+           build out, from a note under the result, means the answer arrives one
+           build too late. (2026-08-16) -->
+      <span id="expandAgainWrap">
+        <label class="switch sm" style="flex:0 0 auto"><input type="checkbox" id="expandAgain"><span class="slider"></span></label>
+        <label for="expandAgain">Expand again on this build</label><span class="tipwrap"><i class="tipicon">i</i><div class="help">Expansion runs once per list, so a rebuild quotes the terms as they stand rather than reaching for neighbours of neighbours. Turn this on to run it once more — nothing is deleted, and anything it adds keeps its ✦ and stays subject to the same filters. It switches itself back off after the build.</div></span>
+      </span>
     </div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
@@ -945,6 +968,31 @@ function renderSavedReports(){
   });
 }
 
+// OFFERED BEFORE THE BUILD, NOT AFTER IT. Expansion runs once per list, and the
+// only sign of that used to be a note under a finished build — by which point
+// the answer is one build too late and the operator has already paid for a run
+// that quoted the list as it stood. The switch appears the moment the list
+// carries terms a previous expansion put there, which is exactly when the
+// question "should it go again?" becomes askable.
+//
+// It is a ONE-BUILD override, not a preference: `ST.expandAgain` is consumed
+// and cleared by the build, so the switch clears with it. (2026-08-16)
+function syncExpandAgain(){
+  const wrap=document.getElementById('expandAgainWrap');
+  const box=document.getElementById('expandAgain');
+  if(!wrap||!box) return;
+  const prev=new Set(((typeof ST!=='undefined'&&ST.expandedSeeds)||[])
+                      .map(v=>String(v).toLowerCase()));
+  const held=(stores.kw||[]).filter(v=>prev.has(String(v).toLowerCase()));
+  const auto=document.getElementById('autoExpand');
+  // Nothing to override when expansion is off, or when the list carries none of
+  // its output. A dead control is worse than no control.
+  const offer=!!(held.length && auto && auto.checked);
+  wrap.style.display=offer?'inline-flex':'none';
+  if(!offer && box.checked){ box.checked=false; ST.expandAgain=false; }
+  wrap.classList.toggle('on', box.checked);
+}
+
 function wirePills(key, inputId){
   const box = document.querySelector(`.pillbox[data-for="${key}"]`);
   const input = document.getElementById(inputId);
@@ -1022,7 +1070,8 @@ function wirePills(key, inputId){
     if(key === 'sites'){ try{ refreshOrderPanel(); }catch(e){} }
   }
   PILL_RENDER[key] = (key === 'kw')
-    ? function(){ render(); try{ syncSvcChips(); }catch(e){} }
+    ? function(){ render(); try{ syncSvcChips(); }catch(e){}
+                  try{ syncExpandAgain(); }catch(e){} }
     : render;
   const US_ST=new Set(['al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la','me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok','or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy']);
   const US_ST_NAMES=new Set(['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky','louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico','new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania','rhode island','south carolina','south dakota','tennessee','texas','utah','vermont','virginia','washington','west virginia','wisconsin','wyoming']);
@@ -1059,6 +1108,20 @@ function wirePills(key, inputId){
 }
 wirePills('sites','sites_in'); wirePills('kw','kw_in'); wirePills('geo','geo_in'); wirePills('spgeo','spgeo_in');
 wirePills('neg','neg_in');
+
+// The one-build override, wired once. Both switches feed the same question, so
+// both re-ask it: turning expansion off entirely retires the override with it.
+(function(){
+  const box=document.getElementById('expandAgain');
+  const auto=document.getElementById('autoExpand');
+  if(box) box.addEventListener('change',()=>{
+    ST.expandAgain=!!box.checked;
+    const w=document.getElementById('expandAgainWrap');
+    if(w) w.classList.toggle('on', box.checked);
+  });
+  if(auto) auto.addEventListener('change',()=>{ try{ syncExpandAgain(); }catch(e){} });
+  try{ syncExpandAgain(); }catch(e){}
+})();
 
 // Industry gets bespoke wiring: same pills, but a styled autocomplete instead
 // of the browser's native datalist popup (unstyled, screen-filling in Chrome).
@@ -2150,6 +2213,9 @@ $('step1').addEventListener('click', async()=>{
   // provenance record is untouched, so those terms keep their ✦ and stay subject
   // to every filter a suggested term gets. (2026-08-14)
   const _again = !!ST.expandAgain; ST.expandAgain = false;
+  // One build, then off — the switch says so, so the switch has to show it.
+  try{ const _eb=document.getElementById('expandAgain');
+       if(_eb){ _eb.checked=false; syncExpandAgain(); } }catch(_e){}
   const _skipExpand = (_held.length && !_again) ? 'already'
                     : (_room<=0 ? 'full' : '');
   if(_auto && _auto.checked && _skipExpand){
@@ -4929,18 +4995,9 @@ function step1Grid(kw){
     (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
   }
 
-  // The way back in lives BY THE SWITCH IT OVERRIDES, not in the build notes:
-  // an escape hatch is only useful where you look when you want it, which is
-  // the control you just found turned off. Shown only when a build really did
-  // sit the expansion out. (2026-08-16)
-  setTimeout(()=>{ const wrap=document.getElementById('expandAgainWrap');
-    const _sk=((typeof ST!=='undefined'&&ST.autoNote)||{}).skipped;
-    if(wrap) wrap.style.display=(_sk==='already')?'':'none';
-    const ea=document.getElementById('expandAgain');
-    if(ea) ea.onclick=(e)=>{ e.preventDefault();
-      ST.expandAgain=true;
-      const b=document.getElementById('step1');
-      if(b && !b.disabled){ try{ aimAtList(true); }catch(_e){} b.click(); } }; }, 0);
+  // The control lives by the switch it overrides and is driven by the LIST, not
+  // by the panel — see syncExpandAgain(). All the panel does now is point at it.
+  setTimeout(()=>{ try{ syncExpandAgain(); }catch(_e){} }, 0);
   setTimeout(()=>{ const a=document.getElementById('pasteFromNote');
     if(a) a.onclick=(e)=>{ e.preventDefault();
       const h=document.getElementById('pasteHost'); if(h){ h.style.display='block';
@@ -5058,12 +5115,26 @@ function step1Grid(kw){
     const ch=S.filter(x=>x.status==='changed');
     const er=S.filter(x=>x.status==='error');
     const blocked=S.filter(x=>x.detail);
-    if(ch.length||er.length){
+    const nd=S.filter(x=>x.status==='no data');
+    // NOT SILENT ON "NOTHING TO CHANGE". The market-wording check above stays
+    // quiet when it changes nothing, and that was copied here — but there the
+    // quiet case is genuinely a non-event, and here it is the case we most need
+    // to see. A rate-limited volume call comes back empty, every spelling
+    // measures zero, and "no bigger spelling exists" renders exactly like "the
+    // check never ran". Amare shipped "home for rent" at 10/mo twice while this
+    // block said nothing at all. (2026-08-16)
+    if(S.length){
       const bits=[];
       if(ch.length) bits.push('<div>'+ch.map(x=>'✓ <b>'+escapeHtml(x.chose)+'</b> instead of “'+escapeHtml(x.instead_of)+'” <span style="opacity:.75">('+Number(x.volume||0).toLocaleString()+'/mo vs '+Number(x.default_volume||0).toLocaleString()+'/mo)</span></div>').join('')+'</div>');
       if(blocked.length) bits.push('<div style="margin-top:3px">'+blocked.length+' left as written because the bigger spelling was already in the list.</div>');
       if(er.length) bits.push('<div style="margin-top:3px">⚠ The spelling check could not run ('+escapeHtml(er[0].detail||'API error')+') — the terms are as written.</div>');
-      (ch.length?auto:notes).push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F524} <b>${ch.length?ch.length+' term'+(ch.length===1?'':'s')+' re-spelled':'Spelling checked'} against search volume</b>${tipOf('Singular or plural &mdash; nothing used to choose, so the list kept whichever spelling was typed first. &ldquo;home for rent&rdquo; measures 10/mo and &ldquo;homes for rent&rdquo; measures over a thousand. Measured nationally, because which words people type is a property of the language; per-city demand is measured separately. Only the head noun moves, so this can re-spell a service but never change which service it is.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+      if(!ch.length&&!er.length){
+        const kept=S.filter(x=>x.status==='confirmed');
+        bits.push('<div>'+(kept.length?kept.length+' term'+(kept.length===1?'':'s')+' already carried the bigger spelling. ':'')
+          +(nd.length?nd.length+' returned no volume in either spelling'+(nd.length===S.length?' — which is also what a throttled lookup looks like, so treat it as unmeasured rather than as equal':'')+'.':'')+'</div>');
+        bits.push('<div style="margin-top:3px;opacity:.85">'+S.slice(0,6).map(x=>(x.tested||[]).map(y=>escapeHtml(y.form)+' <span style="opacity:.7">'+Number(y.volume||0).toLocaleString()+'</span>').join(' vs ')).join(' · ')+'</div>');
+      }
+      (ch.length?auto:notes).push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F524} <b>${ch.length?ch.length+' term'+(ch.length===1?'':'s')+' re-spelled':'Spelling checked — nothing bigger found'} against search volume</b>${tipOf('Singular or plural &mdash; nothing used to choose, so the list kept whichever spelling was typed first. &ldquo;home for rent&rdquo; measures 10/mo and &ldquo;homes for rent&rdquo; measures over a thousand. Measured nationally, because which words people type is a property of the language; per-city demand is measured separately. Only the head noun moves, so this can re-spell a service but never change which service it is.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
     }
   }
 
