@@ -5039,6 +5039,24 @@ function step1Grid(kw){
     }
   }
 
+  // SINGULAR OR PLURAL. Same shape as the market-wording note above and silent
+  // for the same reason: "checked, already correct" is the absence of a note.
+  // Only a re-spelling changes the keyword text, and only an error means the
+  // check didn't run. (2026-08-16)
+  if(kw.service_forms&&kw.service_forms.length){
+    const S=kw.service_forms;
+    const ch=S.filter(x=>x.status==='changed');
+    const er=S.filter(x=>x.status==='error');
+    const blocked=S.filter(x=>x.detail);
+    if(ch.length||er.length){
+      const bits=[];
+      if(ch.length) bits.push('<div>'+ch.map(x=>'✓ <b>'+escapeHtml(x.chose)+'</b> instead of “'+escapeHtml(x.instead_of)+'” <span style="opacity:.75">('+Number(x.volume||0).toLocaleString()+'/mo vs '+Number(x.default_volume||0).toLocaleString()+'/mo)</span></div>').join('')+'</div>');
+      if(blocked.length) bits.push('<div style="margin-top:3px">'+blocked.length+' left as written because the bigger spelling was already in the list.</div>');
+      if(er.length) bits.push('<div style="margin-top:3px">⚠ The spelling check could not run ('+escapeHtml(er[0].detail||'API error')+') — the terms are as written.</div>');
+      (ch.length?auto:notes).push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F524} <b>${ch.length?ch.length+' term'+(ch.length===1?'':'s')+' re-spelled':'Spelling checked'} against search volume</b>${tipOf('Singular or plural &mdash; nothing used to choose, so the list kept whichever spelling was typed first. &ldquo;home for rent&rdquo; measures 10/mo and &ldquo;homes for rent&rdquo; measures over a thousand. Measured nationally, because which words people type is a property of the language; per-city demand is measured separately. Only the head noun moves, so this can re-spell a service but never change which service it is.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+    }
+  }
+
   if(kw.ecommerce_suppressed) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6D2} <b>Storefront detected — kept local</b> — ${escapeHtml(kw.ecommerce_suppressed)}</div>`);
   else if(kw.ecommerce_detected&&kw.ecommerce_reason) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6D2} <b>Storefront detected</b> — ${escapeHtml(kw.ecommerce_reason)}.${kw.national_demand?' Volume is being pulled nationally as a result; a store sells everywhere even with a home city listed.':''} Turn off <b>Price on national demand</b> if this client really does only sell locally.</div>`);
 

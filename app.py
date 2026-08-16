@@ -684,6 +684,13 @@ CFG = {
     # exist — Santa Fe apartment rentals top out at 90/mo. (2026-08-13)
     "expand_thin_market_mult": 10,
     "near_me_min_volume": 30,
+    # SINGULAR OR PLURAL — see pick_service_forms. Nothing chose between them,
+    # and Amare shipped "home for rent" where Brendan's list leads with "homes
+    # for rent". A variant has to clearly win before the operator's phrasing is
+    # rewritten: this much volume, and this multiple of the incumbent.
+    "service_form_probe_cap": 20,
+    "service_form_min_ratio": 2.0,
+    "service_form_min_volume": 50,
     "axis_city_volume_floor": 20,
     "axis_min_seeds_for_services": 8,
     "grid_max_cities": 5,             # cities crossed against each service
@@ -3356,6 +3363,19 @@ RULES:
    volume, so the largest national competitor in the trade will almost always appear near the top and
    will look tempting. It is still wrong.
    When you cannot tell which kind of name it is, leave it out.
+2h. WHEN THE BUSINESS SELLS ONE THING, THE HEAD TERM'S SYNONYMS ARE SEPARATE SERVICES.
+   A rental community is not a dental practice with eight departments: there is one thing for
+   sale, so the variety has to come from the words customers use for it. "homes for rent",
+   "houses for rent", "apartments for rent" and "rentals" are four different keywords with four
+   different volumes and four different result pages — a proposal buys two or three of them, not
+   one. Lead the list with the BARE, UNQUALIFIED head term in each wording; those are the money
+   terms, and a list made entirely of qualified variants has bought none of them.
+   This is also the rule that decides the ultra tier for such a business: bare head terms are
+   ultra, one-qualifier forms are competitive, and narrow forms — a single amenity, a micro-segment
+   — are long tail.
+   Rule 2b's cap on variants-per-family does NOT apply here. It exists to stop thirteen implant
+   variants crowding out a general practice's other departments; a business with no other
+   departments has nothing to crowd out.
 2b. BALANCE ACROSS SERVICE LINES — this is the rule that most often gets missed.
    Cover the business's WHOLE service range the way their own website menu does:
    no more than 2-3 variants of any one service family unless the business
@@ -5505,6 +5525,159 @@ def pick_geo_forms(markets, state, service_terms):
     return forms_out, report
 
 
+# Words whose number must not be touched. A service already says which of these
+# it means, and "1 bedrooms homes for rent" is not a phrase.
+_NUMBER_FIXED = frozenset("""
+bedroom bedrooms bathroom bathrooms bath baths br ba story stories storey
+class classes size sizes series
+""".split())
+
+
+_PREPOSITIONS = frozenset("for to on by in with near at from of".split())
+_SIBILANT = ("s", "x", "z", "ch", "sh")
+# Function words only. NOT _SEED_SHAPE, which is a KEYING set and holds real
+# nouns on purpose — "company", "services", "contractor" are shape for the
+# purpose of "is this the same service", but they are the head noun of
+# "property management company" and pluralise like one.
+_FORM_SKIP = frozenset("a an the and or my your our".split())
+
+
+def _flip_number(w):
+    """The other number of one English noun. "" when it has no sensible other."""
+    if not w.isalpha() or len(w) < 3:
+        return ""
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("es") and w[:-2].endswith(_SIBILANT) and len(w) > 4:
+        return w[:-2]
+    # "business" and "class" end in s and are singular. They pluralise with -es
+    # like any other sibilant; stripping the s gives "busines".
+    if w.endswith("ss"):
+        return w + "es"
+    if w.endswith("s") and len(w) > 3:
+        return w[:-1]
+    if w.endswith("s"):
+        return ""
+    if w.endswith("y") and len(w) > 3 and w[-2] not in "aeiou":
+        return w[:-1] + "ies"
+    if w.endswith(_SIBILANT):
+        return w + "es"
+    return w + "s"
+
+
+def service_number_forms(svc):
+    """The same service spelled singular and plural.
+
+    NOTHING IN THE BUILD CHOOSES BETWEEN THEM, and the choice is worth two
+    orders of magnitude. Amare shipped "home for rent santa fe nm" at 10/mo in
+    Competitive; Brendan's list leads with "homes for rent santa fe nm" as an
+    Ultra head term. The stemmer folds the pair to one key everywhere — the
+    fold, the grid dedupe, the topic guarantee — so the tool has always known
+    they are the same service. It just kept whichever spelling arrived first,
+    which is the model's or the operator's typing, not the market's.
+
+    ONLY THE HEAD NOUN MOVES: the last content word before the first
+    preposition, or the last content word when there is none. That is the thing
+    being sold — "homes" in "homes for rent", "apartments" in "luxury
+    apartments". Moving anything else invents a phrase rather than re-spelling
+    one: pluralise every word and "homes for rent" produces "homes for rents",
+    "luxury apartment" produces "luxurys apartment". One variant out, or none.
+    (2026-08-16)
+    """
+    words = clean_kw((svc or "").lower()).split()
+    if not words:
+        return []
+    stop = next((i for i, w in enumerate(words) if w in _PREPOSITIONS), len(words))
+    head = next((i for i in range(stop - 1, -1, -1)
+                 if words[i].isalpha() and words[i] not in _FORM_SKIP), None)
+    if head is None or words[head] in _NUMBER_FIXED:
+        return []
+    other = _flip_number(words[head])
+    if not other:
+        return []
+    cand = " ".join(words[:head] + [other] + words[head + 1:])
+    return [cand] if cand != " ".join(words) else []
+
+
+def pick_service_forms(service_terms, cap=None):
+    """Choose each service's spelling by MEASURED search volume.
+
+    Same argument as pick_geo_forms, one level down: which wording people type
+    is a national property of the language, so the probe is national even on a
+    local quote. Absolute demand is still measured per city afterwards, as
+    before. One request, and only spellings of services already chosen — this
+    cannot add a service, only re-spell one.
+
+    A variant has to CLEARLY win: `service_form_min_ratio` times the incumbent
+    and above `service_form_min_volume`. A tie or a near-miss keeps what the
+    model wrote, because a coin-flip rewrite of the operator's own phrasing is
+    worse than a slightly smaller number.
+
+    Returns (forms, report). `forms` maps the original service -> the spelling
+    to use. `report` carries one entry per service that was TESTED, with a
+    status, so a run that changed nothing is visibly different from a run that
+    could not measure. (2026-08-16)
+    """
+    terms = [clean_kw(str(t).lower()).strip() for t in (service_terms or [])]
+    terms = [t for t in dict.fromkeys(terms) if t]
+    if not terms:
+        return {}, []
+    cap = int(cap if cap is not None else CFG.get("service_form_probe_cap", 20))
+    terms = terms[:cap]
+
+    variants = {t: service_number_forms(t) for t in terms}
+    probes = dfs_kw_list(terms + [v for vs in variants.values() for v in vs])
+    if not probes:
+        return {}, []
+
+    vols = {}
+    try:
+        payload = [{"keywords": probes[:700],
+                    # NATIONAL on purpose — a question about wording, not demand.
+                    "location_name": "United States",
+                    "language_code": "en"}]
+        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
+        for it in (data["tasks"][0]["result"] or []):
+            vols[str(it.get("keyword", "")).lower()] = it.get("search_volume") or 0
+    except Exception as e:                                    # noqa: BLE001
+        return {}, [{"service": t, "status": "error", "detail": str(e)[:120]}
+                    for t in terms]
+
+    ratio = float(CFG.get("service_form_min_ratio", 2.0))
+    floor = int(CFG.get("service_form_min_volume", 50))
+    forms_out, report = {}, []
+    taken = {t.lower() for t in terms}
+    for t in terms:
+        if not variants[t]:
+            continue
+        base = int(vols.get(t, 0) or 0)
+        scored = sorted(((v, int(vols.get(v, 0) or 0)) for v in variants[t]),
+                        key=lambda x: -x[1])
+        table = [{"form": f, "volume": v} for f, v in [(t, base)] + scored]
+        best, best_v = scored[0]
+        if best_v <= 0 and base <= 0:
+            report.append({"service": t, "status": "no data", "tested": table})
+            continue
+        # Re-spelling onto a phrase the grid already holds would merge two
+        # services into one and leave the list a slot short.
+        if best.lower() in taken:
+            report.append({"service": t, "status": "confirmed", "chose": t,
+                           "volume": base, "tested": table,
+                           "detail": "the bigger spelling is already in the list"})
+            continue
+        if best_v >= floor and best_v >= base * ratio:
+            forms_out[t] = best
+            taken.discard(t.lower())
+            taken.add(best.lower())
+            report.append({"service": t, "status": "changed", "chose": best,
+                           "instead_of": t, "volume": best_v,
+                           "default_volume": base, "tested": table})
+        else:
+            report.append({"service": t, "status": "confirmed", "chose": t,
+                           "volume": base, "tested": table})
+    return forms_out, report
+
+
 def suggest_market_name(market, state=""):
     """The name Google is likely to recognise for a market it rejected.
 
@@ -6452,6 +6625,23 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                            if not (d[0] in seen_d or seen_d.add(d[0]))]
         pinned = [t for t in pinned
                   if any((x.get("service") or "") == t for x in services)]
+        # SINGULAR OR PLURAL, decided by measurement rather than by whoever typed
+        # it first. Before the grid, so the crossing and every dedupe downstream
+        # see the chosen spelling. Cannot add or remove a service — see
+        # pick_service_forms. (2026-08-16)
+        service_forms, service_form_report = ({}, [])
+        try:
+            service_forms, service_form_report = pick_service_forms(
+                [x.get("service") for x in services if x.get("service")])
+        except Exception:                                     # noqa: BLE001
+            app.logger.exception("service form probe failed")
+            service_forms, service_form_report = {}, []
+        if service_forms:
+            for _x in services:
+                _new = service_forms.get(_x.get("service") or "")
+                if _new:
+                    _x["service"] = _new
+            pinned = [service_forms.get(t, t) for t in pinned]
         # Which WORDING of each market to cross with. Measured, not assumed —
         # "new york city ny" is nobody's search (2026-08-07).
         # Probe with the client's own SHORTEST terms, not the grid's lead
@@ -7094,6 +7284,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                        for t in topics],
             "topic_fixes": topic_fixes,
             "geo_forms": geo_form_report,
+            "service_forms": service_form_report,
         }
 
     refined = claude_refine_keywords(seeds, markets, brand, domain,
@@ -8615,6 +8806,7 @@ def api_refine():
         "topic_source": s1.get("topic_source") or "",
         "topic_fixes": s1.get("topic_fixes") or [],
         "geo_forms": s1.get("geo_forms") or [],
+        "service_forms": s1.get("service_forms") or [],
     })
 
 # ---------------------------------------------------------------------------
