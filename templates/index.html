@@ -478,6 +478,10 @@
       <label class="switch" style="flex:0 0 auto"><input type="checkbox" id="autoExpand" checked><span class="slider"></span></label>
       <span style="font-size:12.5px"><b>Expand on provided Product / Vertical Focus terms</b>
 </span>
+      <!-- The way back in, next to the switch it overrides rather than buried in
+           the build notes. Shown only when a build actually sat the expansion
+           out; wired and toggled in the Step 1 panel render. (2026-08-16) -->
+      <span id="expandAgainWrap" style="display:none;font-size:12.5px">· <a href="#" id="expandAgain" style="color:var(--atlas);font-weight:600">expand again</a><span class="tipwrap"><i class="tipicon">i</i><div class="help">Expansion runs once per list. The terms below came from the last build, so this one quoted the list as it stands. <b>Expand again</b> rebuilds with it back on for one run — nothing is deleted and the terms keep their ✦, so they stay subject to the same filters.</div></span></span>
     </div>
     <div id="siteSvcOut" style="margin-top:7px"></div>
     <div id="expandSvcOut" style="margin-top:6px"></div>
@@ -4857,7 +4861,7 @@ function step1Grid(kw){
   if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped
      || _lk.length || _pl.length){
     const bits=[];
-    if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded <a href="#" id="expandAgain" style="color:var(--atlas);font-weight:600">expand again</a>`);
+    if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded, and <b>expand again</b> is by the switch`);
     else if(_an.skipped==='full') bits.push(`<b>off</b> \u2014 all ${_an.slots} slots are full`);
     if(_ax.length) bits.push(`<b>${_ax.length} term${_ax.length===1?'':'s'} added</b>`);
     if(_an.ranked) bits.push(`${_an.ranked} they already rank for`);
@@ -4925,8 +4929,14 @@ function step1Grid(kw){
     (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
   }
 
-  // the one action from the cleared panels, reachable from the note
-  setTimeout(()=>{ const ea=document.getElementById('expandAgain');
+  // The way back in lives BY THE SWITCH IT OVERRIDES, not in the build notes:
+  // an escape hatch is only useful where you look when you want it, which is
+  // the control you just found turned off. Shown only when a build really did
+  // sit the expansion out. (2026-08-16)
+  setTimeout(()=>{ const wrap=document.getElementById('expandAgainWrap');
+    const _sk=((typeof ST!=='undefined'&&ST.autoNote)||{}).skipped;
+    if(wrap) wrap.style.display=(_sk==='already')?'':'none';
+    const ea=document.getElementById('expandAgain');
     if(ea) ea.onclick=(e)=>{ e.preventDefault();
       ST.expandAgain=true;
       const b=document.getElementById('step1');

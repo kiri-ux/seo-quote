@@ -689,6 +689,11 @@ CFG = {
     # for rent". A variant has to clearly win before the operator's phrasing is
     # rewritten: this much volume, and this multiple of the incumbent.
     "service_form_probe_cap": 20,
+    # TIER BY SHAPE WHEN VOLUME CANNOT SEPARATE — see service_shape. A token
+    # shared by this share of the list is the vertical's core; what a term adds
+    # on top of the core is its qualification, and that is what breaks the ties
+    # the tier reconciliation cannot break on volume.
+    "shape_core_share": 0.4,
     "service_form_min_ratio": 2.0,
     "service_form_min_volume": 50,
     "axis_city_volume_floor": 20,
@@ -3030,6 +3035,44 @@ def rebalance_tiers(services):
                 x["tier"] = need
                 break
     return out
+
+
+_NARROW_QUALIFIER = re.compile(
+    r"\b(?:with|without|w/|no|near|next to|walking distance|close to|"
+    r"that (?:allow|accept)|accepting|allowing|includes?|including)\b", re.I)
+
+
+def service_shape(services):
+    """How QUALIFIED each service is, relative to the list it sits in.
+
+    The core of a list is whatever tokens most of it shares — {hom, rent} for a
+    rental community, {comp} for a workers-comp broker. What a term adds on top
+    of the core is its qualification, and that is the axis Brendan's tiers
+    actually run on: bare head terms are Ultra, one qualifier is Competitive, an
+    amenity or a landmark is Long Tail.
+
+    Returns {service: (depth, narrow)}. `depth` counts qualifier tokens beyond
+    the core; `narrow` marks the constructions that are long tail no matter how
+    few tokens they add — "homes for rent WITH a garage", "rentals with NO
+    credit check", "homes for rent NEAR meow wolf". Empty when the list has no
+    shared core, because relative depth means nothing across unrelated services.
+    (2026-08-16)
+    """
+    names = [(x.get("service") or "").strip().lower() for x in (services or [])]
+    names = [n for n in names if n]
+    if len(names) < 4:
+        return {}
+    keys = {n: _seed_key(n) for n in names}
+    share = float(CFG.get("shape_core_share", 0.4))
+    tally = {}
+    for k in keys.values():
+        for tok in k:
+            tally[tok] = tally.get(tok, 0) + 1
+    core = {tok for tok, c in tally.items() if c >= len(names) * share}
+    if not core:
+        return {}
+    return {n: (len(keys[n] - core), bool(_NARROW_QUALIFIER.search(n)))
+            for n in names}
 
 
 def drop_foreign_geo_services(services, markets, state):
@@ -5599,14 +5642,34 @@ def service_number_forms(svc):
     return [cand] if cand != " ".join(words) else []
 
 
-def pick_service_forms(service_terms, cap=None):
-    """Choose each service's spelling by MEASURED search volume.
+def service_form_probes(service_terms, cap=None):
+    """The alternate spellings to MEASURE, for services already chosen.
 
-    Same argument as pick_geo_forms, one level down: which wording people type
-    is a national property of the language, so the probe is national even on a
-    local quote. Absolute demand is still measured per city afterwards, as
-    before. One request, and only spellings of services already chosen — this
-    cannot add a service, only re-spell one.
+    Handed to the volume call the build already makes, so this costs extra
+    keywords and not an extra request — the same trade the "<service> near me"
+    probe makes a few lines below it. The first version of this made its own
+    national call, which was both a twelfth request against a 12/min limit and
+    a silent failure: a rate-limited response comes back as HTTP 200 with an
+    empty result, every spelling measured zero, and "no data on both" is
+    indistinguishable from "nothing to do". (2026-08-16)
+    """
+    terms = [clean_kw(str(t).lower()).strip() for t in (service_terms or [])]
+    terms = [t for t in dict.fromkeys(terms) if t]
+    cap = int(cap if cap is not None else CFG.get("service_form_probe_cap", 20))
+    out = []
+    for t in terms[:cap]:
+        for v in service_number_forms(t):
+            if v not in out and v not in terms:
+                out.append(v)
+    return out
+
+
+def choose_service_forms(service_terms, vols, err="", cap=None):
+    """Choose each service's spelling from volumes ALREADY MEASURED.
+
+    Pure — `vols` is the map the build's own volume call returned. Only
+    spellings of services already chosen, so this cannot add or remove a
+    service, only re-spell one.
 
     A variant has to CLEARLY win: `service_form_min_ratio` times the incumbent
     and above `service_form_min_volume`. A tie or a near-miss keeps what the
@@ -5624,24 +5687,11 @@ def pick_service_forms(service_terms, cap=None):
         return {}, []
     cap = int(cap if cap is not None else CFG.get("service_form_probe_cap", 20))
     terms = terms[:cap]
-
     variants = {t: service_number_forms(t) for t in terms}
-    probes = dfs_kw_list(terms + [v for vs in variants.values() for v in vs])
-    if not probes:
-        return {}, []
-
-    vols = {}
-    try:
-        payload = [{"keywords": probes[:700],
-                    # NATIONAL on purpose — a question about wording, not demand.
-                    "location_name": "United States",
-                    "language_code": "en"}]
-        data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
-        for it in (data["tasks"][0]["result"] or []):
-            vols[str(it.get("keyword", "")).lower()] = it.get("search_volume") or 0
-    except Exception as e:                                    # noqa: BLE001
-        return {}, [{"service": t, "status": "error", "detail": str(e)[:120]}
-                    for t in terms]
+    if err:
+        return {}, [{"service": t, "status": "error", "detail": str(err)[:120]}
+                    for t in terms if variants[t]]
+    vols = {str(k).lower(): v for k, v in (vols or {}).items()}
 
     ratio = float(CFG.get("service_form_min_ratio", 2.0))
     floor = int(CFG.get("service_form_min_volume", 50))
@@ -6625,23 +6675,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                            if not (d[0] in seen_d or seen_d.add(d[0]))]
         pinned = [t for t in pinned
                   if any((x.get("service") or "") == t for x in services)]
-        # SINGULAR OR PLURAL, decided by measurement rather than by whoever typed
-        # it first. Before the grid, so the crossing and every dedupe downstream
-        # see the chosen spelling. Cannot add or remove a service — see
-        # pick_service_forms. (2026-08-16)
         service_forms, service_form_report = ({}, [])
-        try:
-            service_forms, service_form_report = pick_service_forms(
-                [x.get("service") for x in services if x.get("service")])
-        except Exception:                                     # noqa: BLE001
-            app.logger.exception("service form probe failed")
-            service_forms, service_form_report = {}, []
-        if service_forms:
-            for _x in services:
-                _new = service_forms.get(_x.get("service") or "")
-                if _new:
-                    _x["service"] = _new
-            pinned = [service_forms.get(t, t) for t in pinned]
         # Which WORDING of each market to cross with. Measured, not assumed —
         # "new york city ny" is nobody's search (2026-08-07).
         # Probe with the client's own SHORTEST terms, not the grid's lead
@@ -6712,17 +6746,43 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # and "dumpster rentals near me" while missing "junk removal near me" —
         # the one BE put in his proposal at rank 2, and the biggest of the three.
         # Extra keywords in a call already being made; no extra request.
+        # SINGULAR OR PLURAL, decided by measurement rather than by whoever typed
+        # it first — see service_form_probes. The near-me form of each variant is
+        # probed too, so a service that gets re-spelled still has a measured
+        # near-me term waiting rather than losing one to the swap.
+        form_probes = service_form_probes(svc_names)
         near_n = int(CFG.get("near_me_terms", 3))
         near_forms = []
         if near_n > 0 and not national_demand:
-            for nm in svc_names[:int(CFG.get("near_me_probe_cap", 12))]:
+            for nm in (svc_names + form_probes)[:2 * int(CFG.get("near_me_probe_cap", 12))]:
                 f = clean_kw(f"{nm} near me")
                 if f and f not in near_forms:
                     near_forms.append(f)
         vols, per_city, vol_err = fetch_local_volume(
-            svc_names + _alts + near_forms,
+            svc_names + _alts + near_forms + form_probes,
             [] if national_demand else cities, state,
             national=national_demand)
+        # Apply the spellings BEFORE anything reads the grid: rebuilding it is
+        # pure string work, so the swap costs nothing beyond the keywords already
+        # measured above, and every dedupe downstream sees the chosen form.
+        if form_probes:
+            try:
+                service_forms, service_form_report = choose_service_forms(
+                    svc_names, vols, vol_err)
+            except Exception:                                 # noqa: BLE001
+                app.logger.exception("service form choice failed")
+                service_forms, service_form_report = {}, []
+        if service_forms:
+            for _x in services:
+                _new = service_forms.get(_x.get("service") or "")
+                if _new:
+                    _x["service"] = _new
+            pinned = [service_forms.get(t, t) for t in pinned]
+            svc_names = list(dict.fromkeys([s["service"] for s in services]))
+        if service_forms:
+            g = build_grid(services, grid_cities, state, prepicked=True,
+                           geo_forms=geo_forms)
+            full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Add the near-me forms that earned their place, into the same tier as the
         # service they came from.
         near_added = []
@@ -7039,10 +7099,36 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 # the same client on breadth — "homes for rent santa fe nm" Ultra
                 # at three words, "homes for rent with garage santa fe nm" Long
                 # Tail at six. (2026-08-13)
+                # STORE INTENT WAS STILL THE WHOLE HAND, one layer down. It
+                # was demoted from a 3x multiplier to a tie-break, but it sat
+                # ABOVE breadth in the key — and on a list where every term ties
+                # at 10/mo, the first tie-break is the ranking. `_STORE_INTENT`
+                # holds "rental", which is a shop word for a ski hire but the
+                # PRODUCT NOUN for a rental community, so it fired on "rental
+                # homes with pool", "rental homes no credit check" and "short
+                # term rental homes" and put all three in Ultra Competitive
+                # ahead of "houses for rent" and "home for rent". Brendan's list
+                # for the same client leads with the bare head terms and puts
+                # every one of those three in Long Tail.
+                #
+                # Breadth now outranks it, measured as SHAPE rather than word
+                # count: what a term adds on top of the list's own core, so
+                # "houses for rent" reads as one step off the head term rather
+                # than as three words. An amenity or a landmark — "with a
+                # garage", "no credit check", "near meow wolf" — is last
+                # whatever its length. Volume still leads; this only decides the
+                # ties, which in a thin market is most of the list.
+                # (2026-08-16)
+                _shape = service_shape(services)
+
                 def _rank_key(x):
+                    _n = (x.get("service") or "").strip().lower()
+                    _depth, _narrow = _shape.get(_n, (0, False))
                     return (-(service_volume.get(x["service"]) or 0),
-                            0 if is_store_intent(x["service"]) else 1,
-                            len((x.get("service") or "").split()))
+                            1 if _narrow else 0,
+                            _depth,
+                            len(_n.split()),
+                            0 if is_store_intent(x["service"]) else 1)
                 _ranked = sorted(_measured, key=_rank_key)
                 # UNMEASURED TERMS SINK; THEY DO NOT SQUAT. They used to keep
                 # whatever tier the model gave them, and the per-tier capacity was
