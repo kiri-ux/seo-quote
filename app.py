@@ -2533,8 +2533,22 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     # "auto insurance" and "bundle home and auto insurance" still both belong.
     # A skipped duplicate frees its slot for the next pick rather than shortening
     # the grid. (2026-08-13)
+    # THE STAGE THE BACKSTOP KEPT POINTING AT. The alias went into the seed fold
+    # and the final pass and not into this one, so "workers compensation nysif"
+    # — a machine pick, which the seed fold never sees — survived to be caught
+    # at the last step and reported as a bug. It was: this key needed telling.
+    # Computed from the seeds AND the model's picks together, because the two
+    # spellings are usually one of each. (2026-08-14)
+    # From the RAW seeds, not `clean` — clean drops anything over six words, and
+    # the long form is nearly always the wordy one. PEO Brokers' expansion lives
+    # in "new york state insurance fund workers compensation", seven words, which
+    # never reaches `clean` and so left the acronym with nothing to match.
+    _alias = acronym_aliases(
+        [str(x) for x in (seeds or [])]
+        + [str(x.get("service", "")) for x in (services or [])])
+
     def key(t):
-        return _seed_key(t) or frozenset({norm(t)})
+        return _seed_key(t, _alias) or frozenset({norm(t)})
 
     out, taken = [], set()
     for term in clean[:max_services]:
@@ -2814,14 +2828,16 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
         # that fills a topic with a rewording of a service the grid already
         # holds has covered nothing. (2026-08-13)
         used = {str(x.get("service", "")).lower() for x in out}
-        used_keys = {_seed_key(str(x.get("service", ""))) or
+        _al = acronym_aliases([str(x.get("service", "")) for x in out]
+                              + [str(s) for s in (t.get("seeds") or [])])
+        used_keys = {_seed_key(str(x.get("service", "")), _al) or
                      frozenset({str(x.get("service", "")).lower()}) for x in out}
 
         def _dupe(term):
             t2 = str(term).strip()
             if not t2 or t2.lower() in used:
                 return True
-            return (_seed_key(t2) or frozenset({t2.lower()})) in used_keys
+            return (_seed_key(t2, _al) or frozenset({t2.lower()})) in used_keys
 
         pool = [s for s in t["seeds"] if not _dupe(s)]
         pool.sort(key=lambda s: (-vol.get(str(s).lower(), 0), t["seeds"].index(s)))
