@@ -697,14 +697,15 @@ CFG = {
     # Below this many distinct stems the keyword pool is too small to prove a
     # qualifier is unused — see drop_ungrounded_services.
     "pool_vocab_min": 60,
-    # A pool row has to be a keyword someone actually runs before its words
-    # count as the market's vocabulary — see pool_vocabulary. Same bar the
-    # near-me forms clear.
-    "pool_min_volume": 30,
+    # The absolute floor under the median — see pool_vocabulary. Google Ads
+    # reports 10/mo for a phrase it holds no data on, so 11 is "measured at all".
+    "pool_min_volume": 11,
     # OFF until the backfill stops drawing New York and San Antonio terms out of
     # a nationally-ranked pool for a Santa Fe client. The filter half is sound;
     # the refill half is not. (2026-08-16)
-    "pool_qualifier_filter": False,
+    # False | "report" | True. "report" decides everything and applies nothing,
+    # so its verdicts can be read against a real pool without moving a quote.
+    "pool_qualifier_filter": "report",
     "service_form_min_ratio": 2.0,
     "service_form_min_volume": 50,
     "axis_city_volume_floor": 20,
@@ -1382,7 +1383,11 @@ def fetch_suggestions(seeds, markets, state):
                     kw = it.get("keyword")
                     if kw:
                         ki = it.get("keyword_info") or {}
-                        rows.append({"keyword": kw, "volume": ki.get("search_volume") or 0})
+                        # Measured AT THE CLIENT'S MARKET — see loc_string above. Tagged,
+                        # because the site-keyword pull below is measured across the
+                        # whole United States and the two are not comparable numbers.
+                        rows.append({"keyword": kw, "scope": "local",
+                                     "volume": ki.get("search_volume") or 0})
             return rows
         except Exception:
             return []
@@ -1414,7 +1419,10 @@ def fetch_keywords_for_site(domain, markets, state):
                 kw = it.get("keyword")
                 if kw:
                     ki = it.get("keyword_info") or {}
-                    rows.append({"keyword": kw, "volume": ki.get("search_volume") or 0})
+                    # location_code 2840 is the WHOLE US. These volumes are national
+                    # and sit beside Santa Fe figures in the same list.
+                    rows.append({"keyword": kw, "scope": "national",
+                                 "volume": ki.get("search_volume") or 0})
         return rows
     except Exception:
         return []
@@ -3066,8 +3074,18 @@ def pool_vocabulary(candidates, seeds=None, site_terms=None, min_volume=None):
     grounded all seventeen on exactly that loop.
     Existence is not the test — a phrase can be real, returned by Google, and
     still be searched by nobody. A qualifier earns its place from a keyword
-    someone actually runs, so only rows clearing `pool_min_volume` count.
-    (2026-08-16)
+    someone actually runs.
+
+    AND ONLY FROM THE ROWS MEASURED WHERE THE CLIENT SELLS. The pool is two
+    populations wearing the same shape: keyword_suggestions is localised
+    (loc_string -> "Santa Fe,New Mexico,United States") and keywords_for_site is
+    Labs location_code 2840, the whole United States. Santa Fe rentals report
+    10-90/mo; the national rows report tens of thousands. An absolute floor
+    across both selects AGAINST the client's own market and FOR the national
+    noise — which is exactly what happened: "luxury" was judged unused in Santa
+    Fe while "new york city apartments for rent" counted as this market's
+    vocabulary. So national rows are excluded, and the floor is taken from the
+    LOCAL population's own distribution rather than assumed. (2026-08-16)
 
     `keywords_for_keywords` and `keyword_suggestions` come back with a few
     hundred phrases people really type. The expansion prompt has always been
@@ -3082,10 +3100,25 @@ def pool_vocabulary(candidates, seeds=None, site_terms=None, min_volume=None):
     because a service a client sells is legitimate whether or not Google's idea
     list happened to surface it. (2026-08-16)
     """
-    floor = int(min_volume if min_volume is not None
-                else CFG.get("pool_min_volume", 30))
+    local = [c for c in (candidates or [])
+             if isinstance(c, dict) and c.get("scope") != "national"]
+    # A FLOOR READ OFF THIS MARKET, not carried in from another one. Santa Fe's
+    # rows sit at 10-90/mo, so 30 is a coin flip; a metro's sit in the
+    # thousands, where 30 excludes nothing. The median of what came back is the
+    # same question asked in the market's own units.
+    # The median, but never below the no-data marker: Google Ads reports 10/mo
+    # for a phrase it holds nothing on, so a pool sitting entirely at 10 is not
+    # a vocabulary — it is an absence of one, and should stand the filter down
+    # rather than ground everything at the floor.
+    _abs = int(CFG.get("pool_min_volume", 11))
+    if min_volume is not None:
+        floor = int(min_volume)
+    else:
+        vols = sorted(int(c.get("volume") or 0) for c in local)
+        vols = [v for v in vols if v > 0]
+        floor = max(vols[len(vols) // 2] if vols else 0, _abs)
     out = set()
-    for src, weighed in ((candidates or [], True), (seeds or [], False),
+    for src, weighed in ((local, True), (seeds or [], False),
                          (site_terms or [], False)):
         for c in src:
             if isinstance(c, dict):
@@ -3144,7 +3177,18 @@ def backfill_services(services, candidates, want, markets=None, state="",
     def covered(term):
         return any(term == h or term in h or h in term for h in have if h)
 
-    floor = int(CFG.get("pool_min_volume", 30))
+    # SAME MARKET, SAME UNITS. The first outing of this ranked the whole pool by
+    # volume and offered "new york city apartments for rent" (60,500) and
+    # "apartments in san antonio tx" (33,100) to a Santa Fe rental community,
+    # because the national rows outrank every local one by three orders of
+    # magnitude. They are not candidates for a local grid at any volume.
+    candidates = [c for c in (candidates or [])
+                  if isinstance(c, dict) and c.get("scope") != "national"]
+    if not candidates:
+        return services, []
+    _v = sorted(int(c.get("volume") or 0) for c in candidates)
+    _v = [v for v in _v if v > 0]
+    floor = max(_v[len(_v) // 2] if _v else 0, int(CFG.get("pool_min_volume", 11)))
     b = (brand or "").strip().lower()
     keys = {n: _seed_key(n) for n in have if n}
     tally = {}
@@ -6895,7 +6939,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # a Santa Fe rental community, because it ranked the keyword pool by
         # NATIONAL volume, which is the exact trap drop_foreign_geo_services and
         # the competitor rules were written for.
-        if CFG.get("pool_qualifier_filter"):
+        _pq = CFG.get("pool_qualifier_filter")
+        if _pq:
+            # REPORT MODE. Four builds were spent on this feature, and the one
+            # thing that would have caught every failure was seeing its verdicts
+            # against the real pool before they touched a quote. In "report" it
+            # decides everything and applies nothing. (2026-08-16)
+            _dry = (str(_pq).lower() == "report")
+            _before = [dict(x) for x in services]
             services, pool_dropped, pool_status = drop_ungrounded_qualifiers(
                 services, cands, seeds, site_terms_kw, pinned=pinned,
                 suggested=suggested)
@@ -6915,7 +6966,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 if _bf_geo:
                     _gone = {d[0] for d in _bf_geo}
                     pool_added = [a for a in pool_added if a[0] not in _gone]
-                    geo_dropped2 = list(geo_dropped2 or []) + list(_bf_geo)
+                    if not _dry:
+                        geo_dropped2 = list(geo_dropped2 or []) + list(_bf_geo)
+            if _dry:
+                services = _before          # decided everything, applied nothing
+                pool_status = "dry:" + str(pool_status or "")
         # Counted HERE, not off the final payload: several more filters run below
         # and "11 of 15" has to mean 15 as the grounding filter saw it.
         _gtotal = len([x for x in (services or []) if not x.get("pinned")])
