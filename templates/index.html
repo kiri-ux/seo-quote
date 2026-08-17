@@ -2474,7 +2474,20 @@ function step2Html(m){
   const kdLine = (m.adder_basis==='kd')
     ? ``
     : (m.median_kd!=null)
-    ? `<div class="calc">organic difficulty <code>${m.median_kd}</code>/100${tipOf('Labs organic data, independent of Google Ads bid data.')}</div>`
+    ? `<div class="calc">organic difficulty <code>${m.median_kd}</code>/100${tipOf('Labs organic data, independent of Google Ads bid data.')}${(()=>{
+        // WHAT DIFFICULTY WOULD HAVE SAID. It is measured on every quote and
+        // only consulted when bid data is missing entirely, so on a quote WITH
+        // bids it was printed here and thrown away. Shown against the adder that
+        // actually applied, because the disagreement is the number worth having:
+        // a page priced at $0 on bids while organic difficulty says it is hard is
+        // exactly what the formula currently cannot see. Reported, not applied.
+        // (2026-08-17)
+        const k=m.kd_vs_cpc; if(!k) return '';
+        const same = k.delta===0;
+        return `<div class="nf" style="margin-top:3px${same?'':';color:#8a5a10'}">${same
+          ? `Difficulty agrees with the bid data — both score +$${Number(k.cpc_adder).toLocaleString()}.`
+          : `⚖ Bids set the adder at <b>+$${Number(k.cpc_adder).toLocaleString()}</b>; organic difficulty (${k.median_kd}/100) would say <b>+$${Number(k.kd_adder).toLocaleString()}</b> — a ${k.delta>0?'+':''}$${Number(k.delta).toLocaleString()} difference. Not applied: every calibrated price in the bench was built on the bid basis.`
+        }</div>`; })()}</div>`
     : `<div class="calc nf">keyword difficulty unavailable${m.kd_error?` — ${m.kd_error}`:''}</div>`;
   const bs=m.bid_stats;
   // The suggestion branch used to key off m.kd_suggested_adder alone, so when

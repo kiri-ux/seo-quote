@@ -8370,17 +8370,40 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
     # adder the tool can derive from evidence should not need to be typed in by
     # hand. The operator can still override, but the default is now a reasoned
     # number rather than a blank field (2026-08-04).
+    # ALWAYS SCORED, EVEN WHEN BIDS EXIST. Organic difficulty was computed on
+    # every quote and consulted only when bid data was completely missing, so on
+    # a quote WITH bids it was measured, printed on the panel, and thrown away.
+    # Amare came back at 7/100 and NPAIHB at 25/100 with the price identical, and
+    # difficulty is the one competition signal the industry actually scopes on:
+    # ranking effort is a function of how hard the page-one incumbents are, not
+    # of how many people search. Scored here for every quote so the two numbers
+    # can be COMPARED before either is trusted to move money.
+    #
+    # Reported, not applied, while bids exist — the bid-based adder is what every
+    # calibrated price in the bench was built on, and swapping the basis would
+    # move every quote already written. When there are no bids it still decides,
+    # exactly as before. (2026-08-17)
     kd_suggested_adder = kd_score = None
-    if no_bids and median_kd is not None:
+    if median_kd is not None:
         klo, khi = CFG.get("kd_score_breaks", [30, 60])
         kd_score = 2 if median_kd > khi else 1 if median_kd >= klo else 0
         kd_suggested_adder = CFG["competitive_adder"][kd_score]
+    if no_bids and kd_suggested_adder is not None:
         adder = kd_suggested_adder
         adder_basis = "kd"
     # Only a total absence of evidence still stops the quote: no bids from any
     # of the three sources AND no organic difficulty either. Then there really
     # is nothing to reason from and a human has to supply the number.
     adder_blocked = no_bids and kd_suggested_adder is None
+    # The disagreement is the interesting number: a quote priced at $0 on bids
+    # while organic difficulty says the page is hard is exactly the case the
+    # formula currently cannot see.
+    kd_vs_cpc = None
+    if adder_basis == "cpc" and kd_suggested_adder is not None:
+        kd_vs_cpc = {"cpc_adder": int(adder or 0),
+                     "kd_adder": int(kd_suggested_adder),
+                     "median_kd": median_kd, "kd_score": kd_score,
+                     "delta": int(kd_suggested_adder) - int(adder or 0)}
     return {"adder": adder, "adder_basis": adder_basis, "cpc_used": cpc_used,
             "cpc_low_confidence": cpc_low_conf, "cpc_n_bids": n_bids,
             "flat_adder": flat_adder,
@@ -8390,6 +8413,7 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
             "adder_blocked": adder_blocked,
             "kd_suggested_adder": kd_suggested_adder,
             "kd_score": kd_score,
+            "kd_vs_cpc": kd_vs_cpc,
             "restricted_vertical": restricted,
             "bid_error": bid_err,
             "bid_location": bid_loc_used,
@@ -10065,6 +10089,7 @@ def api_metrics():
                     "n_markets": m3.get("n_markets"),
                     "cpc": m3.get("cpc", {}), "kd": m3.get("kd", {}),
                     "median_kd": m3.get("median_kd"), "kd_error": m3.get("kd_error"),
+                    "kd_vs_cpc": m3.get("kd_vs_cpc"),
                     "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
 
 def _serp_parse_items(items, domain_dom, brand):
