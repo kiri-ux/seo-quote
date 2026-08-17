@@ -6821,6 +6821,18 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # next build. A suggested term is the tool's to retract, so it is
         # retracted here, named on the panel, and its pill goes with it. What
         # the operator typed still only ever gets DEMOTED below. (2026-08-13)
+        # WHAT THE OPERATOR TYPED, KEPT SEPARATELY FROM WHAT SURVIVED. `seeds` is
+        # narrowed below — set aside by the classifier, folded, ranked out — and
+        # it is also the corpus the grounding filter judges vocabulary against.
+        # So a focus term removed by one filter stopped counting as the client's
+        # own words, and any service still using those words then read as
+        # foreign: NPAIHB had "federally recognized tribes pacific northwest"
+        # set aside as not-a-service, and the same phrase came back a second time
+        # under "6 unrecognised terms removed" — one term, two removals, two
+        # different explanations, and the second one wrong. Somebody who knows
+        # the account typed those words; that is true whatever any filter later
+        # decides about the term. (2026-08-16)
+        seeds_typed = list(seeds or [])
         if seeds and suggested:
             _sk, _sd = drop_suggested_nonservices(seeds, suggested, _kinds,
                                                   brand, markets, state, ranked,
@@ -7017,8 +7029,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # and "11 of 15" has to mean 15 as the grounding filter saw it.
         _gtotal = len([x for x in (services or []) if not x.get("pinned")])
         services, ungrounded, blocked_pins, grounding_off = drop_ungrounded_services(
-            services, seeds, biz, [p.get("title", "") if isinstance(p, dict) else str(p)
-                                   for p in (site_pages or [])], brand, domain)
+            services, seeds_typed, biz,
+            [p.get("title", "") if isinstance(p, dict) else str(p)
+             for p in (site_pages or [])], brand, domain)
         # LAST, after every filter has had its say: make sure each topic the
         # operator typed is still represented. Everything above ranks by volume,
         # and the biggest topic wins every one of those contests — Ski Barn's
