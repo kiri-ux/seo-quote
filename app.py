@@ -2930,6 +2930,11 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
 
         pool = [s for s in t["seeds"] if not _dupe(s)]
         pool.sort(key=lambda s: (-vol.get(str(s).lower(), 0), t["seeds"].index(s)))
+        # Which candidates are the OPERATOR'S OWN — everything from t["seeds"] is,
+        # everything the cands fallback below adds is not. The donor rule needs to
+        # know, because "seed in, seed out" and "seed out, machine pick in" are
+        # completely different trades. (2026-08-17)
+        _seed_sourced = {str(x).strip().lower() for x in pool}
         # WHEN THE TOPIC HAS NO SEED LEFT TO PROMOTE. PEO Brokers typed 21 terms
         # for 20 slots, so freeing three of them from abbreviation lookups freed
         # nothing: every remaining seed was already in the grid and the loop had
@@ -2983,8 +2988,10 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
             # whether the operator meant it. Donate machine picks only, and if
             # there are none, leave the topic short rather than overrule them.
             # (2026-08-14)
+            _incoming_is_seed = str(s).strip().lower() in _seed_sourced
             orphans = [x for x in out
-                       if not x.get("_topic") and not x.get("from_seed")]
+                       if not x.get("_topic")
+                       and (_incoming_is_seed or not x.get("from_seed"))]
             if orphans:
                 # Last one first is "cheapest slot"; a lookup is cheaper still,
                 # so it goes ahead of any other unclaimed service. Stable, so
@@ -2992,15 +2999,46 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                 orphans.sort(key=lambda x: 1 if is_lookup_kw(x.get("service", "")) else 0)
                 drop = orphans[-1]
             else:
+                # THE SAME ASYMMETRY, ONE LINE EARLIER. This picks which topics
+                # are even eligible to donate, and it counted only non-seed rows —
+                # so on a grid made entirely of seeds every topic looked to have
+                # nothing to give and the loop broke out before the donor test was
+                # reached at all. Fixing the donor list without this one changed
+                # nothing, which is what the reproduction showed. (2026-08-17)
                 _over = [k for k in quota
                          if len([x for x in out if x.get("_topic") == k
-                                 and not x.get("from_seed")]) > 0]
+                                 and (_incoming_is_seed
+                                      or not x.get("from_seed"))]) > 0]
                 if not _over:
                     break
                 donor_lab = max(_over, key=lambda k: len([x for x in out if x.get("_topic") == k])
                                 - quota.get(k, 1))
+                # SEED FOR SEED IS ALLOWED; SEED FOR A MACHINE PICK IS NOT.
+                #
+                # "A term the operator typed is not a spare slot" (2026-08-14)
+                # excluded every from_seed row from donating, and that is right
+                # when the incoming term is something the tool invented. But
+                # enforce_seed_services stamps from_seed on EVERY row it creates,
+                # so a client with more focus terms than slots has a grid made
+                # entirely of seeds — and then this rule leaves no donor at all
+                # and the topic guarantee breaks out having done nothing.
+                #
+                # Ski Barn is exactly that shape: 59 focus terms, 20 slots, every
+                # service from_seed. Slots 20, quota bbq 2 / patio 2 / ski 16,
+                # already held bbq 0 / patio 0 / ski 20 — the pass had work to do,
+                # a full pool to do it from, and broke out on the donor test. Its
+                # BBQ and patio lines have been dropping out of that quote since
+                # the seed protection landed.
+                #
+                # Two guarantees were in direct conflict, and the operator settles
+                # it: they typed the BBQ terms too. Refusing to trade a ski seed
+                # for a BBQ seed does not protect their intent, it overrules it —
+                # silently deleting a whole product line they asked for. So a seed
+                # may donate to another SEED, and still never to an invention.
+                # (2026-08-17)
+                _incoming_is_seed = str(s).strip().lower() in _seed_sourced
                 donors = [x for x in out if x.get("_topic") == donor_lab
-                          and not x.get("from_seed")]
+                          and (_incoming_is_seed or not x.get("from_seed"))]
                 if len(donors) <= 1 or len(
                         [x for x in out if x.get("_topic") == donor_lab]) <= quota.get(donor_lab, 1):
                     break
