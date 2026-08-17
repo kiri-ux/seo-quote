@@ -5123,7 +5123,8 @@ function step1Grid(kw){
     notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> — ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% → ${t.services} service${t.services===1?'':'s'})</span>`).join(' · ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words — the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(()=>{const f=kw.topic_fixes||[];
       const un=f.filter(x=>x.kind==='unprotected'), sd=f.filter(x=>x.kind==='stood_down'),
             nc=f.filter(x=>x.kind==='no_candidate');
-      if(!un.length&&!sd.length&&!nc.length) return '';
+      const hasQ=f.some(x=>x.kind==='quota');
+      if(!un.length&&!sd.length&&!nc.length&&!hasQ) return '';
       const pct=v=>Math.round(Number(v||0)*100)+'%';
       const bits=[];
       // The protection threshold moves with the slot count, so a topic covered
@@ -5132,6 +5133,11 @@ function step1Grid(kw){
       if(un.length) bits.push(un.map(x=>'<b>'+escapeHtml(x.topic)+'</b> at '+pct(x.share)+' is below the '+pct(x.needed_share)+' a guaranteed slot needs on a '+x.slots+'-slot grid').join('<br>'));
       if(sd.length) bits.push('Fewer than two topics were left protected, so the coverage guarantee did not run at all.');
       if(nc.length) bits.push(nc.map(x=>'<b>'+escapeHtml(x.topic)+'</b> had a slot reserved but no term left to put in it').join('<br>'));
+      // The raw decision, so the next build answers this instead of me guessing.
+      const q=f.find(x=>x.kind==='quota');
+      if(q) bits.push('<span style="opacity:.8">Slots '+q.slots+' · seeds '+q.total_seeds
+        +' · quota '+Object.keys(q.quota_after_trim||q.quota||{}).map(k=>escapeHtml(k)+' '+(q.quota_after_trim||q.quota)[k]).join(', ')
+        +' · already held '+Object.keys(q.have||{}).map(k=>escapeHtml(k)+' '+q.have[k]).join(', ')+'</span>');
       return '<div class="nf" style="margin-top:5px;color:#8a5a10">⚠ '+bits.join('<br>')+'</div>';
     })()}${(()=>{const f=(kw.topic_fixes||[]).filter(x=>x.added);return f.length?`<div class="nf" style="margin-top:5px">Swapped ${f.length} service${f.length===1?'':'s'} so every topic appears${tipOf(f.map(x=>'<b>'+escapeHtml(x.added)+'</b> in, '+escapeHtml(x.replaced)+' out').join('<br>')+'<br><br>Services are chosen by search volume, so without this every slot would have gone to <b>'+escapeHtml((kw.topics[0]||{}).label||'the biggest topic')+'</b>.')}</div>`:'';})()}</div>`);
 
@@ -5179,12 +5185,17 @@ function step1Grid(kw){
   // service name changed under the operator with nothing said — and a DROPPED
   // one would have shortened the quote and moved the price silently. (2026-08-17)
   if(kw.service_swaps&&kw.service_swaps.length){
-    const sw=kw.service_swaps.filter(x=>x.kind!=='dropped');
+    const sw=kw.service_swaps.filter(x=>x.kind!=='dropped'&&x.kind!=='would_drop');
     const dr=kw.service_swaps.filter(x=>x.kind==='dropped');
+    const wd=kw.service_swaps.filter(x=>x.kind==='would_drop');
     const bits=[];
+    // STOOD DOWN, AND WHAT IT WOULD HAVE TAKEN. Removing ten of seventeen is not
+    // a correction, and the operator needs the list either way — it is the same
+    // contract the grounding filter has a few lines up. (2026-08-17)
+    if(wd.length) bits.push('<div style="color:#8a5a10"><b>Nothing was removed</b> — this check would have cut '+wd.length+' service'+(wd.length===1?'':'s')+', too much of what the AI wrote to be a targeted removal, so it stood down: '+wd.map(x=>escapeHtml(x.out)).join(' · ')+'<div style="margin-top:3px">Every one measures nothing. If they are wrong for this client, delete the pills; if they are right, they stay quoted at no measured demand.</div></div>');
     if(sw.length) bits.push('<div>'+sw.map(x=>'✓ <b>'+escapeHtml(x['in'])+'</b> <span style="opacity:.75">('+Number(x.in_volume||0).toLocaleString()+'/mo)</span> instead of “'+escapeHtml(x.out)+'” <span style="opacity:.75">('+Number(x.out_volume||0).toLocaleString()+'/mo)</span></div>').join('')+'</div>');
     if(dr.length) bits.push('<div style="margin-top:4px">'+dr.length+' slot'+(dr.length===1?'':'s')+' dropped — nothing measurable behind the phrase and no unused focus term to put there: '+dr.map(x=>'<b>'+escapeHtml(x.out)+'</b>').join(' · ')+'<div style="margin-top:3px;color:#8a5a10">A shorter list prices lower. That is the honest figure for this client rather than a padded one.</div></div>');
-    auto.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F4CF} <b>${dr.length&&!sw.length?dr.length+' service'+(dr.length===1?'':'s')+' dropped':(sw.length+dr.length)+' service name'+((sw.length+dr.length)===1?'':'s')+' reconciled'} against measured demand</b>${tipOf('A slot holding a phrase nobody searches costs twice: it fills the proposal with terms the client cannot win traffic on, and it drags the volume total that sets the price. Where the operator has an unused focus term in the same topic, it takes the slot. Where there is none, the slot goes. Never a term you typed, never a pin, and never below the minimum grid size.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+    auto.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F4CF} <b>${wd.length&&!sw.length&&!dr.length?'Dead-slot check stood down':(dr.length&&!sw.length?dr.length+' service'+(dr.length===1?'':'s')+' dropped':(sw.length+dr.length)+' service name'+((sw.length+dr.length)===1?'':'s')+' reconciled')} against measured demand</b>${tipOf('A slot holding a phrase nobody searches costs twice: it fills the proposal with terms the client cannot win traffic on, and it drags the volume total that sets the price. Where the operator has an unused focus term in the same topic, it takes the slot. Where there is none, the slot goes. Never a term you typed, never a pin, and never below the minimum grid size.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
   }
 
   // QUALIFIERS THE MARKET DOES NOT USE. Reported in full — these are slots the

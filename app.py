@@ -701,6 +701,11 @@ CFG = {
     # reports 10/mo for a phrase it holds no data on, so 11 is "measured at all".
     "pool_min_volume": 11,
     "market_pool_cap": 60,          # local rows carried forward for the refill
+    # Above this share of the whole list, dropping dead slots stops being a
+    # targeted correction and becomes a cull — see swap_low_volume_services. Same
+    # value and same denominator as grounding_max_drop_ratio, for the reason
+    # written there.
+    "dead_slot_max_drop_ratio": 0.5,
     # OFF until the backfill stops drawing New York and San Antonio terms out of
     # a nationally-ranked pool for a Santa Fe client. The filter half is sound;
     # the refill half is not. (2026-08-16)
@@ -2850,18 +2855,31 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
     # protected on a one-city grid is unprotected on a five-city one — and this
     # returns silently in that case. Guessing at it from the outside cost most of
     # an afternoon. (2026-08-17)
-    _unprot = [{"kind": "unprotected", "topic": t["label"],
+    _unprot = [{"kind": "unprotected", "added": "", "replaced": "",
+                "topic": t["label"],
                 "share": round(t["size"] / total_seeds, 4),
                 "needed_share": round(min_share * 0.75, 4), "slots": n_slots}
                for t in topics if t not in _kept_t]
     topics = _kept_t
     if len(topics) < 2:
-        return services, (_unprot + [{"kind": "stood_down", "slots": n_slots,
-                                      "protected": len(topics)}])
+        return services, (_unprot + [{"kind": "stood_down", "added": "",
+                                      "replaced": "", "slots": n_slots,
+                                      "protected": len(topics),
+                                      "total_seeds": total_seeds}])
 
     quota = {}
     for t in topics:
         quota[t["label"]] = max(1, round(n_slots * t["size"] / total_seeds))
+    # THE DECISION ITSELF, RECORDED UNCONDITIONALLY. Two rounds of instrumenting
+    # the branches I THOUGHT were firing both came back empty on Ski Barn, which
+    # means my model of this function is wrong rather than the branches being
+    # rare. So this records the inputs — slot count, quota, and what each topic
+    # already holds — whatever happens next. Guessing from the outside has now
+    # cost three builds. (2026-08-17)
+    _decision = {"kind": "quota", "added": "", "replaced": "",
+                 "slots": n_slots, "total_seeds": total_seeds,
+                 "quota": dict(quota),
+                 "sizes": {t["label"]: t["size"] for t in topics}}
     # Trim quotas back to the slots available, smallest topics protected.
     while sum(quota.values()) > n_slots:
         big = max(quota, key=lambda k: quota[k])
@@ -2870,6 +2888,7 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
         quota[big] -= 1
 
     out = [dict(x) for x in services]
+    _decision["quota_after_trim"] = dict(quota)
     for x in out:
         svc = x.get("service", "")
         # A LOOKUP CLAIMS NO TOPIC. Even with the definitional seeds kept out of
@@ -2881,10 +2900,12 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
     vol = {str(r.get("keyword", "")).lower(): (r.get("volume") or 0)
            for r in (cands or [])}
     report = []
+    _decision["have"] = {}
     for t in topics:
         lab = t["label"]
         have = [x for x in out if x.get("_topic") == lab]
         need = quota.get(lab, 1) - len(have)
+        _decision["have"][lab] = len(have)
         if need <= 0:
             continue
         # Best unused seed from this topic, by measured volume then by order.
@@ -2943,7 +2964,8 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                 if len(pool) >= need:
                     break
         if not pool:
-            report.append({"kind": "no_candidate", "topic": lab, "need": need,
+            report.append({"kind": "no_candidate", "added": "", "replaced": "",
+                           "topic": lab, "need": need,
                            "slots": n_slots})
         for s in pool[:need]:
             # A SERVICE NO TOPIC CLAIMS IS THE CHEAPEST SLOT IN THE LIST. It used
@@ -2999,7 +3021,7 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                            "from_topic": drop.get("_topic") or "unclaimed"})
     for x in out:
         x.pop("_topic", None)
-    return out, (_unprot + report)
+    return out, (_unprot + [_decision] + report)
 
 
 def tier_split(n_terms):
@@ -6323,6 +6345,29 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
             continue
         if vol_of(n) == 0:
             _dead.append(n)
+    # THE SAME VALVE EVERY OTHER FILTER HERE HAS. This one had a floor on the
+    # FINAL COUNT and no cap on how much it removed, so it took ten of seventeen
+    # services in one build — 59%. The competitor-name filter, looking at the same
+    # list on the same build, stood down at exactly that ratio and said so in
+    # amber. Two filters, one list, opposite behaviour, and the only difference
+    # was that this one did not copy the valve.
+    #
+    # MEASURED AGAINST THE WHOLE LIST, and the grounding filter already worked out
+    # why. Its comment: "measure that against the WHOLE list, not just the model's
+    # share of it. Keller contributed only 3 non-seed services and 2 were
+    # competitors: a correct 2-of-3 read as a 67% drop and tripped the valve."
+    # The first draft of this valve used the model's share and did exactly that —
+    # NPAIHB's four inventions were four of four, so a correct removal read as
+    # 100% and the padding came back. Against the whole list those four are 36%,
+    # plainly targeted, while Ski Barn's ten of seventeen are 59%, which is the
+    # cull this valve exists to catch. Above the ratio it reports what it WOULD
+    # have cut and removes nothing. (2026-08-17)
+    _judged = [x for x in out if not x.get("pinned")]
+    _ratio = float(CFG.get("dead_slot_max_drop_ratio", 0.5) or 0.5)
+    if _dead and _judged and len(_dead) / len(_judged) > _ratio:
+        return out, report + [{"out": n, "out_volume": 0, "in": "", "in_volume": 0,
+                               "kind": "would_drop", "topic": "",
+                               "tier": ""} for n in _dead]
     if _dead and len(out) - len(_dead) < _min:
         # THE CHEAPEST SLOT GOES FIRST — the same ordering the topic guarantee
         # uses when it has to take one. Lowest tier first, and inside a tier the
