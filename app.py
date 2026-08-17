@@ -7065,6 +7065,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services, topic_fixes = enforce_topic_coverage(services, topic_seeds,
                                                       n_services, cands,
                                                       topics=topics)
+        # THE LAST PASS TO ADD A SERVICE HAS TO FACE THE OUT-OF-AREA FILTER TOO.
+        # The topic guarantee fills an under-represented topic from `cands` when
+        # the operator's own terms cannot, and `cands` is ranked by NATIONAL
+        # volume — so it reached past two earlier drop_foreign_geo_services passes
+        # and put "arizona native peoples" and "arizona native tribes" into a
+        # Portland, Oregon quote for a Pacific Northwest health board. They also
+        # arrived after the grid had chosen its wording, which is why they read
+        # "portland or" while every other row reads "portland".
+        #
+        # Exactly the hole the qualifier backfill had. Any pass that can add a
+        # service from the pool needs this after it, not before it. (2026-08-17)
+        if topic_fixes:
+            services, _tc_geo = drop_foreign_geo_services(services, markets, state)
+            if _tc_geo:
+                _seen_tc = {d[0] for d in (geo_dropped2 or [])}
+                geo_dropped2 = list(geo_dropped2 or []) + [
+                    d for d in _tc_geo if d[0] not in _seen_tc]
+                topic_fixes = [f for f in topic_fixes
+                               if str((f or {}).get("added") or f) not in
+                               {d[0] for d in _tc_geo}]
         services = rebalance_tiers(services)
         # LAST WORD ON DUPLICATES. enforce_seed_services folds on the shared key
         # and so does the topic guarantee, and PEO Brokers still came back with
