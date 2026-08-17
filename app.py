@@ -6127,7 +6127,7 @@ def is_reseller_brand(term):
 
 
 def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
-                            max_swaps=None, upgrade_ratio=None):
+                            max_swaps=None, upgrade_ratio=None, typed=None):
     """Replace service names nobody searches with ones the client's own list has.
 
     The geo WORDING is measured against search volume; the SERVICE NAMES were
@@ -6284,7 +6284,19 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
     # Never a term the operator typed, never a pin, and never below
     # grid_min_services — a list can be honest and short without being empty.
     # (2026-08-17)
-    _typed = {str(x).strip().lower() for x in (seeds or [])}
+    # THE OPERATOR'S LIST AS THEY TYPED IT, NOT AS THE BUILD LEFT IT. `seeds` is
+    # the right pool to swap FROM — a term the classifier set aside should not be
+    # swapped in — and the wrong list to grant the exemption from. NPAIHB's
+    # "federally recognized tribes pacific northwest" was set aside by the kinds
+    # classifier, left `seeds`, and this pass then dropped it as an invention: the
+    # operator watched their own typing removed under a line that says "nothing
+    # measurable behind the phrase".
+    #
+    # This is the SECOND time the same narrowing has caused the same class of bug
+    # — the grounding corpus had it two builds earlier and was fixed by passing
+    # the typed list separately. Any pass that asks "did the operator type this?"
+    # needs `typed`, never `seeds`. (2026-08-17)
+    _typed = {str(x).strip().lower() for x in (typed if typed is not None else seeds) or []}
     _min = int(CFG.get("grid_min_services", 7) or 7)
     _dead = []
     for x in out:
@@ -7528,7 +7540,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         if not national_demand and _svc_check_on:
             try:
                 services, service_swaps = swap_low_volume_services(
-                    services, vols, seeds, topics)
+                    services, vols, seeds, topics, typed=seeds_typed)
                 if service_swaps:
                     svc_names = list(dict.fromkeys([x["service"] for x in services]))
                     g = build_grid(services, grid_cities, state, prepicked=True,
