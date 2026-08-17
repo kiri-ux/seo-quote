@@ -3474,6 +3474,26 @@ def drop_foreign_geo_services(services, markets, state):
         if not foreign:
             foreign = [st for st in STATE_ABBREV
                        if " " in st and st not in ours and st in name]
+        # AND THE ABBREVIATION, which this only ever tested full names for. Nob
+        # Hill Dental — Salem, OREGON — was quoted "dentist salem ct" because the
+        # loop above iterates STATE_ABBREV's KEYS, the full names, so it catches
+        # "arizona" and never "ct". Abbreviations are how these keywords are
+        # actually written.
+        #
+        # Only the LAST token, and only when the word before it is not a shape
+        # word — because half these abbreviations are ordinary English. "me" is
+        # Maine and "dentist near me" is a term the tool adds on purpose; "or" is
+        # Oregon; "in" is Indiana; "hi", "de", "la", "ok", "pa" are all words or
+        # fragments. Requiring the trailing position and a real place-word before
+        # it is what separates "salem ct" from "near me". (2026-08-17)
+        if not foreign:
+            _toks = name.split()
+            if len(_toks) >= 3:
+                _last, _prev = _toks[-1], _toks[-2]
+                if (len(_last) == 2 and _prev not in _SEED_SHAPE
+                        and _last not in ours
+                        and _last in set(STATE_ABBREV.values())):
+                    foreign = [_last]
         if foreign:
             dropped.append((svc.get("service"), foreign[0]))
             continue
@@ -4164,7 +4184,31 @@ def is_brand_term(term, brand):
     bt = _name_tokens(brand)
     if len(bt) < 2:
         return False
-    return bt <= _name_tokens(term)
+    tt = _name_tokens(term)
+
+    # PREFIX, NOT EQUALITY. The stemmer is crude by design — it strips a short
+    # list of suffixes — so "dental" reduces to `dent` and "dentistry" reduces to
+    # nothing at all. That made {dent, hill, nob} not a subset of
+    # {dentistry, hill, nob}, and Nob Hill Dental was quoted to rank for "nob hill
+    # dentistry" at 140/mo: their own name, the biggest number in their grid, and
+    # work nobody can sell because they already own it.
+    #
+    # A brand token matches a term token when either is a prefix of the other and
+    # the shorter is at least four characters. That covers dental/dentistry/
+    # dentist, plumb/plumbing/plumber and the rest of the trade-word family
+    # without a lexicon. EVERY brand token must still match, so "dentures" — one
+    # loose prefix hit and nothing else — is untouched. (2026-08-17)
+    def _hit(b):
+        for t in tt:
+            if b == t:
+                return True
+            if len(b) >= 4 and t.startswith(b):
+                return True
+            if len(t) >= 4 and b.startswith(t):
+                return True
+        return False
+
+    return all(_hit(b) for b in bt)
 
 
 def drop_suggested_nonservices(seeds, suggested, kinds, brand,
