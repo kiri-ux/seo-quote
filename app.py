@@ -701,6 +701,9 @@ CFG = {
     # reports 10/mo for a phrase it holds no data on, so 11 is "measured at all".
     "pool_min_volume": 11,
     "market_pool_cap": 60,          # local rows carried forward for the refill
+    # How far down page one to read the incumbents — see _serp_parse_items.
+    "serp_competitor_depth": 10,
+    "serp_rival_cap": 12,           # distinct incumbents carried to the panel
     # Above this share of the whole list, dropping dead slots stops being a
     # targeted correction and becomes a cull — see swap_low_volume_services. Same
     # value and same denominator as grounding_max_drop_ratio, for the reason
@@ -10136,20 +10139,35 @@ def api_metrics():
                     "kd_vs_cpc": m3.get("kd_vs_cpc"),
                     "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
 
-def _serp_parse_items(items, domain_dom, brand):
+def _serp_parse_items(items, domain_dom, brand, top_n=None):
     """Shared SERP parsing for live + task modes: first organic position for
-    the client domain, plus People-Also-Ask questions (brand-mention filtered)."""
-    pos, paa = None, []
+    the client domain, People-Also-Ask questions (brand-mention filtered), and
+    WHO IS ACTUALLY ON PAGE ONE.
+
+    The domains were always in this response and were always thrown away. They
+    are the one thing that distinguishes two clients the rest of the formula
+    reads as identical: Amare's page one for Santa Fe rentals is Zillow,
+    Apartments.com and Trulia; Nob Hill Dental's is other dentists in Salem.
+    Same keyword count, same not-found share, same CPC band, same difficulty
+    band — and Brendan priced them $600 apart. Free, because this SERP is
+    already fetched for the rank check. (2026-08-17)
+    """
+    top_n = int(top_n or CFG.get("serp_competitor_depth", 10))
+    pos, paa, doms = None, [], []
     for it in items or []:
-        if it.get("type") == "organic" and domain_dom and domain_dom in (it.get("domain") or ""):
-            if pos is None:
-                pos = it.get("rank_absolute")
+        if it.get("type") == "organic":
+            d = (it.get("domain") or "").lower().replace("www.", "")
+            if domain_dom and domain_dom in (it.get("domain") or ""):
+                if pos is None:
+                    pos = it.get("rank_absolute")
+            elif d and d not in doms and len(doms) < top_n:
+                doms.append(d)
         if it.get("type") == "people_also_ask":
             for el in it.get("items", []):
                 q = el.get("title")
                 if q and (brand or "").lower() not in q.lower():
                     paa.append(q)
-    return pos, paa
+    return pos, paa, doms
 
 
 @app.route("/api/rankings_submit", methods=["POST"])
@@ -10230,6 +10248,7 @@ def api_rankings_collect():
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
     top_n = CFG["zero_ranking_top_n"]
     done, pending, paa = [], [], []
+    rivals = {}
 
     def one(t):
         data = dfs_post(f"/serp/google/organic/task_get/regular/{t['task_id']}",
@@ -10238,11 +10257,11 @@ def api_rankings_collect():
         sc = task0.get("status_code")
         if sc == 20000:
             res = (task0.get("result") or [{}])[0]
-            pos, qs = _serp_parse_items(res.get("items") or [], dom, brand)
-            return ("done", pos, qs)
+            pos, qs, doms = _serp_parse_items(res.get("items") or [], dom, brand)
+            return ("done", pos, qs, doms)
         if sc in (40601, 40602, 40100):      # queued / in progress
-            return ("pending", None, [])
-        return ("error", None, [])
+            return ("pending", None, [], [])
+        return ("error", None, [], [])
 
     with ThreadPoolExecutor(max_workers=8) as ex:
         futs = {ex.submit(one, t): t for t in tasks if t.get("task_id")}
@@ -10252,23 +10271,95 @@ def api_rankings_collect():
             try:
                 results[t["kw"]] = fut.result()
             except Exception:
-                results[t["kw"]] = ("pending", None, [])   # transient: poll again
+                results[t["kw"]] = ("pending", None, [], [])  # transient: poll again
     for t in tasks:
         if not t.get("task_id"):
             done.append({"kw": t["kw"], "pos": "—", "ranked_top": False, "error": True})
             continue
-        status, pos, qs = results.get(t["kw"], ("pending", None, []))
+        status, pos, qs, doms = results.get(t["kw"], ("pending", None, [], []))
         if status == "done":
             done.append({"kw": t["kw"],
                          "pos": (pos if pos is not None else "Not Found"),
                          "ranked_top": (pos is not None and pos <= top_n),
                          "error": False})
             paa.extend(qs)
+            # WHO IS ALREADY THERE. Collected per keyword and counted across the
+            # list below, because one SERP is an anecdote and ten is a market.
+            for _d in doms:
+                rivals[_d] = rivals.get(_d, 0) + 1
         elif status == "error":
             done.append({"kw": t["kw"], "pos": "—", "ranked_top": False, "error": True})
         else:
             pending.append(t)
-    return jsonify({"done": done, "pending": pending, "paa": paa[:40]})
+    return jsonify({"done": done, "pending": pending, "paa": paa[:40],
+                    "rivals": [{"domain": d, "appearances": n}
+                               for d, n in sorted(rivals.items(),
+                                                  key=lambda kv: (-kv[1], kv[0]))
+                               [:int(CFG.get("serp_rival_cap", 12))]]})
+
+
+@app.route("/api/market_signals", methods=["POST"])
+@_json_error_guard
+def api_market_signals():
+    """The three things the price has never seen, measured and REPORTED.
+
+    Four pricing thresholds in this tool sit above where its clients live:
+    search volume pays nothing below 10,000/mo, the CPC adder needs a $20 click
+    before rounding leaves anything, organic difficulty's first break is at 30
+    and every client measured reads 0-25, and the zero-visibility bonus wants 90%
+    not-ranking. So every quote computes under the floor and the floor is the
+    price — which is why two clients Brendan priced $600 apart came out identical.
+
+    This measures what is left, on the theory that what actually differs between
+    a Santa Fe rental community and a Salem dental practice is WHO IS ALREADY ON
+    PAGE ONE and how far the client is from them:
+
+      1. the incumbents   — free, read off the rank-check SERP we already fetch
+      2. the authority gap — one bulk_ranks call for the client and all of them
+      3. technical debt    — one instant_pages call, fields we already receive
+
+    NOTHING HERE TOUCHES THE PRICE. Difficulty was banded by analogy this morning
+    and turned out to be measuring national difficulty of a bare term for a local
+    client — the wrong quantity, not just the wrong band. So these are reported
+    first, across a real spread of clients, and banded only once there is a range
+    to band against. (2026-08-17)
+    """
+    d = request.get_json(force=True) or {}
+    domain = (d.get("domain") or "").strip().lower()
+    domain = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    rivals = [str(x.get("domain") if isinstance(x, dict) else x or "").lower()
+              for x in (d.get("rivals") or [])]
+    rivals = [r for r in rivals if r and r != domain][:int(CFG.get("serp_rival_cap", 12))]
+    counts = {str(x.get("domain") or "").lower(): int(x.get("appearances") or 0)
+              for x in (d.get("rivals") or []) if isinstance(x, dict)}
+
+    ranks, rank_err = fetch_domain_authority(([domain] if domain else []) + rivals)
+    health, health_err = fetch_technical_health(domain) if domain else ({}, "")
+
+    client_rank = ranks.get(domain)
+    rival_ranks = [ranks[r] for r in rivals if r in ranks]
+    rival_ranks.sort()
+    median_rival = (rival_ranks[len(rival_ranks) // 2] if rival_ranks else None)
+    top_rival = (rival_ranks[-1] if rival_ranks else None)
+    gap = (median_rival - client_rank
+           if client_rank is not None and median_rival is not None else None)
+
+    return jsonify({
+        "domain": domain,
+        "client_rank": client_rank,
+        "median_rival_rank": median_rival,
+        "top_rival_rank": top_rival,
+        "gap": gap,
+        "rivals": [{"domain": r, "rank": ranks.get(r),
+                    "appearances": counts.get(r, 0)}
+                   for r in rivals],
+        "n_measured": len(rival_ranks),
+        "health": health,
+        "authority_error": rank_err,
+        "health_error": health_err,
+        # Said out loud so nobody has to infer it from the absence of a change.
+        "applied_to_price": False,
+    })
 
 
 @app.route("/api/rank_location", methods=["POST"])
@@ -10312,6 +10403,117 @@ def _rank_cache_put(kw, loc, dom, top_n, pos):
         if len(RANK_CACHE) > RANK_CACHE_MAX:
             RANK_CACHE.clear()
         RANK_CACHE[(kw, loc, dom, top_n)] = (pos, time.time())
+
+def fetch_domain_authority(domains):
+    """Backlink rank (0-1000) for a batch of domains, in ONE request.
+
+    The authority gap is what the industry actually scopes on. Linkscope's 2026
+    benchmarks put local-services page one at DA 28 average with the top decile
+    at 45+, and translate a gap straight into work: DA 20->40 is 40-80 referring
+    domains over 12-18 months, DA 40->60 is 100-300+ over 18-36. That is a
+    duration and a link volume, which is what a retainer ladder actually sells —
+    and nothing in this tool has ever looked at it.
+
+    `backlinks/bulk_ranks/live` takes up to 1000 targets per call, so the client
+    and every incumbent on their page one cost one request between them. Returns
+    {domain: rank} and {} on any failure — no key, no network, bad JSON — so a
+    dead call reports nothing rather than claiming everyone is weak.
+    (2026-08-17)
+    """
+    doms = []
+    for d in domains or []:
+        d = str(d or "").strip().lower().replace("https://", "").replace("http://", "")
+        d = d.replace("www.", "").strip("/")
+        if d and d not in doms:
+            doms.append(d)
+    if not doms:
+        return {}, ""
+    try:
+        data = dfs_post("/backlinks/bulk_ranks/live",
+                        [{"targets": doms[:1000]}], timeout=25)
+        task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+        if task0.get("status_code") not in (20000, None):
+            return {}, f"{task0.get('status_code')}: {task0.get('status_message')}"
+        out = {}
+        for block in (task0.get("result") or []):
+            for it in (block.get("items") or []):
+                t = str(it.get("target") or "").lower().replace("www.", "")
+                if t:
+                    out[t] = int(it.get("rank") or 0)
+        return out, ""
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("bulk_ranks failed")
+        return {}, str(e)[:120]
+
+
+# The on-page checks worth counting as debt. DataForSEO returns ~60 booleans and
+# most are advisory; these are the ones that cost real remediation hours and that
+# every pricing guide names when it says "current site condition".
+_ONPAGE_DEBT = (
+    ("is_https", False, "not on HTTPS"),
+    ("no_h1_tag", True, "no H1"),
+    ("title_too_long", True, "title too long"),
+    ("no_title", True, "missing title"),
+    ("no_description", True, "missing meta description"),
+    ("duplicate_title_tag", True, "duplicate title"),
+    ("duplicate_meta_tags", True, "duplicate meta"),
+    ("low_content_rate", True, "thin content"),
+    ("large_page_size", True, "heavy page"),
+    ("high_loading_time", True, "slow load"),
+    ("has_render_blocking_resources", True, "render-blocking assets"),
+    ("no_image_alt", True, "images without alt text"),
+    ("broken_links", True, "broken links"),
+    ("is_4xx_code", True, "4xx errors"),
+    ("is_5xx_code", True, "5xx errors"),
+    ("no_favicon", True, "no favicon"),
+    ("canonical_to_broken", True, "canonical to a broken URL"),
+    ("has_meta_refresh_redirect", True, "meta-refresh redirect"),
+)
+
+
+def fetch_technical_health(domain):
+    """The client site's own condition, from a call the tool already makes.
+
+    `on_page/instant_pages` has been in this codebase purely as a fallback for
+    scraping page TITLES when the sitemap is unreadable — the response's
+    `onpage_score` and its ~60 `checks` were received and discarded on every
+    build. Every pricing guide names site condition as an upfront cost driver
+    ("technical debt, broken links and thin content increase upfront costs") and
+    it is the one input here that needs no new judgement: the API returns a score
+    out of 100 and a list of what failed.
+
+    Returns {"score": 0-100, "failed": [labels], "checked": n} and {} on failure.
+    (2026-08-17)
+    """
+    dom = str(domain or "").strip().lower()
+    dom = dom.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
+    if not dom:
+        return {}, ""
+    try:
+        data = dfs_post("/on_page/instant_pages",
+                        [{"url": f"https://{dom}"}], timeout=25)
+        task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+        if task0.get("status_code") not in (20000, None):
+            return {}, f"{task0.get('status_code')}: {task0.get('status_message')}"
+        item = None
+        for block in (task0.get("result") or []):
+            for it in (block.get("items") or []):
+                item = it
+                break
+            if item:
+                break
+        if not item:
+            return {}, "no page returned"
+        checks = item.get("checks") or {}
+        failed = [label for key, bad_when, label in _ONPAGE_DEBT
+                  if key in checks and bool(checks[key]) is bool(bad_when)]
+        return {"score": round(float(item.get("onpage_score") or 0), 1),
+                "failed": failed, "checked": len(checks),
+                "timing": (item.get("page_timing") or {}).get("dom_complete")}, ""
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("instant_pages health failed")
+        return {}, str(e)[:120]
+
 
 def serp_top_domains(kw, loc, client_dom="", top_n=5, deadline=None):
     """The first few organic domains for one query, plus where the client sits.

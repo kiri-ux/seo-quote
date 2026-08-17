@@ -2743,6 +2743,11 @@ let STEP3_RUNNING = false;
 async function runStep3(retryOnlyFailed){
   if(STEP3_RUNNING) return;          // a second click must not start a parallel run
   STEP3_RUNNING = true;
+  // A FULL RUN IS A NEW MARKET. Retrying only the failed rows keeps what the
+  // earlier polls already collected; a fresh check starts the incumbent tally
+  // over, or one client's page one bleeds into the next quote's.
+  if(!retryOnlyFailed){ ST.rivals={}; ST.signals=null; ST._signalsRun=false;
+                        const n=document.getElementById('marketSignals'); if(n) n.remove(); }
   const b=$('step3');
   if(b){ b.disabled=true; b.textContent='Checking rankings…'; }
   try{ await _runStep3(retryOnlyFailed); }
@@ -2873,6 +2878,12 @@ async function _bgQueuePoll(pending, gen){
       if(row.error) ST.errored++;
       landed=true;
     });
+    // WHO IS ON PAGE ONE, accumulated across polls. The rank check already
+    // fetched these SERPs; the domains were parsed and thrown away. (2026-08-17)
+    if((coll.rivals||[]).length){
+      ST.rivals = ST.rivals || {};
+      coll.rivals.forEach(r=>{ ST.rivals[r.domain]=(ST.rivals[r.domain]||0)+(r.appearances||0); });
+    }
     pending=coll.pending||[];
     if(landed && $('p3')) finishStep3();
   }
@@ -2959,6 +2970,54 @@ async function _finishOrRetry(retryOnlyFailed, all){
   finishStep3();
 }
 
+// THE THREE THINGS THE PRICE HAS NEVER SEEN. Fired once the rank check has
+// settled, because its SERPs are where the incumbents come from. Reported only —
+// nothing here moves a number. Difficulty was banded by analogy this morning and
+// turned out to be measuring the wrong quantity entirely, so these get measured
+// across real clients before anyone picks a threshold. (2026-08-17)
+async function loadMarketSignals(){
+  const rv = Object.entries(ST.rivals||{})
+    .map(([domain,appearances])=>({domain,appearances}))
+    .sort((a,b)=>b.appearances-a.appearances).slice(0,12);
+  if(!rv.length && !(ST.inputs&&ST.inputs.domain)) return;
+  try{
+    ST.signals = await postJSON('/api/market_signals',
+      {domain:(ST.inputs&&ST.inputs.domain)||'', rivals:rv});
+  }catch(e){ ST.signals=null; }
+  try{ renderMarketSignals(); }catch(e){}
+}
+
+function renderMarketSignals(){
+  const s=ST.signals, host=document.getElementById('p3');
+  if(!host) return;
+  let n=document.getElementById('marketSignals');
+  if(!s){ if(n) n.remove(); return; }
+  if(!n){ n=document.createElement('div'); n.id='marketSignals'; n.className='calc'; host.appendChild(n); }
+  n.style.marginTop='10px';
+  const num=v=>v===null||v===undefined?'—':Number(v).toLocaleString();
+  const rivals=(s.rivals||[]).filter(r=>r.rank!==null&&r.rank!==undefined);
+  const bits=[];
+  bits.push(`<div><b>Page one belongs to</b> ${(s.rivals||[]).slice(0,6).map(r=>
+      escapeHtml(r.domain)+' <span class="nf">('+(r.rank!=null?'authority '+num(r.rank):'—')
+      +(r.appearances?', '+r.appearances+' of your terms':'')+')</span>').join(' · ')||'—'}</div>`);
+  if(s.client_rank!=null||s.median_rival_rank!=null){
+    bits.push(`<div style="margin-top:4px"><b>Authority</b> — this client ${num(s.client_rank)}`
+      +` · median incumbent ${num(s.median_rival_rank)} · strongest ${num(s.top_rival_rank)}`
+      +(s.gap!=null?` · <b>gap ${s.gap>0?'+':''}${num(s.gap)}</b>`:'')
+      +` <span class="nf">(${s.n_measured} incumbent${s.n_measured===1?'':'s'} measured)</span></div>`);
+  }
+  if(s.authority_error) bits.push(`<div style="margin-top:4px;color:#8a5a10">⚠ Authority lookup failed — ${escapeHtml(s.authority_error)}</div>`);
+  const h=s.health||{};
+  if(h.score!=null){
+    bits.push(`<div style="margin-top:4px"><b>Site condition</b> — on-page score ${num(h.score)}/100`
+      +(h.failed&&h.failed.length?` · <span style="color:#8a5a10">${h.failed.length} issue${h.failed.length===1?'':'s'}</span>: ${h.failed.slice(0,8).map(escapeHtml).join(', ')}`:' · nothing flagged')
+      +`</div>`);
+  } else if(s.health_error){
+    bits.push(`<div style="margin-top:4px;color:#8a5a10">⚠ Site check failed — ${escapeHtml(s.health_error)}</div>`);
+  }
+  n.innerHTML=`\u{1F52C} <b>Market signals</b>${tipOf('Three inputs the price has never seen: who already holds page one, how far this client sits behind them in backlink authority, and what condition their own site is in. Measured and shown only \u2014 none of it moves the quote. Every threshold already in the formula was set for a client ten times larger than the ones quoted here, so these get measured across a real spread before any of them is banded.')}<div class="nf" style="margin-top:4px">${bits.join('')}<div style="margin-top:5px;opacity:.75">Reported only \u2014 the price is unchanged by all of this.</div></div>`;
+}
+
 function finishStep3(){
   const checkedOk = Math.max(ST.total - excludedRows(), 0);
   // NOTHING MEASURED IS NOT A MEASUREMENT OF ZERO.
@@ -2984,6 +3043,11 @@ function finishStep3(){
   panel('p3', step3Html());
   panel('p3b', focusHtml());
   if($('retryFailed')) $('retryFailed').onclick=()=>runStep3(true);
+  // panel() replaces #p3's contents, so the signals block has to be re-attached
+  // after every redraw — and fetched once, when the rank check has something to
+  // read incumbents from.
+  try{ if(ST.signals) renderMarketSignals();
+       else if(!ST._signalsRun){ ST._signalsRun=true; loadMarketSignals(); } }catch(e){}
   if($('step4')) $('step4').onclick = ()=>runStep4();
   // A restored quote has rows but never made the call that reports the
   // location. Ask for it separately (no lookup is spent) and redraw, so
