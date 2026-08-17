@@ -338,6 +338,16 @@
     <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
 
+    <!-- REFERENCE ONLY, like Current spend above it. A budget is the single most
+         useful number for judging whether the ladder is plausible, and the single
+         most dangerous one to let into a formula: anchoring on it would quote
+         every client exactly what they said they had. So it is captured, saved
+         with the quote, and shown beside the ladder — and it touches nothing.
+         (2026-08-17) -->
+    <label>Client's estimated budget <span style="font-weight:400;color:var(--muted)">/ mo (optional)</span></label>
+    <div class="help">What the client has indicated they expect to spend, per month. <b>Reference only — it does not move the price.</b> Shown beside the tier ladder so a quote can be sanity-checked against it. Letting a budget into the formula would quote every client whatever number they said out loud, which is a decision for a human, not a calculation.</div>
+    <input type="text" id="client_budget" placeholder="e.g. 4000" style="width:140px">
+
     <label>Has done SEO in the past</label>
     <div class="help">Context for the reviewer — does not affect pricing (the rank check sets the zero-ranking modifier).</div>
     <div class="toggle-row">
@@ -2027,6 +2037,10 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
     const n=parseFloat(String(el.value||'').replace(/[^0-9.]/g,''));
     return (!isNaN(n)&&n>0)?Math.round(n):null;
   });
+  bind('client_budget','client_budget', el=>{
+    const n=parseFloat(String(el.value||'').replace(/[^0-9.]/g,''));
+    return (!isNaN(n)&&n>0)?Math.round(n):null;
+  });
 })();
 
 
@@ -2081,6 +2095,7 @@ function collectInputs(){
     past_seo: !!($('pastseo')&&$('pastseo').checked),
     past_seo_detail: ($('pastseo_detail')&&$('pastseo_detail').value.trim())||'',
     past_seo_spend: (()=>{ const v=($('pastseo_spend')&&$('pastseo_spend').value||'').replace(/[^0-9.]/g,''); const n=parseFloat(v); return (!isNaN(n)&&n>0)?Math.round(n):null; })(),
+    client_budget: (()=>{ const v=($('client_budget')&&$('client_budget').value||'').replace(/[^0-9.]/g,''); const n=parseFloat(v); return (!isNaN(n)&&n>0)?Math.round(n):null; })(),
   };
 }
 
@@ -3294,6 +3309,38 @@ function renderStep4(p){
         +' <span class="nf">Context only — the price is unchanged by this.</span>';
     } else if(n){ n.remove(); }
   }catch(e){}
+  // The budget the client named, beside the ladder for the same reason and with
+  // the same guarantee: it is context, not an input. Kept as its own line rather
+  // than merged with the incumbent spend, because "what they pay today" and
+  // "what they say they have" are different facts and a quote can sit
+  // comfortably against one and awkwardly against the other. (2026-08-17)
+  try{
+    const bg=(ST.inputs&&ST.inputs.client_budget)||null;
+    const host=document.getElementById('p4');
+    let b=document.getElementById('budgetCompare');
+    if(bg && host){
+      if(!b){ b=document.createElement('div'); b.id='budgetCompare'; b.className='calc'; }
+      const anchor=document.getElementById('spendCompare')
+                 ||document.getElementById('addonSuggest')
+                 ||document.getElementById('addonCost');
+      if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(b, anchor.nextSibling);
+      else host.appendChild(b);
+      b.style.margin='10px 0 0';
+      const t=p.client_tiers||{};
+      const ks=Object.keys(t);
+      const near=ks.length?ks.reduce((a,k)=>Math.abs(t[k]-bg)<Math.abs(t[a]-bg)?k:a,ks[0]):'';
+      const under=ks.filter(k=>t[k]<=bg);
+      const best=under.length?under.reduce((a,k)=>t[k]>t[a]?k:a,under[0]):'';
+      const cap=k=>k.charAt(0).toUpperCase()+k.slice(1);
+      b.innerHTML='Client\u2019s estimated budget <b>'+money(bg)+'/mo</b>'
+        +(near?' \u2014 closest tier is <b>'+cap(near)+'</b> at '+money(t[near])
+               +' <span class="nf">('+(t[near]>=bg?'+':'')
+               +Math.round((t[near]-bg)/bg*100)+'%)</span>':'')
+        +(best?'. Highest tier inside it: <b>'+cap(best)+'</b> at '+money(t[best])+'.'
+              :(ks.length?'. <span style="color:#8a5a10">Every tier is above it.</span>':''))
+        +' <span class="nf">Context only \u2014 the price is unchanged by this.</span>';
+    } else if(b){ b.remove(); }
+  }catch(e){}
   ST.addonRates = {primary:(p.ai_search? p.ai_search.client_total : p.client_tiers),
                    seo:p.client_tiers, ai:(p.ai_search? p.ai_search.client_add : null),
                    each:p.client_addon_per_market, hard:p.hard_addon_per_market,
@@ -4020,6 +4067,8 @@ function snapshotQuote(){
     industries: stores.industry.slice(),
     past_seo: $('pastseo') ? $('pastseo').checked : !!ST.inputs.past_seo,
     past_seo_detail: $('pastseo_detail') ? $('pastseo_detail').value.trim() : (ST.inputs.past_seo_detail||''),
+    client_budget: (()=>{ const el=$('client_budget'); if(!el) return (ST.inputs.client_budget!=null?ST.inputs.client_budget:null);
+      const n=parseFloat(String(el.value||'').replace(/[^0-9.]/g,'')); return (!isNaN(n)&&n>0)?Math.round(n):null; })(),
   }) : ST.inputs;
   return {
     schema: 1,
@@ -4142,6 +4191,7 @@ function reflectInputs(inp){
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
   if($('goal')){ $('goal').value = inp.goal||''; try{ reflectGoals(); }catch(e){} }
   if($('pastseo_spend')) $('pastseo_spend').value = (inp.past_seo_spend!=null?inp.past_seo_spend:'');
+  if($('client_budget')) $('client_budget').value = (inp.client_budget!=null?inp.client_budget:'');
   // The details block is hidden until Past SEO is on; restoring the value
   // without unhiding it would look like the field had lost the figure.
   const _pw=document.getElementById('pastseo_detail_wrap');
