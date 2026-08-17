@@ -8515,7 +8515,7 @@ def market_for_keyword(kw, markets, state=""):
 
 def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
               loc_override=""):
-    """One keyword's SERP call. Returns (position_or_None, [paa questions]).
+    """One keyword's SERP call. Returns (position, [paa questions], [rival domains]).
     Depth tracks top_n (<=100 is one DataForSEO unit either way). Works within a shared batch DEADLINE: the
     platform kills any request near ~30s, so retrying past the budget doesn't
     save this keyword — it kills the WHOLE batch, failing keywords that had
@@ -8562,17 +8562,13 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
         raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
     res = (task0.get("result") or [{}])[0] or {}
     items = res.get("items", []) or []
-    pos, paa = None, []
-    for it in items:
-        if it.get("type") == "organic" and domain_dom and domain_dom in (it.get("domain") or ""):
-            if pos is None:
-                pos = it.get("rank_absolute")
-        if it.get("type") == "people_also_ask":
-            for el in it.get("items", []):
-                q = el.get("title")
-                if q and (brand or "").lower() not in q.lower():
-                    paa.append(q)
-    return pos, paa
+    # THE SAME PARSE AS THE TASK PATH. This was a hand-rolled copy of
+    # _serp_parse_items, so adding the incumbent domains to that one left this
+    # one alone — and this is the path that runs when Google answers fast enough
+    # to skip the queue. Nob Hill Dental resolved entirely live and the market
+    # signals block came back "0 incumbents measured" for a client whose page one
+    # was sitting in the response. One parser now, both paths. (2026-08-17)
+    return _serp_parse_items(items, domain_dom, brand)
 
 def stage3_rankcheck(all_kws, domain, markets, state, brand):
     top_n = CFG["zero_ranking_top_n"]
@@ -8589,19 +8585,22 @@ def stage3_rankcheck(all_kws, domain, markets, state, brand):
         for fut in futs:
             i = futs[fut]
             try:
-                results[i] = fut.result() + (False,)
+                results[i] = fut.result() + (False,)   # (pos, paa, rivals, err)
             except Exception:
                 # One bad keyword shouldn't sink the quote — but it must not be
                 # counted as "not ranking" either. A failed lookup measured
                 # nothing, and folding it into the denominator inflates the
                 # zero-ranking percentage and therefore the price. Same rule the
                 # batched /api/rankings path already follows. (2026-08-10)
-                results[i] = (None, [], True)
+                results[i] = (None, [], [], True)
 
     table, paa, ranked, errors = [], [], 0, 0
-    for kw, (pos, qs, err) in zip(kws, results):
+    rivals = {}
+    for kw, (pos, qs, doms, err) in zip(kws, results):
         table.append({"keyword": kw, "position": pos, "error": err})
         paa.extend(qs)
+        for _d in (doms or []):
+            rivals[_d] = rivals.get(_d, 0) + 1
         if err:
             errors += 1
             continue
@@ -8613,7 +8612,11 @@ def stage3_rankcheck(all_kws, domain, markets, state, brand):
             "checked": checked, "errors": errors,
             # Nothing was measured, so there is no evidence of zero ranking.
             "zero_ranking": bool(checked) and frac < CFG["zero_ranking_frac"],
-            "paa_pool": list(dict.fromkeys(paa))}
+            "paa_pool": list(dict.fromkeys(paa)),
+            "rivals": [{"domain": d, "appearances": n}
+                       for d, n in sorted(rivals.items(),
+                                          key=lambda kv: (-kv[1], kv[0]))
+                       [:int(CFG.get("serp_rival_cap", 12))]]}
 
 # ---------------------------------------------------------------------------
 # STAGE 4 — pricing
@@ -10743,6 +10746,7 @@ def api_rankings():
                           if mk_named else loc)
     batch = order
     results, paa = [], []
+    rivals = {}
     hits = {}
     to_fetch = []
     err_msgs = []
@@ -10763,8 +10767,15 @@ def api_rankings():
             for fut in futs:
                 kw = futs[fut]
                 try:
-                    pos, qs = fut.result()
+                    pos, qs, doms = fut.result()
                     err = False
+                    # Page one, per keyword, tallied across the batch — see
+                    # _serp_parse_items. This endpoint is the one that runs when
+                    # Google answers fast enough to skip the queue, which is how
+                    # Nob Hill reported "0 incumbents measured" with its rivals
+                    # sitting in the response. (2026-08-17)
+                    for _d in (doms or []):
+                        rivals[_d] = rivals.get(_d, 0) + 1
                 except Exception as e:
                     # lookup FAILED — record it as unknown, NOT as "Not Found".
                     # Counting a failed call as not-ranking would inflate the
@@ -10821,7 +10832,11 @@ def api_rankings():
     return jsonify({"results": results, "paa": list(dict.fromkeys(paa)),
                     "n_cached": len(hits), "n_fetched": len(to_fetch),
                     "n_errors": len(err_msgs), "error_reason": top_err,
-                    "rank_location": note})
+                    "rank_location": note,
+                    "rivals": [{"domain": d, "appearances": n}
+                               for d, n in sorted(rivals.items(),
+                                                  key=lambda kv: (-kv[1], kv[0]))
+                               [:int(CFG.get("serp_rival_cap", 12))]]})
 
 @app.route("/api/qualify_markets", methods=["POST"])
 @_json_error_guard

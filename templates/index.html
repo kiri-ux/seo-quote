@@ -2938,6 +2938,14 @@ async function _runStep3Live(todo, all, BATCH){
       if(got.error_reason) ST.rankErr=got.error_reason;
       got.results.forEach(row=>{ ST.table.push(row); if(row.ranked_top) ST.ranked++; if(row.error) ST.errored++; });
       ST.paa.push(...(got.paa||[]));
+      // Page one, accumulated across batches. The live path is the one that runs
+      // when Google answers fast enough to skip the queue — Nob Hill resolved
+      // entirely this way and the signals block reported "0 incumbents measured"
+      // for a client whose rivals were in the response. (2026-08-17)
+      if((got.rivals||[]).length){
+        ST.rivals = ST.rivals || {};
+        got.rivals.forEach(r=>{ ST.rivals[r.domain]=(ST.rivals[r.domain]||0)+(r.appearances||0); });
+      }
     }else{
       // batch failed twice — record these as failed and KEEP GOING
       batch.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
