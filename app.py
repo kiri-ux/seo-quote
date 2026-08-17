@@ -634,6 +634,21 @@ CFG = {
     # yields almost nothing and Amare was spending a call on it. The saving is
     # one call; the point is which five. (2026-08-14)
     "suggest_seed_cap": 5,
+    # How many variants of one procedure the TOOL may propose — see
+    # cap_service_family. Never applies to a term the operator typed.
+    "service_family_cap": 3,
+    # A token in this many of the operator's OWN terms is the business, not a
+    # runaway family, and is exempt from the cap above.
+    "family_core_seeds": 2,
+    # HOW MANY DIFFERENT SERVICES THE GAP-FINDER IS ASKED FOR. The cap above
+    # takes slots BACK, so something has to be there to fill them or the grid
+    # only gets smaller — which is the complaint that started this ("they all
+    # come back so low now"). This is the one proposal source that returns a
+    # DIFFERENT service rather than the same one reworded, so it is the one to
+    # widen: proposing more costs no DataForSEO calls (one Anthropic call either
+    # way, then one volume request for the whole batch), and every term it
+    # proposes is measured and floored before it can reach a chip. (2026-08-17)
+    "industry_gap_n": 22,
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
@@ -3982,10 +3997,29 @@ _SEED_SYN = {"compens": "comp"}
 _SEED_QUALIFY = frozenset("insurance insurances coverage coverages".split())
 
 
+# IRREGULAR PLURALS THE SUFFIX RULES CANNOT REACH. Nob Hill Dental came back with
+# "tooth overlay" AND "overlays for teeth" in the same thirteen-slot grid — one
+# procedure, two slots — because no amount of suffix-stripping turns "teeth" into
+# "tooth". Six of that client's thirteen terms were overlay variants while
+# Brendan's list for the same practice covers cleanings, crowns, whitening, root
+# canals, extractions and dentures. A short closed list, not a lexicon: these are
+# the ones that actually show up in service names. (2026-08-17)
+_IRREGULAR = {
+    "teeth": "tooth", "feet": "foot", "children": "child", "men": "man",
+    "women": "woman", "people": "person", "mice": "mouse", "geese": "goose",
+    "lice": "louse", "oxen": "ox", "leaves": "leaf", "knives": "knife",
+    "wives": "wife", "lives": "life", "shelves": "shelf", "halves": "half",
+    "wolves": "wolf", "loaves": "loaf", "thieves": "thief", "calves": "calf",
+    "hooves": "hoof", "roofs": "roof",
+}
+
+
 def _seed_stem(word):
     """Crude, deterministic stemmer. A real one is not worth the dependency:
     the only job is making 'hauling', 'haulers' and 'haul' the same token."""
     w = re.sub(r"[^a-z0-9]+", "", (word or "").lower())
+    if w in _IRREGULAR:
+        w = _IRREGULAR[w]
     # Trailing "e" is last on purpose: without it "remove" and "removal" stem to
     # different tokens and "remove junk" survives as a second slot for the same
     # service as "junk removal".
@@ -4096,6 +4130,101 @@ def seed_norm(term, markets=None, state=""):
     """
     return clean_kw(strip_placeholders(strip_proximity(
         _strip_markets((term or "").lower(), list(markets or []), state)))).strip()
+
+
+def cap_service_family(terms, seeds=None, cap=None, markets=None, state=""):
+    """No more than a few variants of any one procedure, enforced in code.
+
+    The expansion prompt has carried a rule about this since July — "no more than
+    2-3 variants of any one service family... NOT thirteen implant variants
+    because one seed said implants" — and a prompt cannot be checked. Nob Hill
+    Dental came back with nine: onlay overlay, overlay onlay, crown overlay,
+    overlay crown, overlays on teeth, overlays for teeth, tooth overlay, dental
+    onlays and overlays, composite tooth restoration. Six of them reached a
+    thirteen-slot grid. Brendan's list for the same practice covers cleanings,
+    crowns, whitening, root canals, extractions, dentures and emergency care.
+
+    The damage compounds: those nine became SEEDS, which made overlays half the
+    seed list, which earned them half the grid through the topic quota — working
+    exactly as designed, on an input that was already lopsided.
+
+    ONLY WHAT THE TOOL PROPOSED. A family cap is lethal in the wrong place: a
+    rental community's list is ALL "homes for rent" variants and every one of
+    them is the business. The operator's own terms are what say which is which,
+    so they are exempt and they are not counted towards the cap — thirteen typed
+    homes-for-rent terms can never make "home" look over-represented.
+
+    Groups on the shared significant token, keeps the earliest few of each group
+    (the ranking that produced them already put the best first), and returns
+    (kept, dropped) with dropped as (term, token). (2026-08-17)
+    """
+    cap = int(cap if cap is not None else CFG.get("service_family_cap", 3))
+    typed = {seed_norm(str(t), markets, state).lower() for t in (seeds or [])}
+    typed |= {str(t).strip().lower() for t in (seeds or [])}
+    if cap <= 0:
+        return list(terms or []), []
+
+    def toks(t):
+        return {w for w in _seed_key(seed_norm(str(t), markets, state))
+                if w and len(w) > 2}
+
+    # WHICH FAMILY IS THE BUSINESS, AND WHICH RAN AWAY. The operator's own list
+    # is what says so. Amare's typed terms are "apartment for rent", "home for
+    # rent", "single family homes for rent" — "home" and "rent" are in most of
+    # them, so a suggestion pool full of homes-for-rent variants is the client's
+    # whole offer and capping it would gut the quote. Nob Hill typed five terms
+    # and exactly one mentions overlays, so nine overlay suggestions are a
+    # runaway. A token carried by this many of the TYPED seeds is core and is
+    # never capped. (2026-08-17)
+    core_n = int(CFG.get("family_core_seeds", 2))
+    typed_freq = {}
+    for t in (seeds or []):
+        for w in toks(t):
+            typed_freq[w] = typed_freq.get(w, 0) + 1
+    core = {w for w, n in typed_freq.items() if n >= core_n}
+
+    # A CORE TOKEN EXEMPTS THE WHOLE TERM, and keeps it out of everyone else's
+    # count. Exempting only the core token itself sent the term to its NEXT most
+    # crowded token instead, and that token is usually a category word rather
+    # than a service: with "overlay" core, the five terms carrying "tooth"
+    # regrouped onto tooth and the cap dropped `teeth whitening` — a different
+    # procedure entirely, thrown out for sharing a body part with overlays.
+    # A term the operator's own vocabulary vouches for is the business; it is
+    # not capped, and it does not make anything else look crowded either.
+    # (2026-08-17)
+    def _exempt(t):
+        return str(t).strip().lower() in typed or bool(toks(t) & core)
+
+    # Counted over the PROPOSALS only. A token the operator uses constantly is
+    # their vocabulary, not a family that has run away with the list.
+    freq = {}
+    for t in (terms or []):
+        if _exempt(t):
+            continue
+        for w in toks(t):
+            freq[w] = freq.get(w, 0) + 1
+    crowded = {w for w, n in freq.items() if n > cap and w not in core}
+    if not crowded:
+        return list(terms or []), []
+
+    seen, kept, dropped = {}, [], []
+    for t in (terms or []):
+        if _exempt(t):
+            kept.append(t)
+            continue
+        # The most crowded token this term belongs to decides its group, so a
+        # term in two runaway families is counted once, against the worse one.
+        mine = sorted(toks(t) & crowded, key=lambda w: (-freq[w], w))
+        if not mine:
+            kept.append(t)
+            continue
+        w = mine[0]
+        seen[w] = seen.get(w, 0) + 1
+        if seen[w] <= cap:
+            kept.append(t)
+        else:
+            dropped.append((str(t), w))
+    return kept, dropped
 
 
 def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
@@ -11847,7 +11976,7 @@ def mine_acronyms(html, brand="", limit=14):
 
 
 def claude_industry_services(brand="", domain="", industry="", business_desc="",
-                             site_pages=None, seeds=None, geo="", n=14):
+                             site_pages=None, seeds=None, geo="", n=None):
     """What ELSE does a business of this kind sell that people search for.
 
     The list can only ever choose among the seeds it is handed, so when those
@@ -11870,6 +11999,7 @@ def claude_industry_services(brand="", domain="", industry="", business_desc="",
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return []
+    n = int(n if n else CFG.get("industry_gap_n", 22) or 22)
     have = [str(x).strip().lower() for x in (seeds or []) if str(x).strip()]
     pages = [str(p) for p in (site_pages or [])][:40]
     prompt = f"""A search campaign is being scoped for {brand or domain or "a business"}.
@@ -11885,6 +12015,13 @@ Name up to {n} ADDITIONAL service lines a business of this type sells that peopl
 search for, and that are NOT already covered above. Rules:
 1. A DIFFERENT service, never a synonym of one already listed. "haul away
    service" when "junk removal" is present is a synonym — do not return it.
+   This applies WITHIN your own answer too: {n} slots means {n} different things
+   this business sells, not one thing worded {n} ways. A dental list runs
+   cleanings, crowns, whitening, root canals, extractions, dentures, implants,
+   emergency care — it does NOT run overlay onlay, crown overlay, overlay crown,
+   overlays on teeth, tooth overlay. Return fewer terms rather than pad with
+   rewordings; anything past three variants of one procedure is discarded
+   unread.
 2. The phrase a customer types, 2-4 words, no city, no brand.
 3. Only services this business plausibly sells. If the website pages or the
    description name something, prefer it.
@@ -11909,14 +12046,21 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
                      "content-type": "application/json"},
             data=json.dumps({
                 "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
-                "max_tokens": 1200, "temperature": 0,
-                "messages": [{"role": "user", "content": prompt}]}), timeout=30)
+                # ASKING FOR 22 AND BUDGETING FOR 14 IS A SILENT ZERO. Each item
+                # carries a `why` string, the reply is one JSON object, and a
+                # truncated object does not parse — so the whole pass would
+                # return [] and the panel would say "nothing was proposed" for a
+                # model that answered fine. Scaled with n. (2026-08-17)
+                "max_tokens": max(1200, 110 * n), "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}]}), timeout=45)
         resp.raise_for_status()
         body = resp.json()
         text = "".join(b.get("text", "") for b in body.get("content", [])
                        if b.get("type") == "text").strip()
         text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
         raw = json.loads(text).get("services") or []
+        if body.get("stop_reason") == "max_tokens":
+            app.logger.warning("claude_industry_services truncated at max_tokens")
     except Exception:
         app.logger.exception("claude_industry_services failed")
         return []
@@ -12674,6 +12818,18 @@ def api_expand_services():
     good, folded_rows = fold_proposals([r for r in rows if r["volume"] >= floor],
                                        seeds=(d.get("seeds") or []),
                                        markets=([] if nat else markets), state=state)
+    # The prompt is now asked for 22 rather than 14, and a model asked for more
+    # than the vertical has will pad with rewordings — which is the one thing this
+    # pass exists NOT to do. fold_proposals catches near-duplicates by
+    # containment; this catches the fourth distinct wording of one procedure,
+    # which containment does not. Checked in code because a prompt rule cannot
+    # be. (2026-08-17)
+    _gkept, _gfam = cap_service_family([r["term"] for r in good],
+                                       seeds=(d.get("seeds") or []),
+                                       markets=([] if nat else markets), state=state)
+    if _gfam:
+        _gset = set(_gkept)
+        good = [r for r in good if r["term"] in _gset]
     # IS THIS A THIN MARKET, OR A THIN PROPOSAL SET? The panel could already relax
     # the floor when the CLIENT'S OWN built list came in under it — but on Amare
     # Homes no build existed yet, which is exactly when the operator is assembling
@@ -12697,6 +12853,9 @@ def api_expand_services():
         thin_market = bool(_typ < floor and _best < floor * _mult)
     return jsonify({"services": good,
                     "folded": [r["term"] for r in folded_rows],
+                    "family_capped": [{"term": t, "on": w} for t, w in _gfam],
+                    "asked_for": int(CFG.get("industry_gap_n", 22) or 22),
+                    "proposed": len(rows),
                     "rejected": [r for r in rows if r["volume"] < floor],
                     # The panel has to be able to ask "is this floor stricter than
                     # the quote it is protecting?" — NPAIHB's own terms run at
@@ -12949,8 +13108,26 @@ def api_ranked_keywords():
         return bool(toks) and bool(_bw) and all(t in _bw for t in toks)
     fresh = [r for r in rows if r["bare"] not in have and not _is_brand(r["bare"])]
     brandy = [r["bare"] for r in rows if _is_brand(r["bare"])]
+    # NINE OVERLAY VARIANTS, ALL OF THEM REAL POSITIONS. This is the source the
+    # family cap was missing, and it is the worst place to miss it: a position is
+    # treated as proof of ownership, so these chips sort AHEAD of everything the
+    # other two panels found, and Nob Hill Dental spent six of thirteen grid
+    # slots on one procedure. The client genuinely ranks for all nine — that is
+    # not the question. Selling the fourth wording of a service you are already
+    # selling the first three wordings of is not a campaign.
+    #
+    # The operator's own typed terms are exempt and are what mark a family as the
+    # business rather than a runaway, so a rental community whose whole list is
+    # homes-for-rent variants loses nothing. (2026-08-17)
+    _kept, _famdrop = cap_service_family(
+        [r["bare"] for r in fresh], seeds=(d.get("seeds") or []),
+        markets=markets, state=state)
+    if _famdrop:
+        _keepset = set(_kept)
+        fresh = [r for r in fresh if r["bare"] in _keepset]
     return jsonify({"keywords": fresh, "total": len(rows),
                     "brand_terms": brandy,
+                    "family_capped": [{"term": t, "on": w} for t, w in _famdrop],
                     "already_seeded": len([r for r in rows
                                            if r["bare"] in have]),
                     "top20": sum(1 for r in rows
@@ -13044,11 +13221,17 @@ def api_site_services():
                 x["term"] = x["label"].lower()
         # 39 chips off a retail menu is not 39 services — see fold_proposals().
         out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
+        # NO MORE THAN A FEW VARIANTS OF ONE PROCEDURE — the prompt has
+        # asked for this since July and a prompt cannot be checked.
+        # See cap_service_family. (2026-08-17)
+        out, family_out = cap_service_family(out, seeds=(d.get("seeds") or []))
         out, not_svc = _split_proposal_kinds(out, d, dom or "(pasted list)")
         return jsonify({"domain": dom, "services": out,
                         "not_services": not_svc,
                         "folded": [(x.get("term") or x.get("label") or "")
                                    for x in folded_out],
+                        "family_capped": [{"term": t, "on": w}
+                                          for t, w in (family_out or [])],
                         "ai_refined": ai_used,
                         "from_sitemap": False, "pasted": True, "n_nav_links": 0})
     # Two identities: some servers stub out bots, others' WAFs block a Chrome UA
@@ -13317,6 +13500,10 @@ def api_site_services():
         acronyms = [{"error": str(_ae)[:120]}]
     # 39 chips off a retail menu is not 39 services — see fold_proposals().
     out, folded_out = fold_proposals(out, seeds=(d.get("seeds") or []))
+    # NO MORE THAN A FEW VARIANTS OF ONE PROCEDURE — the prompt has
+    # asked for this since July and a prompt cannot be checked.
+    # See cap_service_family. (2026-08-17)
+    out, family_out = cap_service_family(out, seeds=(d.get("seeds") or []))
     # Headings are the risky source by construction: it fires when the nav gave
     # nothing, so it over-collects on purpose, and on npaihb.org it collected
     # member tribes. Classify whatever came back, whatever the source.
@@ -13351,6 +13538,8 @@ def api_site_services():
                     "not_services": not_svc,
                     "folded": [(x.get("term") or x.get("label") or "")
                                for x in folded_out],
+                    "family_capped": [{"term": t, "on": w}
+                                      for t, w in (family_out or [])],
                     "ai_refined": ai_used, "from_sitemap": used_sitemap,
                     "from_headings": used_headings,
                     "site_description": site_desc,

@@ -665,6 +665,75 @@ function isLookupKw(v){
   return _LOOKUP_AUX.test(t) && t.split(/\s+/).length>=4;
 }
 
+// ONE PROCEDURE CANNOT HAVE THE WHOLE GRID. Nob Hill Dental's thirteen slots went
+// six to overlays — crown overlay, overlays for teeth, tooth overlay, overlays on
+// teeth, onlay overlay, dental onlays and overlays — while Brendan's list for the
+// same practice covered cleanings, crowns, whitening, root canals, extractions
+// and dentures. Every one of the six was a real position, which is why nothing
+// upstream objected: rank is treated as proof of ownership and sorts these first.
+//
+// cap_service_family() in app.py now caps each PANEL, but three panels capped at
+// three apiece still merge to nine, and the merge happens here. So the spread is
+// enforced where the slots are actually handed out.
+//
+// IT DROPS NOTHING. The same number of terms is added as before — min(candidates,
+// room) — and only WHICH ones changes: one per family, then a second per family,
+// and so on, so a runaway family loses its tail to families that had none.
+// When there is only one family it takes every slot, exactly as today, because a
+// rental community's list IS all homes-for-rent variants and that is the business.
+// This is a selection order, not a filter, so it does not need to agree with the
+// Python stemmer token for token — a slightly different grouping gives a slightly
+// different spread and nothing else. (2026-08-17)
+const _FAM_STOP=new Set(['the','and','for','with','near','your','our','their','best','top',
+  'cheap','affordable','local','service','company','shop','store','price','cost','quote',
+  'estimate','free','new','all','any','you','me','my','our','from','that','this','are','get']);
+const _FAM_IRREG={teeth:'tooth',feet:'foot',children:'child',people:'person',
+  women:'woman',men:'man',mice:'mouse',geese:'goose'};
+function famStem(w){
+  w=String(w||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  if(_FAM_IRREG[w]) return _FAM_IRREG[w];
+  if(w.length>4&&/ies$/.test(w)) return w.slice(0,-3)+'y';
+  if(w.length>4&&/(?:ss|sh|ch|x|z)es$/.test(w)) return w.slice(0,-2);
+  if(w.length>3&&/s$/.test(w)&&!/ss$/.test(w)) return w.slice(0,-1);
+  return w;
+}
+function famToks(v){
+  return [...new Set(String(v||'').toLowerCase().split(/[^a-z0-9]+/)
+    .map(famStem).filter(w=>w.length>2 && !_FAM_STOP.has(w)))];
+}
+// cand must already be in priority order — this only decides who gets crowded
+// out when there are more candidates than slots, never what is worth having.
+function spreadByFamily(cand, room){
+  room=Math.max(0, room|0);
+  if(!room || cand.length<=room) return cand.slice(0, room);
+  const freq={};
+  for(const c of cand) for(const w of famToks(c.v)) freq[w]=(freq[w]||0)+1;
+  const groups=new Map();
+  cand.forEach((c,i)=>{
+    c._i=i;
+    // The most crowded token this term belongs to decides its family, so a term
+    // in two runaway families is counted once, against the worse one. A term
+    // sharing no token with anything else is its own family and never waits.
+    const toks=famToks(c.v).sort((a,b)=>(freq[b]-freq[a])||(a<b?-1:1));
+    const key=(toks.length&&freq[toks[0]]>1)?toks[0]:(' '+i);
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(c);
+  });
+  // Map insertion order is first-appearance order, so families are visited in
+  // the order their own best member already stood.
+  const fams=[...groups.values()], out=[];
+  for(let pass=0; out.length<room; pass++){
+    let took=false;
+    for(const f of fams){
+      if(f.length>pass){ out.push(f[pass]); took=true; if(out.length>=room) break; }
+    }
+    if(!took) break;
+  }
+  // Handed back in priority order, not round-robin order — the spread decided
+  // membership and has no business reordering the list the operator sees.
+  return out.sort((a,b)=>a._i-b._i);
+}
+
 // Agency reports print one keyword row with a token standing in for the city —
 // "bbq grill store <cityname>" covers a dozen markets in one line. Imported
 // verbatim the token becomes a literal word, nobody searches it, so it is
@@ -1393,7 +1462,7 @@ async function runExpandServices(){
       out.innerHTML=`<div class="nf" style="font-size:11.5px">Nothing the industry sells that isn't already above.</div>`;
       return;
     }
-    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.${((r.folded||[]).length||(good.length-fresh.length))?` <span style="opacity:.8">${(r.folded||[]).length+(good.length-fresh.length)} near-duplicate${((r.folded||[]).length+(good.length-fresh.length))===1?'':'s'} folded out.</span>`:''}</div>`
+    out.innerHTML=`<div class="nf" style="font-size:11.5px;margin-bottom:4px">Service lines your focus terms don't cover, measured against ${escapeHtml(r.basis||'')} — click to add as a seed. Hover for why it was proposed.${((r.folded||[]).length||(good.length-fresh.length))?` <span style="opacity:.8">${(r.folded||[]).length+(good.length-fresh.length)} near-duplicate${((r.folded||[]).length+(good.length-fresh.length))===1?'':'s'} folded out.</span>`:''}${((r.family_capped||[]).length)?` <span style="opacity:.8">${r.family_capped.length} extra wording${r.family_capped.length===1?'':'s'} of one service held back.${tipOf('Asked for '+(r.asked_for||22)+' different services and got '+(r.proposed||0)+' back. A model asked for more than the vertical has will pad with rewordings, which is the one thing this pass exists not to do &mdash; so it is checked in code rather than left to the prompt.<br><br>'+r.family_capped.slice(0,12).map(x=>escapeHtml(String(x.term))+' &mdash; '+escapeHtml(String(x.on))).join('<br>'))}</span>`:''}</div>`
       + fresh.map(x=>`<span class="svc-chip" data-vol="${Number(x.volume||0)}" data-src="industry" data-label="${escapeHtml(x.term)}" title="${escapeHtml(x.why||'')}" style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid var(--atlas);color:var(--atlas);font-size:12.5px;cursor:pointer;background:#fff">${escapeHtml(x.term)} <span class="nf" style="font-size:10.5px">(${Number(x.volume).toLocaleString()}/mo)</span></span>`).join('')
       + thinFloorHtml(bad, floor, typ, r);
     wireSvcChips(out, ':scope > .svc-chip');
@@ -1689,7 +1758,9 @@ async function runRankedKeywords(){
   box.innerHTML='<div class="nf" style="font-size:11.5px;margin-bottom:4px">\u{1F4C8} <b>'+kws.length+' term'+(kws.length===1?'':'s')+' they already rank for</b>'
     +(r.top20?' — '+r.top20+' in the top 20':'')
     +(r.already_seeded?' · '+r.already_seeded+' already on your list':'')
-    +tipOf('Read off their own positions, so no keywords were needed to find them. The city is stripped on the way in because the grid appends one of its own; hover a chip for the phrase as it ranks.')+'</div>'
+    +((r.family_capped||[]).length?' · <b>'+r.family_capped.length+' extra wording'+(r.family_capped.length===1?'':'s')+' of one service held back</b>':'')
+    +tipOf('Read off their own positions, so no keywords were needed to find them. The city is stripped on the way in because the grid appends one of its own; hover a chip for the phrase as it ranks.'
+      +((r.family_capped||[]).length?'<br><br><b>Held back:</b> '+r.family_capped.slice(0,14).map(x=>escapeHtml(String(x.term))+' &mdash; '+escapeHtml(String(x.on))).join('<br>')+'<br><br>They do rank for these &mdash; that is not the question. Selling the fourth wording of a service you are already selling three wordings of is not a campaign, and this panel sorts ahead of the other two because a position is proof of ownership, so nine of them would have taken nine slots. Your own typed terms are exempt and are what mark a family as the business rather than a runaway.':''))+'</div>'
     + kws.slice(0,24).map(chip).join('');
   wireSvcChips(box);
 }
@@ -1770,8 +1841,15 @@ async function runAllSuggestions(){
                  || b.vol-a.vol
                  || (a.src==='menu'?0:1)-(b.src==='menu'?0:1));
   const room=Math.max(0, (ST.serviceSlots||20) - (stores.kw||[]).length);
+  // SPREAD ACROSS SERVICES, not down one of them — see spreadByFamily(). Same
+  // count as the flat slice; different composition when one family had run away
+  // with the list.
+  const flat=cand.slice(0, room), chosen=spreadByFamily(cand, room);
+  const _flatSet=new Set(flat.map(c=>c.v));
+  const spread=chosen.filter(c=>!_flatSet.has(c.v)).map(c=>c.v);
+  const crowdedOut=flat.filter(c=>!chosen.some(x=>x.v===c.v)).map(c=>c.v);
   const added=[], rankedAdded=[];
-  for(const c of cand.slice(0, room)){
+  for(const c of chosen){
     stores.kw.push(c.v); added.push(c.v);
     // A POSITION IS PROOF OF OWNERSHIP. Kept so the build can tell a term the
     // client already ranks for apart from one the classifier merely thinks looks
@@ -1821,6 +1899,11 @@ async function runAllSuggestions(){
   note.heldBack=heldBack;
   note.lookups=lookups;
   note.slots=ST.serviceSlots||20;
+  // What the family spread changed. Reported rather than silent: it is the one
+  // step here that overrides the ranking, so if it ever takes the wrong term the
+  // panel has to be the place that says so. (2026-08-17)
+  note.spread=spread;
+  note.crowdedOut=crowdedOut;
   return {added, regions, note, before, after:(stores.kw||[]).length};
 }
 
@@ -5075,8 +5158,9 @@ function step1Grid(kw){
   const _ax=(typeof ST!=='undefined' && ST.autoExpanded)||[];
   const _an=(typeof ST!=='undefined' && ST.autoNote)||{};
   const _lk=_an.lookups||[], _pl=_an.pulled||[];
+  const _sp=_an.spread||[], _co=_an.crowdedOut||[];
   if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped
-     || _lk.length || _pl.length){
+     || _lk.length || _pl.length || _sp.length){
     const bits=[];
     if(_an.skipped==='already') bits.push(`<b>off</b> \u2014 this list is already expanded, and <b>expand again</b> is by the switch`);
     else if(_an.skipped==='full') bits.push(`<b>off</b> \u2014 all ${_an.slots} slots are full`);
@@ -5086,6 +5170,7 @@ function step1Grid(kw){
     if(_an.folded) bits.push(`${_an.folded} near-duplicate${_an.folded===1?'':'s'}`);
     if(_an.noRank) bits.push('no top-100 rankings');
     if(_an.heldBack) bits.push(`${_an.heldBack} left out — no room past ${_an.slots} slots`);
+    if(_sp.length) bits.push(`${_sp.length} slot${_sp.length===1?'':'s'} moved to a different service`);
     if(_lk.length) bits.push(`${_lk.length} lookup${_lk.length===1?'':'s'} not offered`);
     if(_pl.length) bits.push(`${_pl.length} lookup${_pl.length===1?'':'s'} taken back off`);
     if(_an.blocked) bits.push(`site refused us (${escapeHtml(String(_an.blocked))}) <a href="#" id="pasteFromNote" style="color:var(--atlas);font-weight:600">paste their menu</a>`);
@@ -5093,6 +5178,7 @@ function step1Grid(kw){
         _an.skipped==='already' ? 'Expansion runs once per list. '+_an.held+' of the terms below came from the last one, so this build quoted the list as it stands. <b>Expand again</b> rebuilds with it back on for one run &mdash; nothing is deleted and the terms keep their &#10022;, so they stay subject to the same filters.' : '',
         _an.skipped==='full' ? 'The grid holds '+_an.slots+' services and the list already fills them, so there was nothing to add.' : '',
         _ax.length ? 'Read off their site, the industry pass and their own rankings, then added.<br>'+_ax.slice(0,25).map(escapeHtml).join(' &middot; ') : '',
+        _sp.length ? '<b>One procedure cannot have the whole grid.</b> Nob Hill Dental spent six of thirteen slots on overlays &mdash; crown overlay, overlays for teeth, tooth overlay &mdash; all real positions, which is why nothing objected. The slots go one per service first, then a second per service, so a runaway family loses its tail rather than the services that had no term at all.<br><br>The same NUMBER of terms was added either way; only which ones changed.<br><br>In: '+_sp.slice(0,12).map(x=>escapeHtml(String(x))).join(' &middot; ')+(_co.length?'<br>Out: '+_co.slice(0,12).map(x=>escapeHtml(String(x))).join(' &middot; '):'') : '',
         (_lk.length||_pl.length) ? 'A definition or question is someone reading, not buying &mdash; it cannot cross with a city, so the tool no longer proposes one. Type it yourself and it is quoted like any other focus term.<br>'+[].concat(_lk,_pl).slice(0,14).map(x=>escapeHtml(String(x))).join(' &middot; ') : '',
       ].filter(Boolean).join('<br><br>'))}</div>`);
   }
