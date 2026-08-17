@@ -6262,6 +6262,56 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
             used.discard(str(cur).lower())
             used.add(best)
             out[i] = {"service": best, "tier": out[i].get("tier", "competitive")}
+
+    # ---- AND WHEN THERE IS NOTHING TO SWAP IN, THE SLOT GOES ---------------
+    # Everything above replaces a dead service with one of the operator's unused
+    # terms. NPAIHB had none left — eight typed terms, all either used or set
+    # aside — so four invented names survived at no measured demand at all:
+    # "tribal health resources", "native american epidemiology services",
+    # "tribal health advisory services", "native american health board". Plausible
+    # English, nobody's search, and they went in front of a client as things this
+    # health board would be ranked for.
+    #
+    # A slot is worth less than nothing when it holds a phrase that does not
+    # exist. Dropped rather than kept, which shortens the list and lowers the
+    # price — the amber warning above the panel already says so, and a seven-term
+    # quote that is true beats an eleven-term one that is padded.
+    #
+    # ZERO, NOT MERELY BELOW THE FLOOR. Google Ads reports 10/mo for a phrase it
+    # holds no data on, so 10 is "small or unmeasured" and 0 is "the tool has
+    # nothing at all". Only the second is dropped.
+    #
+    # Never a term the operator typed, never a pin, and never below
+    # grid_min_services — a list can be honest and short without being empty.
+    # (2026-08-17)
+    _typed = {str(x).strip().lower() for x in (seeds or [])}
+    _min = int(CFG.get("grid_min_services", 7) or 7)
+    _dead = []
+    for x in out:
+        n = str(x.get("service") or "").strip().lower()
+        if not n or x.get("pinned") or x.get("from_seed") or n in _typed:
+            continue
+        if vol_of(n) == 0:
+            _dead.append(n)
+    if _dead and len(out) - len(_dead) < _min:
+        # Drop the weakest first and stop at the floor rather than refusing the
+        # whole pass: half a correction beats none.
+        _dead.sort(key=lambda n: (n,))
+        _dead = _dead[:max(0, len(out) - _min)]
+    if _dead:
+        _gone = set(_dead)
+        kept_out = []
+        for x in out:
+            n = str(x.get("service") or "").strip().lower()
+            if n in _gone:
+                report.append({"out": x.get("service"), "out_volume": 0,
+                               "in": "", "in_volume": 0, "kind": "dropped",
+                               "topic": service_topic(n, topics) if topics else "",
+                               "tier": x.get("tier", "")})
+                _gone.discard(n)          # one row per name
+                continue
+            kept_out.append(x)
+        out = kept_out
     return out, report
 
 

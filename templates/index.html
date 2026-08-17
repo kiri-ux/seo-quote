@@ -5111,6 +5111,19 @@ function step1Grid(kw){
     }
   }
 
+  // SERVICE NAMES RECONCILED AGAINST MEASURED DEMAND. The report for this has
+  // been in the payload since 2026-08-08 and was never rendered, so a swapped
+  // service name changed under the operator with nothing said — and a DROPPED
+  // one would have shortened the quote and moved the price silently. (2026-08-17)
+  if(kw.service_swaps&&kw.service_swaps.length){
+    const sw=kw.service_swaps.filter(x=>x.kind!=='dropped');
+    const dr=kw.service_swaps.filter(x=>x.kind==='dropped');
+    const bits=[];
+    if(sw.length) bits.push('<div>'+sw.map(x=>'✓ <b>'+escapeHtml(x['in'])+'</b> <span style="opacity:.75">('+Number(x.in_volume||0).toLocaleString()+'/mo)</span> instead of “'+escapeHtml(x.out)+'” <span style="opacity:.75">('+Number(x.out_volume||0).toLocaleString()+'/mo)</span></div>').join('')+'</div>');
+    if(dr.length) bits.push('<div style="margin-top:4px">'+dr.length+' slot'+(dr.length===1?'':'s')+' dropped — nothing measurable behind the phrase and no unused focus term to put there: '+dr.map(x=>'<b>'+escapeHtml(x.out)+'</b>').join(' · ')+'<div style="margin-top:3px;color:#8a5a10">A shorter list prices lower. That is the honest figure for this client rather than a padded one.</div></div>');
+    auto.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F4CF} <b>${dr.length&&!sw.length?dr.length+' service'+(dr.length===1?'':'s')+' dropped':(sw.length+dr.length)+' service name'+((sw.length+dr.length)===1?'':'s')+' reconciled'} against measured demand</b>${tipOf('A slot holding a phrase nobody searches costs twice: it fills the proposal with terms the client cannot win traffic on, and it drags the volume total that sets the price. Where the operator has an unused focus term in the same topic, it takes the slot. Where there is none, the slot goes. Never a term you typed, never a pin, and never below the minimum grid size.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+  }
+
   // QUALIFIERS THE MARKET DOES NOT USE. Reported in full — these are slots the
   // tool took back, and an operator who disagrees can type the term into the
   // focus box, where it becomes exempt. Says so when the pool was too thin to
