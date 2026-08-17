@@ -5120,7 +5120,20 @@ function step1Grid(kw){
     notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>${kw.seed_services_used} of ${svcCount||'the'} services came from your Product / Vertical Focus terms</b>${tipOf("Treated as the client's own service list &mdash; they fill the grid before anything the AI proposes.")}</div>`);
 
   if(kw.topics&&kw.topics.length>1)
-    notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> — ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% → ${t.services} service${t.services===1?'':'s'})</span>`).join(' · ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words — the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(kw.topic_fixes&&kw.topic_fixes.length)?`<div class="nf" style="margin-top:5px">Swapped ${kw.topic_fixes.length} service${kw.topic_fixes.length===1?'':'s'} so every topic appears${tipOf(kw.topic_fixes.map(x=>'<b>'+escapeHtml(x.added)+'</b> in, '+escapeHtml(x.replaced)+' out').join('<br>')+'<br><br>Services are chosen by search volume, so without this every slot would have gone to <b>'+escapeHtml((kw.topics[0]||{}).label||'the biggest topic')+'</b>.')}</div>`:''}</div>`);
+    notes.push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F9E9} <b>${kw.topics.length} topics in your terms</b> — ${kw.topics.map(t=>`<b>${escapeHtml(t.label)}</b> <span class="nf">(${t.share}% → ${t.services} service${t.services===1?'':'s'})</span>`).join(' · ')}${(kw.topic_source==='words')?`<div class="nf" style="margin-top:4px">Grouped by shared words — the AI grouping was unavailable, so topics may be coarser than the real product lines.</div>`:''}${(()=>{const f=kw.topic_fixes||[];
+      const un=f.filter(x=>x.kind==='unprotected'), sd=f.filter(x=>x.kind==='stood_down'),
+            nc=f.filter(x=>x.kind==='no_candidate');
+      if(!un.length&&!sd.length&&!nc.length) return '';
+      const pct=v=>Math.round(Number(v||0)*100)+'%';
+      const bits=[];
+      // The protection threshold moves with the slot count, so a topic covered
+      // on a one-city grid is uncovered on a five-city one. Said out loud
+      // because the alternative is "9% -> 0 services" with no reason. (2026-08-17)
+      if(un.length) bits.push(un.map(x=>'<b>'+escapeHtml(x.topic)+'</b> at '+pct(x.share)+' is below the '+pct(x.needed_share)+' a guaranteed slot needs on a '+x.slots+'-slot grid').join('<br>'));
+      if(sd.length) bits.push('Fewer than two topics were left protected, so the coverage guarantee did not run at all.');
+      if(nc.length) bits.push(nc.map(x=>'<b>'+escapeHtml(x.topic)+'</b> had a slot reserved but no term left to put in it').join('<br>'));
+      return '<div class="nf" style="margin-top:5px;color:#8a5a10">⚠ '+bits.join('<br>')+'</div>';
+    })()}${(()=>{const f=(kw.topic_fixes||[]).filter(x=>x.added);return f.length?`<div class="nf" style="margin-top:5px">Swapped ${f.length} service${f.length===1?'':'s'} so every topic appears${tipOf(f.map(x=>'<b>'+escapeHtml(x.added)+'</b> in, '+escapeHtml(x.replaced)+' out').join('<br>')+'<br><br>Services are chosen by search volume, so without this every slot would have gone to <b>'+escapeHtml((kw.topics[0]||{}).label||'the biggest topic')+'</b>.')}</div>`:'';})()}</div>`);
 
   // Service-swap note removed 2026-08-13 — the list itself is the result.
 

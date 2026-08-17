@@ -2840,9 +2840,24 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
     # the business. Topics below the threshold can still be picked on merit,
     # they just aren't protected.
     min_share = 1.0 / max(n_slots, 1)
-    topics = [t for t in topics if t["size"] / total_seeds >= min_share * 0.75]
+    _kept_t = [t for t in topics if t["size"] / total_seeds >= min_share * 0.75]
+    # WHY A TOPIC WASN'T COVERED, ON THE PANEL. Ski Barn — the client this pass
+    # was written for — came back "bbq & grills 9% -> 0 services · patio
+    # furniture 9% -> 0 services" with no explanation available anywhere. Run in
+    # isolation the pass promotes four of those terms; the live build promoted
+    # none, and nothing recorded which branch it took. The protection threshold
+    # moves with the slot count (1/7 is 14%, 1/20 is 5%), so a topic that is
+    # protected on a one-city grid is unprotected on a five-city one — and this
+    # returns silently in that case. Guessing at it from the outside cost most of
+    # an afternoon. (2026-08-17)
+    _unprot = [{"kind": "unprotected", "topic": t["label"],
+                "share": round(t["size"] / total_seeds, 4),
+                "needed_share": round(min_share * 0.75, 4), "slots": n_slots}
+               for t in topics if t not in _kept_t]
+    topics = _kept_t
     if len(topics) < 2:
-        return services, []
+        return services, (_unprot + [{"kind": "stood_down", "slots": n_slots,
+                                      "protected": len(topics)}])
 
     quota = {}
     for t in topics:
@@ -2927,6 +2942,9 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                 pool.append(kw)
                 if len(pool) >= need:
                     break
+        if not pool:
+            report.append({"kind": "no_candidate", "topic": lab, "need": need,
+                           "slots": n_slots})
         for s in pool[:need]:
             # A SERVICE NO TOPIC CLAIMS IS THE CHEAPEST SLOT IN THE LIST. It used
             # to be untouchable: donors were drawn only from topics that were OVER
@@ -2981,7 +2999,7 @@ def enforce_topic_coverage(services, seeds, max_services, cands=None, topics=Non
                            "from_topic": drop.get("_topic") or "unclaimed"})
     for x in out:
         x.pop("_topic", None)
-    return out, report
+    return out, (_unprot + report)
 
 
 def tier_split(n_terms):
