@@ -6306,9 +6306,17 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
         if vol_of(n) == 0:
             _dead.append(n)
     if _dead and len(out) - len(_dead) < _min:
-        # Drop the weakest first and stop at the floor rather than refusing the
-        # whole pass: half a correction beats none.
-        _dead.sort(key=lambda n: (n,))
+        # THE CHEAPEST SLOT GOES FIRST — the same ordering the topic guarantee
+        # uses when it has to take one. Lowest tier first, and inside a tier the
+        # longest phrase, because a long qualified phrase is the more likely
+        # invention and the barer term is the one worth keeping. This was
+        # alphabetical, which dropped whichever two terms happened to sort first
+        # and left an invention sitting in the list. (2026-08-17)
+        _rank = {"long_tail": 0, "competitive": 1, "ultra": 2}
+        _tier_of = {str(x.get("service") or "").strip().lower():
+                    str(x.get("tier") or "competitive") for x in out}
+        _dead.sort(key=lambda n: (_rank.get(_tier_of.get(n), 1),
+                                  -len(n.split()), n))
         _dead = _dead[:max(0, len(out) - _min)]
     if _dead:
         _gone = set(_dead)
@@ -7541,6 +7549,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             try:
                 services, service_swaps = swap_low_volume_services(
                     services, vols, seeds, topics, typed=seeds_typed)
+                # A PASS THAT REMOVES A SERVICE HAS TO RESTORE THE TIER
+                # GUARANTEE. rebalance_tiers runs earlier, so dropping the dead
+                # slots after it emptied a column outright: NPAIHB came back
+                # "Long Tail 0" with a bare em dash where the third column of the
+                # proposal goes, which reads as a mistake rather than a thin
+                # account. Same shape as every other late-pass bug this week —
+                # something added after the guarantee, without re-asking it.
+                # (2026-08-17)
+                if any(r.get("kind") == "dropped" for r in (service_swaps or [])):
+                    services = rebalance_tiers(services)
                 if service_swaps:
                     svc_names = list(dict.fromkeys([x["service"] for x in services]))
                     g = build_grid(services, grid_cities, state, prepicked=True,
