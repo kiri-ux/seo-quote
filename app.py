@@ -4128,6 +4128,12 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
         if k.get("kind") == "other_business" and not (
                 (raw in _rank or norm in _rank) and raw not in _rival):
             why = k.get("why") or "another company, not a service"
+        # RANKING IS NOT AN EXEMPTION HERE — IT IS THE SYMPTOM. A reference term
+        # is one the client's own site ranks for BECAUSE it publishes about it,
+        # so "they rank for it" is exactly how it got proposed and cannot also be
+        # what saves it. (2026-08-16)
+        elif k.get("kind") == "reference":
+            why = k.get("why") or "something they publish about, not something they sell"
         elif raw.split() and raw.split()[-1] in _CORP_SUFFIX:
             why = "a company name"
         elif is_brand_term(t, brand):
@@ -4390,7 +4396,7 @@ def demote_nonservices(seeds, kinds, markets=None, state="", ranked=None,
         _exempt = (_kind == "other_business"
                    and (raw in _rank or seed_norm(t, markets, state) in _rank)
                    and raw not in _rival)
-        if _kind in ("item", "other_business") and not _exempt:
+        if _kind in ("item", "other_business", "reference") and not _exempt:
             demoted.append({"term": t, "kind": k.get("kind", "item"),
                             "why": k.get("why", "")})
         else:
@@ -5849,6 +5855,7 @@ def pick_geo_forms(markets, state, service_terms):
 _NUMBER_FIXED = frozenset("""
 bedroom bedrooms bathroom bathrooms bath baths br ba story stories storey
 class classes size sizes series
+north south east west northwest northeast southwest southeast midwest
 """.split())
 
 
@@ -11445,6 +11452,14 @@ def claude_seed_kinds(seeds, brand="", domain="", industry="",
     {term: {"kind": service|item|other_business, "why": str}} and {} on any
     failure — no key, no network, bad JSON — so the ranking degrades to
     volume-only rather than breaking. (2026-08-11)
+
+    "reference" is the fourth bucket and the newest: a term the client's own site
+    ranks for because it PUBLISHES about it. NPAIHB, a tribal health board, came
+    back with twelve of twenty focus terms reading "haddon matrix", "fancy shawl
+    dance" and "double balls" — every one a real page on their site, every one a
+    ranking they already hold and earn nothing from, and none of them a service
+    anybody could buy. The other three buckets could not name it, so all twelve
+    defaulted to "service" and six reached Ultra Competitive. (2026-08-16)
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     terms = []
@@ -11481,6 +11496,25 @@ EVERY term as exactly one of:
   "other_business" - a real service, but a DIFFERENT trade from this client's.
                      "furniture movers" for a junk removal company; "roofing"
                      for a plumber. Also use this for a competitor's company name.
+  "reference"      - THE CLIENT PUBLISHES ABOUT THIS; nobody is hiring anyone.
+                     The searcher wants to read a definition, an article or a
+                     fact sheet, and this client happens to host one. A tribal
+                     health board's site ranks for "haddon matrix" because its
+                     EpiCenter publishes injury-prevention worksheets using it,
+                     for "fancy shawl dance" and "double ball" because its youth
+                     programme publishes articles on powwow dancing and
+                     traditional games. Real pages, real rankings, and no work to
+                     sell against any of them: the client already holds the
+                     position and earns nothing from it.
+                     This fires most on organisations whose website is mostly
+                     resources — a health board, a museum, a trade association,
+                     a university department — where the ranked-keywords pass
+                     returns their library rather than their offer.
+                     It is NOT "reference" merely because the phrase is a noun,
+                     or because a searcher might be doing research. Ask whether
+                     the client could be HIRED, FUNDED or PARTNERED WITH off the
+                     back of that search. "tribal epidemiology center" is a
+                     service line; "double ball" is an article.
 
 Then, SEPARATELY, mark each term's vocabulary as "client" or "adjacent":
 
@@ -11499,8 +11533,8 @@ apartment terms in the quote and dropped every homes-for-rent term the partner
 had typed. (2026-08-13)
 
 Rules:
-- Default to "service". These three buckets are not balanced: most terms are
-  services, and "item" is the rare case.
+- Default to "service". These buckets are not balanced: most terms are
+  services; "item" and "reference" are the rare cases.
 - THE SAME PHRASE GOES BOTH WAYS depending on the client, so decide from the
   business above, never from the words alone. Ask: would this searcher be happy
   to land on this client's website? If the client sells the object, yes - that
@@ -11554,7 +11588,7 @@ Return ONLY JSON:
         if str((it or {}).get("vocab") or "").strip().lower() == "adjacent":
             out[t] = {"kind": "adjacent",
                       "why": str((it or {}).get("why") or "")[:90]}
-        if k not in ("item", "other_business"):
+        if k not in ("item", "other_business", "reference"):
             continue
         if k == "item" and sells_products:
             continue
