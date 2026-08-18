@@ -4221,11 +4221,35 @@ function proposalSignals(){
     </div>`;
 }
 
+// A CAPTURE ON SCREEN THAT THE PROPOSAL CANNOT SEE. The screenshot has always
+// been rendered straight into #serpOut and never stored, so every capture taken
+// before ST.serp existed — and every one taken on a quote saved before the field
+// did — is sitting visibly on the Build tab while the Proposal tab reports "no
+// capture yet". Adopt it rather than making anyone generate it twice: it is the
+// same image, it just never had somewhere to live.
+//
+// The DOM copy is PNG off a canvas, so it is re-encoded to JPEG in the
+// background before it can ride along in an autosave. (2026-08-18)
+function adoptSerpFromDom(){
+  if(ST.serp && ST.serp.img) return ST.serp;
+  const img=document.querySelector('#serpOut img');
+  if(!img || !img.src || img.src.indexOf('data:')!==0) return null;
+  const m=(document.querySelector('#serpOut')||{}).textContent||'';
+  const kw=(m.match(/Live Google results for [“"]([^”"]+)/)||[])[1]
+        || (($('serpPhrase')||{}).value||'');
+  ST.serp={kw:kw, img:img.src, adopted:true};
+  try{ toJpeg(img.src, 0.72).then(j=>{
+        ST.serp={kw:kw, img:j};
+        try{ scheduleAutoSave(); }catch(e){}
+      }).catch(()=>{}); }catch(e){}
+  return ST.serp;
+}
+
 function proposalSerp(){
-  const sp=ST.serp;
+  const sp=ST.serp && ST.serp.img ? ST.serp : adoptSerpFromDom();
   if(!sp||!sp.img) return `<div class="pph">Live search result</div>
     <div class="nf" style="border:1px dashed var(--line);border-radius:10px;padding:14px 16px">
-      No capture yet — generate one from <b>SERP screenshot</b> on the Build tab and it appears here and in the download.</div>`;
+      No capture yet — generate one from <b>SERP screenshot</b> on the Build tab, then come back. It appears here and in the download.</div>`;
   return `<div class="pph">Live search result</div>
     <div class="nf" style="margin-bottom:6px">Google today for “${escapeHtml(sp.kw||'')}”:</div>
     <img src="${sp.img}" style="max-width:100%;border:1px solid var(--line);border-radius:10px">`;
@@ -4311,7 +4335,10 @@ async function downloadProposal(){
         business_desc:((ST.inputs||{}).business_desc)||'',
         geo_values:((ST.inputs||{}).geo_values)||[],
         kw:ST.kw||{}, table:ST.table||[], signals:ST.signals||null,
-        pricing:ST.pricing||{}, vibe:ST.vibe||null, serp:ST.serp||null})});
+        pricing:ST.pricing||{}, vibe:ST.vibe||null,
+        // Same adoption as the view: a capture already on the Build tab goes in
+        // the document rather than being reported as missing.
+        serp:(ST.serp&&ST.serp.img)?ST.serp:adoptSerpFromDom()})});
     if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
     const blob=await res.blob();
     const a=document.createElement('a');
