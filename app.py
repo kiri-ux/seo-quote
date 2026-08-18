@@ -13068,6 +13068,11 @@ def calibration_rows(payloads):
             # list against the price sent in July, and if the list changed in
             # between that is a fact about the tool, not about the price.
             "formula_was": p.get("formulaWas") or None,
+            # EVERY VIBE NOTE IS A LABELLED EXAMPLE of why a real price differed
+            # from a computed one — which is the evidence this whole panel has
+            # been short of. Carried onto the row so the reasons can be read
+            # together rather than one quote at a time.
+            "vibe": p.get("vibe") or None,
             "median_rival_rank": ((p.get("signals") or {}).get("pageone_rank")
                                   if (p.get("signals") or {}).get("pageone_rank")
                                   is not None
@@ -14810,6 +14815,23 @@ def _proposal_rows(d):
     return rows
 
 
+def _vibe_adjust(n, d):
+    """Brendan's adjustment, applied to a client figure on the way out.
+
+    THE NOTE NEVER REACHES THE DOCUMENT. The reason is internal — "existing
+    client, three referrals last year" is exactly the sort of thing that must
+    not be in a file that gets forwarded. The adjusted PRICE goes in; the
+    judgement behind it stays in the tool. (2026-08-18)
+    """
+    try:
+        pc = float(((d.get("vibe") or {}) or {}).get("pct") or 0)
+    except (TypeError, ValueError):
+        pc = 0.0
+    if not pc or n in (None, ""):
+        return n
+    return int(round(float(n) * (1 + pc / 100.0) / 50.0) * 50)
+
+
 def build_proposal_docx(d):
     """One SSG-shaped proposal, built from the quote the tool already holds."""
     from docx import Document
@@ -14967,7 +14989,8 @@ def build_proposal_docx(d):
     body("Depending on how aggressive you wish to be with an SEO campaign, we "
          "have included three options below following a “good, better, best” "
          "model.")
-    tiers = (d.get("pricing") or {}).get("client_tiers") or {}
+    tiers = {k: _vibe_adjust(v, d) for k, v in
+             ((d.get("pricing") or {}).get("client_tiers") or {}).items()}
     term = int((d.get("pricing") or {}).get("min_term_months") or 6)
     for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
         label = {"base": "Base", "intermediate": "Intermediate",
@@ -14989,7 +15012,8 @@ def build_proposal_docx(d):
     # SEO options above — which is how Brendan writes it and how the tool
     # computes it. Absent entirely on a Core SEO quote rather than showing zeros.
     ai = (d.get("pricing") or {}).get("ai_search") or {}
-    ai_add = ai.get("client_add") or {}
+    ai_add = {k: _vibe_adjust(v, d)
+              for k, v in (ai.get("client_add") or {}).items()}
     if any(ai_add.get(k) for k in ("base", "intermediate", "advanced")):
         head(P["geo_heading"])
         for para in P["geo_intro"]:
@@ -15018,7 +15042,8 @@ def build_proposal_docx(d):
             r2 = p2.add_run(f"This option would be a monthly cost of "
                             f"{_p_money(ai_add.get(key))}.")
             r2.bold = True
-        tot = ai.get("client_total") or {}
+        tot = {k: _vibe_adjust(v, d)
+               for k, v in (ai.get("client_total") or {}).items()}
         if tot.get("base"):
             body(f"Combined with the SEO campaign above, a base engagement is "
                  f"{_p_money(tot.get('base'))} per month, intermediate "

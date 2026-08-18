@@ -4002,6 +4002,79 @@ async function runBackmeasure(){
 // reading this is deciding whether to send it. (2026-08-18)
 function ppMoney(v){ return (v===null||v===undefined||v==='')?'—':'$'+Number(v).toLocaleString(); }
 
+// ---- VIBE CHECK -----------------------------------------------------------
+// The formula is calibrated on twelve proposals and it is wrong on some of them
+// for reasons no measurement in this tool can see — a client who will clearly
+// pay more, a relationship worth protecting, a market Brendan knows first-hand.
+// This is where that judgement goes, on the record.
+//
+// IT NEVER TOUCHES ST.pricing. The calibration panel compares the Actual price
+// against the FORMULA price stored on the quote, so baking an adjustment into
+// the formula output would quietly rewrite the baseline — the exact damage a
+// rebuild did to MPG Gummies this morning. The adjustment is a layer applied at
+// render and at export; the formula's own answer stays underneath it, which is
+// what makes the two comparable at all.
+//
+// THE NOTE IS REQUIRED, and it is the point. Every one of these is a labelled
+// example of why a real price differed from a computed one — which is the
+// evidence the whole calibration effort has been short of. (2026-08-18)
+function vibePct(){ const v=(ST.vibe||{}).pct; return (typeof v==='number' && v)?v:0; }
+function vibeAdjust(n){
+  const pc=vibePct(); if(!pc || n===null || n===undefined || n==='') return n;
+  return Math.round((Number(n)*(1+pc/100))/50)*50;
+}
+function vibeTiers(t){
+  const out={}; ['base','intermediate','advanced'].forEach(k=>{ out[k]=vibeAdjust((t||{})[k]); });
+  return out;
+}
+function vibeBlock(){
+  const v=ST.vibe||{}, p=ST.pricing||{};
+  const t=p.client_tiers||{}, ai=p.ai_search||null;
+  const before=(ai&&(ai.client_total||{}).base)||t.base;
+  const after=vibeAdjust(before);
+  const on=!!vibePct();
+  const PRESETS=[-15,-10,-5,5,10,15];
+  return `<div class="pph">Vibe check</div>
+  <div style="border:1px solid ${on?'var(--atlas)':'var(--line)'};border-radius:12px;padding:14px 16px;background:${on?'#eef4fb':'#fff'}">
+    <div class="nf" style="margin-bottom:9px">Move the quote off the formula where you know something it doesn't. The reason is required and is saved with the quote.</div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:9px">
+      ${PRESETS.map(x=>`<button type="button" class="btn2 vibeP" data-pct="${x}" style="padding:4px 11px;font-size:12px${v.pct===x?';background:var(--atlas);color:#fff;border-color:var(--atlas)':''}">${x>0?'+':''}${x}%</button>`).join('')}
+      <input id="vibePct" type="number" step="1" value="${v.pct||''}" placeholder="±%" style="width:74px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px">
+      ${on?`<button type="button" id="vibeClear" class="btn2" style="padding:4px 11px;font-size:12px">Clear</button>`:''}
+    </div>
+    <textarea id="vibeNote" rows="2" placeholder="Why — required. e.g. “Existing client, three referrals last year, hold at the old rate.”" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:inherit">${escapeHtml(v.note||'')}</textarea>
+    <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <button type="button" id="vibeApply" class="btn2" style="padding:5px 13px;font-size:12.5px;font-weight:600">Apply</button>
+      <span id="vibeMsg" class="nf"></span>
+    </div>
+    ${on?`<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:13px">
+      Formula said <b>${ppMoney(before)}</b> · quoting <b style="color:var(--atlas)">${ppMoney(after)}</b>
+      <span class="nf">(${v.pct>0?'+':''}${v.pct}%${v.at?' · '+escapeHtml(v.at):''})</span>
+      ${v.note?`<div class="nf" style="margin-top:4px">“${escapeHtml(v.note)}”</div>`:''}
+      <div class="nf" style="margin-top:5px">The formula's own figure is kept underneath this, so calibration still measures the formula rather than the judgement.</div>
+    </div>`:''}
+  </div>`;
+}
+function wireVibe(){
+  const set=pc=>{
+    const note=($('vibeNote')||{}).value||'';
+    const msg=$('vibeMsg');
+    if(pc && !note.trim()){
+      if(msg) msg.innerHTML='<span class="err">A reason is required — it is what makes this a decision rather than a nudge.</span>';
+      const n=$('vibeNote'); if(n) n.focus();
+      return;
+    }
+    ST.vibe = pc ? {pct:pc, note:note.trim(), at:new Date().toISOString().slice(0,10)} : null;
+    try{ scheduleAutoSave(); }catch(e){}
+    renderProposal();
+  };
+  document.querySelectorAll('.vibeP').forEach(b=>{
+    b.onclick=()=>{ const el=$('vibePct'); if(el) el.value=b.getAttribute('data-pct'); set(Number(b.getAttribute('data-pct'))); };
+  });
+  const ap=$('vibeApply'); if(ap) ap.onclick=()=>set(Number(($('vibePct')||{}).value||0));
+  const cl=$('vibeClear'); if(cl) cl.onclick=()=>{ const n=$('vibeNote'); if(n) n.value=''; set(0); };
+}
+
 function pricingChart(){
   const p=ST.pricing||{}; if(!p.client_tiers) return '';
   const anchor=p.anchor||0, adder=p.competitive_adder||0, vol=p.volume_add||0;
@@ -4044,16 +4117,16 @@ function pricingChart(){
   sum('Core SEO', ppMoney(t.base), 'monthly, base tier');
   if(ai && (ai.client_add||{}).base)
     sum('AI Search (GEO)', '+ '+ppMoney(ai.client_add.base),
-        `${ai.uplift_pct!=null?ai.uplift_pct+'% of Core SEO':''}${ai.geo_pct_basis?' · '+escapeHtml(ai.geo_pct_basis):''}`);
+        `${ai.uplift_pct!=null?ai.uplift_pct+'% of Core SEO':''}`);
   if(nAdd && addPer)
     sum('Add-on markets', '+ '+ppMoney(addPer*nAdd), `${nAdd} × ${ppMoney(addPer)} each`);
   const grand=((ai&&(ai.client_total||{}).base)||t.base)+(nAdd&&addPer?addPer*nAdd:0);
-  rows.push(`<tr class="sum" style="border-top-width:3px"><td style="font-size:14px"><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums;font-size:14px"><b>${ppMoney(grand)}</b></td><td class="nf">what the client pays</td></tr>`);
-  const stepC=Math.round((p.step||0)/(1-(mk/100))/50)*50;
+  const pc=vibePct();
+  if(pc) sum('Vibe check', (pc>0?'+':'')+pc+'%', escapeHtml((ST.vibe||{}).note||'operator judgement'));
+  rows.push(`<tr class="sum" style="border-top-width:3px"><td style="font-size:14px"><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums;font-size:14px"><b>${ppMoney(vibeAdjust(grand))}</b></td><td class="nf">what the client pays</td></tr>`);
   return `<div class="pph">How this price was built</div><div class="ppwrap"><table>
     <tr><th>Component</th><th style="text-align:right">Amount</th><th>Measured from</th></tr>
-    ${rows.join('')}</table>
-    <div class="nf" style="margin-top:6px">Intermediate and Advanced add ${ppMoney(stepC)} a tier.${ai?' AI Search (GEO) scales with Core SEO at the same percentage on every tier.':''}</div></div>`;
+    ${rows.join('')}</table></div>`;
 }
 
 function proposalSignals(){
@@ -4116,7 +4189,9 @@ function renderProposal(){
   const host=$('proposalView'); if(!host) return;
   const p=ST.pricing||{};
   if(!p.client_tiers){ host.innerHTML='<div class="nf">Price the quote first — the proposal is built from it.</div>'; return; }
-  const t=p.client_tiers, ai=(p.ai_search||{}).client_total;
+  const t=vibeTiers(p.client_tiers), ai=(p.ai_search||{}).client_total
+        ? vibeTiers((p.ai_search||{}).client_total) : null;
+  const aiAdd=(p.ai_search||{}).client_add ? vibeTiers((p.ai_search||{}).client_add) : null;
   const shown=ai||t;
   const brand=((ST.inputs||{}).brand)||'This client';
   const term=p.min_term_months||6;
@@ -4133,14 +4208,16 @@ function renderProposal(){
         <div class="pptier${i===1?' lead':''}">
           <div class="lbl">${['Base','Intermediate','Advanced'][i]}</div>
           <div class="amt">${ppMoney(shown[k])}</div>
-          <div class="per">per month${ai?`<br><span class="nf">SEO ${ppMoney(t[k])} + AI Search (GEO) ${ppMoney(((p.ai_search||{}).client_add||{})[k])}</span>`:''}</div>
+          <div class="per">per month${ai?`<br><span class="nf">SEO ${ppMoney(t[k])} + AI Search (GEO) ${ppMoney((aiAdd||{})[k])}</span>`:''}</div>
         </div>`).join('')}
     </div>
     ${pricingChart()}
+    ${vibeBlock()}
     ${proposalSignals()}
     ${proposalKeywords()}
     <div id="ppMsg" class="nf" style="margin-top:10px"></div>`;
   const b=$('ppDownload'); if(b) b.onclick=downloadProposal;
+  try{ wireVibe(); }catch(e){}
 }
 
 async function downloadProposal(){
@@ -4154,7 +4231,7 @@ async function downloadProposal(){
         business_desc:((ST.inputs||{}).business_desc)||'',
         geo_values:((ST.inputs||{}).geo_values)||[],
         kw:ST.kw||{}, table:ST.table||[], signals:ST.signals||null,
-        pricing:ST.pricing||{}})});
+        pricing:ST.pricing||{}, vibe:ST.vibe||null})});
     if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
     const blob=await res.blob();
     const a=document.createElement('a');
@@ -4560,6 +4637,9 @@ async function initReviewMode(){
       bar.innerHTML=`🔎 <b>Review copy</b> — “${escapeHtml(q.name)}”${q.client?` · ${escapeHtml(q.client)}`:''} · saved ${q.updated_at.slice(0,10)} · read-only. Edits here won't save; contact the sender to change the quote.`;
     }
     if(q.payload) restoreQuote(q.payload);
+    // A review link is somebody being asked to look at the QUOTE, not at the
+    // pipeline that produced it. Open on the proposal. (2026-08-18)
+    try{ const vt=$('viewTabs'); if(vt) vt.classList.remove('hidden'); showView('proposal'); }catch(e){}
     // Panels re-render asynchronously after the restore, so strip once now and
     // again whenever anything is added back.
     stripDemo();
@@ -4682,7 +4762,10 @@ function snapshotQuote(){
     rivals: ST.rivals||{},
     // What the formula said BEFORE this quote was last rebuilt, so the
     // calibration panel can tell a formula change from a keyword-list change.
-    formulaWas: ST.formulaWas||null
+    formulaWas: ST.formulaWas||null,
+    // Brendan's judgement and his reason for it — a layer over the formula,
+    // never folded into it. See vibeAdjust().
+    vibe: ST.vibe||null
   };
 }
 
@@ -4720,6 +4803,7 @@ function restoreQuote(p){
   // client. Every per-client measurement resets here, then rehydrates from the
   // quote's own snapshot if it has one. (2026-08-18)
   ST.formulaWas=p.formulaWas||null;
+  ST.vibe=p.vibe||null;
   ST.signals=p.signals||null;
   ST.rivals=p.rivals||{};
   ST._signalsRun=!!p.signals;
