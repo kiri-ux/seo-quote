@@ -9813,6 +9813,13 @@ def api_refine():
         "grounding_gap_words": s1.get("grounding_gap_words") or [],
         "grounding_total": s1.get("grounding_total") or 0,
         "grounding_stood_down": bool(s1.get("grounding_stood_down")),
+        # RE-EXPORTED, because the panel reads THIS payload and not stage 1's.
+        # The slot-fill valve restored five terms on MPG Gummies and the note
+        # naming them rendered nowhere — the key existed on the stage-1 dict and
+        # was simply never copied across the boundary. Same shape of miss as the
+        # `scope` tag that died here in August. (2026-08-18)
+        "grounding_restored": s1.get("grounding_restored") or [],
+        "grounding_slot_fill": s1.get("grounding_slot_fill"),
         "business_desc": s1.get("business_desc", ""),
         "site_pages_found": s1.get("site_pages_found", 0),
         "grid": s1.get("grid", False),
