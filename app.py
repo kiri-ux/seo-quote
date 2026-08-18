@@ -661,6 +661,14 @@ CFG = {
     # How many head terms the back-measure buys a SERP for, per saved quote.
     # Five was enough to characterise all three clients measured by hand.
     "backmeasure_terms": 5,
+    # HOW FULL THE GRID HAS TO BE BEFORE THE GROUNDING FILTER STOPS TAKING FROM
+    # IT. Its own valve is a ratio against its candidates — drop more than half
+    # and stand down — which passed comfortably on MPG Gummies at 7 of 18, and
+    # left the grid at 11 of 20. The nine empty slots took total volume under
+    # vol_free_below, the volume add went to $0, and the quote came out $1,000
+    # under the one Brendan sent. Below this fraction of the slots, the best of
+    # what it dropped comes back until the line is reached. 0 turns it off.
+    "grounding_min_slot_fill": 0.75,
     # WHO ALREADY HOLDS PAGE ONE, IN DOLLARS. Partner cost added to the anchor,
     # keyed on the median incumbent's backlink authority through
     # _pageone_bucket() — the SAME function the Calibration driver buckets on, so
@@ -7420,10 +7428,54 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # Counted HERE, not off the final payload: several more filters run below
         # and "11 of 15" has to mean 15 as the grounding filter saw it.
         _gtotal = len([x for x in (services or []) if not x.get("pinned")])
+        _pre_ground = list(services or [])
         services, ungrounded, blocked_pins, grounding_off = drop_ungrounded_services(
             services, seeds_typed, biz,
             [p.get("title", "") if isinstance(p, dict) else str(p)
              for p in (site_pages or [])], brand, domain)
+
+        # THE VALVE WAS WATCHING THE WRONG NUMBER. drop_ungrounded_services stands
+        # down when it drops more than half of what it was handed — a ratio
+        # against its own candidates. It never asks what the grid LOOKED LIKE
+        # afterwards. MPG Gummies came back with 7 dropped out of 18, which is
+        # 39% and passes that test comfortably, and left the grid at 11 of 20.
+        #
+        # The nine empty slots are not cosmetic. Total volume fell to ~8,020/mo,
+        # under vol_free_below, so the volume add went to $0 and the quote came
+        # out $1,000 under the one Brendan sent for the same client. List length
+        # is a pricing input, and a filter that quietly shortens the list is
+        # quietly moving the price.
+        #
+        # So there is a second valve, on the outcome rather than the ratio: if
+        # the grid is left materially short and this filter is holding services
+        # that would fill it, the best of them come back — highest volume first,
+        # in the order the ranking already put them — and only as many as it
+        # takes to reach the fill line. Everything past that stays dropped, so a
+        # full list still gets the whole protection: Keller's "turner
+        # construction company" is only ever restored if the alternative is an
+        # empty slot. (2026-08-18)
+        _restored = []
+        _fill = float(CFG.get("grounding_min_slot_fill", 0.75) or 0)
+        if ungrounded and _fill and n_services:
+            _want = int(n_services * _fill)
+            _have = len([x for x in (services or []) if not x.get("pinned")])
+            if _have < _want:
+                _gone = {str(d[0]).lower() for d in ungrounded}
+                _kept = {(x.get("service") or "").lower() for x in (services or [])}
+                for x in _pre_ground:
+                    if _have >= _want:
+                        break
+                    _n = (x.get("service") or "").lower()
+                    if _n in _gone and _n not in _kept:
+                        services.append(x)
+                        _restored.append(x.get("service"))
+                        _kept.add(_n)
+                        _have += 1
+                if _restored:
+                    _low = {r.lower() for r in _restored}
+                    ungrounded = [d for d in ungrounded
+                                  if str(d[0]).lower() not in _low]
+        grounding_restored = list(_restored)
         # LAST, after every filter has had its say: make sure each topic the
         # operator typed is still represented. Everything above ranks by volume,
         # and the biggest topic wins every one of those contests — Ski Barn's
@@ -8174,6 +8226,12 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "dropped_ungrounded": ([] if grounding_off
                                    else [d[0] for d in (ungrounded or [])]),
             "grounding_stood_down": grounding_off,
+            # Put back because the grid would otherwise have gone out short —
+            # see the slot-fill valve. Named, because this is the filter
+            # deliberately not doing its job and the operator should see which
+            # terms it let through and why.
+            "grounding_restored": grounding_restored,
+            "grounding_slot_fill": CFG.get("grounding_min_slot_fill"),
             "grounding_would_drop": ([list(d) for d in (ungrounded or [])]
                                      if grounding_off else []),
             "grounding_gap_words": (grounding_gap_words(ungrounded)
@@ -12749,6 +12807,11 @@ def calibration_rows(payloads):
             # Attached by the back-measure, absent on any quote it has not run
             # on yet — which is the normal state and reads as "not measured"
             # rather than as a zero.
+            # What the formula said BEFORE this quote was last rebuilt. A row
+            # showing "the formula runs 26% low" is measuring TODAY's keyword
+            # list against the price sent in July, and if the list changed in
+            # between that is a fact about the tool, not about the price.
+            "formula_was": p.get("formulaWas") or None,
             "median_rival_rank": ((p.get("signals") or {}).get("pageone_rank")
                                   if (p.get("signals") or {}).get("pageone_rank")
                                   is not None

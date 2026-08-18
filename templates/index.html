@@ -2301,6 +2301,30 @@ $('step1').addEventListener('click', async()=>{
     $('kwlock').checked=false;
   }
   const inp=collectInputs(); if(!inp) return;
+  // THE CALIBRATION BASELINE IS ABOUT TO BE OVERWRITTEN. The panel compares the
+  // Actual price against the formula price STORED on the quote, so rebuilding a
+  // quote you have already entered an actual for silently replaces the evidence.
+  // MPG Gummies was $3,900 in the back-measure table and $2,950 after a rebuild
+  // — the keyword filters had shortened the list — and the row that said "the
+  // formula runs 26% low" was measuring today's list against July's price with
+  // nothing on screen to say so.
+  //
+  // Kept, not blocked: the pre-rebuild figure is snapshotted so the panel can
+  // show both — what the formula said when the quote was sent, and what it says
+  // now. (2026-08-18)
+  if(ST.pricing && ST.actual && Object.values(ST.actual).some(v=>v)){
+    const _was=((ST.pricing||{}).client_tiers||{}).base;
+    if(_was){
+      ST.formulaWas = ST.formulaWas || {
+        base:_was,
+        intermediate:((ST.pricing||{}).client_tiers||{}).intermediate,
+        advanced:((ST.pricing||{}).client_tiers||{}).advanced,
+        terms:((ST.kw||{}).all||[]).length,
+        volume:ST.totalVol!=null?ST.totalVol:null,
+        at:new Date().toISOString().slice(0,10)
+      };
+    }
+  }
   ST.inputs=inp;
   $('out').innerHTML='';
   // Pre-flight suggestions panel removed 2026-08-13 on request.
@@ -4430,7 +4454,10 @@ function snapshotQuote(){
     // Reopening a quote and re-pricing has to reproduce the price it was saved
     // with, and re-measuring costs five SERPs. (2026-08-18)
     signals: ST.signals||null,
-    rivals: ST.rivals||{}
+    rivals: ST.rivals||{},
+    // What the formula said BEFORE this quote was last rebuilt, so the
+    // calibration panel can tell a formula change from a keyword-list change.
+    formulaWas: ST.formulaWas||null
   };
 }
 
@@ -4467,6 +4494,7 @@ function restoreQuote(p){
   // leaked the same way and printed "Measured in Philadelphia" on a Salem
   // client. Every per-client measurement resets here, then rehydrates from the
   // quote's own snapshot if it has one. (2026-08-18)
+  ST.formulaWas=p.formulaWas||null;
   ST.signals=p.signals||null;
   ST.rivals=p.rivals||{};
   ST._signalsRun=!!p.signals;
@@ -5345,6 +5373,18 @@ function step1Grid(kw){
   const _an=(typeof ST!=='undefined' && ST.autoNote)||{};
   const _lk=_an.lookups||[], _pl=_an.pulled||[];
   const _sp=_an.spread||[], _co=_an.crowdedOut||[];
+  // THE LIST CHANGED UNDER THE COMPARISON. Rebuilding a quote replaces the
+  // formula price the Actual is measured against, and this week's keyword
+  // filters moved MPG Gummies from 20 terms to 11 — worth $1,000, entirely from
+  // the volume total the missing terms were carrying. (2026-08-18)
+  const _fw=(typeof ST!=='undefined' && ST.formulaWas)||null;
+  if(_fw && _fw.base && ST.pricing){
+    const _now=((ST.pricing||{}).client_tiers||{}).base;
+    const _nowN=((ST.kw||{}).all||[]).length;
+    if(_now && Math.abs(_now-_fw.base)>=100){
+      notes.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">\u26a0 <b>This quote priced ${money(Math.abs(_now-_fw.base))} ${_now<_fw.base?'LOWER':'HIGHER'} than before it was rebuilt</b> \u2014 ${money(_fw.base)} \u2192 ${money(_now)}${(_fw.terms&&_nowN)?`, on ${_nowN} keyword${_nowN===1?'':'s'} instead of ${_fw.terms}`:''}.${tipOf('Your Actual price is compared against the formula price stored on this quote, and rebuilding replaced it. A shorter list prices lower on its own: total volume is summed over the terms that exist, and the volume bracket starts at '+(10000).toLocaleString()+'/mo, so falling under it removes the whole volume add at once.<br><br>MPG Gummies went from 20 terms to 11 on a rebuild and lost $1,000 without a single pricing constant changing.')}</div>`);
+    }
+  }
   if(_ax.length || _an.blocked || _an.floorHeld || _an.noRank || _an.skipped
      || _lk.length || _pl.length || _sp.length){
     const bits=[];
@@ -5511,6 +5551,12 @@ function step1Grid(kw){
 
   // Service-swap note removed 2026-08-13 — the list itself is the result.
 
+  // PUT BACK BECAUSE THE GRID WOULD OTHERWISE HAVE GONE OUT SHORT. This is the
+  // filter deliberately not doing its job, so it says so and names the terms —
+  // one of them being a competitor is the price of the empty slot not being
+  // there, and the operator is the one who can tell. (2026-08-18)
+  const _gre=kw.grounding_restored||[];
+  if(_gre.length) notes.push(`<div style="margin-top:4px" class="nf">\u21A9 <b>${_gre.length} term${_gre.length===1?'':'s'} put back to fill the grid</b> \u2014 ${_gre.map(t=>escapeHtml(String(t))).join(', ')}.${tipOf('These failed the grounding check &mdash; their wording appears nowhere in the client&rsquo;s seeds, description or site &mdash; but dropping them would have left the grid under '+Math.round((kw.grounding_slot_fill||0.75)*100)+'% full, and empty slots cost real money: MPG Gummies lost nine of twenty and the missing volume took the quote $1,000 under what Brendan sent.<br><br>The best of them come back, highest volume first, and only as many as it takes to reach the line. Check them &mdash; a competitor name here is the cost of the slot not being empty, and you can delete it.')}</div>`);
   if(kw.dropped_ungrounded&&kw.dropped_ungrounded.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6AB} <b>${kw.dropped_ungrounded.length} unrecognised term${kw.dropped_ungrounded.length>1?'s':''} removed</b> — ${kw.dropped_ungrounded.map(t=>escapeHtml(t)).join(', ')}. ${tipOf("Wording found nowhere in the client's seeds, description or site. Usually a competitor riding high in the keyword data, sometimes an unrelated product sharing a word. If one is real, add it to Product / Vertical Focus and rebuild.")}</div>`);
 
   if(kw.dropped_out_of_area&&kw.dropped_out_of_area.length) notes.push(`<div style="margin-top:4px" class="nf">\u{1F6AB} <b>${kw.dropped_out_of_area.length} out-of-area term${kw.dropped_out_of_area.length>1?'s':''} removed</b> — ${kw.dropped_out_of_area.map(t=>escapeHtml(t)).join(', ')}. ${tipOf('These name a state the client does not serve; the idea list is ranked by national volume so it fills with them. If one is actually a style or product name rather than a place (e.g. &ldquo;new york style pizza&rdquo;), add it back with <b>add term…</b>.')}</div>`);
