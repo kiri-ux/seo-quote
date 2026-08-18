@@ -3769,6 +3769,12 @@ function renderStep4(p){
         // (local pack + top competitors), at a 16:9 ratio, on a white background.
         // Done client-side via canvas so there's no server image dependency.
         const cropped = await cropLandscape(done.data_url, 16/9);
+        // KEPT, so the proposal page and the .docx can both use it. Re-encoded
+        // to JPEG first: the canvas hands back PNG, which for a full-width
+        // screenshot runs to about a megabyte of base64 and would go into every
+        // autosave of the quote payload. (2026-08-18)
+        try{ ST.serp={kw:done.keyword, img:await toJpeg(cropped, 0.72)};
+             try{ scheduleAutoSave(); }catch(e){} }catch(e){ ST.serp={kw:done.keyword, img:cropped}; }
         out.innerHTML=`
           <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${done.keyword}”:</div>
           <img src="${cropped}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
@@ -4000,6 +4006,21 @@ async function runBackmeasure(){
 //
 // Internal, not client-facing: partner cost and margin stay, because the person
 // reading this is deciding whether to send it. (2026-08-18)
+// PNG off a canvas is ~1MB of base64 for a full-width screenshot, and it would
+// ride along in every autosave. JPEG at 0.72 is a tenth of that and a Google
+// results page has no transparency to lose. (2026-08-18)
+function toJpeg(dataUrl, q){
+  return new Promise((res, rej)=>{
+    const im=new Image();
+    im.onload=()=>{ try{
+      const c=document.createElement('canvas'); c.width=im.width; c.height=im.height;
+      const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height);
+      x.drawImage(im,0,0); res(c.toDataURL('image/jpeg', q||0.72));
+    }catch(e){ rej(e); } };
+    im.onerror=rej; im.src=dataUrl;
+  });
+}
+
 function ppMoney(v){ return (v===null||v===undefined||v==='')?'—':'$'+Number(v).toLocaleString(); }
 
 // ---- VIBE CHECK -----------------------------------------------------------
@@ -4018,6 +4039,23 @@ function ppMoney(v){ return (v===null||v===undefined||v==='')?'—':'$'+Number(v
 // THE NOTE IS REQUIRED, and it is the point. Every one of these is a labelled
 // example of why a real price differed from a computed one — which is the
 // evidence the whole calibration effort has been short of. (2026-08-18)
+// MIRRORS gap_effort() / PROPOSAL["gap_bands"] in app.py — keep the two in step;
+// proposal_test.py asserts they agree. The bands are the published 0-100 ones,
+// and the 0-1000 authority score is divided by ten to compare.
+const GAP_BANDS=[[20,'6-12 months','10-20 referring domains'],
+                 [40,'12-18 months','40-80 referring domains'],
+                 [60,'18-36 months','100-300+ referring domains'],
+                 [1000,'24-48+ months','300-1,000+ referring domains']];
+function gapEffort(clientRank, rivalRank){
+  if(!rivalRank) return null;
+  const tgt=Number(rivalRank)/10, cur=clientRank?Number(clientRank)/10:0;
+  const pts=Math.round((tgt-cur)*10)/10;
+  if(pts<=5) return {client:cur, target:tgt, points:pts, months:'', links:'', level:true};
+  let band=GAP_BANDS[GAP_BANDS.length-1];
+  for(const b of GAP_BANDS){ if(tgt<=b[0]){ band=b; break; } }
+  return {client:cur, target:tgt, points:pts, months:band[1], links:band[2], level:false};
+}
+
 function vibePct(){ const v=(ST.vibe||{}).pct; return (typeof v==='number' && v)?v:0; }
 function vibeAdjust(n){
   const pc=vibePct(); if(!pc || n===null || n===undefined || n==='') return n;
@@ -4033,14 +4071,18 @@ function vibeBlock(){
   const before=(ai&&(ai.client_total||{}).base)||t.base;
   const after=vibeAdjust(before);
   const on=!!vibePct();
-  const PRESETS=[-15,-10,-5,5,10,15];
   return `<div class="pph">Vibe check</div>
   <div style="border:1px solid ${on?'var(--atlas)':'var(--line)'};border-radius:12px;padding:14px 16px;background:${on?'#eef4fb':'#fff'}">
     <div class="nf" style="margin-bottom:9px">Move the quote off the formula where you know something it doesn't. The reason is required and is saved with the quote.</div>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:9px">
-      ${PRESETS.map(x=>`<button type="button" class="btn2 vibeP" data-pct="${x}" style="padding:4px 11px;font-size:12px${v.pct===x?';background:var(--atlas);color:#fff;border-color:var(--atlas)':''}">${x>0?'+':''}${x}%</button>`).join('')}
-      <input id="vibePct" type="number" step="1" value="${v.pct||''}" placeholder="±%" style="width:74px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px">
-      ${on?`<button type="button" id="vibeClear" class="btn2" style="padding:4px 11px;font-size:12px">Clear</button>`:''}
+    <div style="display:flex;gap:14px;align-items:center;justify-content:center;margin:4px 0 12px">
+      <button type="button" class="vibeStep" data-step="-5" title="Down 5%">&minus;</button>
+      <div style="text-align:center;min-width:120px">
+        <div id="vibeDial" style="font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:800;line-height:1;color:${on?'var(--atlas)':'var(--muted)'}">${(v.pct>0?'+':'')+(v.pct||0)}%</div>
+        <div class="nf" style="font-size:11px">off the formula</div>
+      </div>
+      <button type="button" class="vibeStep" data-step="5" title="Up 5%">+</button>
+      <input id="vibePct" type="hidden" value="${v.pct||0}">
+      ${on?`<button type="button" id="vibeClear" class="btn2" style="padding:4px 11px;font-size:12px;margin-left:6px">Reset</button>`:''}
     </div>
     <textarea id="vibeNote" rows="2" placeholder="Why — required. e.g. “Existing client, three referrals last year, hold at the old rate.”" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:inherit">${escapeHtml(v.note||'')}</textarea>
     <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">
@@ -4068,8 +4110,16 @@ function wireVibe(){
     try{ scheduleAutoSave(); }catch(e){}
     renderProposal();
   };
-  document.querySelectorAll('.vibeP').forEach(b=>{
-    b.onclick=()=>{ const el=$('vibePct'); if(el) el.value=b.getAttribute('data-pct'); set(Number(b.getAttribute('data-pct'))); };
+  // The dial moves on every click; the price only moves on Apply, so a stray
+  // click cannot change a quote without a reason attached to it.
+  document.querySelectorAll('.vibeStep').forEach(b=>{
+    b.onclick=()=>{
+      const el=$('vibePct'); if(!el) return;
+      const next=Math.max(-50, Math.min(50, (Number(el.value)||0)+Number(b.getAttribute('data-step'))));
+      el.value=next;
+      const d=$('vibeDial');
+      if(d){ d.textContent=(next>0?'+':'')+next+'%'; d.style.color=next?'var(--atlas)':'var(--muted)'; }
+    };
   });
   const ap=$('vibeApply'); if(ap) ap.onclick=()=>set(Number(($('vibePct')||{}).value||0));
   const cl=$('vibeClear'); if(cl) cl.onclick=()=>{ const n=$('vibeNote'); if(n) n.value=''; set(0); };
@@ -4098,8 +4148,15 @@ function pricingChart(){
   // numbers between the inputs and the answer, and neither is a thing anyone
   // quotes — the components add up, the uplift and margin apply, and the price
   // comes out. (2026-08-18)
+  // NOT "16 MARKETS". The anchor is a flat rate for the SCOPE — the count picks
+  // which band applies and is not a multiplier — but printing it beside the
+  // dollar figure read as sixteen markets being charged for, especially with an
+  // "Add-on markets" line directly below using the same word. "Areas covered"
+  // says what the number is: coverage, not quantity billed. (2026-08-18)
+  const _areas=((ST.inputs||{}).geo_values||[]).length;
   row('Geographic anchor', ppMoney(anchor),
-      `${escapeHtml(((ST.inputs||{}).geo_scope||'').replace(/_/g,' ')||'scope')} · ${((ST.inputs||{}).geo_values||[]).length||'no'} market${((ST.inputs||{}).geo_values||[]).length===1?'':'s'}`);
+      `${escapeHtml(((ST.inputs||{}).geo_scope||'').replace(/_/g,' ')||'scope')} — flat rate`
+      + (_areas?`, covering ${_areas} area${_areas===1?'':'s'}`:', no areas entered'));
   row('Competition', (adder?'+ '+ppMoney(adder):'—'),
       adder ? (ST.adder_basis==='kd' ? `organic difficulty ${ST.score!=null?ST.score:''}/100`
                                      : `median top-of-page bid ${cpc!=null?('$'+Number(cpc).toFixed(2)):''}`)
@@ -4119,7 +4176,8 @@ function pricingChart(){
     sum('AI Search (GEO)', '+ '+ppMoney(ai.client_add.base),
         `${ai.uplift_pct!=null?ai.uplift_pct+'% of Core SEO':''}`);
   if(nAdd && addPer)
-    sum('Add-on markets', '+ '+ppMoney(addPer*nAdd), `${nAdd} × ${ppMoney(addPer)} each`);
+    sum('Add-on markets', '+ '+ppMoney(addPer*nAdd),
+        `${nAdd} separately-activated campaign${nAdd===1?'':'s'} × ${ppMoney(addPer)}`);
   const grand=((ai&&(ai.client_total||{}).base)||t.base)+(nAdd&&addPer?addPer*nAdd:0);
   const pc=vibePct();
   if(pc) sum('Vibe check', (pc>0?'+':'')+pc+'%', escapeHtml((ST.vibe||{}).note||'operator judgement'));
@@ -4139,6 +4197,16 @@ function proposalSignals(){
        ? `<div style="font-size:15px;margin-top:10px">Typical incumbent authority <b>${num(s.median_rival_rank)}</b>. This client's own score could not be measured.</div>`
        : '');
   const h=s.health||{};
+  const g=gapEffort(s.client_measured?s.client_rank:null, s.median_rival_rank);
+  // WHAT THE GAP COSTS, not what it measures. "A gap of 605" means nothing to
+  // anyone; link volume and months are what a retainer actually buys.
+  const impact = g ? `<div style="margin-top:10px;padding:11px 13px;background:#fff;border:1px solid var(--line);border-radius:9px">
+      <div style="font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin-bottom:5px">What that gap means</div>
+      ${g.level
+        ? `<div style="font-size:13.5px">This client is already at the authority level of its own page one. Links are not the constraint here — ranking will come from content, on-page work and targeting the right terms.</div>`
+        : `<div style="font-size:13.5px">Closing roughly <b>${g.points}</b> points of authority. Published benchmarks put that at <b>${escapeHtml(g.links)}</b> over <b>${escapeHtml(g.months)}</b> of sustained link acquisition${g.points>40?' — which is why the advanced pace exists':''}.</div>`}
+      ${tipOf('Authority is scored 0-1000 and is LOGARITHMIC, so each step up costs two to three times the referring domains of the one before it. The figures here are converted to the 0-100 scale the published benchmarks use, and they describe the ORDER of effort rather than a guarantee &mdash; scoring methodologies differ between providers.<br><br>Source: Linkscope 2026 domain-authority ranking benchmarks.')}
+    </div>` : '';
   return `<div class="pph">Who owns page one today</div>
     <div style="border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--info-bg)">
       <div style="display:flex;flex-wrap:wrap;gap:10px">
@@ -4148,8 +4216,19 @@ function proposalSignals(){
         </div>`).join('')||'<div class="nf">No incumbents measured yet — run the rank check.</div>'}
       </div>
       ${gapline}
+      ${impact}
       ${h.score!=null?`<div class="nf" style="margin-top:8px">Client site condition <b>${num(h.score)}/100</b>${(h.failed||[]).length?` — ${h.failed.length} issue${h.failed.length===1?'':'s'}: ${h.failed.slice(0,6).map(escapeHtml).join(', ')}`:''}</div>`:''}
     </div>`;
+}
+
+function proposalSerp(){
+  const sp=ST.serp;
+  if(!sp||!sp.img) return `<div class="pph">Live search result</div>
+    <div class="nf" style="border:1px dashed var(--line);border-radius:10px;padding:14px 16px">
+      No capture yet — generate one from <b>SERP screenshot</b> on the Build tab and it appears here and in the download.</div>`;
+  return `<div class="pph">Live search result</div>
+    <div class="nf" style="margin-bottom:6px">Google today for “${escapeHtml(sp.kw||'')}”:</div>
+    <img src="${sp.img}" style="max-width:100%;border:1px solid var(--line);border-radius:10px">`;
 }
 
 function proposalKeywords(){
@@ -4214,6 +4293,7 @@ function renderProposal(){
     ${pricingChart()}
     ${vibeBlock()}
     ${proposalSignals()}
+    ${proposalSerp()}
     ${proposalKeywords()}
     <div id="ppMsg" class="nf" style="margin-top:10px"></div>`;
   const b=$('ppDownload'); if(b) b.onclick=downloadProposal;
@@ -4231,7 +4311,7 @@ async function downloadProposal(){
         business_desc:((ST.inputs||{}).business_desc)||'',
         geo_values:((ST.inputs||{}).geo_values)||[],
         kw:ST.kw||{}, table:ST.table||[], signals:ST.signals||null,
-        pricing:ST.pricing||{}, vibe:ST.vibe||null})});
+        pricing:ST.pricing||{}, vibe:ST.vibe||null, serp:ST.serp||null})});
     if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
     const blob=await res.blob();
     const a=document.createElement('a');
@@ -4765,7 +4845,8 @@ function snapshotQuote(){
     formulaWas: ST.formulaWas||null,
     // Brendan's judgement and his reason for it — a layer over the formula,
     // never folded into it. See vibeAdjust().
-    vibe: ST.vibe||null
+    vibe: ST.vibe||null,
+    serp: ST.serp||null
   };
 }
 
@@ -4804,6 +4885,7 @@ function restoreQuote(p){
   // quote's own snapshot if it has one. (2026-08-18)
   ST.formulaWas=p.formulaWas||null;
   ST.vibe=p.vibe||null;
+  ST.serp=p.serp||null;
   ST.signals=p.signals||null;
   ST.rivals=p.rivals||{};
   ST._signalsRun=!!p.signals;

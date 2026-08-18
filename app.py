@@ -9563,6 +9563,26 @@ PROPOSAL = {
     # Brendan runs this as a full parallel campaign with its own three options,
     # priced IN ADDITION to SEO — see the Media Venue proposal, the only one of
     # the ten that carries it. Same shape here, under the name the team uses.
+    # ---- what the authority gap actually costs ----------------------------
+    # "A gap of 605" means nothing to a client. These bands turn it into link
+    # volume and months, which is what a retainer actually buys.
+    #
+    # DataForSEO's rank is 0-1000 and logarithmic; the published benchmarks below
+    # are on the 0-100 scale, so the score is divided by ten to compare. That is
+    # an approximation and is labelled as one wherever it is shown — DataForSEO's
+    # own docs say their methodology differs from Moz's and Ahrefs', so this is
+    # the right ORDER of effort, not a promise.
+    #
+    # Source: Linkscope's 2026 domain-authority ranking benchmarks —
+    # 10-15 quality linking root domains a month moves 5-10 points, and each
+    # 10-point step needs 2-3x the referring domains of the one before it.
+    "gap_bands": [
+        (20, "6-12 months", "10-20 referring domains"),
+        (40, "12-18 months", "40-80 referring domains"),
+        (60, "18-36 months", "100-300+ referring domains"),
+        (1000, "24-48+ months", "300-1,000+ referring domains"),
+    ],
+    "gap_heading": "What the authority gap means",
     "geo_heading": "AI Search (GEO)",
     "geo_intro": [
         "AI Search optimization — also called Generative Engine Optimization "
@@ -14769,6 +14789,37 @@ if __name__ == "__main__":
 # THE .DOCX EXPORT
 # ---------------------------------------------------------------------------
 
+def gap_effort(client_rank, rival_rank):
+    """The authority gap, in link volume and months rather than in points.
+
+    Reads the band the client has to climb INTO — the target, not where they
+    start — because that is what sets the cost of the next ten points. A local
+    dentist thirty points behind other local dentists is a different campaign
+    from a supplement brand six hundred behind Amazon, and the number alone does
+    not say which you are looking at. (2026-08-18)
+    """
+    if not rival_rank:
+        return None
+    tgt = float(rival_rank) / 10.0
+    cur = (float(client_rank) / 10.0) if client_rank else 0.0
+    months, links = PROPOSAL["gap_bands"][-1][1], PROPOSAL["gap_bands"][-1][2]
+    for ceiling, m, l in PROPOSAL["gap_bands"]:
+        if tgt <= ceiling:
+            months, links = m, l
+            break
+    pts = round(tgt - cur, 1)
+    # A BAND IS AN ALTITUDE, NOT A DISTANCE. Pennsylvania Center for Dental
+    # Excellence sits at 23.5 against a page one of 24.0 — half a point — and
+    # reading the band it is climbing INTO returned "12-18 months", which is the
+    # cost of the whole band rather than of the half point. When the client is
+    # already level, the honest answer is that links are not the constraint.
+    if pts <= 5:
+        return {"client": round(cur, 1), "target": round(tgt, 1), "points": pts,
+                "months": "", "links": "", "level": True}
+    return {"client": round(cur, 1), "target": round(tgt, 1),
+            "points": pts, "months": months, "links": links, "level": False}
+
+
 def _p_money(v):
     try:
         return "$" + format(int(round(float(v))), ",")
@@ -14928,6 +14979,23 @@ def build_proposal_docx(d):
             c[2].text = row["tier"]
         doc.add_paragraph()
 
+    # ---- the live results page, if one was captured ------------------------
+    sp = d.get("serp") or {}
+    if sp.get("img"):
+        # THE CAPTION IS ROLLED BACK IF THE PICTURE DOES NOT LAND. Written the
+        # obvious way — caption, then add_picture in a try — a corrupt capture
+        # left "Google results today for ..." sitting above nothing, which is
+        # worse than no image at all because it reads as a rendering failure in
+        # a document going to a client. (2026-08-18)
+        cap = body(f"Google results today for “{sp.get('kw', '')}”:", True)
+        try:
+            raw = sp["img"].split(",", 1)[1]
+            doc.add_picture(io.BytesIO(base64.b64decode(raw)), width=Inches(6.4))
+            doc.add_paragraph()
+        except Exception:                                     # noqa: BLE001
+            app.logger.exception("serp image could not be embedded")
+            cap._element.getparent().remove(cap._element)
+
     ranked = len([r for r in rows if r["rank"].isdigit()])
     demand = sum(r["vol"] for r in rows)
     body(f"Of the {len(rows)} terms above, {brand} currently ranks in the top "
@@ -14969,6 +15037,22 @@ def build_proposal_docx(d):
                 gapline += (f", against {format(int(sig['client_rank']), ',')} for "
                             f"{brand} — the gap this campaign is built to close")
             body(gapline + ".")
+            # WHAT THE GAP COSTS, in the units a retainer buys. A score means
+            # nothing to a client; referring domains and months do.
+            g = gap_effort(sig.get("client_rank") if sig.get("client_measured")
+                           else None, sig.get("median_rival_rank"))
+            if g and g.get("level"):
+                body(f"{brand} is already at the authority level of its own page "
+                     f"one. Links are not the constraint here — the ranking gains "
+                     f"will come from content, on-page work and targeting the "
+                     f"right terms, which is what the campaign below concentrates "
+                     f"on.", True)
+            elif g:
+                body(f"Closing that gap means roughly {g['points']} points of "
+                     f"authority. Published industry benchmarks put a move of "
+                     f"that size at {g['links']} acquired over {g['months']} of "
+                     f"sustained work — which is what the link building and "
+                     f"content elements of the campaign below are for.", True)
         health = sig.get("health") or {}
         if health.get("failed"):
             body("On-site issues found on your own site, which we address in the "
