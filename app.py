@@ -4393,6 +4393,37 @@ def is_brand_term(term, brand):
                 return True
         return False
 
+    # RUN TOGETHER, THE WAY DOMAINS AND HANDLES WRITE IT. Red Shoes Inc came back
+    # quoted on "redshoe appleton wi" — their own name, one word, because the
+    # per-token matcher compares {red, shoes} against {redshoe, appleton, wi} and
+    # neither brand token is a prefix of "redshoe": "red" is three characters and
+    # falls under the four-character floor, and "shoes" starts a different
+    # letter. Same failure as "nob hill dentistry", arriving by spelling instead
+    # of by suffix.
+    #
+    # The squashed form is how people actually type a brand they know from a URL
+    # — redshoesinc.com, mpgxtreme — so it is checked as one token against each
+    # token of the term, with the same prefix rule. Two or more brand words are
+    # required: squashing a one-word brand just restates it, and a one-word
+    # brand has never been allowed to swallow a list. (2026-08-18)
+    # AND THE TERM TOKEN HAS TO BE LONGER THAN ANY SINGLE BRAND WORD, or the
+    # squashed form matches one of its own components: "gummies" is a prefix of
+    # "gummiesmpg", so a first pass at this read "energy gummies" as MPG Gummies'
+    # own name and would have deleted the biggest term in their grid. A run-
+    # together brand is by definition longer than the words it is made of.
+    # Built from the RAW brand, not from bt: _name_tokens returns a SET (so
+    # "".join() on it is in arbitrary order) and it STEMS, so "Nob Hill Dental"
+    # arrives as {nob, hill, dent} and could never reproduce "nobhilldental".
+    _raw = [w for w in re.split(r"[^a-z0-9]+", (brand or "").lower()) if w]
+    if len(_raw) >= 2:
+        _squash = "".join(_raw)
+        _longest = max(len(w) for w in _raw)
+        for t in tt:
+            if len(t) <= _longest:
+                continue
+            if _squash.startswith(t) or t.startswith(_squash):
+                return True
+
     return all(_hit(b) for b in bt)
 
 
@@ -7540,14 +7571,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # wins so pins and seeds keep their place. Reported, not silent — if it
         # ever catches anything the stage above it is still wrong. (2026-08-14)
         _alias = acronym_aliases([(x.get("service") or "") for x in services])
+        # SPACING IS NOT A DIFFERENT SERVICE. MPG Gummies' grid carried both
+        # "mpgxtreme" (210/mo) and "mpg xtreme" (30/mo) — one product, two slots,
+        # and their volumes counted twice into the total the price is computed
+        # from. _seed_key compares stemmed token SETS, so {mpgxtreme} and
+        # {mpg, xtreme} are simply different and no amount of stemming closes
+        # that. Running the stems together gives one key for both, and it is
+        # checked alongside the token set rather than replacing it: a brand
+        # written solid is a real spelling that a keyword tool will return.
+        # (2026-08-18)
         _seen_final, _final, services_deduped = set(), [], []
+        _seen_squash = set()
         for _x in services:
             _n = (_x.get("service") or "").strip()
             _k = _seed_key(_n, _alias) or frozenset({_n.lower()})
-            if _k in _seen_final:
+            _sq = "".join(sorted(_k))
+            if _k in _seen_final or (len(_sq) > 5 and _sq in _seen_squash):
                 services_deduped.append(_n)
                 continue
             _seen_final.add(_k)
+            _seen_squash.add(_sq)
             _final.append(_x)
         if services_deduped:
             services = _final
