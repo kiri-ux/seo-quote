@@ -4603,6 +4603,7 @@ function wireCompare(c){
   if(!ST.actual) ST.actual={};
   const recompute=()=>{
     let anyOver=0, anyUnder=0, n=0, pctSum=0;
+    const seen={};
     fields.forEach(([inId,diffId,key])=>{
       const el=$(inId), out=$(diffId); if(!el||!out) return;
       const actual=parseFloat(el.value);
@@ -4611,7 +4612,7 @@ function wireCompare(c){
       if(isNaN(actual)||!formula){ out.innerHTML='<span class="nf">—</span>'; return; }
       const diff=formula-actual;                 // + = formula higher than the actual quote
       const pct=actual? Math.round((diff/actual)*100) : 0;
-      n++; pctSum+=pct;
+      n++; pctSum+=pct; seen[key]={diff:diff, pct:pct, formula:formula, actual:actual};
       if(diff>0) anyOver++; else if(diff<0) anyUnder++;
       const sign = diff>0?'+':'';
       const color = diff>0?'#b04a4a':(diff<0?'#2a7a4a':'var(--muted)');
@@ -4624,6 +4625,23 @@ function wireCompare(c){
     if(Math.abs(avg)<=5) verdict=`<span style="color:#2a7a4a">Formula is within ${Math.abs(avg)}% of the actual quote on average — good match.</span>`;
     else if(avg>0) verdict=`<span style="color:#b04a4a">Formula runs ~${avg}% HIGHER than the actual quote on this client.</span>`;
     else verdict=`<span style="color:#b04a4a">Formula runs ~${Math.abs(avg)}% LOWER than the actual quote on this client.</span>`;
+
+    // AN AVERAGE OF A SLOPE IS ZERO. Amare came back base +4%, intermediate -1%,
+    // advanced -4% and this line called it "within 0% — good match": three tiers
+    // wrong in a consistent direction, averaged into a verdict of nothing wrong.
+    // The base and the STEP are different constants and a single mean cannot
+    // separate them, which is the whole reason the Calibration panel keeps them
+    // apart. Two errors cancelling is a different finding from no error, and it
+    // is the more actionable one. (2026-08-18)
+    const b=seen.base, a=seen.advanced;
+    if(b && a){
+      const stepF=(seen.intermediate&&b)?(seen.intermediate.formula-b.formula):null;
+      const stepA=(seen.intermediate&&b)?(seen.intermediate.actual-b.actual):null;
+      const slope=a.pct-b.pct;
+      if(Math.abs(slope)>=6 && stepF!=null && stepA!=null && stepF!==stepA){
+        verdict+=`<div style="margin-top:5px;padding:6px 9px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;color:var(--ink);font-weight:400">\u26a0 <b>The base and the step are wrong in opposite directions</b> \u2014 base ${b.pct>0?'+':''}${b.pct}%, advanced ${a.pct>0?'+':''}${a.pct}%. The average above cancels them out and reads as a good match.<br>Your tier step is <b>${money(stepA)}</b>; the formula's is <b>${money(stepF)}</b>.${tipOf('The base and the step come from different constants (client_floor / the anchor, versus tier_step_flat), so one mean over three tiers cannot tell you which is off &mdash; and a consistent slope averages to zero.<br><br>Across Brendan&rsquo;s proposals the step is $900 to $1,300 while the formula uses a flat $1,000 for everyone, so this is worth collecting in &#9878; Calibration rather than fixing per client.')}</div>`;
+      }
+    }
     s.innerHTML=verdict;
   };
   fields.forEach(([inId])=>{ const el=$(inId); if(el) el.addEventListener('input', recompute); });
