@@ -661,6 +661,32 @@ CFG = {
     # How many head terms the back-measure buys a SERP for, per saved quote.
     # Five was enough to characterise all three clients measured by hand.
     "backmeasure_terms": 5,
+    # WHO ALREADY HOLDS PAGE ONE, IN DOLLARS. Partner cost added to the anchor,
+    # keyed on the median incumbent's backlink authority through
+    # _pageone_bucket() — the SAME function the Calibration driver buckets on, so
+    # moving a cut moves both and they can never disagree.
+    #
+    # Four thresholds already in this formula sit above where these clients live
+    # (volume pays nothing under 10,000/mo and they run 200-980; the CPC adder
+    # needs a $20 click and they measure $2.89-$16.75; difficulty's first break
+    # is 30 and they read 0-25), so every quote computed under the floor and the
+    # floor was the price. Nob Hill and Amare came out identical at $2,950 and
+    # Brendan sent $2,950 and $3,550.
+    #
+    # THE EVIDENCE IS TWO QUOTES. 390 partner is 600 client at 35%, which is
+    # exactly the $2,950 -> $3,550 step in his own book — but it is fitted on the
+    # two clients in that bucket against a three-quote minimum, and four of the
+    # eight variables already tested fit that same single boundary, including
+    # organic difficulty, which was ruled out by experiment the morning it was
+    # banded. Set deliberately and early, on the operator's call, to be checked
+    # against the back-measure across the whole book. It is one number in one
+    # dict: setting the national band back to 0 reverts it entirely.
+    # (2026-08-18)
+    "pageone_anchor_add": {
+        "page one: local businesses (under 200)": 0,
+        "page one: regional or institutional (200-399)": 0,
+        "page one: national platforms (400+)": 390,
+    },
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
@@ -8970,7 +8996,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
                  national_demand=False, geo_override=None, addon_override=None,
-                 goal=""):
+                 goal="", pageone_rank=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # RETAIL IS CANONICAL (2026-08-05). The anchors and every hard-dollar extra
@@ -9058,6 +9084,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     base_pre = anchor + adder + vol_add
     if rule:
         base_pre += int(rule.get("anchor_add", 0))
+
+    # WHO HOLDS PAGE ONE — see pageone_anchor_add. Added to the anchor exactly
+    # like the industry rule's, and NOT scaled by the extras multiplier: this is
+    # a property of the market, not one of the SERP extras a big-org card mutes.
+    pageone_band = _pageone_bucket(pageone_rank)
+    pageone_add = int((CFG.get("pageone_anchor_add") or {}).get(pageone_band, 0)
+                      if pageone_band else 0)
+    base_pre += pageone_add
 
     # The volume add prices UNCAPTURED demand. A client already ranking for
     # most of its terms owns that traffic; charging for it double-counts.
@@ -9286,6 +9320,15 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "manual_addon": manual_addon,
             "industry_rule": rule_key,
             "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
+            "pageone_anchor_add": pageone_add,
+            "pageone_band": pageone_band,
+            "pageone_rank": pageone_rank,
+            # NOT MEASURED IS NOT ZERO. A quote priced before the rank check has
+            # found anyone carries no page-one reading at all, and silently
+            # omitting the add would make the same client price two different
+            # ways depending on when the button was pressed. Said out loud so
+            # step 4 can warn instead of quietly under-quoting.
+            "pageone_measured": pageone_band is not None,
             "ai_search": ai,
             "floored": floored, "client_floor": floor, "manual_base": manual_base,
             "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
@@ -10495,11 +10538,22 @@ def api_market_signals():
     client_measured = bool(client_rank)
     gap = (median_rival - client_rank
            if client_measured and median_rival is not None else None)
+    _rivrows = [{"domain": r, "rank": ranks.get(r), "appearances": counts.get(r, 0)}
+                for r in rivals]
+    # What the PRICE reads — see pageone_strength(). The median stays on the
+    # panel because it is the honest summary of the page; the band keys on the
+    # strongest repeated incumbent because one Zillow changes the job.
+    strength = pageone_strength(_rivrows)
+    band = _pageone_bucket(strength)
+    band_add = int((CFG.get("pageone_anchor_add") or {}).get(band, 0) if band else 0)
 
     return jsonify({
         "domain": domain,
         "client_rank": client_rank,
         "client_measured": client_measured,
+        "pageone_rank": strength,
+        "pageone_band": band,
+        "pageone_add": band_add,
         "median_rival_rank": median_rival,
         "top_rival_rank": top_rival,
         "gap": gap,
@@ -10510,8 +10564,10 @@ def api_market_signals():
         "health": health,
         "authority_error": rank_err,
         "health_error": health_err,
-        # Said out loud so nobody has to infer it from the absence of a change.
-        "applied_to_price": False,
+        # NO LONGER ALWAYS FALSE. As of 2026-08-18 the page-one band carries a
+        # partner-dollar add, so this says which of the three signals moved the
+        # quote. Authority-gap and site condition are still reported only.
+        "applied_to_price": bool(band_add),
     })
 
 
@@ -10650,7 +10706,10 @@ def api_backmeasure_one():
     # is not a thing to pay for twice, and a variable that is only ever eyeballed
     # never gets the fragility guards the other eight already have. Additive: no
     # version snapshot, no reordering, no price touched.
-    signals = {"median_rival_rank": median_rival,
+    _rivrows = [{"domain": x, "rank": ranks.get(x), "appearances": n}
+                for x, n in order[:int(CFG.get("serp_rival_cap", 12))]]
+    signals = {"pageone_rank": pageone_strength(_rivrows),
+               "median_rival_rank": median_rival,
                "top_rival_rank": (rr[-1] if rr else None),
                "client_rank": client_rank, "client_measured": client_measured,
                "n_incumbents": len(rr), "terms_measured": measured,
@@ -10670,6 +10729,10 @@ def api_backmeasure_one():
         "terms_measured": measured, "terms_asked": len(head),
         "median_rival_rank": median_rival,
         "top_rival_rank": (rr[-1] if rr else None),
+        "pageone_rank": signals.get("pageone_rank"),
+        "pageone_band": _pageone_bucket(signals.get("pageone_rank")),
+        "pageone_add": int((CFG.get("pageone_anchor_add") or {}).get(
+            _pageone_bucket(signals.get("pageone_rank")) or "", 0)),
         "client_rank": client_rank,
         "client_measured": client_measured,
         # Only when the client was actually measured — see the note in
@@ -11519,7 +11582,12 @@ def api_price():
     total_volume = int(total_volume) if total_volume not in (None, "") else None
     base_override = d.get("base_override", None)
     base_override = base_override if base_override not in (None, "") else None
-    p = stage4_price(band, adder, zero, addon, markup,
+    # The median incumbent's authority, measured by the rank check's own SERPs.
+    # None when the check has not found anyone yet, which is a different state
+    # from "nobody strong" and is carried through as such.
+    pageone_rank = d.get("pageone_rank", None)
+    pageone_rank = int(pageone_rank) if pageone_rank not in (None, "") else None
+    p = stage4_price(band, adder, zero, addon, markup, pageone_rank=pageone_rank,
                      pct_not_ranking=pct_not_ranking, total_volume=total_volume,
                      base_override=base_override, ecommerce=bool(d.get("ecommerce")),
                      industry=(d.get("industry") or ""),
@@ -12631,7 +12699,10 @@ def calibration_rows(payloads):
             # Attached by the back-measure, absent on any quote it has not run
             # on yet — which is the normal state and reads as "not measured"
             # rather than as a zero.
-            "median_rival_rank": (p.get("signals") or {}).get("median_rival_rank"),
+            "median_rival_rank": ((p.get("signals") or {}).get("pageone_rank")
+                                  if (p.get("signals") or {}).get("pageone_rank")
+                                  is not None
+                                  else (p.get("signals") or {}).get("median_rival_rank")),
             "top_rival_rank": (p.get("signals") or {}).get("top_rival_rank"),
             "total_volume": kw.get("total_volume") or pricing.get("total_volume"),
             "formula": {t: pairs[t][0] for t in _TIERS},
@@ -12902,6 +12973,31 @@ def _mkt_bucket(n):
     return "1 market" if n <= 1 else ("2-5 markets" if n <= 5 else "6+ markets")
 
 
+def pageone_strength(rivals, min_appearances=2):
+    """How strong the strongest REAL incumbent on page one is.
+
+    A MAX, NOT A MEDIAN, because that is the mechanism: one Zillow changes the
+    job. NPAIHB's page one is ihs.gov, Wikipedia and Facebook and its median is
+    437; Amare's is Zillow, Trulia and Redfin and its median is 597. Brendan
+    priced both at $3,550, so a median with a cut between them splits two clients
+    he priced identically, while the strongest reads 1,000 for both.
+
+    THE 2+ TERMS IS THE GUARD ON THE MAX. A bare maximum is exactly what a stray
+    facebook.com or wikipedia.org result — a SERP artifact rather than a
+    competitor — would swing, and that would push a local client into the
+    national band on one keyword's noise. A platform holding page one across
+    several of the client's terms is not an artifact. Falls back to the plain
+    maximum when nothing repeats, so a thin measurement reports something rather
+    than nothing. (2026-08-18)
+    """
+    ranked = [(int(r.get("rank") or 0), int(r.get("appearances") or 0))
+              for r in (rivals or []) if r.get("rank") is not None]
+    if not ranked:
+        return None
+    repeated = [v for v, n in ranked if n >= int(min_appearances)]
+    return max(repeated) if repeated else max(v for v, _ in ranked)
+
+
 def _pageone_bucket(rank):
     """Who already holds page one, by the median incumbent's backlink authority.
 
@@ -12928,9 +13024,9 @@ def _pageone_bucket(rank):
         return None
     if rank < 200:
         return "page one: local businesses (under 200)"
-    if rank < 500:
-        return "page one: regional or institutional (200-499)"
-    return "page one: national platforms (500+)"
+    if rank < 400:
+        return "page one: regional or institutional (200-399)"
+    return "page one: national platforms (400+)"
 
 
 CALIB_DRIVERS = [

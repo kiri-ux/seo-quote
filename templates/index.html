@@ -320,7 +320,7 @@
        (2026-08-17) -->
   <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px">
     <div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin-bottom:6px">Who is on page one — back-measure</div>
-    <div class="help" style="margin:0 0 9px">Every pricing input in this tool reads these clients as identical: search volume pays nothing under 10,000/mo and they run 200–980, the CPC adder needs a $20 click and they measure $2.89–$16.75, difficulty's first break is 30 and they read 0–25. So every quote computes under the floor and the floor is the price. What actually differs is <b>who already holds page one</b> — Amaré's is Zillow and Trulia, Nob Hill's is six other Salem dentists. This measures that against the price you really sent. <b>Nothing here is applied to a price.</b></div>
+    <div class="help" style="margin:0 0 9px">Every pricing input in this tool reads these clients as identical: search volume pays nothing under 10,000/mo and they run 200–980, the CPC adder needs a $20 click and they measure $2.89–$16.75, difficulty's first break is 30 and they read 0–25. So every quote computes under the floor and the floor is the price. What actually differs is <b>who already holds page one</b> — Amaré's is Zillow and Trulia, Nob Hill's is six other Salem dentists. This measures that against the price you really sent. <b>The page-one band now carries $390 partner cost, fitted on two quotes</b> — everything else here is measured and shown. Run this across the book and the panel above will say whether that holds.</div>
     <div id="bmOut" style="font-size:12.5px">Loading…</div>
   </div>
 </div>
@@ -2808,6 +2808,17 @@ function step3Html(){
         if(checked===0 || share>=0.7) return '';
         return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Priced on ${checked} of ${ST.total} rows</b> (${Math.round(share*100)}%) \u2014 the rest are queued or failed. The ranked share sets the zero-ranking tier, so <b>re-price once they land</b>; a partial table can sit in a different tier from the full one.</div>`;
       })()}
+      ${(()=>{
+        // PRICED BEFORE PAGE ONE WAS READ. The signals call fires when step 3
+        // finishes and is not awaited, so clicking Re-price fast enough gets a
+        // quote with no page-one band on it — and since the national band is
+        // worth $600 client, the same client would price two different ways
+        // depending on how quickly the button was pressed. The tool has made
+        // this exact mistake before with an unmeasured rank table, in both
+        // directions, so it says so rather than quietly under-quoting.
+        if(!ST.pricing || ST.pricing.pageone_measured!==false) return '';
+        return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Priced without reading page one</b> \u2014 the incumbent check had not come back when this price was computed, so no page-one band was applied. <b>Re-price</b> once \u{1F52C} Market signals has filled in below.${tipOf('Not the same as &ldquo;nobody strong holds page one&rdquo;. That reading is worth up to +$600 on the client base, so a quote computed before it lands can be $600 light and nothing else on the page would say so.')}</div>`;
+      })()}
       ${(ST.zero && ST.ranked===0 && checked>=8)?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>Nothing ranked at all</b> — applies the largest zero-ranking uplift; spot-check one keyword in Google before quoting. <span class="tipwrap"><span class="tipicon">i</span><span class="help">A total zero can be genuine, but it's also what you'd see if the keywords don't match how people really search this market — a misspelled city, a missing state suffix, or a national SERP being used to score a local business.${ST.rankLoc&&ST.rankLoc.scope==='national'?' <b>This run was measured nationally</b> — check that above first.':''}</span></span></div>`:''}
       ${(()=>{
         // A failed lookup and a genuine "Not Found" look identical on the row.
@@ -3079,6 +3090,14 @@ async function _finishOrRetry(retryOnlyFailed, all){
 // nothing here moves a number. Difficulty was banded by analogy this morning and
 // turned out to be measuring the wrong quantity entirely, so these get measured
 // across real clients before anyone picks a threshold. (2026-08-17)
+// WHAT THE PRICE READS OFF PAGE ONE. Null until the rank check has found
+// somebody, which is a different state from "nobody strong" — stage4_price is
+// told which, so a quote priced before the signal lands warns instead of quietly
+// coming out $600 light. (2026-08-18)
+function pageoneRank(){
+  const v=(ST.signals||{}).pageone_rank;
+  return (v===undefined||v===null)?null:v;
+}
 async function loadMarketSignals(){
   const rv = Object.entries(ST.rivals||{})
     .map(([domain,appearances])=>({domain,appearances}))
@@ -3104,6 +3123,11 @@ function renderMarketSignals(){
   bits.push(`<div><b>Page one belongs to</b> ${(s.rivals||[]).slice(0,6).map(r=>
       escapeHtml(r.domain)+' <span class="nf">('+(r.rank!=null?'authority '+num(r.rank):'—')
       +(r.appearances?', '+r.appearances+' of your terms':'')+')</span>').join(' · ')||'—'}</div>`);
+  if(s.pageone_rank!=null){
+    bits.push(`<div style="margin-top:4px"><b>Page one strength</b> \u2014 strongest incumbent holding more than one of your terms: <b>${num(s.pageone_rank)}</b>`
+      +(s.pageone_band?` \u2014 ${escapeHtml(String(s.pageone_band).split(': ').pop())}`:'')
+      +`${tipOf('A MAX, not a median, because that is the mechanism: one Zillow changes the job. NPAIHB&rsquo;s page one is ihs.gov, Wikipedia and Facebook; Amar&eacute;&rsquo;s is Zillow, Trulia and Redfin. Brendan priced both the same, and a median falls between them.<br><br>The &ldquo;more than one term&rdquo; is the guard on the max: a stray facebook.com on a single keyword is a SERP artifact, not a competitor, and without it one keyword&rsquo;s noise would move a local client into the national band.')}</div>`);
+  }
   if(s.client_rank!=null||s.median_rival_rank!=null){
     // A CLIENT RANK OF 0 IS NOT A MEASUREMENT. bulk_ranks answers for every
     // target and writes 0 for one it has no backlink data on, so "no authority"
@@ -3135,7 +3159,16 @@ function renderMarketSignals(){
     // (2026-08-17)
     bits.push(`<div style="margin-top:4px;color:#8a5a10">⚠ <b>Site condition could not be measured</b> — ${escapeHtml(s.health_error)}${tipOf('Not a score of zero &mdash; nothing was read. Their site refuses automated requests; the tool now asks as a browser rather than as an auditor and falls back to Google Lighthouse, and this line means both were refused.<br><br>Left blank on purpose: a blocked site reading as 0/100 would be the worst possible client in any band built on site condition.')}</div>`);
   }
-  n.innerHTML=`\u{1F52C} <b>Market signals</b>${tipOf('Three inputs the price has never seen: who already holds page one, how far this client sits behind them in backlink authority, and what condition their own site is in. Measured and shown only \u2014 none of it moves the quote. Every threshold already in the formula was set for a client ten times larger than the ones quoted here, so these get measured across a real spread before any of them is banded.')}<div class="nf" style="margin-top:4px">${bits.join('')}<div style="margin-top:5px;opacity:.75">Reported only \u2014 the price is unchanged by all of this.</div></div>`;
+  // WHAT MOVED THE PRICE AND WHAT DID NOT — no longer the same answer for all
+  // three. The page-one band carries a partner-dollar add as of 2026-08-18; the
+  // authority gap and the site condition are still reported only. Saying "the
+  // price is unchanged by all of this" over a line that changed it is exactly
+  // the kind of stale reassurance that stops anyone checking.
+  const applied = s.applied_to_price && s.pageone_add;
+  const foot = applied
+    ? `<b style="color:#8a5a10">This moved the price</b> \u2014 page one is held by ${escapeHtml(String(s.pageone_band||'').split(': ').pop())}, worth <b>+$${Number(s.pageone_add).toLocaleString()} partner cost</b> on the base.${tipOf('Fitted on TWO quotes \u2014 Amar&eacute; and NPAIHB, both of which Brendan priced $600 over the floor while every other input in the formula read them as identical to a client he priced AT the floor.<br><br>Two is below the three-quote minimum this tool uses everywhere else, and it is set early on purpose so the back-measure can check it across the whole book. Authority gap and site condition still move nothing.<br><br>Reverting is one number: pageone_anchor_add, national band, back to 0.')} <span class="nf">The authority gap and site condition below still move nothing.</span>`
+    : `Reported only \u2014 the price is unchanged by all of this.`;
+  n.innerHTML=`\u{1F52C} <b>Market signals</b>${tipOf('Who already holds page one, how far this client sits behind them in backlink authority, and what condition their own site is in. Every other threshold in the formula was set for a client ten times larger than the ones quoted here \u2014 volume pays nothing under 10,000/mo and these run 200-980 \u2014 which is why two clients Brendan priced $600 apart came out identical. The page-one band is the one that now carries dollars; the other two are measured and shown.')}<div class="nf" style="margin-top:4px">${bits.join('')}<div style="margin-top:5px;opacity:.75">${foot}</div></div>`;
 }
 
 function finishStep3(){
@@ -3561,7 +3594,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -3574,7 +3607,7 @@ function renderStep4(p){
     if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -3714,7 +3747,7 @@ async function checkStoredPrice(){
   _staleChecked = true;
   const host=$('p4'); if(!host) return;
   try{
-    const fresh=await postJSON('/api/price',{
+    const fresh=await postJSON('/api/price',{pageone_rank:pageoneRank(),
       geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'',
       ecommerce:!!ST.inputs.ecommerce, national_demand:!!ST.inputs.national_demand,
       goal:ST.inputs.goal||'', industry:ST.inputs.industry||'',
@@ -3785,7 +3818,7 @@ async function runStep4(){
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   ST.rankUnmeasured = ((ST.total||0) > 0 && checkedOk === 0);
   try{
-    const p=await postJSON('/api/price',{geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder,
       zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
@@ -3856,8 +3889,9 @@ function renderBackmeasure(){
         <th style="padding:3px 6px 3px 0">client</th>
         <th style="padding:3px 6px;text-align:right">sent</th>
         <th style="padding:3px 6px;text-align:right">formula</th>
-        <th style="padding:3px 6px;text-align:right">median<br>incumbent</th>
-        <th style="padding:3px 6px;text-align:right">strongest</th>
+        <th style="padding:3px 6px;text-align:right">page one<br>strength</th>
+        <th style="padding:3px 6px;text-align:right">band<br>adds</th>
+        <th style="padding:3px 6px;text-align:right">median</th>
         <th style="padding:3px 6px;text-align:right">client</th>
         <th style="padding:3px 6px;text-align:right">gap</th>
         <th style="padding:3px 0 3px 6px">page one</th></tr>
@@ -3865,13 +3899,14 @@ function renderBackmeasure(){
         <td style="padding:4px 6px 4px 0"><b>${escapeHtml(String(x.client||x.name||'').slice(0,26))}</b>${x.errors&&x.errors.length?` <span title="${escapeHtml(x.errors.join(' · '))}" style="color:#b04a4a">⚠</span>`:''}</td>
         <td style="padding:4px 6px;text-align:right"><b>${bmMoney(x.actual_base)}</b></td>
         <td style="padding:4px 6px;text-align:right;color:var(--muted)">${bmMoney(x.formula_base)}</td>
-        <td style="padding:4px 6px;text-align:right"><b>${bmNum(x.median_rival_rank)}</b></td>
-        <td style="padding:4px 6px;text-align:right;color:var(--muted)">${bmNum(x.top_rival_rank)}</td>
+        <td style="padding:4px 6px;text-align:right"><b>${bmNum(x.pageone_rank)}</b></td>
+        <td style="padding:4px 6px;text-align:right">${x.pageone_add?('<b>+$'+Number(x.pageone_add).toLocaleString()+'</b>'):'—'}</td>
+        <td style="padding:4px 6px;text-align:right;color:var(--muted)">${bmNum(x.median_rival_rank)}</td>
         <td style="padding:4px 6px;text-align:right;color:var(--muted)">${x.client_measured?bmNum(x.client_rank):'<span title="bulk_ranks had no backlink data for this domain, which is indistinguishable from having none — so the gap declines to be computed rather than take the biggest number in the book off the weakest evidence in it">not measured</span>'}</td>
         <td style="padding:4px 6px;text-align:right">${x.gap==null?'—':'+'+Number(x.gap).toLocaleString()}</td>
         <td style="padding:4px 0 4px 6px;color:var(--muted)">${(x.rivals||[]).slice(0,3).map(v=>escapeHtml(v.domain)).join(', ')||'—'}</td></tr>`).join('')}
     </table></div>
-    <div class="nf" style="margin-top:7px">Sorted by the price actually sent. <b>Median incumbent</b> is the one to read: it needs no measurement of the client at all, which is the reading that failed on Amaré. <b>Nothing in this table is applied to a price</b> — banding is a separate decision, taken after the table says something.</div>`:''}
+    <div class="nf" style="margin-top:7px">Sorted by the price actually sent. <b>Page one strength</b> is the column that prices — the strongest incumbent holding more than one of the client's terms${tipOf('A max rather than a median, because one Zillow changes the job; the &ldquo;more than one term&rdquo; stops a stray facebook.com on a single keyword from moving a local client into the national band.<br><br>The median is kept beside it as the honest summary of the page, but it is not what the band reads.')}. <b>Band adds</b> is what that reading is currently worth in partner cost.<br><b style="color:#8a5a10">This column now moves the price</b>, and it is fitted on two quotes against the three-quote minimum used everywhere else in this panel — which is what the rest of this table is for. Read down <b>sent</b> and see whether strength tracks it.</div>`:''}
     ${BM.skipped.length?`<details style="margin-top:7px"><summary class="nf" style="cursor:pointer;user-select:none;font-size:11.5px">${BM.skipped.length} saved quote${BM.skipped.length===1?'':'s'} couldn't be measured</summary><div class="nf" style="font-size:11.5px;margin-top:4px">${BM.skipped.map(s=>escapeHtml(s.name)+' — '+escapeHtml(s.why)).join('<br>')}</div></details>`:''}`;
   const run=$('bmRun'); if(run) run.onclick=runBackmeasure;
   const st=$('bmStop'); if(st) st.onclick=()=>{ BM.stop=true; };
