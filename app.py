@@ -8066,6 +8066,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # collected; nothing was checking them (Ski Barn: NJ stores, priced
         # nationwide, so every term came back as national head demand).
         scope_warning = ""
+        scope_why = ""
+        # "note" = this is the tool working as intended and saying so; "warn" =
+        # something needs a decision. They were rendered identically.
+        scope_kind = "warn"
         goals_all = goal_list(goal)
         _gs = goal_scope(goal)
         _gforce = goal_forces_national(goal)
@@ -8083,14 +8087,22 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             if site_locations:
                 _where.append(f"{len(site_locations)} location page"
                               f"{'' if len(site_locations) == 1 else 's'}")
+            # ONE LINE, AND NOT IN AN AMBER BOX. This branch fires when the
+            # goal did exactly what it is for, and it was five sentences of
+            # prose inside a warning panel — so the loudest note on the build
+            # was the one saying nothing is wrong. The reasoning is worth
+            # keeping and belongs behind the tooltip with the rest of it.
+            # (2026-08-18)
+            scope_kind = "note"
             scope_warning = (
-                f"Goal is “{_gforce}”, so demand is pulled NATIONALLY "
-                "even though this client has " + " and ".join(_where) + ". That "
-                "is the goal doing its job — the client asked to be sold online "
-                "sales, so the volumes describe the whole addressable market. "
-                "Rankings are still measured in the client's own market, because "
-                "whether THIS client is visible is a local question. Change the "
-                "goal if the campaign is really about the stores.")
+                f"Demand pulled nationally — the goal is “{_gforce}”, "
+                "with " + " and ".join(_where) + ".")
+            scope_why = (
+                "The client asked to be sold online sales, so the volumes "
+                "describe the whole addressable market rather than one city. "
+                "Rankings are still measured in the client's own market, "
+                "because whether THIS client is visible is a local question. "
+                "Change the goal if the campaign is really about the stores.")
         elif goal and _gs == "local" and national_demand:
             scope_warning = (
                 f"Goal is \u201c{goal}\u201d, which happens somewhere \u2014 but this "
@@ -8199,6 +8211,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "gbp_locations": gbp_count,
             "tier_moves": tier_moves,
             "scope_warning": scope_warning,
+            "scope_why": scope_why,
+            "scope_kind": scope_kind,
             "scope_note": scope_note,
             "gbp_cities": gbp_cities,
             "dropped_out_of_area": [d[0] for d in (geo_dropped or [])],
@@ -9786,6 +9800,8 @@ def api_refine():
         "site_locations": s1.get("site_locations") or [],
         "tier_moves": s1.get("tier_moves") or [],
         "scope_warning": s1.get("scope_warning") or "",
+        "scope_why": s1.get("scope_why") or "",
+        "scope_kind": s1.get("scope_kind") or "warn",
         "scope_note": s1.get("scope_note") or "",
         "service_areas": s1.get("service_areas") or [],
         "gbp_locations": s1.get("gbp_locations"),

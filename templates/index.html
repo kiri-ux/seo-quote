@@ -5487,7 +5487,17 @@ function step1Grid(kw){
     notes.push(`<div style="margin-top:4px" class="nf">⚠ <b>Competitor-name filter off for this build</b> — it would have cut ${wd.length||'most'}${tot?` of ${tot}`:''} of the AI\'s services${pct?` (${pct}%)`:''}, too much of the list to be a targeted removal.${detail}${gap.length?`<div style="margin-top:2px">Every one tripped on a word the client\'s own text never uses: ${gapWords}. If those are fair synonyms for what they do, add them to <b>Business description</b> and rebuild — the filter switches back on and keeps working.</div>`:` Fill in <b>Business description</b> or add more <b>Product / Vertical Focus</b> terms and rebuild to switch it back on.`}</div>`);
   }
 
-  if(kw.scope_warning) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">⚠ <b>Scope check</b> — ${escapeHtml(kw.scope_warning)}</div>`);
+  // A NOTE AND A WARNING ARE NOT THE SAME THING. This rendered both in the same
+  // amber panel, so the loudest block on an MPG Gummies build was the one saying
+  // the goal had worked correctly. Reasoning goes behind the tooltip; the amber
+  // is kept for the cases that actually need a decision. (2026-08-18)
+  if(kw.scope_warning){
+    const _why=kw.scope_why?tipOf(escapeHtml(kw.scope_why)):'';
+    if(kw.scope_kind==='note')
+      notes.push(`<div class="nf" style="margin-top:4px">\u{1F9ED} <b>Scope</b> \u2014 ${escapeHtml(kw.scope_warning)}${_why}</div>`);
+    else
+      warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px">\u26a0 <b>Scope check</b> \u2014 ${escapeHtml(kw.scope_warning)}${_why}</div>`);
+  }
 
   // PROVENANCE, NOT A DECISION. A blocked pin is a term that never entered the
   // list — there is nothing to check and nothing to act on, and it sat at the top
