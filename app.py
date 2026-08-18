@@ -10804,6 +10804,43 @@ _ONPAGE_DEBT = (
 )
 
 
+def _instant_pages(dom):
+    """One instant_pages call that survives a parameter this endpoint rejects.
+
+    I added `accept_language` on the strength of a docs summary and DataForSEO
+    answered `40501: Invalid Field: 'accept_language'` — so the site check failed
+    for EVERY client, not just the blocked one it was meant to rescue. Their docs
+    render client-side and could not be read to check, and guessing a second time
+    is the same move that caused this.
+
+    So the extras are optional by construction: on an Invalid Field reply the
+    named field is dropped and the call is retried, down to the bare URL, which
+    is the request that worked before any of this. A parameter that helps is
+    kept; one this endpoint has never heard of costs a retry instead of a
+    reading. Returns the task dict, or an error string. (2026-08-18)
+    """
+    extras = {"custom_user_agent": CFG.get("onpage_user_agent"),
+              "browser_preset": "desktop"}
+    last = ""
+    for _ in range(len(extras) + 1):
+        payload = dict(extras)
+        payload["url"] = f"https://{dom}"
+        data = dfs_post("/on_page/instant_pages", [payload], timeout=25)
+        task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+        code = task0.get("status_code")
+        if code in (20000, None):
+            return task0
+        msg = str(task0.get("status_message") or "")
+        last = f"{code}: {msg}"
+        bad = re.search(r"Invalid Field:\s*'?\"?([a-z_]+)", msg, re.I)
+        if not (bad and bad.group(1) in extras):
+            return last
+        app.logger.warning("instant_pages rejected %s — retrying without it",
+                           bad.group(1))
+        extras.pop(bad.group(1))
+    return last or "instant_pages refused every parameter set"
+
+
 def fetch_technical_health(domain):
     """The client site's own condition, from a call the tool already makes.
 
@@ -10825,20 +10862,13 @@ def fetch_technical_health(domain):
     try:
         # NOT AS "RSiteAuditor". instant_pages defaults its user agent to
         # `Mozilla/5.0 (compatible; RSiteAuditor)` — a string that announces
-        # itself as a bot to every WAF on the internet — and DataForSEO's own
-        # docs note that some sites deny access when accept_language is missing.
-        # Amare Homes came back with an empty page and the panel printed
-        # "0/100 · nothing flagged" for a site nobody had read. Ask as a browser
-        # on the call we are already paying for; it costs nothing and it may be
-        # the whole fix. (2026-08-17)
-        data = dfs_post("/on_page/instant_pages",
-                        [{"url": f"https://{dom}",
-                          "custom_user_agent": CFG.get("onpage_user_agent"),
-                          "accept_language": "en-US,en;q=0.9",
-                          "browser_preset": "desktop"}], timeout=25)
-        task0 = ((data or {}).get("tasks") or [{}])[0] or {}
-        if task0.get("status_code") not in (20000, None):
-            return {}, f"{task0.get('status_code')}: {task0.get('status_message')}"
+        # itself as a bot to every WAF on the internet. Amare Homes came back
+        # with an empty page and the panel printed "0/100 · nothing flagged" for
+        # a site nobody had read. Ask as a browser on the call we already pay
+        # for. (2026-08-17)
+        task0 = _instant_pages(dom)
+        if isinstance(task0, str):
+            return {}, task0
         item = None
         for block in (task0.get("result") or []):
             for it in (block.get("items") or []):
