@@ -9559,6 +9559,67 @@ PROPOSAL = {
                     "authority and produce content — the fastest route to page "
                     "one on the most competitive terms.",
     },
+    # ---- AI Search (GEO) --------------------------------------------------
+    # Brendan runs this as a full parallel campaign with its own three options,
+    # priced IN ADDITION to SEO — see the Media Venue proposal, the only one of
+    # the ten that carries it. Same shape here, under the name the team uses.
+    "geo_heading": "AI Search (GEO)",
+    "geo_intro": [
+        "AI Search optimization — also called Generative Engine Optimization "
+        "(GEO) — is the process of optimizing for AI-based search queries. "
+        "There are a variety of AI-based search engines currently in use, with "
+        "the largest being:",
+    ],
+    "geo_engines": [
+        "Google's Gemini “AI Mode” and AI Overviews",
+        "ChatGPT",
+        "Microsoft Copilot (Bing AI Search)",
+        "Dozens of other smaller players in the market",
+    ],
+    "geo_context": [
+        "While AI search is certainly going to be a large part of search in the "
+        "future, today AI searches account for approximately 10% of all search "
+        "volume. Traditional search remains where the overwhelming majority of "
+        "queries happen, which is why we recommend AI Search alongside a core "
+        "SEO campaign rather than instead of one.",
+        "Many brands want to get ahead of the AI trend and leverage it for "
+        "additional brand exposure. We have been a pioneer in GEO and AI search, "
+        "one of the first companies to offer optimization for AI models, having "
+        "launched the service in 2023.",
+    ],
+    "geo_services": [
+        ("Keyword & Topic Research",
+         ["Conduct full initial research to identify relevant search phrases on "
+          "AI models.",
+          "We generally identify 20-30 target search phrases and topics."]),
+        ("AI Model Optimization",
+         ["Full AI model optimization to train the core AI models with "
+          "information supporting your business being the recommended result "
+          "for a given AI search."]),
+        ("Off-Site Resources",
+         ["Guest posts/articles", "Directory type listings", "Citation building",
+          "Content distribution/creation", "Content sharing sites",
+          "Micro-blogs",
+          "And additional link types as relevant to the campaign"]),
+        ("Reporting",
+         ["A monthly report outlining the work performed and any available "
+          "analytical metrics for your keywords and AI searches."]),
+    ],
+    "geo_option_blurb": {
+        "base": "In our base AI Search campaign, we engage in GEO work to "
+                "steadily improve your brand appearing in recommendations "
+                "across AI models. We include everything outlined above and "
+                "would expect to see improvements after 6-10 months.",
+        "intermediate": "An intermediate campaign includes everything in a base "
+                        "campaign, and additionally targets 1-2 premium "
+                        "placements per month which are specifically analyzed "
+                        "by AI models when rendering results and "
+                        "recommendations, to impact AI search results faster.",
+        "advanced": "An advanced campaign includes everything in an "
+                    "intermediate campaign, and accelerates the pace at which "
+                    "we create premium placements to 3-4 per month. We expect "
+                    "to see improvements after 6 months.",
+    },
     "closing": [
         "Additional keywords can be added to any campaign for an additional fee "
         "upon request.",
@@ -14824,13 +14885,17 @@ def build_proposal_docx(d):
     body("Based on our research, we built the keyword list below and measured "
          "where the site currently ranks for each term.")
 
+    # NO VOLUME COLUMN. A list where most terms read 10/mo argues against the
+    # campaign, and Brendan's table does not carry one either. The demand total
+    # stays in the prose, where it describes the opportunity rather than
+    # itemising its weakest rows. (2026-08-18)
     rows = _proposal_rows(d)
     if rows:
-        tbl = doc.add_table(rows=1, cols=4)
+        tbl = doc.add_table(rows=1, cols=3)
         tbl.style = "Light Grid Accent 1"
         hdr = tbl.rows[0].cells
         for i, label in enumerate(("Keyword", "Google Current Rank",
-                                   "Monthly Searches", "Keyword Type")):
+                                   "Keyword Type")):
             hdr[i].text = ""
             rr = hdr[i].paragraphs[0].add_run(label)
             rr.bold = True
@@ -14838,14 +14903,17 @@ def build_proposal_docx(d):
             c = tbl.add_row().cells
             c[0].text = row["kw"]
             c[1].text = row["rank"]
-            c[2].text = format(row["vol"], ",") if row["vol"] else "—"
-            c[3].text = row["tier"]
+            c[2].text = row["tier"]
         doc.add_paragraph()
 
     ranked = len([r for r in rows if r["rank"].isdigit()])
+    demand = sum(r["vol"] for r in rows)
     body(f"Of the {len(rows)} terms above, {brand} currently ranks in the top "
-         f"100 for {ranked}. There is significant room for improvement in "
-         f"organic ranking through an organic SEO campaign.")
+         f"100 for {ranked}"
+         + (f", against roughly {format(demand, ',')} searches a month across "
+            f"the list" if demand else "")
+         + ". There is significant room for improvement in organic ranking "
+           "through an organic SEO campaign.")
 
     body("All of our SEO campaigns focus on three primary keyword sets:", True)
     for name, blurb in P["keyword_sets"]:
@@ -14915,6 +14983,47 @@ def build_proposal_docx(d):
                        f"which then becomes a month-to-month commitment.")
         rr.bold = True
     body(P["closing"][0])
+
+    # ---- AI Search (GEO), when the quote carries it ------------------------
+    # A parallel campaign with its own three options, priced IN ADDITION to the
+    # SEO options above — which is how Brendan writes it and how the tool
+    # computes it. Absent entirely on a Core SEO quote rather than showing zeros.
+    ai = (d.get("pricing") or {}).get("ai_search") or {}
+    ai_add = ai.get("client_add") or {}
+    if any(ai_add.get(k) for k in ("base", "intermediate", "advanced")):
+        head(P["geo_heading"])
+        for para in P["geo_intro"]:
+            body(para)
+        for e in P["geo_engines"]:
+            bullet(e)
+        for para in P["geo_context"]:
+            body(para)
+        body("An AI Search campaign consists of the following each month:", True)
+        for name, items in P["geo_services"]:
+            body(name, True)
+            for it in items:
+                bullet(it)
+        head("AI Search (GEO) Campaign Options", size=12)
+        body("Depending on how aggressive you wish to be, we have included three "
+             "options below. These options are in addition to the SEO campaign "
+             "options above.")
+        for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
+            label = {"base": "Base", "intermediate": "Intermediate",
+                     "advanced": "Advanced"}[key]
+            p_ = doc.add_paragraph()
+            rl = p_.add_run(f"Option {i}: {label} AI Search Campaign — ")
+            rl.bold = True
+            p_.add_run(P["geo_option_blurb"][key])
+            p2 = doc.add_paragraph()
+            r2 = p2.add_run(f"This option would be a monthly cost of "
+                            f"{_p_money(ai_add.get(key))}.")
+            r2.bold = True
+        tot = ai.get("client_total") or {}
+        if tot.get("base"):
+            body(f"Combined with the SEO campaign above, a base engagement is "
+                 f"{_p_money(tot.get('base'))} per month, intermediate "
+                 f"{_p_money(tot.get('intermediate'))}, advanced "
+                 f"{_p_money(tot.get('advanced'))}.", True)
 
     # ---- case studies -----------------------------------------------------
     head(P["case_heading"])

@@ -4006,16 +4006,25 @@ function pricingChart(){
   const p=ST.pricing||{}; if(!p.client_tiers) return '';
   const anchor=p.anchor||0, adder=p.competitive_adder||0, vol=p.volume_add||0;
   const ind=p.industry_anchor_add||0, po=p.pageone_anchor_add||0;
-  const sub=p.base_pre_uplift!=null?p.base_pre_uplift:(anchor+adder+vol+ind+po);
   const up=p.zero_ranking_uplift_pct||0, mult=p.extras_multiplier;
-  const partner=p.base||0, mk=p.markup_pct!=null?p.markup_pct:35;
-  const client=(p.client_tiers||{}).base;
+  const mk=p.markup_pct!=null?p.markup_pct:35;
+  const t=p.client_tiers||{}, ai=p.ai_search||null;
+  const nAdd=p.addon_markets||0, addPer=(p.client_addon_per_market||{}).base||0;
   const cpc=(ST.cpc_used!=null?ST.cpc_used:null);
   const rows=[];
   const row=(what, amt, src, muted)=>rows.push(
-    `<tr${muted?' style="opacity:.55"':''}><td>${what}</td>`
+    `<tr${muted?' style="opacity:.5"':''}><td>${what}</td>`
     +`<td style="text-align:right;font-variant-numeric:tabular-nums">${amt}</td>`
     +`<td class="nf">${src}</td></tr>`);
+  const sum=(what, amt, src)=>rows.push(
+    `<tr class="sum"><td>${what}</td>`
+    +`<td style="text-align:right;font-variant-numeric:tabular-nums">${amt}</td>`
+    +`<td class="nf">${src}</td></tr>`);
+
+  // NO INTERMEDIATE SUBTOTALS. "Subtotal" and "Partner cost" were two more
+  // numbers between the inputs and the answer, and neither is a thing anyone
+  // quotes — the components add up, the uplift and margin apply, and the price
+  // comes out. (2026-08-18)
   row('Geographic anchor', ppMoney(anchor),
       `${escapeHtml(((ST.inputs||{}).geo_scope||'').replace(/_/g,' ')||'scope')} · ${((ST.inputs||{}).geo_values||[]).length||'no'} market${((ST.inputs||{}).geo_values||[]).length===1?'':'s'}`);
   row('Competition', (adder?'+ '+ppMoney(adder):'—'),
@@ -4027,19 +4036,24 @@ function pricingChart(){
       + (vol?'':' — under the paying threshold'), !vol);
   if(ind) row('Industry rule', '+ '+ppMoney(ind), escapeHtml(p.industry_rule||'vertical premium'));
   if(po)  row('Page one', '+ '+ppMoney(po), escapeHtml(String(p.pageone_band||'').split(': ').pop()));
-  rows.push(`<tr class="sum"><td>Subtotal</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(sub)}</td><td class="nf">partner cost before uplifts</td></tr>`);
-  if(up) row('Current visibility', '× '+(1+up/100).toFixed(2),
-             `${ST.pctNotRanking!=null?Math.round(ST.pctNotRanking)+'% of terms not ranking':'ranking uplift'}`);
+  if(up)  row('Current visibility', '× '+(1+up/100).toFixed(2),
+              `${ST.pctNotRanking!=null?Math.round(ST.pctNotRanking)+'% of terms not ranking':'ranking uplift'}`);
   if(mult!=null && mult!==1) row('Extras multiplier', '× '+mult, 'industry card or nationwide scope');
-  if(p.floored) row('Minimum', ppMoney(p.client_floor),
-                    'computed below the floor — the floor is the price');
-  rows.push(`<tr class="sum"><td>Partner cost</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(partner)}</td><td class="nf">what the work costs</td></tr>`);
-  row('Margin', mk+'%', 'agency share of gross');
-  rows.push(`<tr class="sum"><td><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>${ppMoney(client)}</b></td><td class="nf">partner ÷ (1 − margin), rounded to $50</td></tr>`);
+  if(p.floored) row('Minimum', ppMoney(p.client_floor), 'computed below the floor — the floor is the price');
+  row('Margin', mk+'%', 'agency share of gross · everything above is partner cost');
+  sum('Core SEO', ppMoney(t.base), 'monthly, base tier');
+  if(ai && (ai.client_add||{}).base)
+    sum('AI Search (GEO)', '+ '+ppMoney(ai.client_add.base),
+        `${ai.uplift_pct!=null?ai.uplift_pct+'% of Core SEO':''}${ai.geo_pct_basis?' · '+escapeHtml(ai.geo_pct_basis):''}`);
+  if(nAdd && addPer)
+    sum('Add-on markets', '+ '+ppMoney(addPer*nAdd), `${nAdd} × ${ppMoney(addPer)} each`);
+  const grand=((ai&&(ai.client_total||{}).base)||t.base)+(nAdd&&addPer?addPer*nAdd:0);
+  rows.push(`<tr class="sum" style="border-top-width:3px"><td style="font-size:14px"><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums;font-size:14px"><b>${ppMoney(grand)}</b></td><td class="nf">what the client pays</td></tr>`);
+  const stepC=Math.round((p.step||0)/(1-(mk/100))/50)*50;
   return `<div class="pph">How this price was built</div><div class="ppwrap"><table>
     <tr><th>Component</th><th style="text-align:right">Amount</th><th>Measured from</th></tr>
     ${rows.join('')}</table>
-    <div class="nf" style="margin-top:6px">Every figure above is partner cost until the last line. The three tiers differ by a fixed step of ${ppMoney(p.step)} partner (${ppMoney(Math.round((p.step||0)/(1-(mk/100))/50)*50)} client).</div></div>`;
+    <div class="nf" style="margin-top:6px">Intermediate and Advanced add ${ppMoney(stepC)} a tier.${ai?' AI Search (GEO) scales with Core SEO at the same percentage on every tier.':''}</div></div>`;
 }
 
 function proposalSignals(){
@@ -4077,8 +4091,11 @@ function proposalKeywords(){
       const pos=live.pos;
       const isNum=typeof pos==='number';
       if(isNum) ranked++;
+      // NO PER-KEYWORD VOLUME. A list where most terms read 10/mo argues against
+      // the campaign; the aggregate in the heading is the number that describes
+      // the opportunity, and it is the one the price was built on. Brendan's
+      // table has no volume column either. (2026-08-18)
       rows+=`<tr><td>${escapeHtml(r.kw||'')}</td>`
-        +`<td class="ppvol" style="text-align:right">${v?v.toLocaleString():'—'}</td>`
         +`<td style="text-align:right">${isNum?('#'+pos):'<span class="nf">Not found</span>'}</td>`
         +`<td class="nf">${LBL[t]}</td></tr>`;
     });
@@ -4090,9 +4107,9 @@ function proposalKeywords(){
   const shownTotal = (ST.totalVol!=null && ST.totalVol) ? Number(ST.totalVol) : total;
   return `<div class="pph">Keyword list — ${(kw.all||[]).length} terms, ${shownTotal.toLocaleString()}/mo total demand</div>
     <div class="ppwrap"><table>
-      <tr><th>Keyword</th><th style="text-align:right">Searches/mo</th><th style="text-align:right">Rank today</th><th>Tier</th></tr>
+      <tr><th>Keyword</th><th style="text-align:right">Rank today</th><th>Tier</th></tr>
       ${rows}</table>
-      <div class="nf" style="margin-top:6px">${ranked} of ${(kw.all||[]).length} currently rank in the top 100. Volume is a live search-data lookup, not an estimate — it is what sets the tiers and it is the number the price is built on.</div></div>`;
+      <div class="nf" style="margin-top:6px">${ranked} of ${(kw.all||[]).length} currently rank in the top 100. Demand is a live search-data lookup, not an estimate — it is what sets the tiers and it is the number the price is built on.</div></div>`;
 }
 
 function renderProposal(){
@@ -4116,7 +4133,7 @@ function renderProposal(){
         <div class="pptier${i===1?' lead':''}">
           <div class="lbl">${['Base','Intermediate','Advanced'][i]}</div>
           <div class="amt">${ppMoney(shown[k])}</div>
-          <div class="per">per month${ai?`<br><span class="nf">SEO ${ppMoney(t[k])} + AI ${ppMoney(((p.ai_search||{}).client_ai||{})[k])}</span>`:''}</div>
+          <div class="per">per month${ai?`<br><span class="nf">SEO ${ppMoney(t[k])} + AI Search (GEO) ${ppMoney(((p.ai_search||{}).client_add||{})[k])}</span>`:''}</div>
         </div>`).join('')}
     </div>
     ${pricingChart()}
