@@ -10778,17 +10778,34 @@ RANK_CACHE_MAX = 8000
 _rank_cache_lock = threading.Lock()
 
 def _rank_cache_get(kw, loc, dom, top_n):
+    """Cached (position, page-one domains), or "MISS".
+
+    THE DOMAINS ARE CACHED TOO, AND THAT IS NOT COSMETIC. This stored only the
+    position, so a re-run inside the 6-hour TTL contributed no incumbents from
+    any cached row — page one was measured from whatever happened to be
+    re-fetched. Harmless while the signal was reported only; not harmless now
+    that the page-one band carries $390 of partner cost, because it made the
+    PRICE depend on cache state. Amare re-priced with every incumbent showing
+    "1 of your terms" off fifteen cached rows, which also defeated the
+    two-or-more-terms guard on pageone_strength and dropped it onto the bare
+    maximum — the exact fragile path that guard exists to prevent. (2026-08-18)
+    """
     with _rank_cache_lock:
         ent = RANK_CACHE.get((kw, loc, dom, top_n))
-    if ent and time.time() - ent[1] < RANK_CACHE_TTL:
-        return ent[0]
-    return "MISS"
+    if not ent:
+        return "MISS", []
+    # Entries written before the domains were cached are 2-tuples. A redeploy
+    # clears the dict, but a config change inside a live process does not.
+    pos, doms, stamp = (ent if len(ent) == 3 else (ent[0], [], ent[1]))
+    if time.time() - stamp < RANK_CACHE_TTL:
+        return pos, list(doms or [])
+    return "MISS", []
 
-def _rank_cache_put(kw, loc, dom, top_n, pos):
+def _rank_cache_put(kw, loc, dom, top_n, pos, doms=None):
     with _rank_cache_lock:
         if len(RANK_CACHE) > RANK_CACHE_MAX:
             RANK_CACHE.clear()
-        RANK_CACHE[(kw, loc, dom, top_n)] = (pos, time.time())
+        RANK_CACHE[(kw, loc, dom, top_n)] = (pos, list(doms or []), time.time())
 
 def fetch_domain_authority(domains):
     """Backlink rank (0-1000) for a batch of domains, in ONE request.
@@ -10952,7 +10969,29 @@ def fetch_technical_health(domain):
             return _lighthouse_health(dom, "the page returned nothing to check")
         failed = [label for key, bad_when, label in _ONPAGE_DEBT
                   if key in checks and bool(checks[key]) is bool(bad_when)]
-        return {"score": round(float(item.get("onpage_score") or 0), 1),
+        score = round(float(item.get("onpage_score") or 0), 1)
+
+        # ZERO OUT OF A HUNDRED WITH NOTHING WRONG IS A CONTRADICTION, and the
+        # empty-checks guard above does not catch it: for a page it could not
+        # fetch, DataForSEO returns a FULL checks object with everything at its
+        # default, so `checks` is populated, every check reads as passing, and
+        # the score comes back 0. Amare printed "0/100 · nothing flagged" again
+        # on the build after that guard shipped.
+        #
+        # No new API knowledge needed to spot it — the two halves of the answer
+        # disagree. A page that genuinely scores 0 has failures; a page with no
+        # failures does not score 0. An HTTP error on the item says the same
+        # thing more directly, when it is there to read. (2026-08-18)
+        _http = item.get("status_code")
+        _dead = (isinstance(_http, int) and _http >= 400) or (
+            score <= 0 and not failed)
+        if _dead:
+            return _lighthouse_health(
+                dom, (f"their site answered HTTP {_http}" if isinstance(_http, int)
+                      and _http >= 400 else
+                      "the page scored 0 with nothing flagged, which means it was "
+                      "not read"))
+        return {"score": score,
                 "failed": failed, "checked": len(checks), "source": "on_page",
                 "timing": (item.get("page_timing") or {}).get("dom_complete")}, ""
     except Exception as e:                                    # noqa: BLE001
@@ -11270,9 +11309,12 @@ def api_rankings():
     to_fetch = []
     err_msgs = []
     for kw in batch:
-        c = _rank_cache_get(kw, per_kw_loc.get(kw, loc), dom, top_n)
+        c, cdoms = _rank_cache_get(kw, per_kw_loc.get(kw, loc), dom, top_n)
         if c != "MISS":
             hits[kw] = c
+            # A cached row still tells you who holds page one.
+            for _d in cdoms:
+                rivals[_d] = rivals.get(_d, 0) + 1
         else:
             to_fetch.append(kw)
     try:
@@ -11306,7 +11348,8 @@ def api_rankings():
                     err_msgs.append(str(e)[:160])
                 done[kw] = (pos, qs, err)
                 if not err:
-                    _rank_cache_put(kw, per_kw_loc.get(kw, loc), dom, top_n, pos)
+                    _rank_cache_put(kw, per_kw_loc.get(kw, loc), dom, top_n, pos,
+                                    doms)
         for kw in batch:
             if kw in hits:
                 pos, qs, err = hits[kw], [], False
