@@ -14888,6 +14888,8 @@ def build_proposal_docx(d):
     from docx import Document
     from docx.shared import Pt, Inches, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 
     ATLAS = RGBColor(0x00, 0x2D, 0x58)
     P = PROPOSAL
@@ -14918,6 +14920,63 @@ def build_proposal_docx(d):
 
     def bullet(text):
         return doc.add_paragraph(text, style="List Bullet")
+
+    def option_box(title, blurb, scope_lines, price_line):
+        """One priced option, in a bordered box.
+
+        A single-cell TABLE, because that is the only construct Word and
+        LibreOffice both render a reliable border around. Paragraph borders look
+        right in Word and merge into one another in LibreOffice, and these
+        documents get opened in whatever the client has. (2026-08-18)
+        """
+        tb = doc.add_table(rows=1, cols=1)
+        tb.autofit = False
+        # KEEP THE BOX WHOLE. Left to itself Word broke Option 3 across the page
+        # boundary and drew a border on each half, so one option read as two
+        # empty-bottomed panels. A priced option is a unit; it moves to the next
+        # page or it does not move. (2026-08-18)
+        _trPr = tb.rows[0]._tr.get_or_add_trPr()
+        _cant = OxmlElement("w:cantSplit")
+        _trPr.append(_cant)
+        cell = tb.rows[0].cells[0]
+        cell.width = Inches(6.6)
+        tcPr = cell._tc.get_or_add_tcPr()
+        borders = OxmlElement("w:tcBorders")
+        for edge in ("top", "left", "bottom", "right"):
+            e = OxmlElement("w:" + edge)
+            e.set(qn("w:val"), "single")
+            e.set(qn("w:sz"), "10")
+            e.set(qn("w:color"), "002D58")
+            borders.append(e)
+        tcPr.append(borders)
+        # Breathing room inside the border — a box with text against its edges
+        # reads as a rendering accident rather than a design.
+        mar = OxmlElement("w:tcMar")
+        for edge, val in (("top", "170"), ("start", "170"),
+                          ("bottom", "170"), ("end", "170")):
+            m = OxmlElement("w:" + edge)
+            m.set(qn("w:w"), val)
+            m.set(qn("w:type"), "dxa")
+            mar.append(m)
+        tcPr.append(mar)
+
+        h = cell.paragraphs[0]
+        rh = h.add_run(title)
+        rh.bold = True
+        rh.font.size = Pt(12.5)
+        rh.font.color.rgb = ATLAS
+        cell.add_paragraph(blurb)
+        if scope_lines:
+            t = cell.add_paragraph()
+            rt = t.add_run("This option targets:")
+            rt.bold = True
+            for line in scope_lines:
+                cell.add_paragraph(line, style="List Bullet")
+        pr = cell.add_paragraph()
+        rp = pr.add_run(price_line)
+        rp.bold = True
+        doc.add_paragraph()
+        return tb
 
     # ---- cover ------------------------------------------------------------
     t = doc.add_paragraph()
@@ -15079,16 +15138,12 @@ def build_proposal_docx(d):
     for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
         label = {"base": "Base", "intermediate": "Intermediate",
                  "advanced": "Advanced"}[key]
-        head(f"Option {i}: {label} SEO Campaign", size=12)
-        body(P["option_blurb"][key])
-        body("This option targets:", True)
-        for line in P["option_scope"][key]:
-            bullet(line)
-        p = doc.add_paragraph()
-        rr = p.add_run(f"This option would be a monthly investment of "
-                       f"{_p_money(tiers.get(key))} with a {term} month term "
-                       f"which then becomes a month-to-month commitment.")
-        rr.bold = True
+        option_box(f"Option {i}: {label} SEO Campaign",
+                   P["option_blurb"][key],
+                   P["option_scope"][key],
+                   f"This option would be a monthly investment of "
+                   f"{_p_money(tiers.get(key))} with a {term} month term "
+                   f"which then becomes a month-to-month commitment.")
     body(P["closing"][0])
 
     # ---- AI Search (GEO), when the quote carries it ------------------------
@@ -15118,14 +15173,10 @@ def build_proposal_docx(d):
         for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
             label = {"base": "Base", "intermediate": "Intermediate",
                      "advanced": "Advanced"}[key]
-            p_ = doc.add_paragraph()
-            rl = p_.add_run(f"Option {i}: {label} AI Search Campaign — ")
-            rl.bold = True
-            p_.add_run(P["geo_option_blurb"][key])
-            p2 = doc.add_paragraph()
-            r2 = p2.add_run(f"This option would be a monthly cost of "
-                            f"{_p_money(ai_add.get(key))}.")
-            r2.bold = True
+            option_box(f"Option {i}: {label} AI Search Campaign",
+                       P["geo_option_blurb"][key], [],
+                       f"This option would be a monthly cost of "
+                       f"{_p_money(ai_add.get(key))}.")
         tot = {k: _vibe_adjust(v, d)
                for k, v in (ai.get("client_total") or {}).items()}
         if tot.get("base"):
