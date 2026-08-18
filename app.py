@@ -13016,6 +13016,24 @@ def _mkt_bucket(n):
     return "1 market" if n <= 1 else ("2-5 markets" if n <= 5 else "6+ markets")
 
 
+# A BUSINESS'S OWN SOCIAL PROFILE IS NOT AN INCUMBENT. These are 1000-authority
+# domains that turn up on ordinary local SERPs constantly — an Instagram page, a
+# Facebook page, a YouTube video — and none of them is who you outrank by being a
+# better dentist. Pennsylvania Center for Dental Excellence has five Philadelphia
+# dental sites on its page one, all 143-240, and instagram.com on two terms.
+# instagram.com set the strength to 1,000, which put a plainly local practice in
+# the national-platform band and quoted it $350 over what Brendan sent.
+#
+# NOT A GENERAL DIRECTORY BAN. Zillow, Trulia, Apartments.com and Yelp stay in:
+# they take the click and they are what a local business is actually competing
+# with for it. The line is a profile page you could own yourself. (2026-08-18)
+_PAGEONE_NON_RIVAL = frozenset("""
+instagram.com facebook.com m.facebook.com youtube.com m.youtube.com
+linkedin.com tiktok.com twitter.com x.com pinterest.com reddit.com
+threads.net tumblr.com flickr.com vimeo.com
+""".split())
+
+
 def pageone_strength(rivals, min_appearances=2):
     """How strong the strongest REAL incumbent on page one is.
 
@@ -13034,7 +13052,10 @@ def pageone_strength(rivals, min_appearances=2):
     than nothing. (2026-08-18)
     """
     ranked = [(int(r.get("rank") or 0), int(r.get("appearances") or 0))
-              for r in (rivals or []) if r.get("rank") is not None]
+              for r in (rivals or [])
+              if r.get("rank") is not None
+              and str(r.get("domain") or "").lower().replace("www.", "")
+              not in _PAGEONE_NON_RIVAL]
     if not ranked:
         return None
     repeated = [v for v, n in ranked if n >= int(min_appearances)]

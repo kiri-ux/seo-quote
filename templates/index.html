@@ -4425,7 +4425,12 @@ function snapshotQuote(){
     expandedSeeds: ST.expandedSeeds||[],
     rankedSeeds: ST.rankedSeeds||[],
     // Imported incumbent reports (extraction only — see rememberReport).
-    reports: ST.reports||[]
+    reports: ST.reports||[],
+    // WHO HELD PAGE ONE, saved with the quote because it now sets the price.
+    // Reopening a quote and re-pricing has to reproduce the price it was saved
+    // with, and re-measuring costs five SERPs. (2026-08-18)
+    signals: ST.signals||null,
+    rivals: ST.rivals||{}
   };
 }
 
@@ -4454,6 +4459,18 @@ function restoreQuote(p){
   ST.expandedSeeds=p.expandedSeeds||[];
   ST.rankedSeeds=p.rankedSeeds||[];
   ST.reports=p.reports||[];
+  // ONE CLIENT'S PAGE ONE PRICED ANOTHER. ST.signals survived a quote load, so
+  // opening Pennsylvania Center for Dental Excellence and then Nob Hill Dental
+  // left Philadelphia's incumbents in place — and because the page-one band now
+  // carries $390 of partner cost, Nob Hill re-priced from $2,950 to $3,600 on a
+  // reading taken in a different state for a different practice. ST.rankLoc
+  // leaked the same way and printed "Measured in Philadelphia" on a Salem
+  // client. Every per-client measurement resets here, then rehydrates from the
+  // quote's own snapshot if it has one. (2026-08-18)
+  ST.signals=p.signals||null;
+  ST.rivals=p.rivals||{};
+  ST._signalsRun=!!p.signals;
+  ST.rankLoc=null;
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
   if(ST.reports.length){ window._report=ST.reports[ST.reports.length-1]; }
