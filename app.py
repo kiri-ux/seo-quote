@@ -649,6 +649,18 @@ CFG = {
     # way, then one volume request for the whole batch), and every term it
     # proposes is measured and floored before it can reach a chip. (2026-08-17)
     "industry_gap_n": 22,
+    # HOW THE SITE READER INTRODUCES ITSELF. DataForSEO's default is
+    # "Mozilla/5.0 (compatible; RSiteAuditor)", which is a bot string, and a
+    # WAF that refuses it costs a whole client's site-condition reading.
+    "onpage_user_agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/126.0 Safari/537.36"),
+    # Second opinion via Google Lighthouse when the read above comes back empty.
+    # A second request per blocked site, never on the happy path.
+    "technical_health_fallback": True,
+    # How many head terms the back-measure buys a SERP for, per saved quote.
+    # Five was enough to characterise all three clients measured by hand.
+    "backmeasure_terms": 5,
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
@@ -10473,12 +10485,21 @@ def api_market_signals():
     rival_ranks.sort()
     median_rival = (rival_ranks[len(rival_ranks) // 2] if rival_ranks else None)
     top_rival = (rival_ranks[-1] if rival_ranks else None)
+    # THE GAP DECLINES TO BE COMPUTED OFF AN UNMEASURED CLIENT. A client rank of
+    # 0 means bulk_ranks had no backlink data for them, which is indistinguishable
+    # from a site with genuinely none — and subtracting it produces the largest
+    # gap in the book from the weakest evidence in it. Amare read client 0 against
+    # a median incumbent of 565: a gap of 565 that is not comparable to Nob Hill's
+    # 35 against a measured 91. The median incumbent needs no client reading at
+    # all, which is why it is the number to band on. (2026-08-17)
+    client_measured = bool(client_rank)
     gap = (median_rival - client_rank
-           if client_rank is not None and median_rival is not None else None)
+           if client_measured and median_rival is not None else None)
 
     return jsonify({
         "domain": domain,
         "client_rank": client_rank,
+        "client_measured": client_measured,
         "median_rival_rank": median_rival,
         "top_rival_rank": top_rival,
         "gap": gap,
@@ -10490,6 +10511,176 @@ def api_market_signals():
         "authority_error": rank_err,
         "health_error": health_err,
         # Said out loud so nobody has to infer it from the absence of a change.
+        "applied_to_price": False,
+    })
+
+
+# ---------------------------------------------------------------------------
+# BACK-MEASURE: the signal, run against the quotes whose real price is known.
+#
+# Three clients measured by hand said median incumbent authority orders the way
+# Brendan's prices order — 126 / 437 / 565 against $2,950 / $3,550 / $3,550 —
+# and it was the first input that ever separated them. But three points contain
+# exactly one boundary, and four of the eight inputs tested "fit" it, including
+# organic difficulty, which had already been ruled out by experiment that
+# morning. A fit on one boundary is not a finding.
+#
+# The evidence needed already exists: twelve saved quotes carrying a domain, a
+# keyword list and the price Brendan actually sent. This runs the same
+# measurement over all of them so the band is fitted on twelve points instead of
+# three. Nothing here touches a price, and it never will — banding is a separate
+# decision taken after looking at the table.
+#
+# ONE CLIENT PER REQUEST. Five SERPs a client at a 12/min ceiling is about six
+# minutes across the book, and Render kills a request long before that. The
+# browser drives the loop, exactly as the rank check already does. (2026-08-17)
+
+
+def backmeasure_targets(payloads):
+    """Saved quotes that can be back-measured, and why the rest cannot."""
+    out, skipped = [], []
+    for q in payloads or []:
+        p = q.get("payload") or {}
+        if isinstance(p, str):
+            try:
+                p = json.loads(p)
+            except Exception:                                 # noqa: BLE001
+                continue
+        inp = p.get("inputs") or {}
+        name = q.get("name") or q.get("client") or f"quote {q.get('id')}"
+        dom = str(inp.get("domain") or (inp.get("sites") or [""])[0] or "").strip()
+        actual = (p.get("actual") or {}).get("base")
+        # The head terms the build already chose. Falling back to the full list
+        # sorted by volume covers quotes saved before the head split existed.
+        kw = p.get("kw") or {}
+        head = [str(r.get("kw") or "") for r in (kw.get("head") or []) if r.get("kw")]
+        if not head:
+            head = [str(r.get("kw") or "") for r in
+                    sorted((kw.get("all") or []),
+                           key=lambda r: -int(r.get("vol") or 0)) if r.get("kw")]
+        why = ("no client website saved" if not dom
+               else "no keyword list saved" if not head
+               else "no Actual price entered" if not actual else "")
+        row = {"id": q.get("id"), "name": name, "client": q.get("client") or "",
+               "domain": dom, "actual_base": actual,
+               "formula_base": ((p.get("pricing") or {}).get("client_tiers")
+                                or {}).get("base"),
+               "markets": len(inp.get("geo_values") or []),
+               "industry": _first_industry(inp.get("industry")),
+               "terms": len(head)}
+        if why:
+            skipped.append(dict(row, why=why))
+        else:
+            out.append(row)
+    return out, skipped
+
+
+@app.route("/api/backmeasure/list")
+@_json_error_guard
+def api_backmeasure_list():
+    """Which saved quotes the back-measure can run on, without running it."""
+    if not storage.enabled():
+        return jsonify({"targets": [], "skipped": [], "error": "saving is off"})
+    targets, skipped = backmeasure_targets(storage.all_payloads("seo"))
+    return jsonify({"targets": targets, "skipped": skipped,
+                    "terms_each": int(CFG.get("backmeasure_terms", 5) or 5),
+                    "applied_to_price": False})
+
+
+@app.route("/api/backmeasure/one", methods=["POST"])
+@_json_error_guard
+def api_backmeasure_one():
+    """Measure ONE saved quote's page one. Called in a loop by the browser."""
+    if not storage.enabled():
+        return jsonify({"error": "saving is off"}), 400
+    d = request.get_json(force=True) or {}
+    qid = d.get("id")
+    rec = storage.load_quote(qid) if qid is not None else None
+    if not rec:
+        return jsonify({"error": f"quote {qid} not found"}), 404
+    p = rec.get("payload") or {}
+    if isinstance(p, str):
+        p = json.loads(p)
+    inp = p.get("inputs") or {}
+    dom = str(inp.get("domain") or (inp.get("sites") or [""])[0] or "").strip()
+    dom = dom.lower().replace("https://", "").replace("http://", "")
+    dom = dom.replace("www.", "").strip("/")
+    brand = inp.get("brand") or rec.get("client") or ""
+    markets = usable_markets(inp.get("geo_values") or [])
+    state = derive_state(markets, (inp.get("state") or "").strip())
+    kw = p.get("kw") or {}
+    head = [str(r.get("kw") or "") for r in (kw.get("head") or []) if r.get("kw")]
+    if not head:
+        head = [str(r.get("kw") or "") for r in
+                sorted((kw.get("all") or []),
+                       key=lambda r: -int(r.get("vol") or 0)) if r.get("kw")]
+    head = head[:int(CFG.get("backmeasure_terms", 5) or 5)]
+    if not dom or not head:
+        return jsonify({"error": "nothing to measure on this quote"}), 400
+
+    # Page one, per term, through the SAME parser the live rank check uses — the
+    # one place a hand-rolled second copy has already cost a whole client's
+    # incumbents once today.
+    deadline = time.time() + 22
+    rivals, errs, measured = {}, [], 0
+    for k in head:
+        if time.time() > deadline - 4:
+            errs.append("ran out of request budget")
+            break
+        try:
+            _pos, _paa, doms = _serp_one(k, dom, markets, state, brand,
+                                         int(CFG.get("serp_competitor_depth", 10)),
+                                         deadline=deadline)
+            measured += 1
+            for x in doms or []:
+                rivals[x] = rivals.get(x, 0) + 1
+        except Exception as e:                                # noqa: BLE001
+            errs.append(f"{k}: {str(e)[:60]}")
+
+    order = sorted(rivals.items(), key=lambda kv: (-kv[1], kv[0]))
+    top = [x for x, _ in order][:int(CFG.get("serp_rival_cap", 12))]
+    ranks, rank_err = fetch_domain_authority(([dom] if dom else []) + top)
+    rr = sorted(ranks[r] for r in top if r in ranks)
+    median_rival = rr[len(rr) // 2] if rr else None
+    client_rank = ranks.get(dom)
+    client_measured = bool(client_rank)
+    # KEPT ON THE QUOTE, so the Calibration panel can test "who is on page one"
+    # the same way it tests geo band and search volume — rather than in a
+    # separate table read by eye. Five SERPs and a minute of rate-limited waiting
+    # is not a thing to pay for twice, and a variable that is only ever eyeballed
+    # never gets the fragility guards the other eight already have. Additive: no
+    # version snapshot, no reordering, no price touched.
+    signals = {"median_rival_rank": median_rival,
+               "top_rival_rank": (rr[-1] if rr else None),
+               "client_rank": client_rank, "client_measured": client_measured,
+               "n_incumbents": len(rr), "terms_measured": measured,
+               "rivals": [{"domain": x, "rank": ranks.get(x), "appearances": n}
+                          for x, n in order[:int(CFG.get("serp_rival_cap", 12))]]}
+    try:
+        storage.patch_signals(rec.get("id"), signals)
+    except Exception:                                         # noqa: BLE001
+        app.logger.exception("could not attach signals to quote")
+    return jsonify({
+        "id": rec.get("id"), "name": rec.get("name") or "",
+        "client": rec.get("client") or "", "domain": dom,
+        "actual_base": (p.get("actual") or {}).get("base"),
+        "formula_base": ((p.get("pricing") or {}).get("client_tiers") or {}).get("base"),
+        "markets": len(inp.get("geo_values") or []),
+        "industry": _first_industry(inp.get("industry")),
+        "terms_measured": measured, "terms_asked": len(head),
+        "median_rival_rank": median_rival,
+        "top_rival_rank": (rr[-1] if rr else None),
+        "client_rank": client_rank,
+        "client_measured": client_measured,
+        # Only when the client was actually measured — see the note in
+        # api_market_signals. An unmeasured client produces the biggest gap in
+        # the book off the weakest evidence in it.
+        "gap": (median_rival - client_rank
+                if client_measured and median_rival is not None else None),
+        "n_incumbents": len(rr),
+        "rivals": [{"domain": x, "rank": ranks.get(x), "appearances": n}
+                   for x, n in order[:int(CFG.get("serp_rival_cap", 12))]],
+        "errors": errs + ([rank_err] if rank_err else []),
         "applied_to_price": False,
     })
 
@@ -10572,6 +10763,16 @@ def fetch_domain_authority(domains):
                 t = str(it.get("target") or "").lower().replace("www.", "")
                 if t:
                     out[t] = int(it.get("rank") or 0)
+        # A ZERO IS NOT A MEASUREMENT OF WEAKNESS. bulk_ranks answers for every
+        # target it was asked about and writes 0 for one it has no backlink data
+        # on, so "no authority" and "not in the index" arrive as the same number.
+        # That is survivable for an incumbent — a page-one domain with no
+        # backlink data is genuinely weak — but not for the CLIENT, whose rank
+        # is the subtrahend in the gap. Amare read 0 against a median incumbent
+        # of 565, and a gap of 565 computed against an unmeasured client is not
+        # comparable to Nob Hill's 35 computed against a measured 91. Callers
+        # get the zeros AND the list, so the gap can decline to be computed
+        # rather than quietly inflate. (2026-08-17)
         return out, ""
     except Exception as e:                                    # noqa: BLE001
         app.logger.exception("bulk_ranks failed")
@@ -10622,8 +10823,19 @@ def fetch_technical_health(domain):
     if not dom:
         return {}, ""
     try:
+        # NOT AS "RSiteAuditor". instant_pages defaults its user agent to
+        # `Mozilla/5.0 (compatible; RSiteAuditor)` — a string that announces
+        # itself as a bot to every WAF on the internet — and DataForSEO's own
+        # docs note that some sites deny access when accept_language is missing.
+        # Amare Homes came back with an empty page and the panel printed
+        # "0/100 · nothing flagged" for a site nobody had read. Ask as a browser
+        # on the call we are already paying for; it costs nothing and it may be
+        # the whole fix. (2026-08-17)
         data = dfs_post("/on_page/instant_pages",
-                        [{"url": f"https://{dom}"}], timeout=25)
+                        [{"url": f"https://{dom}",
+                          "custom_user_agent": CFG.get("onpage_user_agent"),
+                          "accept_language": "en-US,en;q=0.9",
+                          "browser_preset": "desktop"}], timeout=25)
         task0 = ((data or {}).get("tasks") or [{}])[0] or {}
         if task0.get("status_code") not in (20000, None):
             return {}, f"{task0.get('status_code')}: {task0.get('status_message')}"
@@ -10635,16 +10847,82 @@ def fetch_technical_health(domain):
             if item:
                 break
         if not item:
-            return {}, "no page returned"
+            return _lighthouse_health(dom, "no page returned")
         checks = item.get("checks") or {}
+        # A SITE THAT REFUSED US IS NOT A SITE SCORING ZERO. With no checks
+        # there is nothing to score, and `onpage_score or 0` turned that into
+        # 0.0/100 with an empty failure list — the worst possible reading,
+        # printed as though it were a measurement, for the one client in three
+        # whose site blocks crawlers. The information to tell them apart was
+        # already here: len(checks). (2026-08-17)
+        if not checks:
+            return _lighthouse_health(dom, "the page returned nothing to check")
         failed = [label for key, bad_when, label in _ONPAGE_DEBT
                   if key in checks and bool(checks[key]) is bool(bad_when)]
         return {"score": round(float(item.get("onpage_score") or 0), 1),
-                "failed": failed, "checked": len(checks),
+                "failed": failed, "checked": len(checks), "source": "on_page",
                 "timing": (item.get("page_timing") or {}).get("dom_complete")}, ""
     except Exception as e:                                    # noqa: BLE001
         app.logger.exception("instant_pages health failed")
         return {}, str(e)[:120]
+
+
+# Lighthouse audit ids that mean the same thing as the _ONPAGE_DEBT checks, so a
+# site read through the fallback reports in the same vocabulary as one read
+# directly. Google's audit set is not the same shape — there is no "no H1" audit
+# — so this is deliberately the intersection rather than a translation.
+_LH_DEBT = (
+    ("is-on-https", "not on HTTPS"),
+    ("document-title", "missing title"),
+    ("meta-description", "missing meta description"),
+    ("image-alt", "images without alt text"),
+    ("crawlable-anchors", "links Google cannot follow"),
+    ("hreflang", "broken hreflang"),
+    ("http-status-code", "page returns an error status"),
+    ("viewport", "no mobile viewport"),
+)
+
+
+def _lighthouse_health(dom, why):
+    """Second opinion on a site instant_pages could not read.
+
+    Lighthouse fetches as Chrome rather than as an auditor, so it clears the
+    naive 403 that the default user agent trips, and DataForSEO wraps Google's
+    own project — same credentials, same dfs_post, one extra call. Its audits
+    cover meta descriptions, titles, hreflang, crawlable links and image alt
+    text, which is most of what _ONPAGE_DEBT counts.
+
+    OFF BY DEFAULT AND ONLY ON FAILURE: this is a second request, and doubling
+    the cost of every quote to rescue the occasional blocked site is a bad
+    trade. Returns ({}, why) unchanged when it is off or when it fails too, so
+    the caller still learns that nothing was measured. (2026-08-17)
+    """
+    if not CFG.get("technical_health_fallback"):
+        return {}, why
+    try:
+        data = dfs_post("/on_page/lighthouse/live/json",
+                        [{"url": f"https://{dom}", "for_mobile": False,
+                          "categories": ["performance", "seo", "accessibility",
+                                         "best-practices"]}], timeout=40)
+        task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+        if task0.get("status_code") not in (20000, None):
+            return {}, f"{why}; lighthouse {task0.get('status_code')}"
+        block = ((task0.get("result") or [{}])[0] or {})
+        audits = (block.get("audits") or {})
+        cats = (block.get("categories") or {})
+        if not audits and not cats:
+            return {}, f"{why}; lighthouse returned nothing either"
+        # Lighthouse scores each audit 0-1, with null meaning "not applicable".
+        failed = [label for aid, label in _LH_DEBT
+                  if isinstance((audits.get(aid) or {}).get("score"), (int, float))
+                  and float(audits[aid]["score"]) < 1]
+        seo = ((cats.get("seo") or {}).get("score"))
+        return {"score": round(float(seo) * 100, 1) if seo is not None else None,
+                "failed": failed, "checked": len(audits), "source": "lighthouse",
+                "timing": None}, ""
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("lighthouse health failed")
+        return {}, f"{why}; lighthouse {str(e)[:60]}"
 
 
 def serp_top_domains(kw, loc, client_dom="", top_n=5, deadline=None):
@@ -12301,6 +12579,11 @@ def calibration_rows(payloads):
             "industry_anchor_add": pricing.get("industry_anchor_add") or 0,
             "markets": len(inp.get("geo_values") or []),
             "pct_not_ranking": pricing.get("pct_not_ranking"),
+            # Attached by the back-measure, absent on any quote it has not run
+            # on yet — which is the normal state and reads as "not measured"
+            # rather than as a zero.
+            "median_rival_rank": (p.get("signals") or {}).get("median_rival_rank"),
+            "top_rival_rank": (p.get("signals") or {}).get("top_rival_rank"),
             "total_volume": kw.get("total_volume") or pricing.get("total_volume"),
             "formula": {t: pairs[t][0] for t in _TIERS},
             "actual": {t: pairs[t][1] for t in _TIERS},
@@ -12570,6 +12853,37 @@ def _mkt_bucket(n):
     return "1 market" if n <= 1 else ("2-5 markets" if n <= 5 else "6+ markets")
 
 
+def _pageone_bucket(rank):
+    """Who already holds page one, by the median incumbent's backlink authority.
+
+    THE MEDIAN, NOT THE GAP. The gap needs the client's own authority, and
+    bulk_ranks writes 0 both for a domain with no backlinks and for one it has no
+    data on — Amare read 0 and would have produced the largest gap in the book
+    off the weakest evidence in it. The median incumbent needs no reading of the
+    client at all.
+
+    THE BANDS ARE NOT FITTED TO THE THREE CLIENTS MEASURED BY HAND. 126, 437 and
+    565 would each land in their own bucket at almost any cut, which is how a
+    variable looks like a perfect driver on n=3 — four of the eight inputs
+    already tested "fit" that same single boundary, including organic difficulty,
+    which had been ruled out by experiment the same morning. These are round
+    thirds of DataForSEO's 0-1000 scale, and the panel's existing guards
+    (min_bucket, the fragile flag) decide whether they have earned anything.
+    (2026-08-17)
+    """
+    # None, not a label. A quote the back-measure has not run on is not a bucket
+    # of its own — it would be the biggest bucket in the panel for weeks, and a
+    # "spread" between measured and unmeasured quotes measures nothing but which
+    # ones got measured first.
+    if rank is None:
+        return None
+    if rank < 200:
+        return "page one: local businesses (under 200)"
+    if rank < 500:
+        return "page one: regional or institutional (200-499)"
+    return "page one: national platforms (500+)"
+
+
 CALIB_DRIVERS = [
     ("geo band", lambda r: (r["band"] or "unset").replace("_", " ")),
     ("demand basis", lambda r: "national" if r["national_demand"] else "local"),
@@ -12577,6 +12891,14 @@ CALIB_DRIVERS = [
     ("strategy", lambda r: r.get("strategy") or "Core SEO"),
     ("search volume", lambda r: _vol_bucket(r.get("total_volume"))),
     ("market count", lambda r: _mkt_bucket(int(r.get("markets") or 0))),
+    # WHO IS ON PAGE ONE — the ninth variable, tested exactly like the other
+    # eight. Three clients measured by hand put it in the right order against
+    # Brendan's prices (126/437/565 against $2,950/$3,550/$3,550) and it was the
+    # first input that ever separated them. That is a reason to MEASURE it across
+    # the book, not to believe it: this panel already knows how to say "n is too
+    # small" and how to spot one outlier wearing several hats, and a variable
+    # read off a table by eye gets neither. (2026-08-17)
+    ("page one", lambda r: _pageone_bucket(r.get("median_rival_rank"))),
     # INDUSTRY, tested the same way as everything else rather than assumed. There
     # is already an industry pricing rule (industry_anchor_add), so if BE's prices
     # move by vertical this is the variable that will show it — and if they do not,
@@ -12600,7 +12922,14 @@ def calibration_drivers(rows, min_bucket=2):
         for r in rows:
             if r["gap_pct"]["base"] is None:
                 continue
-            buckets.setdefault(fn(r), []).append(r["gap_pct"]["base"])
+            # A driver returns None for a quote it cannot classify, and that
+            # quote sits the test out rather than forming an "unknown" bucket —
+            # the difference between measured and not-yet-measured quotes is a
+            # fact about the measuring, not about the price.
+            key = fn(r)
+            if key is None:
+                continue
+            buckets.setdefault(key, []).append(r["gap_pct"]["base"])
         shown = [{"value": k, "n": len(v), "median_gap_pct": _median(v)}
                  for k, v in buckets.items()]
         # The ranking rung is an ORDERED scale, so listing it by gap printed the

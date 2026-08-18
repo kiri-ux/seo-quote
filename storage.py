@@ -367,3 +367,36 @@ def all_payloads(tool="seo", limit=500):
             d["updated_at"] = d["updated_at"].isoformat() if d["updated_at"] else None
             out.append(d)
         return out
+
+
+def patch_signals(quote_id, signals):
+    """Attach a market-signals reading to a saved quote, and nothing else.
+
+    The back-measure runs the same page-one measurement over every quote whose
+    real price is known, so the Calibration panel can test "who is on page one"
+    the same way it tests geo band and search volume. That reading has to
+    persist — measuring it is five SERPs and a minute of rate-limited waiting,
+    and nobody should pay that twice.
+
+    NOT update_quote(). That snapshots a version and bumps updated_at, so
+    back-measuring twelve quotes would push twelve entries into their history and
+    reshuffle the saved-quotes list into back-measure order. This is an additive
+    key on the payload: no version, no reordering, no change to any price.
+    (2026-08-17)
+    """
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT payload FROM quotes WHERE id=%s", (quote_id,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        payload = row[0]
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:                                 # noqa: BLE001
+                return False
+        payload["signals"] = signals
+        cur.execute("UPDATE quotes SET payload=%s WHERE id=%s",
+                    (json.dumps(payload), quote_id))
+        conn.commit()
+        return True

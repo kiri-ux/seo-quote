@@ -310,6 +310,19 @@
   </div>
   <div class="help" style="margin:4px 0 12px">What the formula produced versus the price actually sent, on every saved quote where you filled in <b>Compare to actual quote</b>. Grouped by geo band and demand basis — the shape of the quote, not the client.<br><b>Each row compares against the formula price stored on that quote</b>, so a constant you change today only shows up in quotes priced after it — these gaps will not close retroactively.</div>
   <div id="calibOut" style="font-size:13px">Loading…</div>
+  <!-- BACK-MEASURE. Three clients measured by hand said incumbent authority
+       orders the way Brendan's prices order, and it was the first input that
+       ever separated them — but three points contain one boundary and four of
+       eight inputs fitted it, including the one ruled out by experiment that
+       same morning. This runs the same measurement over every saved quote whose
+       real price is known, so the band is fitted on the whole book instead.
+       Reported only, and it stays that way until the table says something.
+       (2026-08-17) -->
+  <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px">
+    <div style="font-weight:700;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin-bottom:6px">Who is on page one — back-measure</div>
+    <div class="help" style="margin:0 0 9px">Every pricing input in this tool reads these clients as identical: search volume pays nothing under 10,000/mo and they run 200–980, the CPC adder needs a $20 click and they measure $2.89–$16.75, difficulty's first break is 30 and they read 0–25. So every quote computes under the floor and the floor is the price. What actually differs is <b>who already holds page one</b> — Amaré's is Zillow and Trulia, Nob Hill's is six other Salem dentists. This measures that against the price you really sent. <b>Nothing here is applied to a price.</b></div>
+    <div id="bmOut" style="font-size:12.5px">Loading…</div>
+  </div>
 </div>
 
 <!-- Saved quotes drawer -->
@@ -3092,9 +3105,20 @@ function renderMarketSignals(){
       escapeHtml(r.domain)+' <span class="nf">('+(r.rank!=null?'authority '+num(r.rank):'—')
       +(r.appearances?', '+r.appearances+' of your terms':'')+')</span>').join(' · ')||'—'}</div>`);
   if(s.client_rank!=null||s.median_rival_rank!=null){
-    bits.push(`<div style="margin-top:4px"><b>Authority</b> — this client ${num(s.client_rank)}`
+    // A CLIENT RANK OF 0 IS NOT A MEASUREMENT. bulk_ranks answers for every
+    // target and writes 0 for one it has no backlink data on, so "no authority"
+    // and "not in the index" arrive as the same number. Subtracting it produced
+    // Amaré's gap of +565 — the biggest in the book, off the weakest evidence in
+    // it, and not comparable to Nob Hill's +35 against a measured 91. The median
+    // incumbent needs no client reading at all. (2026-08-17)
+    bits.push(`<div style="margin-top:4px"><b>Authority</b> — this client `
+      +(s.client_measured===false
+        ? `<span title="No backlink data came back for this domain. That is indistinguishable from having none, so the gap is left uncomputed rather than take the largest number available off the weakest evidence available.">not measurable</span>`
+        : num(s.client_rank))
       +` · median incumbent ${num(s.median_rival_rank)} · strongest ${num(s.top_rival_rank)}`
-      +(s.gap!=null?` · <b>gap ${s.gap>0?'+':''}${num(s.gap)}</b>`:'')
+      +(s.gap!=null?` · <b>gap ${s.gap>0?'+':''}${num(s.gap)}</b>`
+                   :(s.client_measured===false&&s.median_rival_rank!=null
+                     ? ` · <span class="nf">gap not computed</span>`:''))
       +` <span class="nf">(${s.n_measured} incumbent${s.n_measured===1?'':'s'} measured)</span></div>`);
   }
   if(s.authority_error) bits.push(`<div style="margin-top:4px;color:#8a5a10">⚠ Authority lookup failed — ${escapeHtml(s.authority_error)}</div>`);
@@ -3102,9 +3126,14 @@ function renderMarketSignals(){
   if(h.score!=null){
     bits.push(`<div style="margin-top:4px"><b>Site condition</b> — on-page score ${num(h.score)}/100`
       +(h.failed&&h.failed.length?` · <span style="color:#8a5a10">${h.failed.length} issue${h.failed.length===1?'':'s'}</span>: ${h.failed.slice(0,8).map(escapeHtml).join(', ')}`:' · nothing flagged')
+      +(h.source==='lighthouse'?` <span class="nf">(read through Google Lighthouse — their site refused the normal crawler)</span>`:'')
       +`</div>`);
   } else if(s.health_error){
-    bits.push(`<div style="margin-top:4px;color:#8a5a10">⚠ Site check failed — ${escapeHtml(s.health_error)}</div>`);
+    // A SITE THAT REFUSED US IS NOT A SITE SCORING ZERO. This read "0/100 ·
+    // nothing flagged" for Amaré, whose site blocks crawlers — the worst
+    // possible score, printed as a measurement, for a page nobody had read.
+    // (2026-08-17)
+    bits.push(`<div style="margin-top:4px;color:#8a5a10">⚠ <b>Site condition could not be measured</b> — ${escapeHtml(s.health_error)}${tipOf('Not a score of zero &mdash; nothing was read. Their site refuses automated requests; the tool now asks as a browser rather than as an auditor and falls back to Google Lighthouse, and this line means both were refused.<br><br>Left blank on purpose: a blocked site reading as 0/100 would be the worst possible client in any band built on site condition.')}</div>`);
   }
   n.innerHTML=`\u{1F52C} <b>Market signals</b>${tipOf('Three inputs the price has never seen: who already holds page one, how far this client sits behind them in backlink authority, and what condition their own site is in. Measured and shown only \u2014 none of it moves the quote. Every threshold already in the formula was set for a client ten times larger than the ones quoted here, so these get measured across a real spread before any of them is banded.')}<div class="nf" style="margin-top:4px">${bits.join('')}<div style="margin-top:5px;opacity:.75">Reported only \u2014 the price is unchanged by all of this.</div></div>`;
 }
@@ -3784,11 +3813,98 @@ function closeCfg(){
   $('cfgBackdrop').style.display='none';
 }
 $('cfgBtn').addEventListener('click', openCfg);
+// ---- back-measure: the signal, against the prices actually sent -------------
+// ONE CLIENT PER REQUEST. Five SERPs a client at DataForSEO's 12/min ceiling is
+// about six minutes across the book, and Render kills a request long before
+// that — so the loop lives here, exactly as the rank check's does. Rows append
+// as they land, and Stop leaves what has already been measured on screen.
+// (2026-08-17)
+const BM={rows:[], running:false, stop:false, targets:[], skipped:[], terms:5};
+function bmMoney(v){ return v==null?'—':'$'+Number(v).toLocaleString(); }
+function bmNum(v){ return (v==null||v==='')?'—':Number(v).toLocaleString(); }
+async function loadBackmeasure(){
+  const out=$('bmOut'); if(!out) return;
+  out.innerHTML='<div class="nf">Reading saved quotes…</div>';
+  try{
+    const r=await (await fetch('/api/backmeasure/list')).json();
+    if(r.error){ out.innerHTML=`<div class="nf">${escapeHtml(r.error)}</div>`; return; }
+    BM.targets=r.targets||[]; BM.skipped=r.skipped||[]; BM.terms=r.terms_each||5;
+    renderBackmeasure();
+  }catch(e){ out.innerHTML=`<div class="err">${escapeHtml(String(e.message))}</div>`; }
+}
+function renderBackmeasure(){
+  const out=$('bmOut'); if(!out) return;
+  const n=BM.targets.length, mins=Math.max(1, Math.round(n*BM.terms/12));
+  if(!n && !BM.rows.length){
+    out.innerHTML=`<div class="calc">No saved quote can be back-measured yet — each one needs a client website, a built keyword list and an <b>Actual</b> price. ${BM.skipped.length?`${BM.skipped.length} quote${BM.skipped.length===1?'':'s'} fell short:<br>`+BM.skipped.slice(0,14).map(s=>`<span class="nf">${escapeHtml(s.name)} — ${escapeHtml(s.why)}</span>`).join('<br>'):''}</div>`;
+    return;
+  }
+  // Sorted by the price Brendan actually sent, because that is the column the
+  // eye has to run down: if authority orders with it, it shows here or nowhere.
+  const rows=BM.rows.slice().sort((a,b)=>(a.actual_base||0)-(b.actual_base||0));
+  const done=BM.rows.length;
+  out.innerHTML=`
+    <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      ${BM.running
+        ? `<button type="button" id="bmStop" class="btn2" style="padding:4px 12px;font-size:12px">Stop</button>
+           <span class="nf">Measuring ${done+1} of ${n}… ${BM.terms} searches each, so this takes a few minutes.</span>`
+        : `<button type="button" id="bmRun" class="btn2" style="padding:4px 12px;font-size:12px">${done?'Measure the rest':'Run the back-measure'}</button>
+           <span class="nf">${n} quote${n===1?'':'s'} ready · ${BM.terms} searches each · about ${mins} minute${mins===1?'':'s'}${done?` · ${done} done`:''}</span>`}
+    </div>
+    ${rows.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="text-align:left;color:var(--muted)">
+        <th style="padding:3px 6px 3px 0">client</th>
+        <th style="padding:3px 6px;text-align:right">sent</th>
+        <th style="padding:3px 6px;text-align:right">formula</th>
+        <th style="padding:3px 6px;text-align:right">median<br>incumbent</th>
+        <th style="padding:3px 6px;text-align:right">strongest</th>
+        <th style="padding:3px 6px;text-align:right">client</th>
+        <th style="padding:3px 6px;text-align:right">gap</th>
+        <th style="padding:3px 0 3px 6px">page one</th></tr>
+      ${rows.map(x=>`<tr style="border-top:1px solid var(--line)">
+        <td style="padding:4px 6px 4px 0"><b>${escapeHtml(String(x.client||x.name||'').slice(0,26))}</b>${x.errors&&x.errors.length?` <span title="${escapeHtml(x.errors.join(' · '))}" style="color:#b04a4a">⚠</span>`:''}</td>
+        <td style="padding:4px 6px;text-align:right"><b>${bmMoney(x.actual_base)}</b></td>
+        <td style="padding:4px 6px;text-align:right;color:var(--muted)">${bmMoney(x.formula_base)}</td>
+        <td style="padding:4px 6px;text-align:right"><b>${bmNum(x.median_rival_rank)}</b></td>
+        <td style="padding:4px 6px;text-align:right;color:var(--muted)">${bmNum(x.top_rival_rank)}</td>
+        <td style="padding:4px 6px;text-align:right;color:var(--muted)">${x.client_measured?bmNum(x.client_rank):'<span title="bulk_ranks had no backlink data for this domain, which is indistinguishable from having none — so the gap declines to be computed rather than take the biggest number in the book off the weakest evidence in it">not measured</span>'}</td>
+        <td style="padding:4px 6px;text-align:right">${x.gap==null?'—':'+'+Number(x.gap).toLocaleString()}</td>
+        <td style="padding:4px 0 4px 6px;color:var(--muted)">${(x.rivals||[]).slice(0,3).map(v=>escapeHtml(v.domain)).join(', ')||'—'}</td></tr>`).join('')}
+    </table></div>
+    <div class="nf" style="margin-top:7px">Sorted by the price actually sent. <b>Median incumbent</b> is the one to read: it needs no measurement of the client at all, which is the reading that failed on Amaré. <b>Nothing in this table is applied to a price</b> — banding is a separate decision, taken after the table says something.</div>`:''}
+    ${BM.skipped.length?`<details style="margin-top:7px"><summary class="nf" style="cursor:pointer;user-select:none;font-size:11.5px">${BM.skipped.length} saved quote${BM.skipped.length===1?'':'s'} couldn't be measured</summary><div class="nf" style="font-size:11.5px;margin-top:4px">${BM.skipped.map(s=>escapeHtml(s.name)+' — '+escapeHtml(s.why)).join('<br>')}</div></details>`:''}`;
+  const run=$('bmRun'); if(run) run.onclick=runBackmeasure;
+  const st=$('bmStop'); if(st) st.onclick=()=>{ BM.stop=true; };
+}
+async function runBackmeasure(){
+  if(BM.running) return;
+  BM.running=true; BM.stop=false;
+  const seen=new Set(BM.rows.map(r=>r.id));
+  renderBackmeasure();
+  for(const t of BM.targets){
+    if(BM.stop) break;
+    if(seen.has(t.id)) continue;
+    try{
+      const r=await postJSON('/api/backmeasure/one',{id:t.id});
+      BM.rows.push(r);
+    }catch(e){
+      // A client that fails is a row that says so, not a loop that stops. The
+      // rest of the book is still worth measuring.
+      BM.rows.push(Object.assign({}, t, {errors:[String(e.message).slice(0,90)]}));
+    }
+    seen.add(t.id);
+    renderBackmeasure();
+  }
+  BM.running=false;
+  renderBackmeasure();
+}
+
 // ---- calibration drawer -----------------------------------------------------
 function closeCalib(){ $('calibPanel').style.display='none'; $('cfgBackdrop').style.display='none'; }
 async function openCalib(){
   $('calibPanel').style.display='block';
   $('cfgBackdrop').style.display='block';
+  loadBackmeasure();
   const out=$('calibOut');
   out.innerHTML='<div class="nf">Reading every saved quote…</div>';
   try{
