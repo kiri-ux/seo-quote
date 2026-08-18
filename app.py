@@ -10908,16 +10908,35 @@ def _lighthouse_health(dom, why):
         if task0.get("status_code") not in (20000, None):
             return {}, f"{why}; lighthouse {task0.get('status_code')}"
         block = ((task0.get("result") or [{}])[0] or {})
+        # DataForSEO wraps Google's report, and the docs render client-side so the
+        # exact envelope could not be read before shipping. Both shapes are
+        # accepted rather than guessed at: a wrong guess here fails silently, and
+        # a silent failure in a fallback is worse than no fallback.
+        block = block.get("lighthouse_result") or block
         audits = (block.get("audits") or {})
         cats = (block.get("categories") or {})
         if not audits and not cats:
             return {}, f"{why}; lighthouse returned nothing either"
-        # Lighthouse scores each audit 0-1, with null meaning "not applicable".
-        failed = [label for aid, label in _LH_DEBT
-                  if isinstance((audits.get(aid) or {}).get("score"), (int, float))
-                  and float(audits[aid]["score"]) < 1]
-        seo = ((cats.get("seo") or {}).get("score"))
-        return {"score": round(float(seo) * 100, 1) if seo is not None else None,
+
+        # AND THE SCALE IS NOT ASSUMED EITHER. Raw Lighthouse scores 0-1;
+        # DataForSEO's own page advertises "1-100 scores". Reading a 0-100 score
+        # as 0-1 would mark every passing audit as failed — a clean site would
+        # come back as the most broken in the book, which is precisely the class
+        # of error this whole change exists to stop. Anything above 1 is a
+        # percentage. (2026-08-17)
+        def _pct(v):
+            if not isinstance(v, (int, float)):
+                return None
+            v = float(v)
+            return v if v > 1 else v * 100
+
+        failed = []
+        for aid, label in _LH_DEBT:
+            v = _pct((audits.get(aid) or {}).get("score"))
+            if v is not None and v < 100:
+                failed.append(label)
+        seo = _pct((cats.get("seo") or {}).get("score"))
+        return {"score": round(seo, 1) if seo is not None else None,
                 "failed": failed, "checked": len(audits), "source": "lighthouse",
                 "timing": None}, ""
     except Exception as e:                                    # noqa: BLE001
