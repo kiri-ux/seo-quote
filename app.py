@@ -673,19 +673,26 @@ CFG = {
     # floor was the price. Nob Hill and Amare came out identical at $2,950 and
     # Brendan sent $2,950 and $3,550.
     #
-    # THE EVIDENCE IS TWO QUOTES. 390 partner is 600 client at 35%, which is
-    # exactly the $2,950 -> $3,550 step in his own book — but it is fitted on the
-    # two clients in that bucket against a three-quote minimum, and four of the
-    # eight variables already tested fit that same single boundary, including
-    # organic difficulty, which was ruled out by experiment the morning it was
-    # banded. Set deliberately and early, on the operator's call, to be checked
-    # against the back-measure across the whole book. It is one number in one
-    # dict: setting the national band back to 0 reverts it entirely.
-    # (2026-08-18)
+    # REVERTED TO ZERO 2026-08-18, THE DAY IT WAS SET. It was fitted on two
+    # quotes — Amare and NPAIHB — and the back-measure across all fifteen killed
+    # it on its first run: page-one strength against the price actually sent is
+    # Spearman rho -0.09. No relationship. It fired on FOUR OF THE SIX clients
+    # Brendan priced at his floor (Media Venue 650, Junk Bee Gone 704, Keller
+    # 728, Red Shoes 728) and would have overcharged every one of them; Keller
+    # went from $200 over to $750 over. Meanwhile the two he priced highest that
+    # it was fitted on, NASSCO at 424 and NPAIHB at 437, sit BELOW four of those
+    # floor clients.
+    #
+    # The mechanism still sounds right — one Zillow does change the job — and it
+    # is measured and reported on every quote. It simply is not what moved his
+    # prices, and a story that good is exactly the kind that needs a number
+    # against it. Kept as a dict at zero rather than deleted: the measurement is
+    # still collected, so if a later cut of the data earns a band the lever is
+    # here. (2026-08-18)
     "pageone_anchor_add": {
         "page one: local businesses (under 200)": 0,
         "page one: regional or institutional (200-399)": 0,
-        "page one: national platforms (400+)": 390,
+        "page one: national platforms (400+)": 0,
     },
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
