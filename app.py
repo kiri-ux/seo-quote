@@ -15,11 +15,11 @@ Local run:
     DFS_LOGIN=... DFS_PASSWORD=... python app.py
     -> http://localhost:5000
 """
-import os, json, base64, statistics, time, re, threading
+import os, json, base64, statistics, time, re, threading, io
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 import requests
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import time as _time
 import storage
 
@@ -9441,6 +9441,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "manual_geo": bool(ai and ai.get("manual_geo")),
             "manual_addon": manual_addon,
             "industry_rule": rule_key,
+            # Every component the price is built from, so the proposal view can
+            # show one chart instead of six panels. The adder was the only one
+            # that lived solely as an input and never came back out.
+            "competitive_adder": int(adder or 0),
             "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
             "pageone_anchor_add": pageone_add,
             "pageone_band": pageone_band,
@@ -9459,6 +9463,131 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
             "markup_pct": markup_pct, "addon_markets": addon_markets,
             "tiers": client, "addon_per_market": client_addon}
+
+# ---------------------------------------------------------------------------
+# THE PROPOSAL DOCUMENT
+#
+# Brendan's proposals are one shape, every time: Background, an SEO section, the
+# keyword table, the three keyword-set definitions, the monthly service list,
+# three priced options, Case Studies. Rebuilding that by hand for every quote is
+# the work this tool exists to remove, and the quote already holds every
+# client-specific number in it.
+#
+# The standing sections live here rather than in the generator so they can be
+# edited without touching code — when a case study changes it changes in one
+# place. Anything that varies per client is computed, never templated.
+# (2026-08-18)
+# ---------------------------------------------------------------------------
+
+PROPOSAL = {
+    "intro_heading": "Background Information",
+    "seo_heading": "Search Engine Optimization (SEO)",
+    "measured_heading": "What We Measured For You",
+    "campaign_heading": "Ongoing SEO Campaign",
+    "options_heading": "SEO Campaign Options",
+    "case_heading": "Case Studies & Results",
+    "keyword_sets": [
+        ("Ultra-Competitive Keywords",
+         "These are the most competitive terms in a particular industry and are "
+         "extremely difficult to rank but yield extremely high traffic and lead "
+         "volume once ranked."),
+        ("Competitive Keywords",
+         "These are highly competitive terms which take a high amount of effort "
+         "and time to rank for but can drive a tremendous amount of traffic and "
+         "leads once ranked."),
+        ("Long-tail Keywords",
+         "These are lower competition terms which take less time and effort to "
+         "rank for but also drive less traffic — however this traffic is "
+         "generally highly qualified and converts at a high rate."),
+    ],
+    "services": [
+        ("Keyword Research & Strategy",
+         ["Conduct full initial keyword research to identify relevant search "
+          "terms in the industry.",
+          "Map each term to the landing page best placed to rank for it.",
+          "Meaningful ranking improvements generally begin within 4-6 months, "
+          "with compounding gains after that."]),
+        ("On-Site Optimization",
+         ["Full technical website audit",
+          "Title tag optimization",
+          "Meta information optimization",
+          "Image optimization where needed",
+          "Testing the site for all current SEO factors including mobile "
+          "usability, speed, and other factors"]),
+        ("Off-Site Link Building",
+         ["Guest posts/articles",
+          "Directory type listings",
+          "Citation building",
+          "Content distribution/syndication",
+          "Content sharing sites",
+          "Micro-blogs",
+          "And additional link types as relevant to the campaign"]),
+        ("Content Creation",
+         ["Research 2-3 long tail keyword topics each month",
+          "Write 2-3 highly SEO-focused articles/content assets, 750-1,000 "
+          "words in length",
+          "Post them to the site and promote them"]),
+        ("Local Listings & Google Business Profile",
+         ["Verify listing sites are set up properly, including Google Business "
+          "Profile",
+          "On-page optimization of the Google Business Profile",
+          "Monthly citation building"]),
+        ("Reporting",
+         ["A monthly report at the start of each month outlining the work "
+          "performed and analytical metrics for the keywords and the website."]),
+    ],
+    # The per-option keyword counts Brendan quotes. Boilerplate in his documents
+    # — the same three lines regardless of the grid — so they stay boilerplate.
+    "option_scope": {
+        "base": ["1 ultra-competitive keyword", "3-5 competitive keywords",
+                 "10-15 long tail keywords"],
+        "intermediate": ["2 ultra-competitive keywords", "5-8 competitive keywords",
+                         "12-18 long tail keywords"],
+        "advanced": ["3 ultra-competitive keywords", "8-12 competitive keywords",
+                     "15-20 long tail keywords"],
+    },
+    "option_blurb": {
+        "base": "In our base SEO campaign, we are doing SEO work to the site to "
+                "steadily improve rankings and drive more traffic to the site. "
+                "We include all SEO activities outlined above and would expect "
+                "to see ranking improvements starting after 6-10 months.",
+        "intermediate": "An intermediate campaign includes everything in a base "
+                        "campaign, plus additional link building, more content "
+                        "each month, and a faster pace of on-site work.",
+        "advanced": "An advanced campaign includes everything in an intermediate "
+                    "campaign, and accelerates the pace at which we build "
+                    "authority and produce content — the fastest route to page "
+                    "one on the most competitive terms.",
+    },
+    "closing": [
+        "Additional keywords can be added to any campaign for an additional fee "
+        "upon request.",
+        "We greatly appreciate the opportunity and your trust in evaluating us "
+        "as your digital partner. Everything we do is centered around providing "
+        "best in class service and results.",
+    ],
+    "case_studies": [
+        "All Year Cooling \u2013 5+ year SEO client ranking #1 for \u201cMiami AC "
+        "Repair\u201d and over 100 other terms on page 1, resulting in a 1,000+% "
+        "increase in organic traffic.",
+        "Engage \u2013 7+ year SEO client ranking #1 for \u201cMotivational "
+        "Speakers\u201d, one of the most competitive keywords on the internet, as "
+        "well as dozens of other terms.",
+        "ERI \u2013 10+ year SEO client ranking #1 for \u201cElectronic "
+        "Recyclers\u201d, \u201cData Destruction\u201d, and hundreds of other terms "
+        "driving hundreds of leads per year.",
+        "Goldstone Financial \u2013 4+ year SEO client ranking #1 for "
+        "\u201cFinancial Advisor Chicago\u201d, \u201cFinancial Planner Chicago\u201d, "
+        "\u201cRetirement Advisor\u201d and dozens of other terms.",
+        "Lakeside Equipment \u2013 10+ year SEO client ranking #1 for over 50 "
+        "keywords in their industry, resulting in an over 5,000% increase in "
+        "organic traffic.",
+    ],
+    "case_closing": "Over the past two decades, we have managed hundreds of "
+                    "digital marketing, web and SEO campaigns with a focus on "
+                    "delivering results and forging long term partnerships.",
+}
+
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -14568,3 +14697,253 @@ except Exception as _e:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
+
+# ---------------------------------------------------------------------------
+# THE .DOCX EXPORT
+# ---------------------------------------------------------------------------
+
+def _p_money(v):
+    try:
+        return "$" + format(int(round(float(v))), ",")
+    except Exception:                                         # noqa: BLE001
+        return "—"
+
+
+def _proposal_rows(d):
+    """The keyword table, in Brendan's column order plus the volume we measure.
+
+    His table is Keyword / Google Current Rank / Keyword Type. The volume column
+    is ours — it is the one number in the document nobody else in the pitch can
+    produce, because it comes from a live search-volume lookup rather than an
+    estimate, and it is why the tiers are where they are.
+    """
+    tier_label = {"ultra": "Ultra Competitive", "competitive": "Competitive",
+                  "long_tail": "Long Tail"}
+    by_kw = {}
+    for r in (d.get("table") or []):
+        by_kw[str(r.get("kw") or "").lower()] = r
+    rows = []
+    for tier in ("ultra", "competitive", "long_tail"):
+        for r in (d.get("kw") or {}).get(tier, []) or []:
+            kw = str(r.get("kw") or r.get("keyword") or "").strip()
+            if not kw:
+                continue
+            live = by_kw.get(kw.lower()) or {}
+            pos = live.get("pos")
+            rows.append({
+                "kw": kw,
+                "rank": (str(pos) if isinstance(pos, int)
+                         else ("Not Found" if pos in ("Not Found", None) else str(pos))),
+                "tier": tier_label[tier],
+                "vol": int(r.get("vol") or 0),
+            })
+    # Ranked first and best-ranked at the top, exactly as his tables read: the
+    # document opens on the terms the client can verify in one search.
+    def _key(x):
+        try:
+            return (0, int(x["rank"]))
+        except (TypeError, ValueError):
+            return (1, -x["vol"])
+    rows.sort(key=_key)
+    return rows
+
+
+def build_proposal_docx(d):
+    """One SSG-shaped proposal, built from the quote the tool already holds."""
+    from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    ATLAS = RGBColor(0x00, 0x2D, 0x58)
+    P = PROPOSAL
+    brand = (d.get("brand") or "").strip() or "Your Business"
+    doc = Document()
+    for sec in doc.sections:
+        sec.left_margin = sec.right_margin = Inches(0.9)
+        sec.top_margin = sec.bottom_margin = Inches(0.8)
+    base = doc.styles["Normal"]
+    base.font.name = "Calibri"
+    base.font.size = Pt(10.5)
+
+    def head(text, size=15):
+        p = doc.add_paragraph()
+        r = p.add_run(text)
+        r.bold = True
+        r.font.size = Pt(size)
+        r.font.color.rgb = ATLAS
+        p.space_before = Pt(14)
+        return p
+
+    def body(text, bold=False, size=10.5):
+        p = doc.add_paragraph()
+        r = p.add_run(text)
+        r.bold = bold
+        r.font.size = Pt(size)
+        return p
+
+    def bullet(text):
+        return doc.add_paragraph(text, style="List Bullet")
+
+    # ---- cover ------------------------------------------------------------
+    t = doc.add_paragraph()
+    t.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = t.add_run("SEO Proposal")
+    r.bold = True
+    r.font.size = Pt(26)
+    r.font.color.rgb = ATLAS
+    n = doc.add_paragraph()
+    n.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    rn = n.add_run(brand)
+    rn.font.size = Pt(16)
+    rn.bold = True
+
+    # ---- background -------------------------------------------------------
+    head(P["intro_heading"])
+    desc = (d.get("business_desc") or "").strip()
+    markets = [str(x) for x in (d.get("geo_values") or []) if str(x).strip()]
+    where = (", ".join(markets[:6]) + (" and more" if len(markets) > 6 else "")
+             if markets else "nationally")
+    body(f"{brand} is requesting a proposal for assistance with improving their "
+         f"organic rankings, traffic, and lead flow through search engine "
+         f"optimization"
+         + (f", serving {where}" if markets else "")
+         + ".")
+    if desc:
+        body(desc)
+    body("Please find our recommendations and proposal below.")
+
+    # ---- the SEO section --------------------------------------------------
+    head(P["seo_heading"])
+    body(f"The primary objective of the SEO campaign will be to increase "
+         f"{brand}'s visibility for the terms their customers actually search, "
+         f"and to convert that visibility into qualified traffic and leads.")
+    body("The best long-term marketing strategy for driving online leads is "
+         "search engine optimization (SEO) — the practice of earning position "
+         "in the unpaid results, where the majority of clicks go.")
+    body("Based on our research, we built the keyword list below and measured "
+         "where the site currently ranks for each term.")
+
+    rows = _proposal_rows(d)
+    if rows:
+        tbl = doc.add_table(rows=1, cols=4)
+        tbl.style = "Light Grid Accent 1"
+        hdr = tbl.rows[0].cells
+        for i, label in enumerate(("Keyword", "Google Current Rank",
+                                   "Monthly Searches", "Keyword Type")):
+            hdr[i].text = ""
+            rr = hdr[i].paragraphs[0].add_run(label)
+            rr.bold = True
+        for row in rows:
+            c = tbl.add_row().cells
+            c[0].text = row["kw"]
+            c[1].text = row["rank"]
+            c[2].text = format(row["vol"], ",") if row["vol"] else "—"
+            c[3].text = row["tier"]
+        doc.add_paragraph()
+
+    ranked = len([r for r in rows if r["rank"].isdigit()])
+    body(f"Of the {len(rows)} terms above, {brand} currently ranks in the top "
+         f"100 for {ranked}. There is significant room for improvement in "
+         f"organic ranking through an organic SEO campaign.")
+
+    body("All of our SEO campaigns focus on three primary keyword sets:", True)
+    for name, blurb in P["keyword_sets"]:
+        p = doc.add_paragraph(style="List Bullet")
+        rb = p.add_run(name + ": ")
+        rb.bold = True
+        p.add_run(blurb)
+
+    # ---- what we measured — the part a generic proposal cannot show --------
+    sig = d.get("signals") or {}
+    if sig.get("rivals") or sig.get("pageone_rank"):
+        head(P["measured_heading"])
+        body("Every number in this proposal was measured for this campaign "
+             "rather than estimated. Search volumes come from live keyword data, "
+             "the rankings above from live result pages, and the competitive "
+             "picture below from the sites currently holding those positions.")
+        riv = [r for r in (sig.get("rivals") or []) if r.get("domain")][:6]
+        if riv:
+            body("Who currently holds page one for your terms:", True)
+            for r in riv:
+                bits = []
+                if r.get("rank") is not None:
+                    bits.append(f"authority {format(int(r['rank']), ',')}")
+                if r.get("appearances"):
+                    bits.append(f"appears on {r['appearances']} of your terms")
+                bullet(f"{r['domain']}" + (f" — {', '.join(bits)}" if bits else ""))
+        if sig.get("median_rival_rank") is not None:
+            gapline = (f"Their typical authority score is "
+                       f"{format(int(sig['median_rival_rank']), ',')}")
+            if sig.get("client_measured") and sig.get("client_rank") is not None:
+                gapline += (f", against {format(int(sig['client_rank']), ',')} for "
+                            f"{brand} — the gap this campaign is built to close")
+            body(gapline + ".")
+        health = sig.get("health") or {}
+        if health.get("failed"):
+            body("On-site issues found on your own site, which we address in the "
+                 "first months of the campaign:", True)
+            for f in health["failed"][:8]:
+                bullet(f)
+
+    # ---- the monthly campaign ---------------------------------------------
+    head(P["campaign_heading"])
+    body("All of our ongoing SEO campaigns include the following each month:")
+    for name, items in P["services"]:
+        body(name, True)
+        for it in items:
+            bullet(it)
+
+    # ---- the options ------------------------------------------------------
+    head(P["options_heading"])
+    body("Depending on how aggressive you wish to be with an SEO campaign, we "
+         "have included three options below following a “good, better, best” "
+         "model.")
+    tiers = (d.get("pricing") or {}).get("client_tiers") or {}
+    term = int((d.get("pricing") or {}).get("min_term_months") or 6)
+    for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
+        label = {"base": "Base", "intermediate": "Intermediate",
+                 "advanced": "Advanced"}[key]
+        head(f"Option {i}: {label} SEO Campaign", size=12)
+        body(P["option_blurb"][key])
+        body("This option targets:", True)
+        for line in P["option_scope"][key]:
+            bullet(line)
+        p = doc.add_paragraph()
+        rr = p.add_run(f"This option would be a monthly investment of "
+                       f"{_p_money(tiers.get(key))} with a {term} month term "
+                       f"which then becomes a month-to-month commitment.")
+        rr.bold = True
+    body(P["closing"][0])
+
+    # ---- case studies -----------------------------------------------------
+    head(P["case_heading"])
+    body(P["closing"][1])
+    body("SEO Projects:", True)
+    for c in P["case_studies"]:
+        bullet(c)
+    body(P["case_closing"])
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
+@app.route("/api/proposal.docx", methods=["POST"])
+def api_proposal_docx():
+    """The quote as an SSG-shaped Word document."""
+    d = request.get_json(force=True) or {}
+    try:
+        buf = build_proposal_docx(d)
+    except ImportError:
+        return jsonify({"error": "python-docx is not installed on this server."}), 500
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("proposal docx failed")
+        return jsonify({"error": str(e)[:200]}), 500
+    name = re.sub(r"[^A-Za-z0-9]+", "_",
+                  (d.get("brand") or "proposal")).strip("_") or "proposal"
+    return send_file(buf, as_attachment=True,
+                     download_name=f"{name}_SEO_Proposal.docx",
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "wordprocessingml.document")

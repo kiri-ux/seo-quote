@@ -10,6 +10,28 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+/* Build / Proposal tabs */
+.vtab{background:none;border:none;border-bottom:2px solid transparent;padding:7px 14px;
+  font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit}
+.vtab.on{color:var(--atlas);border-bottom-color:var(--atlas)}
+.vtab:hover{color:var(--atlas)}
+/* Proposal view */
+.pptier{flex:1 1 0;min-width:132px;border:1px solid var(--line);border-radius:12px;
+  padding:16px 18px;background:#fff}
+.pptier.lead{border-color:var(--atlas);box-shadow:0 2px 10px rgba(0,45,88,.10)}
+.pptier .lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted)}
+.pptier .amt{font-size:34px;font-weight:800;color:var(--atlas);line-height:1.05;margin:6px 0 2px;
+  font-family:'Barlow Condensed',sans-serif;letter-spacing:.01em}
+.pptier .per{font-size:12px;color:var(--muted)}
+.ppwrap table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ppwrap th{text-align:left;color:var(--muted);font-weight:600;padding:5px 8px 5px 0;
+  font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.ppwrap td{padding:6px 8px 6px 0;border-top:1px solid var(--line);vertical-align:top}
+.ppwrap tr.sum td{border-top:2px solid var(--atlas);font-weight:700}
+.ppvol{font-variant-numeric:tabular-nums;font-weight:700;color:var(--atlas)}
+.pph{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--atlas);margin:22px 0 8px}
   /* ============================================================
      adtini · Quote Builder — design system matched to Consent Scanner
      Vici brand: Atlas Blue / Velocity Blue / Vici Gold / Parchment
@@ -597,7 +619,17 @@
   <!-- ============ RESULTS ============ -->
   <div class="card">
     <h2>Quote <a href="#p4" id="jumpPrice" class="hidden" style="float:right;font-size:12px;font-weight:600;text-decoration:none;color:var(--velocity);text-transform:none;letter-spacing:0">Jump to price &#8595;</a></h2>
+    <!-- BUILD vs PROPOSAL. The build view is a working surface — every filter,
+         every diagnostic, every number that went into a decision. The proposal
+         view is the same quote with the reasoning put away: prices first,
+         one chart for where they came from, the keyword list, and the page-one
+         picture. Internal, so partner cost and margin stay on it. (2026-08-18) -->
+    <div id="viewTabs" class="hidden" style="display:flex;gap:4px;margin:0 0 12px;border-bottom:1px solid var(--line)">
+      <button type="button" class="vtab on" data-view="build">Build</button>
+      <button type="button" class="vtab" data-view="proposal">Proposal</button>
+    </div>
     <div id="out"></div>
+    <div id="proposalView" class="hidden"></div>
     <div id="steps" class="hidden" style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
   </div>
 </div>
@@ -3545,6 +3577,8 @@ function renderStep4(p){
   // Search entirely (2026-07-28).
   // The quote column runs long once the keyword and rank tables are in, and
   // the price is the thing anyone actually scrolls for.
+  // The Proposal tab only means anything once there is a price to put on it.
+  const vt=$('viewTabs'); if(vt) vt.classList.remove('hidden');
   const jp=$('jumpPrice');
   if(jp){
     jp.classList.remove('hidden');
@@ -3957,6 +3991,180 @@ async function runBackmeasure(){
   BM.running=false;
   renderBackmeasure();
 }
+
+// ---- PROPOSAL VIEW ---------------------------------------------------------
+// The same quote with the working-out put away. Prices first and large, then ONE
+// chart for where they came from — the build view spreads that across six panels
+// and you cannot see the shape of it — then who owns page one, then the keyword
+// list with the volume it was priced on.
+//
+// Internal, not client-facing: partner cost and margin stay, because the person
+// reading this is deciding whether to send it. (2026-08-18)
+function ppMoney(v){ return (v===null||v===undefined||v==='')?'—':'$'+Number(v).toLocaleString(); }
+
+function pricingChart(){
+  const p=ST.pricing||{}; if(!p.client_tiers) return '';
+  const anchor=p.anchor||0, adder=p.competitive_adder||0, vol=p.volume_add||0;
+  const ind=p.industry_anchor_add||0, po=p.pageone_anchor_add||0;
+  const sub=p.base_pre_uplift!=null?p.base_pre_uplift:(anchor+adder+vol+ind+po);
+  const up=p.zero_ranking_uplift_pct||0, mult=p.extras_multiplier;
+  const partner=p.base||0, mk=p.markup_pct!=null?p.markup_pct:35;
+  const client=(p.client_tiers||{}).base;
+  const cpc=(ST.cpc_used!=null?ST.cpc_used:null);
+  const rows=[];
+  const row=(what, amt, src, muted)=>rows.push(
+    `<tr${muted?' style="opacity:.55"':''}><td>${what}</td>`
+    +`<td style="text-align:right;font-variant-numeric:tabular-nums">${amt}</td>`
+    +`<td class="nf">${src}</td></tr>`);
+  row('Geographic anchor', ppMoney(anchor),
+      `${escapeHtml(((ST.inputs||{}).geo_scope||'').replace(/_/g,' ')||'scope')} · ${((ST.inputs||{}).geo_values||[]).length||'no'} market${((ST.inputs||{}).geo_values||[]).length===1?'':'s'}`);
+  row('Competition', (adder?'+ '+ppMoney(adder):'—'),
+      adder ? (ST.adder_basis==='kd' ? `organic difficulty ${ST.score!=null?ST.score:''}/100`
+                                     : `median top-of-page bid ${cpc!=null?('$'+Number(cpc).toFixed(2)):''}`)
+            : 'bids and difficulty both below the first break', !adder);
+  row('Search volume', (vol?'+ '+ppMoney(vol):'—'),
+      (ST.totalVol!=null?Number(ST.totalVol).toLocaleString()+'/mo across the list':'')
+      + (vol?'':' — under the paying threshold'), !vol);
+  if(ind) row('Industry rule', '+ '+ppMoney(ind), escapeHtml(p.industry_rule||'vertical premium'));
+  if(po)  row('Page one', '+ '+ppMoney(po), escapeHtml(String(p.pageone_band||'').split(': ').pop()));
+  rows.push(`<tr class="sum"><td>Subtotal</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(sub)}</td><td class="nf">partner cost before uplifts</td></tr>`);
+  if(up) row('Current visibility', '× '+(1+up/100).toFixed(2),
+             `${ST.pctNotRanking!=null?Math.round(ST.pctNotRanking)+'% of terms not ranking':'ranking uplift'}`);
+  if(mult!=null && mult!==1) row('Extras multiplier', '× '+mult, 'industry card or nationwide scope');
+  if(p.floored) row('Minimum', ppMoney(p.client_floor),
+                    'computed below the floor — the floor is the price');
+  rows.push(`<tr class="sum"><td>Partner cost</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(partner)}</td><td class="nf">what the work costs</td></tr>`);
+  row('Margin', mk+'%', 'agency share of gross');
+  rows.push(`<tr class="sum"><td><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>${ppMoney(client)}</b></td><td class="nf">partner ÷ (1 − margin), rounded to $50</td></tr>`);
+  return `<div class="pph">How this price was built</div><div class="ppwrap"><table>
+    <tr><th>Component</th><th style="text-align:right">Amount</th><th>Measured from</th></tr>
+    ${rows.join('')}</table>
+    <div class="nf" style="margin-top:6px">Every figure above is partner cost until the last line. The three tiers differ by a fixed step of ${ppMoney(p.step)} partner (${ppMoney(Math.round((p.step||0)/(1-(mk/100))/50)*50)} client).</div></div>`;
+}
+
+function proposalSignals(){
+  const s=ST.signals; if(!s) return '';
+  const num=v=>(v===null||v===undefined)?'—':Number(v).toLocaleString();
+  const riv=(s.rivals||[]).slice(0,6);
+  const gapline = (s.client_measured && s.client_rank!=null && s.median_rival_rank!=null)
+    ? `<div style="font-size:15px;margin-top:10px">Typical incumbent authority <b>${num(s.median_rival_rank)}</b> against <b>${num(s.client_rank)}</b> for this client — a gap of <b style="color:var(--atlas)">${num(s.median_rival_rank-s.client_rank)}</b>.</div>`
+    : (s.median_rival_rank!=null
+       ? `<div style="font-size:15px;margin-top:10px">Typical incumbent authority <b>${num(s.median_rival_rank)}</b>. This client's own score could not be measured.</div>`
+       : '');
+  const h=s.health||{};
+  return `<div class="pph">Who owns page one today</div>
+    <div style="border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--info-bg)">
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        ${riv.map(r=>`<div style="flex:1 1 150px;min-width:150px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#fff">
+          <div style="font-weight:700;font-size:13px;word-break:break-all">${escapeHtml(r.domain)}</div>
+          <div class="nf" style="font-size:11.5px;margin-top:2px">authority ${num(r.rank)}${r.appearances?` · ${r.appearances} of your terms`:''}</div>
+        </div>`).join('')||'<div class="nf">No incumbents measured yet — run the rank check.</div>'}
+      </div>
+      ${gapline}
+      ${h.score!=null?`<div class="nf" style="margin-top:8px">Client site condition <b>${num(h.score)}/100</b>${(h.failed||[]).length?` — ${h.failed.length} issue${h.failed.length===1?'':'s'}: ${h.failed.slice(0,6).map(escapeHtml).join(', ')}`:''}</div>`:''}
+    </div>`;
+}
+
+function proposalKeywords(){
+  const kw=ST.kw||{}; if(!kw.all) return '';
+  const byKw={}; (ST.table||[]).forEach(r=>{ byKw[String(r.kw||'').toLowerCase()]=r; });
+  const LBL={ultra:'Ultra Competitive',competitive:'Competitive',long_tail:'Long Tail'};
+  let total=0, ranked=0, rows='';
+  ['ultra','competitive','long_tail'].forEach(t=>{
+    (kw[t]||[]).forEach(r=>{
+      const v=Number(r.vol||0); total+=v;
+      const live=byKw[String(r.kw||'').toLowerCase()]||{};
+      const pos=live.pos;
+      const isNum=typeof pos==='number';
+      if(isNum) ranked++;
+      rows+=`<tr><td>${escapeHtml(r.kw||'')}</td>`
+        +`<td class="ppvol" style="text-align:right">${v?v.toLocaleString():'—'}</td>`
+        +`<td style="text-align:right">${isNum?('#'+pos):'<span class="nf">Not found</span>'}</td>`
+        +`<td class="nf">${LBL[t]}</td></tr>`;
+    });
+  });
+  // THE SAME TOTAL THE PRICE USED. Summing the rows on screen looks equivalent
+  // and is not: the build's total is what the volume add was computed from, and
+  // a proposal whose keyword heading disagrees with its own pricing chart is
+  // the kind of thing that gets spotted across a table. (2026-08-18)
+  const shownTotal = (ST.totalVol!=null && ST.totalVol) ? Number(ST.totalVol) : total;
+  return `<div class="pph">Keyword list — ${(kw.all||[]).length} terms, ${shownTotal.toLocaleString()}/mo total demand</div>
+    <div class="ppwrap"><table>
+      <tr><th>Keyword</th><th style="text-align:right">Searches/mo</th><th style="text-align:right">Rank today</th><th>Tier</th></tr>
+      ${rows}</table>
+      <div class="nf" style="margin-top:6px">${ranked} of ${(kw.all||[]).length} currently rank in the top 100. Volume is a live search-data lookup, not an estimate — it is what sets the tiers and it is the number the price is built on.</div></div>`;
+}
+
+function renderProposal(){
+  const host=$('proposalView'); if(!host) return;
+  const p=ST.pricing||{};
+  if(!p.client_tiers){ host.innerHTML='<div class="nf">Price the quote first — the proposal is built from it.</div>'; return; }
+  const t=p.client_tiers, ai=(p.ai_search||{}).client_total;
+  const shown=ai||t;
+  const brand=((ST.inputs||{}).brand)||'This client';
+  const term=p.min_term_months||6;
+  host.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:700;color:var(--atlas);letter-spacing:.02em;text-transform:uppercase">${escapeHtml(brand)}</div>
+        <div class="nf">${escapeHtml((ST.inputs||{}).strategy||'Core SEO')} · ${term} month minimum term${ai?' · prices include AI Search':''}</div>
+      </div>
+      <button type="button" id="ppDownload" class="btn2" style="padding:7px 15px;font-size:13px;font-weight:600">⬇ Download proposal (.docx)</button>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+      ${['base','intermediate','advanced'].map((k,i)=>`
+        <div class="pptier${i===1?' lead':''}">
+          <div class="lbl">${['Base','Intermediate','Advanced'][i]}</div>
+          <div class="amt">${ppMoney(shown[k])}</div>
+          <div class="per">per month${ai?`<br><span class="nf">SEO ${ppMoney(t[k])} + AI ${ppMoney(((p.ai_search||{}).client_ai||{})[k])}</span>`:''}</div>
+        </div>`).join('')}
+    </div>
+    ${pricingChart()}
+    ${proposalSignals()}
+    ${proposalKeywords()}
+    <div id="ppMsg" class="nf" style="margin-top:10px"></div>`;
+  const b=$('ppDownload'); if(b) b.onclick=downloadProposal;
+}
+
+async function downloadProposal(){
+  const b=$('ppDownload'), msg=$('ppMsg');
+  if(b){ b.disabled=true; b.textContent='Building…'; }
+  try{
+    const res=await fetch('/api/proposal.docx',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        brand:((ST.inputs||{}).brand)||'',
+        business_desc:((ST.inputs||{}).business_desc)||'',
+        geo_values:((ST.inputs||{}).geo_values)||[],
+        kw:ST.kw||{}, table:ST.table||[], signals:ST.signals||null,
+        pricing:ST.pricing||{}})});
+    if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=(((ST.inputs||{}).brand)||'proposal').replace(/[^A-Za-z0-9]+/g,'_')+'_SEO_Proposal.docx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+    if(msg) msg.textContent='Downloaded. Open it in Word to finish the Background section.';
+  }catch(e){
+    if(msg) msg.innerHTML='<span class="err">'+escapeHtml(String(e.message))+'</span>';
+  }finally{ if(b){ b.disabled=false; b.textContent='⬇ Download proposal (.docx)'; } }
+}
+
+function showView(which){
+  const tabs=document.querySelectorAll('.vtab');
+  tabs.forEach(t=>t.classList.toggle('on', t.getAttribute('data-view')===which));
+  const out=$('out'), pv=$('proposalView'), steps=$('steps'), jump=$('jumpPrice');
+  if(out) out.classList.toggle('hidden', which!=='build');
+  if(steps) steps.classList.toggle('hidden', which!=='build' || !steps.innerHTML.trim());
+  if(jump) jump.classList.toggle('hidden', which!=='build' || !ST.pricing);
+  if(pv) pv.classList.toggle('hidden', which!=='proposal');
+  if(which==='proposal'){ try{ renderProposal(); }catch(e){ pv.innerHTML='<div class="err">'+escapeHtml(String(e.message))+'</div>'; } }
+}
+document.addEventListener('click', e=>{
+  const t=e.target.closest && e.target.closest('.vtab');
+  if(t) showView(t.getAttribute('data-view'));
+});
 
 // ---- calibration drawer -----------------------------------------------------
 function closeCalib(){ $('calibPanel').style.display='none'; $('cfgBackdrop').style.display='none'; }
