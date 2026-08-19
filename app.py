@@ -16,6 +16,7 @@ Local run:
     -> http://localhost:5000
 """
 import os, json, base64, statistics, time, re, threading, io
+import html
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 import requests
@@ -9661,28 +9662,31 @@ PROPOSAL = {
     # asks. Points are on the 0-100 scale (the raw 0-1000 score divided by ten),
     # so a raw gap of 605 lands in the last band. MIRRORED in the template as
     # GAP_VERDICTS — proposal_test.py asserts the two agree.
+    # AND EACH ONE NAMES THE OPTION THAT CLOSES IT. A verdict that stops at
+    # "this is a wide gap" leaves the client to work out what to do about it,
+    # three pages before the prices. Saying which campaign closes it faster is
+    # the same sentence doing the selling it was written for. (2026-08-19)
     "gap_verdicts": [
         (15, "a small gap",
-         "That is a small gap, and a very attainable one — comfortably inside "
-         "what a campaign of this size closes."),
+         "That is a small gap, and a base campaign is enough to close it."),
         (30, "a moderate gap",
-         "That is a moderate gap. It is well within reach with sustained work, "
-         "and closing it is the main thing the campaign below is funding."),
+         "That is a moderate gap. A base campaign closes it steadily; an "
+         "intermediate campaign would close it faster."),
         (50, "a wide gap",
-         "That is a wide gap. It is closeable with our help, but it takes a "
-         "consistent multi-year build rather than a few months — which is why "
-         "the more aggressive options exist."),
+         "That is a wide gap. An intermediate or advanced campaign would close "
+         "it considerably faster than a base one, because the pace of link and "
+         "content work is the whole difference."),
         (1000, "a very large gap",
          "That is a very large gap — the sites ahead are far more established "
-         "domains. We can take ground steadily and win the less contested terms "
-         "early, but the most competitive terms are a long-horizon target "
-         "rather than a first-year one."),
+         "domains. An advanced campaign is what closes it fastest; a base "
+         "campaign would take ground on the less contested terms first and "
+         "reach the most competitive ones considerably later."),
     ],
     "gap_level_verdict":
         "{brand} already scores at or above the sites currently holding page "
-        "one, so authority is not what is holding these rankings back. That is "
-        "the most attainable position a campaign can start from — the gains "
-        "come from content, on-page work and targeting the right terms.",
+        "one, so authority is not what is holding these rankings back. A base "
+        "campaign is enough here — the gains come from content, on-page work "
+        "and targeting the right terms rather than from closing a gap.",
 
     # ---- AI Search (GEO) --------------------------------------------------
     # Brendan runs this as a full parallel campaign with its own three options,
@@ -12369,19 +12373,45 @@ def api_serp_recommend():
     markets = usable_markets(d.get("geo_values") or [])
     def is_geo(kw):
         return any(m.lower() in kw.lower() for m in markets)
-    def not_found(kw):
-        r = ranks.get(kw, "Not Found")
-        return r == "Not Found" or r is None
+    # ABSENT ON PURPOSE, NOT ABSENT BY ACCIDENT. The point of the exhibit is a
+    # page one WITHOUT the client on it — that is the whole argument for the
+    # retainer. This used to treat a term with no measurement at all the same as
+    # a term measured and genuinely missing (`ranks.get(kw, "Not Found")`), so a
+    # term the rank check had simply never reached could win the slot and the
+    # screenshot could come back with the client sitting at the top of it. Ski
+    # Barn's proposal shipped a capture of "ski jackets wayne nj" with Ski Barn
+    # first in the local pack. Measured-and-absent now outranks unmeasured, and
+    # both outrank a term the client already holds. (2026-08-19)
+    def tier(kw):
+        r = ranks.get(kw, None)
+        if r == "Not Found" or r == 0:
+            return 3                          # measured, and they are not there
+        if r is None or r == "":
+            return 1                          # never measured — a guess
+        try:
+            pos = int(r)
+        except (TypeError, ValueError):
+            return 1
+        return 2 if pos > 20 else 0           # deep enough to argue, or theirs
     def score(item):
         kw = item.get("kw", "")
         comp_rank = 2 if item.get("comp", "").lower().startswith("ultra") else 1
-        return (1 if not_found(kw) else 0,   # absent first
+        return (tier(kw),                     # absent first
                 comp_rank,                    # most competitive
                 1 if is_geo(kw) else 0)       # geo-modified
     if not head:
         return jsonify({"recommended": None, "options": []})
     ordered = sorted(head, key=score, reverse=True)
-    return jsonify({"recommended": ordered[0]["kw"],
+    best = ordered[0]
+    return jsonify({"recommended": best["kw"],
+                    # Say WHY, so a weak pick is visible rather than silent: if
+                    # the strongest term available is one they already rank for,
+                    # the operator should know before it goes in a document.
+                    "basis": {3: "measured and not ranking",
+                              2: "ranking below the first two pages",
+                              1: "no ranking measured for it",
+                              0: "they already rank for it"}[tier(best["kw"])],
+                    "weak": tier(best["kw"]) <= 1,
                     "options": [h["kw"] for h in head]})
 
 @app.route("/api/serp_queue", methods=["POST"])
@@ -15094,6 +15124,49 @@ def _vibe_adjust(n, d):
     return int(round(float(n) * (1 + pc / 100.0) / 50.0) * 50)
 
 
+# Openers that mark a sentence as an advert rather than a description.
+_DESC_CTA = re.compile(
+    r"\b(shop|buy|order|call|visit|browse|save|get)\s+(today|now|online|us|here)\b"
+    r"|\bfree (shipping|quote|estimate|consultation)\b|\bcontact us\b"
+    r"|\bclick here\b|\bshop now\b|\blearn more\b", re.I)
+_DESC_IMPERATIVE = re.compile(
+    r"^(get|shop|buy|find|discover|explore|save|order|call|visit|browse|"
+    r"experience|choose|trust)\b", re.I)
+
+
+def _clean_desc(text):
+    """The client's own words, or nothing — never their meta description.
+
+    business_desc is auto-filled from the site, which usually means the meta
+    description, which is written to sell to a searcher. Ski Barn's proposal
+    quoted "Get the best ski &amp; snowboard gear from Ski Barn in New Jersey -
+    ... - Shop Today!" back at Ski Barn, in their own proposal, with the HTML
+    entity still in it — the escape ran twice, once on the way into the field
+    and again on the way into the document.
+
+    So: unescape once, drop a trailing call to action, and if what is left still
+    reads as advertising, drop the paragraph entirely. Brendan's own proposals
+    carry no such line, so losing it costs nothing; keeping a bad one costs the
+    first impression. (2026-08-19)
+    """
+    t = html.unescape(html.unescape(str(text or ""))).strip()
+    if not t:
+        return ""
+    # Trailing CTA clause, after the last dash or full stop.
+    parts = re.split(r"\s+[-\u2013\u2014]\s+", t)
+    while len(parts) > 1 and _DESC_CTA.search(parts[-1]):
+        parts.pop()
+    t = " - ".join(parts).strip(" -\u2013\u2014")
+    if not t:
+        return ""
+    if _DESC_CTA.search(t) or _DESC_IMPERATIVE.match(t):
+        return ""
+    # A description, not a slogan: needs a verb phrase and a reasonable length.
+    if len(t) < 25 or t.count("!") > 0:
+        return ""
+    return t
+
+
 def build_proposal_docx(d):
     """One SSG-shaped proposal, built from the quote the tool already holds."""
     from docx import Document
@@ -15154,6 +15227,13 @@ def build_proposal_docx(d):
         rows = (len(cards) + per_row - 1) // per_row
         tb = doc.add_table(rows=rows, cols=per_row)
         tb.autofit = False
+        # KEEP A ROW OF CARDS WHOLE. Word broke the first row across the page
+        # boundary and put three domain names at the bottom of one page and
+        # their three authority lines at the top of the next, so the figures
+        # read as belonging to the row below them. Same fix as the option
+        # boxes: a card is a unit or it is nothing. (2026-08-19)
+        for _r in tb.rows:
+            _r._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
         for i, (title, sub) in enumerate(cards):
             cell = tb.rows[i // per_row].cells[i % per_row]
             cell.width = Inches(6.6 / per_row)
@@ -15264,7 +15344,7 @@ def build_proposal_docx(d):
 
     # ---- background -------------------------------------------------------
     head(P["intro_heading"])
-    desc = (d.get("business_desc") or "").strip()
+    desc = _clean_desc(d.get("business_desc"))
     body(P["intro_line"].format(brand=brand))
     if desc:
         body(desc)
@@ -15342,10 +15422,10 @@ def build_proposal_docx(d):
     sig = d.get("signals") or {}
     if sig.get("rivals") or sig.get("pageone_rank"):
         head(P["measured_heading"])
-        body("Every number in this proposal was measured for this campaign "
-             "rather than estimated. Search volumes come from live keyword data, "
-             "the rankings above from live result pages, and the competitive "
-             "picture below from the sites currently holding those positions.")
+        body("These figures were pulled live for this campaign. Search volumes "
+             "come from live keyword data, the rankings above from live result "
+             "pages, and the competitive picture below from the sites currently "
+             "holding those positions.")
         riv = [r for r in (sig.get("rivals") or []) if r.get("domain")][:6]
         if riv:
             body("Who currently holds page one for your terms:", True)
@@ -15375,7 +15455,8 @@ def build_proposal_docx(d):
             if v:
                 body(v["line"], True)
             if g and not g.get("level"):
-                body(f"In practical terms that is roughly {g['points']} points "
+                body(f"In practical terms that is roughly "
+                     f"{int(round(g['points']))} points "
                      f"of authority. Published industry benchmarks put a move of "
                      f"that size at {g['links']} acquired over {g['months']} of "
                      f"sustained work — which is what the link building and "

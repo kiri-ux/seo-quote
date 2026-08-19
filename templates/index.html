@@ -3624,6 +3624,7 @@ function renderStep4(p){
     <div class="why">Captures a live Google results page for a head term — ideal for showing a prospect they're absent from page 1 while competitors rank. The recommended term is a "Not Found", high-competition, local keyword; change it if you like, then generate.</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="serpPhrase" style="flex:1;min-width:240px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px"></select>
+      <div id="serpBasis" class="nf" style="flex-basis:100%;margin-top:4px"></div>
       <button id="serpBtn" style="background:var(--velocity,#378ADD);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📸 Generate SERP</button>
     </div>
     <div id="serpOut" style="margin-top:12px"></div>
@@ -3785,18 +3786,27 @@ function renderStep4(p){
     const head=[...ST.kw.ultra.map(r=>({kw:r.kw,comp:'Ultra'})),
                 ...ST.kw.competitive.map(r=>({kw:r.kw,comp:'Competitive'}))];
     const ranks={}; ST.table.forEach(r=>{ranks[r.kw]=r.pos;});
-    let rec=null;
+    let rec=null, basis='', weak=false;
     try{
       const rr=await postJSON('/api/serp_recommend',{head, ranks, geo_values:ST.inputs.geo_values});
-      rec=rr.recommended;
+      rec=rr.recommended; basis=rr.basis||''; weak=!!rr.weak;
     }catch(e){ /* fall back to first head term */ }
     const sel=$('serpPhrase'); if(!sel) return;
     head.forEach(h=>{
       const o=document.createElement('option'); o.value=h.kw;
-      o.textContent=h.kw+(ranks[h.kw]==='Not Found'?'  (Not Found)':''); 
+      const _r=ranks[h.kw];
+      o.textContent=h.kw+(_r==='Not Found'?'  (Not Found)':(_r?'  (#'+_r+')':'  (not measured)'));
       if(h.kw===rec) o.selected=true;
       sel.appendChild(o);
     });
+    // THE EXHIBIT IS SUPPOSED TO SHOW THEM MISSING. If the best term available
+    // is one they already hold, or one nothing measured, the capture argues
+    // against the campaign — and that is worth a line, not a silent default.
+    const _sn=$('serpBasis');
+    if(_sn) _sn.innerHTML = !basis ? ''
+      : (weak
+         ? `<span class="err">Picked &ldquo;${escapeHtml(rec)}&rdquo; &mdash; ${escapeHtml(basis)}. The point of this capture is a page one without them on it; pick a term they are missing from if there is one.</span>`
+         : `Picked &ldquo;${escapeHtml(rec)}&rdquo; &mdash; ${escapeHtml(basis)}.`);
     // FIRE IT ONCE, WITHOUT BEING ASKED. The capture is the one thing in the
     // proposal that needed a human to remember a button, and forgetting it is
     // silent — the document just ships without the picture that shows the client
