@@ -6271,9 +6271,20 @@ function step1Grid(kw){
     // line earns its place on the panel only when the ranking DECIDED something,
     // i.e. some of the client's services are not in the quote.
     // ROOM TO GROW, reported where the ranking that needed it is reported.
+    // A SILENT NO-OP IS THE FAILURE MODE HERE. The first version read the
+    // rankings panel, which only carries terms the operator ADDED from it — on
+    // a list that came off a product line it was empty, so every term looked
+    // like headroom, the reservation was trivially satisfied and nothing
+    // happened, invisibly. Both the "could not check" and the "already fine"
+    // cases now say so. (2026-08-19)
+    if(sr.headroom_skipped){
+      warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No slots held for unranked terms</b> \u2014 what this client already ranks for ${escapeHtml(sr.headroom_skipped)}, so the grid was filled on demand alone. On a client with existing SEO that hands most of the slots to terms they already own.${tipOf('The reservation needs to know which terms the client already ranks for. It reads the rankings panel first, then asks DataForSEO for the domain&rsquo;s ranked keywords. With neither, every term looks like headroom and the reservation would be satisfied without doing anything &mdash; so it stands down and says so rather than pretending it ran.')}</div>`);
+    } else if(sr.headroom_met){
+      notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't rank for</b> \u2014 already past the ${'{'}reservation${'}'}, so nothing was swapped.</div>`.replace('{reservation}','reservation'));
+    }
     if((sr.headroom||[]).length){
       const hn=x=>Number(x||0).toLocaleString();
-      auto.push(`\u{1F331} <b>${sr.headroom.length} slot${sr.headroom.length===1?'':'s'} held for terms they don't rank for yet</b> — ${sr.headroom.map(([t,v])=>escapeHtml(t)+' ('+hn(v)+'/mo)').join(' \u00b7 ')}${(sr.headroom_displaced||[]).length?`, in place of ${sr.headroom_displaced.map(([t])=>escapeHtml(t)).join(' \u00b7 ')}`:''}.${tipOf('Ranking the grid purely by measured demand hands every slot to the terms a client with existing SEO already owns &mdash; those are the ones with volume attached &mdash; so the proposal ends up arguing for a campaign to win what is already won.<br><br>These slots are reserved for the highest-demand terms the client is NOT ranking for, taken from the ones the demand ranking cut. They are the campaign&rsquo;s actual upside.<br><br>A reservation, not a quota: nothing is invented to fill it, and if every candidate is already ranked the grid is unchanged. Set <code>grid_headroom_slots</code> to 0 in pricing config to turn it off.')}`);
+      auto.push(`\u{1F331} <b>${sr.headroom.length} slot${sr.headroom.length===1?'':'s'} held for terms they don't rank for yet</b> — ${sr.headroom.map(([t,v])=>escapeHtml(t)+' ('+hn(v)+'/mo)').join(' \u00b7 ')}${(sr.headroom_displaced||[]).length?`, in place of ${sr.headroom_displaced.map(([t])=>escapeHtml(t)).join(' \u00b7 ')}`:''}.${sr.headroom_basis?` <span class="nf">${escapeHtml(sr.headroom_basis)}.</span>`:''}${tipOf('Ranking the grid purely by measured demand hands every slot to the terms a client with existing SEO already owns &mdash; those are the ones with volume attached &mdash; so the proposal ends up arguing for a campaign to win what is already won.<br><br>These slots are reserved for the highest-demand terms the client is NOT ranking for, taken from the ones the demand ranking cut. They are the campaign&rsquo;s actual upside.<br><br>A reservation, not a quota: nothing is invented to fill it, and if every candidate is already ranked the grid is unchanged. Set <code>grid_headroom_slots</code> to 0 in pricing config to turn it off.')}`);
     }
     (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
   }

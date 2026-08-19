@@ -7339,13 +7339,42 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     if _room and _slots:
                         _vol = {r["term"]: r.get("volume") or 0
                                 for r in _sr["kept"]}
-                        _own = set()
+                        # WHAT THEY ALREADY RANK FOR, FROM SOMETHING THAT KNOWS.
+                        # `ranked` only carries terms the operator ADDED from the
+                        # rankings panel during expansion — Ski Barn's 59 terms
+                        # came off a product line and a report, so it was empty,
+                        # every term looked like headroom, the reservation was
+                        # already satisfied and the whole thing silently did
+                        # nothing. The client's positions are a fact about the
+                        # client, not about how the list was assembled, so ask
+                        # for them. One Labs call, and only when a domain is
+                        # known and the panel gave us nothing. (2026-08-19)
+                        _own, _own_src = set(), "the rankings panel"
                         for _r in (ranked or []):
-                            _rt = _r.get("bare") or _r.get("term") or "" \
-                                  if isinstance(_r, dict) else str(_r)
+                            _rt = (_r.get("bare") or _r.get("term") or ""
+                                   if isinstance(_r, dict) else str(_r))
                             _rk = seed_norm(_rt, markets, state)
                             if _rk:
                                 _own.add(_rk)
+                        if not _own and domain:
+                            try:
+                                _rk_rows = fetch_ranked_keywords(domain, markets,
+                                                                 state)
+                                for _r in _rk_rows:
+                                    if _r.get("bare"):
+                                        _own.add(_r["bare"])
+                                _own_src = (f"{len(_rk_rows)} ranked keywords "
+                                            f"read for {domain}")
+                            except Exception as _e:           # noqa: BLE001
+                                app.logger.warning(
+                                    "headroom: ranked_keywords failed (%s)", _e)
+                                _own_src = f"could not be read ({str(_e)[:80]})"
+                        if not _own:
+                            # NOTHING KNOWN IS NOT THE SAME AS NOTHING RANKED.
+                            # With an empty set every term reads as headroom and
+                            # the reservation is trivially satisfied, which is
+                            # exactly how this shipped doing nothing. Say so.
+                            seed_ranking["headroom_skipped"] = _own_src
                         _head, _tailseeds = seeds[:_slots], seeds[_slots:]
                         _fresh = [t for t in _head if t not in _own]
                         _want = min(_room, _slots)
@@ -7369,6 +7398,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                     [t, _vol.get(t, 0)] for t in _promote]
                                 seed_ranking["headroom_displaced"] = [
                                     [t, _vol.get(t, 0)] for t in _drop]
+                                seed_ranking["headroom_basis"] = _own_src
+                        elif _own:
+                            seed_ranking["headroom_met"] = len(_fresh)
             else:
                 seed_ranking = {"failed": _sr.get("error") or "no volume data",
                                 "was": list(seeds)}
