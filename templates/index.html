@@ -5143,6 +5143,15 @@ function restoreQuote(p){
   // Step 3 — rankings table (rebuild from saved ST)
   if(ST.table && ST.table.length){
     try{ panel('p3', step3Html()); panel('p3b', focusHtml()); $('step4')&&($('step4').onclick=()=>runStep4()); }catch(e){}
+    // WHAT renderStep3() DOES AFTER IT DRAWS THE TABLE, WHICH THIS PATH SKIPPED.
+    // Restoring a quote paints p3 by hand rather than going through
+    // renderStep3(), so the two things that hang off the table were never
+    // re-attached: the page-one block (panel() replaces #p3's contents, taking
+    // #marketSignals with it) and the SERP recommendation (which then still
+    // read "not measured" beside a quote carrying twenty finished rank checks).
+    // Both are pure re-reads of state already restored above. (2026-08-19)
+    try{ renderMarketSignals(); }catch(e){}
+    try{ refreshSerpPick(); }catch(e){}
   }
   // Step 4 — pricing
   if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){}
