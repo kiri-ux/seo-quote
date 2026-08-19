@@ -9559,7 +9559,13 @@ PROPOSAL = {
     # -----------------------------------------------------------------------
     "intro_heading": "Background Information",
     "seo_heading": "Search Engine Optimization (SEO)",
-    "measured_heading": "What We Measured For You",
+    # OURS — he has no equivalent section, so it needed a name. The first two
+    # were "What We Measured For You" and, briefly, "Your Outlook": both
+    # second-person, and the second promised a forecast the section does not
+    # make. It is diagnosis — who holds page one, how far behind the client is,
+    # what is wrong with their site — so it takes the flat noun phrase every
+    # other heading in the document uses. (2026-08-19)
+    "measured_heading": "Competitive Analysis",
     "campaign_heading": "Ongoing SEO Campaign:",
     "options_heading": "SEO Campaign Options:",
     "additional_heading": "Additional Keywords:",
