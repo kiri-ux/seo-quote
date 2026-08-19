@@ -3517,79 +3517,67 @@ function focusHtml(){
 // Crop a (tall) screenshot to a clean landscape frame: keep full width, take the
 // top slice at the target aspect ratio, paint onto white so any transparent/dark
 // gaps read as a clean white proposal image. Returns a PNG data URL.
-// THE TOP OF A LOCAL SERP IS THE MAP PACK, AND THE MAP PACK IS THE CLIENT.
-// cropLandscape() took "the top portion (local pack + top competitors)" at 16:9,
-// which on "ski jackets wayne nj" is the search box, the filter chips and a
-// Places block with Ski Barn sitting at number one — an exhibit that argues
-// against the campaign it is in. The organic list, where they are absent, was
-// below the crop line and below the capture height.
+// THE SAME 16:9 FRAME AS BEFORE — THE OPERATOR CHOOSES WHERE IT SITS.
 //
-// So: capture tall enough to contain the organic results, then find where they
-// start. Google separates the pack from the organic list with a full-width band
-// of background, so this scans down for the first such band past the top
-// quarter and cuts there. If it finds none — a page with no pack, or a layout
-// that does not separate — it returns the image uncropped rather than guessing,
-// because a wrong cut hides the argument entirely. (2026-08-19)
-// One place that draws the capture, so the two views swap without re-fetching.
-async function renderSerpShot(kw, url, organic){
-  const out=$('serpOut'); if(!out) return;
-  try{ ST.serp={kw:kw, img:await toJpeg(url, 0.72)};
-       try{ scheduleAutoSave(); }catch(e){} }catch(e){ ST.serp={kw:kw, img:url}; }
-  const both = !!(ST._serpFull && ST._serpOrganic);
-  out.innerHTML=`
-    <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for &ldquo;${escapeHtml(kw)}&rdquo;${organic?' &mdash; organic listings':''}:</div>
-    <img src="${url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
-    <div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <a href="${url}" download="serp_${String(kw).replace(/ /g,'_')}.png"
-         style="font-size:12.5px;color:var(--atlas);font-weight:600">&#8681; Download image for the proposal</a>
-      ${both?`<button type="button" id="serpToggle" class="btn2" style="padding:4px 11px;font-size:12px">${organic?'Show the whole page':'Cut the map pack'}</button>`:''}
-      ${(!organic&&ST._serpFull)?`<span class="nf" style="font-size:11.5px">The map pack could not be separated from the organic list, so the whole page is in the proposal.</span>`:''}
-    </div>`;
-  const t=$('serpToggle');
-  if(t) t.onclick=()=>renderSerpShot(kw, organic?ST._serpFull:ST._serpOrganic, !organic);
-}
-
-function cropBelowPack(dataUrl, opts){
-  const o=opts||{};
+// Two automatic crops were tried and both failed the same way: a pixel
+// heuristic deciding, silently and alone, what the argument of the proposal is.
+// Taking the top of the page gave a map pack with the client at #1. Scanning
+// for the background band above the organic list found one near the FOOTER on a
+// shopping query and returned the "People also search for" block and the page
+// footer.
+//
+// So the frame is fixed — same landscape ratio the proposal was built around,
+// so the exhibit still lands the way it always did — and the only thing that
+// moves is where the window sits on the page. One click, visible immediately,
+// and it cannot be wrong without being obviously wrong. (2026-08-19)
+function cropWindow(dataUrl, ratio, offset){
   return new Promise((resolve)=>{
     const img=new Image();
     img.onload=()=>{
       const w=img.naturalWidth, h=img.naturalHeight;
-      if(!w||!h) return resolve({url:dataUrl, cut:0, found:false});
+      if(!w||!h) return resolve(dataUrl);
+      const winH=Math.min(Math.round(w/(ratio||16/9)), h);
+      const room=Math.max(0, h-winH);
+      const off=Math.round(room*Math.max(0, Math.min(1, Number(offset)||0)));
       const c=document.createElement('canvas');
-      c.width=w; c.height=h;
-      const x=c.getContext('2d', {willReadFrequently:true});
-      x.fillStyle='#fff'; x.fillRect(0,0,w,h);
-      x.drawImage(img,0,0);
-      let px;
-      try{ px=x.getImageData(0,0,w,h).data; }
-      catch(e){ return resolve({url:dataUrl, cut:0, found:false}); }
-      // A row counts as background when almost every pixel across it is light.
-      const isBg=y=>{
-        let dark=0;
-        for(let i=0;i<w;i+=4){
-          const p=(y*w+i)*4;
-          if(px[p]<232 || px[p+1]<232 || px[p+2]<232){ dark++; if(dark>w/160) return false; }
-        }
-        return true;
-      };
-      const from=Math.floor(h*(o.after||0.22)), band=Math.max(14, Math.round(h*0.012));
-      let run=0, cut=0;
-      for(let y=from; y<Math.floor(h*0.72); y++){
-        if(isBg(y)){ run++; if(run>=band){ cut=y+1; break; } }
-        else run=0;
-      }
-      if(!cut) return resolve({url:dataUrl, cut:0, found:false});
-      const out=document.createElement('canvas');
-      out.width=w; out.height=h-cut;
-      const ox=out.getContext('2d');
-      ox.fillStyle='#fff'; ox.fillRect(0,0,w,h-cut);
-      ox.drawImage(img, 0, cut, w, h-cut, 0, 0, w, h-cut);
-      try{ resolve({url:out.toDataURL('image/png'), cut:cut, found:true}); }
-      catch(e){ resolve({url:dataUrl, cut:0, found:false}); }
+      c.width=w; c.height=winH;
+      const x=c.getContext('2d');
+      x.fillStyle='#fff'; x.fillRect(0,0,w,winH);
+      x.drawImage(img, 0, off, w, winH, 0, 0, w, winH);
+      try{ resolve(c.toDataURL('image/png')); }catch(e){ resolve(dataUrl); }
     };
-    img.onerror=()=>resolve({url:dataUrl, cut:0, found:false});
+    img.onerror=()=>resolve(dataUrl);
     img.src=dataUrl;
+  });
+}
+
+// One place that draws the capture, so moving the frame never re-fetches it.
+async function renderSerpShot(kw, offset){
+  const out=$('serpOut'); if(!out || !ST._serpFull) return;
+  const off=Math.max(0, Math.min(1, Number(offset)||0));
+  ST._serpOffset=off;
+  const url=await cropWindow(ST._serpFull, 16/9, off);
+  try{ ST.serp={kw:kw, img:await toJpeg(url, 0.72), offset:off};
+       try{ scheduleAutoSave(); }catch(e){} }catch(e){ ST.serp={kw:kw, img:url}; }
+  out.innerHTML=`
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for &ldquo;${escapeHtml(kw)}&rdquo;:</div>
+    <img src="${url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
+    <div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <a href="${url}" download="serp_${String(kw).replace(/ /g,'_')}.png"
+         style="font-size:12.5px;color:var(--atlas);font-weight:600">&#8681; Download image for the proposal</a>
+      <span style="flex:1"></span>
+      <span class="nf" style="font-size:11.5px">Frame</span>
+      <button type="button" class="btn2 serpPan" data-d="-0.15" title="Move the frame up" style="padding:3px 11px;font-size:13px">&uarr;</button>
+      <span class="nf" style="font-variant-numeric:tabular-nums;min-width:64px;text-align:center">${off===0?'top':off>=1?'bottom':Math.round(off*100)+'% down'}</span>
+      <button type="button" class="btn2 serpPan" data-d="0.15" title="Move the frame down" style="padding:3px 11px;font-size:13px">&darr;</button>
+      ${off?`<button type="button" class="btn2 serpPan" data-d="reset" style="padding:3px 10px;font-size:12px">Top</button>`:''}
+    </div>
+    <div class="nf" style="margin-top:4px;font-size:11.5px">Same frame the proposal has always used \u2014 slide it down past the ads, the map pack and the shopping panels to land on the organic results, which is where the client is missing.</div>`;
+  document.querySelectorAll('.serpPan').forEach(b=>{
+    b.onclick=()=>{
+      const d=b.getAttribute('data-d');
+      renderSerpShot(kw, d==='reset' ? 0 : (ST._serpOffset||0)+Number(d));
+    };
   });
 }
 
@@ -4025,16 +4013,11 @@ function renderStep4(p){
       }
       if(!done){ out.innerHTML=`<div class="err">SERP didn't finish in 2 minutes — DataForSEO's queue may be busy. Click Generate to retry (often works on a second try).</div>`; }
       else{
-        // Cut off everything above the organic list — see cropBelowPack().
-        // Falls back to the full capture when the band cannot be found.
-        const _cb = await cropBelowPack(done.data_url);
         ST._serpFull = done.data_url;
-        ST._serpOrganic = _cb.found ? _cb.url : null;
-        const cropped = _cb.found ? _cb.url : done.data_url;
         // KEPT by renderSerpShot(), re-encoded to JPEG first: the canvas hands
         // back PNG, which for a full-width screenshot runs to about a megabyte
         // of base64 and would ride in every autosave of the quote. (2026-08-18)
-        renderSerpShot(done.keyword, cropped, _cb.found);
+        await renderSerpShot(done.keyword, 0);
       }
     }catch(e){
       out.innerHTML=`<div class="err">${e.message}</div>`;
