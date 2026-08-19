@@ -117,6 +117,21 @@
      (2026-08-13) */
   .pill.sugg{background:#fff;border:1px dashed #c9d3dc;color:#5c6b78;font-weight:400}
   .pill.sugg .sgmark{color:var(--velocity);font-size:10.5px;margin-right:-3px}
+  /* A term that came off the client's own SEO report. Distinct from a
+     suggestion — nobody proposed it, the client is already tracking it, and
+     that is the strongest argument there is for keeping it on the list.
+     (2026-08-19) */
+  .pill.rept{background:#fff8e8;border:1px solid #e3c98d;color:#6b5320}
+  .pill.rept .rpmark{color:#b8860b;font-size:10.5px;margin-right:-2px}
+  /* Two big steppers, not two small buttons. This is a judgement call being
+     made on purpose, and the control should feel like one. (2026-08-19) */
+  .vibeStep{width:46px;height:46px;border-radius:50%;border:2px solid var(--atlas);
+    background:#fff;color:var(--atlas);font-size:26px;font-weight:700;line-height:1;
+    cursor:pointer;font-family:inherit;display:flex;align-items:center;
+    justify-content:center;padding:0;transition:background .12s,color .12s,transform .08s}
+  .vibeStep:hover{background:var(--atlas);color:#fff}
+  .vibeStep:active{transform:scale(.93)}
+  .vibeStep:focus-visible{outline:2px solid var(--velocity);outline-offset:2px}
   .acwrap{position:relative}
   .acdrop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#fff;
     border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 22px rgba(0,45,88,.16);
@@ -953,7 +968,7 @@ function showReport(r, opts){
   if(ak) ak.onclick=()=>{
     const geo=_reportGeo();
     let n=0, stripped=0, merged=0, dupe=0;
-    const seenHere=new Set();
+    const seenHere=new Set(), _seeded=[];
     (window._report.keywords||[]).forEach(k=>{
       const raw=String(k||'').trim();
       if(!raw) return;
@@ -964,10 +979,26 @@ function showReport(r, opts){
       seenHere.add(v);
       if(stores.kw.some(x=>String(x).toLowerCase()===v)){ dupe++; return; }
       stores.kw.push(v); n++;
+      _seeded.push(v);
     });
+    // A term ALREADY on the list that the report also names is still a report
+    // term — that overlap is the interesting case, not an exclusion.
+    ST.reportSeeds=Array.from(new Set([...(ST.reportSeeds||[]),
+                                       ..._seeded, ...Array.from(seenHere)]));
+    ST.reportSeedFile=(window._report||{}).filename||ST.reportSeedFile||'';
     PILL_RENDER.kw(); try{scheduleAutoSave();}catch(e){}
     ak.disabled=true;
     ak.textContent='\u2713 Added '+n+' term'+(n===1?'':'s');
+    // Say where to look for them, or the marking is a secret.
+    if(seenHere.size){
+      const _m=document.createElement('div');
+      _m.className='nf'; _m.style.marginTop='5px';
+      _m.innerHTML='Marked <span class="rpmark" style="color:#b8860b">\u25a4</span> in '
+        +'Product / Vertical Focus \u2014 every term this report names, including '
+        +'any you had already typed, so you can tell them from your own and from '
+        +'what the tool suggested.';
+      ak.parentNode.appendChild(_m);
+    }
     const bits=[];
     if(stripped) bits.push(stripped+' had the city or state stripped out \u2014 the tool crosses each term with every market itself, so the place belongs in Geographic targeting, not in the phrase');
     if(merged) bits.push(merged+' collapsed into a term already in this batch');
@@ -1167,6 +1198,10 @@ function wirePills(key, inputId){
       const sg=new Set((ST.expandedSeeds||[]).map(x=>String(x).toLowerCase()));
       const c=stores.kw.filter(v=>sg.has(String(v).toLowerCase())).length;
       if(c) extra=` \u00b7 ${c} suggested`;
+      const rp=new Set((ST.reportSeeds||[]).map(x=>String(x).toLowerCase()));
+      const r=stores.kw.filter(v=>!sg.has(String(v).toLowerCase())
+                                 && rp.has(String(v).toLowerCase())).length;
+      if(r) extra+=` \u00b7 ${r} in their report`;
     }
     tag.textContent = n ? `${n} ${noun}${n===1?'':'s'}${extra}` : '';
   }
@@ -1181,12 +1216,21 @@ function wirePills(key, inputId){
     const shown=fold?all.slice(0,PILL_FOLD):all;
     const sugg=(key==='kw' && typeof ST!=='undefined')
       ? new Set((ST.expandedSeeds||[]).map(x=>String(x).toLowerCase())) : null;
+    // WHERE A TERM CAME FROM IS AN ARGUMENT FOR KEEPING IT. A term lifted off
+    // the client's own SEO report is one they are already paying someone to
+    // track, and once it is in the box it looked exactly like a term the
+    // operator typed. Three origins, three appearances. (2026-08-19)
+    const rept=(key==='kw' && typeof ST!=='undefined')
+      ? new Set((ST.reportSeeds||[]).map(x=>String(x).toLowerCase())) : null;
+    const _rf=(typeof ST!=='undefined' && ST.reportSeedFile)?ST.reportSeedFile:'';
     shown.forEach((v,i)=>{
       const el=document.createElement('span');
       const isSugg=!!(sugg && sugg.has(String(v).toLowerCase()));
-      el.className='pill'+(key==='geo'?' geo-pill':'')+(isSugg?' sugg':'');
+      const isRept=!isSugg && !!(rept && rept.has(String(v).toLowerCase()));
+      el.className='pill'+(key==='geo'?' geo-pill':'')+(isSugg?' sugg':'')+(isRept?' rept':'');
       if(isSugg) el.title='Suggested by the tool, not typed by you';
-      el.innerHTML=`${isSugg?'<span class="sgmark">\u2726</span> ':''}${v} <b data-i="${i}">×</b>`;
+      if(isRept) el.title='Named in their SEO report'+(_rf?' ('+_rf+')':'')+' — they are already tracking this term';
+      el.innerHTML=`${isSugg?'<span class="sgmark">\u2726</span> ':''}${isRept?'<span class="rpmark">\u25a4</span> ':''}${v} <b data-i="${i}">×</b>`;
       el.querySelector('b').onclick=()=>{stores[key].splice(i,1);render();try{scheduleAutoSave();}catch(e){}};
       box.insertBefore(el,input);
     });
@@ -4086,6 +4130,26 @@ function gapEffort(clientRank, rivalRank){
   return {client:cur, target:tgt, points:pts, months:band[1], links:band[2], level:false};
 }
 
+// MIRRORS gap_verdict() / PROPOSAL["gap_verdicts"] in app.py — proposal_test.py
+// asserts the two agree. A measurement ("313 against 380") does not tell anyone
+// whether they are nearly there or nowhere near, which is the only thing they
+// want to know from it. These say which, and say what our help does about it.
+const GAP_VERDICTS=[
+  [15,'a small gap','That is a small gap, and a very attainable one — comfortably inside what a campaign of this size closes.'],
+  [30,'a moderate gap','That is a moderate gap. It is well within reach with sustained work, and closing it is the main thing the campaign below is funding.'],
+  [50,'a wide gap','That is a wide gap. It is closeable with our help, but it takes a consistent multi-year build rather than a few months — which is why the more aggressive options exist.'],
+  [1000,'a very large gap','That is a very large gap — the sites ahead are far more established domains. We can take ground steadily and win the less contested terms early, but the most competitive terms are a long-horizon target rather than a first-year one.']];
+const GAP_LEVEL_VERDICT='{brand} already scores at or above the sites currently holding page one, so authority is not what is holding these rankings back. That is the most attainable position a campaign can start from — the gains come from content, on-page work and targeting the right terms.';
+function gapVerdict(g, brand){
+  if(!g) return null;
+  const b=brand||'This site';
+  if(g.level) return {label:'no gap', line:GAP_LEVEL_VERDICT.replace('{brand}', b)};
+  const pts=Number(g.points)||0;
+  for(const [ceiling,label,line] of GAP_VERDICTS){ if(pts<=ceiling) return {label:label, line:line}; }
+  const last=GAP_VERDICTS[GAP_VERDICTS.length-1];
+  return {label:last[1], line:last[2]};
+}
+
 function vibePct(){ const v=(ST.vibe||{}).pct; return (typeof v==='number' && v)?v:0; }
 function vibeAdjust(n){
   const pc=vibePct(); if(!pc || n===null || n===undefined || n==='') return n;
@@ -4101,11 +4165,14 @@ function vibeBlock(){
   const before=(ai&&(ai.client_total||{}).base)||t.base;
   const after=vibeAdjust(before);
   const on=!!vibePct();
-  return `<div class="pph">Vibe check</div>
+  // THE INSTRUCTION IS NOT NEWS AFTER THE FIRST READ. It sat as a full line of
+  // body copy above the control on every render, pushing the dial down the
+  // card; on hover it is there for whoever needs it and out of the way of
+  // whoever does not. (2026-08-19)
+  return `<div class="pph">Vibe check ${tipOf('Move the quote off the formula where you know something it doesn\'t. The reason is required and is saved with the quote.<br><br>The formula\'s own figure is kept underneath, so calibration still measures the formula rather than the judgement.')}</div>
   <div style="border:1px solid ${on?'var(--atlas)':'var(--line)'};border-radius:12px;padding:14px 16px;background:${on?'#eef4fb':'#fff'}">
-    <div class="nf" style="margin-bottom:9px">Move the quote off the formula where you know something it doesn't. The reason is required and is saved with the quote.</div>
-    <div style="display:flex;gap:14px;align-items:center;justify-content:center;margin:4px 0 12px">
-      <button type="button" class="vibeStep" data-step="-5" title="Down 5%">&minus;</button>
+    <div style="display:flex;gap:18px;align-items:center;justify-content:center;margin:6px 0 12px">
+      <button type="button" class="vibeStep" data-step="-5" title="Down 5%" aria-label="Down 5%">&minus;</button>
       <div style="text-align:center;min-width:120px">
         <div id="vibeDial" style="font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:800;line-height:1;color:${on?'var(--atlas)':'var(--muted)'}">${(v.pct>0?'+':'')+(v.pct||0)}%</div>
         <div class="nf" style="font-size:11px">off the formula</div>
@@ -4231,10 +4298,9 @@ function proposalSignals(){
   // WHAT THE GAP COSTS, not what it measures. "A gap of 605" means nothing to
   // anyone; link volume and months are what a retainer actually buys.
   const impact = g ? `<div style="margin-top:10px;padding:11px 13px;background:#fff;border:1px solid var(--line);border-radius:9px">
-      <div style="font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin-bottom:5px">What that gap means</div>
-      ${g.level
-        ? `<div style="font-size:13.5px">This client is already at the authority level of its own page one. Links are not the constraint here — ranking will come from content, on-page work and targeting the right terms.</div>`
-        : `<div style="font-size:13.5px">Closing roughly <b>${g.points}</b> points of authority. Published benchmarks put that at <b>${escapeHtml(g.links)}</b> over <b>${escapeHtml(g.months)}</b> of sustained link acquisition${g.points>40?' — which is why the advanced pace exists':''}.</div>`}
+      <div style="font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--atlas);margin-bottom:5px">${escapeHtml(((gapVerdict(g,(ST.inputs||{}).brand)||{}).label||'the gap').replace(/^a /,''))} &mdash; what it means</div>
+      <div style="font-size:13.5px"><b>${escapeHtml((gapVerdict(g, (ST.inputs||{}).brand)||{}).line||'')}</b></div>
+      ${g.level ? '' : `<div style="font-size:13.5px;margin-top:6px">In practical terms that is roughly <b>${g.points}</b> points of authority. Published benchmarks put that at <b>${escapeHtml(g.links)}</b> over <b>${escapeHtml(g.months)}</b> of sustained link acquisition${g.points>40?' — which is why the advanced pace exists':''}.</div>`}
       ${tipOf('Authority is scored 0-1000 and is LOGARITHMIC, so each step up costs two to three times the referring domains of the one before it. The figures here are converted to the 0-100 scale the published benchmarks use, and they describe the ORDER of effort rather than a guarantee &mdash; scoring methodologies differ between providers.<br><br>Source: Linkscope 2026 domain-authority ranking benchmarks.')}
     </div>` : '';
   return `<div class="pph">Who owns page one today</div>
@@ -4892,6 +4958,8 @@ function snapshotQuote(){
     // Which focus terms Expand contributed, so reopening a quote and rebuilding
     // does not expand an already-expanded list a second time.
     expandedSeeds: ST.expandedSeeds||[],
+    reportSeeds: ST.reportSeeds||[],
+    reportSeedFile: ST.reportSeedFile||'',
     rankedSeeds: ST.rankedSeeds||[],
     // Imported incumbent reports (extraction only — see rememberReport).
     reports: ST.reports||[],
@@ -4934,6 +5002,10 @@ function restoreQuote(p){
   ST.actual=p.actual||{};
   ST.expandedSeeds=p.expandedSeeds||[];
   ST.rankedSeeds=p.rankedSeeds||[];
+  // Per-client, so it resets on load like every other measurement — a quote
+  // saved before this existed simply has none, and its chips read as typed.
+  ST.reportSeeds=p.reportSeeds||[];
+  ST.reportSeedFile=p.reportSeedFile||'';
   ST.reports=p.reports||[];
   // ONE CLIENT'S PAGE ONE PRICED ANOTHER. ST.signals survived a quote load, so
   // opening Pennsylvania Center for Dental Excellence and then Nob Hill Dental
@@ -4970,8 +5042,24 @@ function restoreQuote(p){
   // Step 4 — pricing
   if(ST.pricing){ try{ renderStep4(ST.pricing); }catch(e){}
                   try{ setTimeout(checkStoredPrice, 300); }catch(e){} }
+  // THE RIGHT PANEL IS A RENDER, NOT A BINDING. Every step above repaints the
+  // build view, but the proposal view is drawn once by showView() and then left
+  // alone — so loading a second quote while the Proposal tab was open left the
+  // PREVIOUS client's name, prices, page one and vibe note sitting beside the
+  // new client's inputs. Nothing about that reads as stale; it reads as this
+  // client's quote, and it is the kind of mistake that leaves the building.
+  // (2026-08-19)
+  try{ repaintProposalIfOpen(); }catch(e){}
   // re-enable auto-save shortly after the load settles
   setTimeout(()=>{ SUPPRESS_AUTOSAVE=false; }, 1500);
+}
+
+// Repaint the proposal ONLY if it is the visible view — showView() renders it on
+// the way in, so painting a hidden panel is wasted work, and painting it when it
+// is NOT hidden is the whole fix.
+function repaintProposalIfOpen(){
+  const pv=$('proposalView');
+  if(pv && !pv.classList.contains('hidden')) renderProposal();
 }
 
 // push saved inputs back into the visible form fields + pill stores
@@ -5879,7 +5967,7 @@ function step1Grid(kw){
     const bits=[];
     if(_z.length) bits.push(`<b>${_z.length}</b> with no measurable demand`);
     if(_q.length) bits.push(`<b>${_q.length}</b> people look up, not buy`);
-    notes.push(`<div class="nf" style="margin-top:4px">\u{1F50E} <b>Of your own focus terms</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf('Seeds are never filtered &mdash; you typed them, they win. This is only what they are costing: a term measuring 0/mo brings no traffic to the grid, and a definition lookup ("what does lcf stand for") is someone researching an abbreviation rather than buying.<br><br>'+[].concat(_z.map(x=>escapeHtml(String(x))+' &mdash; 0/mo'), _q.map(x=>escapeHtml(String(x))+' &mdash; lookup')).slice(0,20).join('<br>'))}</div>`);
+    notes.push(`<div class="nf" style="margin-top:4px">\u{1F50E} <b>Of your own focus terms</b> \u2014 ${bits.join(' \u00b7 ')}${tipOf('You typed these, so they stay. This is only what they cost: a 0/mo term brings no traffic, and "what does lcf stand for" is someone looking up a word, not buying.<br><br>'+[].concat(_z.map(x=>escapeHtml(String(x))+' &mdash; 0/mo'), _q.map(x=>escapeHtml(String(x))+' &mdash; lookup')).slice(0,20).join('<br>'))}</div>`);
   }
   const _sdd=kw.services_deduped||[];
   if(_sdd.length) warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>${_sdd.length} duplicate service${_sdd.length===1?'':'s'} caught at the last step</b> \u2014 ${_sdd.slice(0,4).map(escapeHtml).join(' \u00b7 ')}. Removed, but a stage above should have folded ${_sdd.length===1?'it':'them'} \u2014 worth reporting.${tipOf('Two spellings of one service split their own rankings and take two grid slots. This is a backstop after every other filter; anything it catches is a bug upstream, not a normal outcome.')}</div>`);
@@ -5899,7 +5987,7 @@ function step1Grid(kw){
   const _dsg=kw.seeds_dropped_suggested||[];
   if(_dsg.length) notes.push(`<div class="nf" style="margin-top:4px">\u2702 <b>${_dsg.length} suggested term${_dsg.length===1?'':'s'} taken back off</b> \u2014 company names${tipOf('A term the TOOL proposed does not get the exemption that protects one you typed &mdash; a company is not a service line, and you already rank #1 for your own name.<br><br>'+_dsg.slice(0,14).map(x=>escapeHtml(String(x.term||''))+' &mdash; '+escapeHtml(String(x.why||''))).join('<br>'))}</div>`);
   const _sf=kw.seeds_folded||[];
-  if(_sf.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F500} <b>${_sf.length} duplicate focus term${_sf.length===1?'':'s'} folded</b>${tipOf(_sf.slice(0,14).map(x=>escapeHtml(String(x[0]))+' &rarr; '+escapeHtml(String(x[1]))).join('<br>')+'<br><br>One service line cannot take two grid slots. Singular/plural and containment count as the same term.')}</div>`);
+  if(_sf.length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F500} <b>${_sf.length} duplicate focus term${_sf.length===1?'':'s'} folded</b>${tipOf(_sf.slice(0,14).map(x=>escapeHtml(String(x[0]))+' &rarr; '+escapeHtml(String(x[1]))).join('<br>')+'<br><br>One service line cannot take two grid slots.')}</div>`);
   const sr=kw.seed_ranking||{};
   // Sorted, not removed — they fill the tail when slots remain. (2026-08-13)
   if((sr.adjacent||[]).length) notes.push(`<div class="nf" style="margin-top:4px">\u{1F4D0} <b>${sr.adjacent.length} term${sr.adjacent.length===1?'':'s'} sorted below the client's own wording</b>${tipOf('A neighbouring product type: searched, but not what this client sells, so it loses a slot to their own vocabulary before it loses one to anything else. Not removed &mdash; still quoted if the grid has room.<br><br>'+sr.adjacent.slice(0,20).map(escapeHtml).join(' &middot; '))}</div>`);
@@ -6130,15 +6218,15 @@ function step1Grid(kw){
     if(S.length){
       const bits=[];
       if(ch.length) bits.push('<div>'+ch.map(x=>'✓ <b>'+escapeHtml(x.chose)+'</b> instead of “'+escapeHtml(x.instead_of)+'” <span style="opacity:.75">('+Number(x.volume||0).toLocaleString()+'/mo vs '+Number(x.default_volume||0).toLocaleString()+'/mo)</span></div>').join('')+'</div>');
-      if(blocked.length) bits.push('<div style="margin-top:3px">'+blocked.length+' left as written because the bigger spelling was already in the list.</div>');
-      if(er.length) bits.push('<div style="margin-top:3px">⚠ The spelling check could not run ('+escapeHtml(er[0].detail||'API error')+') — the terms are as written.</div>');
+      if(blocked.length) bits.push('<div style="margin-top:3px">'+blocked.length+' left as written because the higher-demand wording was already in the list.</div>');
+      if(er.length) bits.push('<div style="margin-top:3px">⚠ The wording check could not run ('+escapeHtml(er[0].detail||'API error')+') — the terms are as written.</div>');
       if(!ch.length&&!er.length){
         const kept=S.filter(x=>x.status==='confirmed');
-        bits.push('<div>'+(kept.length?kept.length+' term'+(kept.length===1?'':'s')+' already carried the bigger spelling. ':'')
-          +(nd.length?nd.length+' returned no volume in either spelling'+(nd.length===S.length?' — which is also what a throttled lookup looks like, so treat it as unmeasured rather than as equal':'')+'.':'')+'</div>');
+        bits.push('<div>'+(kept.length?kept.length+' term'+(kept.length===1?'':'s')+' already used the wording with more demand. ':'')
+          +(nd.length?nd.length+' returned no volume in either wording'+(nd.length===S.length?' — which is also what a throttled lookup looks like, so treat it as unmeasured rather than as equal':'')+'.':'')+'</div>');
         bits.push('<div style="margin-top:3px;opacity:.85">'+S.slice(0,6).map(x=>(x.tested||[]).map(y=>escapeHtml(y.form)+' <span style="opacity:.7">'+Number(y.volume||0).toLocaleString()+'</span>').join(' vs ')).join(' · ')+'</div>');
       }
-      (ch.length?auto:notes).push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F524} <b>${ch.length?ch.length+' term'+(ch.length===1?'':'s')+' re-spelled':'Spelling checked — nothing bigger found'} against search volume</b>${tipOf('Singular or plural &mdash; nothing used to choose, so the list kept whichever spelling was typed first. &ldquo;home for rent&rdquo; measures 10/mo and &ldquo;homes for rent&rdquo; measures over a thousand. Measured nationally, because which words people type is a property of the language; per-city demand is measured separately. Only the head noun moves, so this can re-spell a service but never change which service it is.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
+      (ch.length?auto:notes).push(`<div style="margin-top:6px;padding:8px 11px;background:var(--info-bg);border:1px solid var(--line);border-radius:7px;font-size:12.5px">\u{1F524} <b>${ch.length?ch.length+' term'+(ch.length===1?'':'s')+' switched to the wording people search':'Wordings grouped — the list already had the one people search'}</b>${tipOf('Near-identical wordings of one service &mdash; singular against plural, mostly &mdash; are grouped and measured against each other, and the list keeps whichever one people actually type. Nothing used to choose, so it kept whichever was entered first: &ldquo;home for rent&rdquo; measures 10/mo and &ldquo;homes for rent&rdquo; measures over a thousand. Measured nationally, because which words people use is a property of the language; per-city demand is measured separately. Only the head noun moves, so this can change the wording of a service but never which service it is.')}<div class="nf" style="margin-top:3px">${bits.join('')}</div></div>`);
     }
   }
 

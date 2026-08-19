@@ -7090,7 +7090,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             ecom_suppressed = (
                 f"Storefront detected ({ecom_reason}) — but this client has "
                 f"{len(markets)} market{'' if len(markets) == 1 else 's'} entered"
-                + (f" and a {band.replace('_', ' ')} geo scope" if band else "")
+                + (f", which read as a {band.replace('_', ' ')} footprint"
+                   if band else "")
                 + ", so demand is still being pulled LOCALLY. A store that also "
                   "ships is not a national campaign. Turn on Price on national "
                   "demand only if this really is a product brand selling "
@@ -9480,41 +9481,101 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 # ---------------------------------------------------------------------------
 
 PROPOSAL = {
+    # -----------------------------------------------------------------------
+    # BRENDAN'S WORDS, NOT OURS.
+    #
+    # Everything in this block that also exists in his proposals is now
+    # character-for-character his, taken from the NASSCO and Media Venue
+    # documents in becal/ — including the double spaces after full stops and the
+    # curly quotes, because "the exact same verbiage" is the instruction and a
+    # tidied-up sentence is a different sentence.
+    #
+    # An audit before this change found 38 paragraphs verbatim, 12 lightly
+    # edited and 38 written by me. The 12 and the 38 are gone. What remains ours
+    # is only what he has no equivalent for: What We Measured For You, the
+    # authority-gap reading, the live results capture, and the AI Search
+    # branding on his GEO section. proposal_test.py checks the boilerplate back
+    # against the .docx files so it cannot drift again. (2026-08-19)
+    # -----------------------------------------------------------------------
     "intro_heading": "Background Information",
     "seo_heading": "Search Engine Optimization (SEO)",
     "measured_heading": "What We Measured For You",
-    "campaign_heading": "Ongoing SEO Campaign",
-    "options_heading": "SEO Campaign Options",
+    "campaign_heading": "Ongoing SEO Campaign:",
+    "options_heading": "SEO Campaign Options:",
+    "additional_heading": "Additional Keywords:",
     "case_heading": "Case Studies & Results",
+
+    # ---- his prose, in the order it appears -------------------------------
+    "intro_line": "{brand} is requesting a proposal for assistance with "
+                  "improving their organic rankings, traffic, and lead flow "
+                  "from search engines such as Google through strategic search "
+                  "engine optimization (SEO) services.",
+    "intro_close": "Please find our recommendations and proposal below.",
+    "seo_intro": "The best long-term marketing strategy for driving online "
+                 "leads is search engine optimization (SEO) which is the "
+                 "process of improving a website’s visibility and rankings "
+                 "for targeted keywords on search engines such as Google.",
+    "seo_table_lead": "Based on our initial research, we came up with a "
+                      "preliminary list of potential keywords and noted your "
+                      "current rankings for each keyword on Google below:",
+    "seo_after_table": "Based on the above data, there is significant room for "
+                       "improvement in organic ranking through an organic SEO "
+                       "campaign.  The goal of this campaign will be to capture "
+                       "this search traffic to drive highly qualified visitors "
+                       "to your website and increase leads for your business.",
+    "keyword_sets_lead": "All of our SEO campaigns focus on three primary "
+                         "keyword sets:",
+    "keyword_sets_close": "We start every campaign with an analysis of keywords "
+                          "and identify which terms map to which landing pages; "
+                          "the above set of keywords are preliminary examples "
+                          "of terms we would target in an organic SEO campaign.",
+    "campaign_lead": "All of our ongoing SEO campaigns include the following "
+                     "services each month:",
+    "campaign_close": "The goal of this campaign is to rank your website as "
+                      "high as possible on page 1 of search results to drive "
+                      "high quality, qualified traffic and leads to your "
+                      "website.",
+    "options_lead": "Depending on how aggressive you wish to be with an SEO "
+                    "campaign, we have included three options below following a "
+                    "“good, better, best” model.  Additional campaign "
+                    "options are available beyond those outlined above. Most "
+                    "clients begin with one of these campaigns and later expand "
+                    "their monthly investment as rankings, traffic, and lead "
+                    "volume grow.",
+
     "keyword_sets": [
         ("Ultra-Competitive Keywords",
          "These are the most competitive terms in a particular industry and are "
-         "extremely difficult to rank but yield extremely high traffic and lead "
-         "volume once ranked."),
+         "extremely difficult to rank but yield extremely high traffic."),
         ("Competitive Keywords",
          "These are highly competitive terms which take a high amount of effort "
-         "and time to rank for but can drive a tremendous amount of traffic and "
-         "leads once ranked."),
+         "and time to rank for but can drive a tremendous amount of traffic."),
         ("Long-tail Keywords",
          "These are lower competition terms which take less time and effort to "
-         "rank for but also drive less traffic — however this traffic is "
-         "generally highly qualified and converts at a high rate."),
+         "rank for but also drive less traffic however this traffic is often "
+         "highly specific with high intent."),
     ],
+
+    # (lead bullet, sub-bullets) — his shape exactly. The bold group headings
+    # this used to carry were mine, and a heading changes how a sentence reads
+    # even when the sentence is untouched, so they are gone too.
     "services": [
-        ("Keyword Research & Strategy",
-         ["Conduct full initial keyword research to identify relevant search "
-          "terms in the industry.",
-          "Map each term to the landing page best placed to rank for it.",
-          "Meaningful ranking improvements generally begin within 4-6 months, "
-          "with compounding gains after that."]),
-        ("On-Site Optimization",
+        ("Conduct full initial keyword research to identify relevant search "
+         "terms in the industry.  We generally begin seeing meaningful ranking "
+         "improvements within 5-10 months, however will provide reports to show "
+         "progress as terms improve. We will identify three types of keywords:",
+         ["Ultra-Competitive", "Competitive", "Long Tail"]),
+        ("We will conduct all on-site optimization work needed.  This includes:",
          ["Full technical website audit",
           "Title tag optimization",
           "Meta information optimization",
           "Image optimization where needed",
           "Testing the site for all current SEO factors including mobile "
           "usability, speed, and other factors"]),
-        ("Off-Site Link Building",
+        ("We will engage in an off-site link building campaign to help "
+         "strengthen the website domain.  Links remain one of the most "
+         "important factors which determine website rankings in organic search. "
+         "These links will include:",
          ["Guest posts/articles",
           "Directory type listings",
           "Citation building",
@@ -9522,50 +9583,61 @@ PROPOSAL = {
           "Content sharing sites",
           "Micro-blogs",
           "And additional link types as relevant to the campaign"]),
-        ("Content Creation",
-         ["Research 2-3 long tail keyword topics each month",
-          "Write 2-3 highly SEO-focused articles/content assets, 750-1,000 "
-          "words in length",
-          "Post them to the site and promote them"]),
-        ("Local Listings & Google Business Profile",
-         ["Verify listing sites are set up properly, including Google Business "
-          "Profile",
-          "On-page optimization of the Google Business Profile",
-          "Monthly citation building"]),
-        ("Reporting",
-         ["A monthly report at the start of each month outlining the work "
-          "performed and analytical metrics for the keywords and the website."]),
+        ("We will research 2-3 long tail keyword topics and write 2-3 highly "
+         "SEO-focused articles/content assets, 750-1,000 words in length, and "
+         "post them to the website blog each month", []),
+        ("We will verify listing sites are setup properly, including Google "
+         "Business Profile (formerly Google My Business) and optimize this "
+         "listing as well as any supplemental listings for satellite locations",
+         ["Includes on-page optimization of the Google Business Profile",
+          "Also includes monthly citation building"]),
+        ("We will deliver a monthly report at the start of each month outlining "
+         "the work performed that month and analytical metrics for our keywords "
+         "and the website’s traffic to show the progress of the campaign",
+         []),
     ],
+
     # The per-option keyword counts Brendan quotes. Boilerplate in his documents
     # — the same three lines regardless of the grid — so they stay boilerplate.
     "option_scope": {
-        "base": ["1 ultra-competitive keyword", "3-5 competitive keywords",
+        "base": ["1-2 ultra-competitive keywords", "3-5 competitive keywords",
                  "10-15 long tail keywords"],
-        "intermediate": ["2 ultra-competitive keywords", "5-8 competitive keywords",
+        "intermediate": ["2-3 ultra-competitive keywords", "5-8 competitive keywords",
                          "12-18 long tail keywords"],
-        "advanced": ["3 ultra-competitive keywords", "8-12 competitive keywords",
+        "advanced": ["3-4 ultra-competitive keywords", "8-12 competitive keywords",
                      "15-20 long tail keywords"],
     },
+    # Each is a list of paragraphs; the last one runs into the targeting list,
+    # which is why it ends on a colon rather than a full stop.
     "option_blurb": {
-        "base": "In our base SEO campaign, we are doing SEO work to the site to "
-                "steadily improve rankings and drive more traffic to the site. "
-                "We include all SEO activities outlined above and would expect "
-                "to see ranking improvements starting after 6-10 months.",
-        "intermediate": "An intermediate campaign includes everything in a base "
-                        "campaign, plus additional link building, more content "
-                        "each month, and a faster pace of on-site work.",
-        "advanced": "An advanced campaign includes everything in an intermediate "
-                    "campaign, and accelerates the pace at which we build "
-                    "authority and produce content — the fastest route to page "
-                    "one on the most competitive terms.",
+        "base": ["In our base SEO campaign, we are doing SEO work to the site "
+                 "to slowly improve rankings and drive more traffic to the "
+                 "site.",
+                 "In a base campaign, we include all SEO activities outlined "
+                 "above.  We would expect to see ranking improvements for the "
+                 "terms starting after 6-10 months of optimization work and "
+                 "recommend targeting:"],
+        "intermediate": ["An intermediate campaign includes everything "
+                         "mentioned in a basic campaign, however we also "
+                         "include additional types of link building which helps "
+                         "build your rankings faster and more consistently as "
+                         "well as our proprietary rank signaling SEO strategy "
+                         "which has seen a 97% success rate in ranking keywords "
+                         "on page 1 of Google.  We expect to see ranking "
+                         "improvements for the terms after 5-8 months and "
+                         "recommend targeting:"],
+        "advanced": ["An advanced campaign includes everything mentioned in an "
+                     "intermediate campaign, however we accelerate the pace at "
+                     "which we optimize the site, build links, and perform "
+                     "other SEO activities allowing us to accelerate ranking "
+                     "growth and lead generation.  We expect to see ranking "
+                     "improvements for the terms after 4-6 months and recommend "
+                     "targeting:"],
     },
-    # ---- AI Search (GEO) --------------------------------------------------
-    # Brendan runs this as a full parallel campaign with its own three options,
-    # priced IN ADDITION to SEO — see the Media Venue proposal, the only one of
-    # the ten that carries it. Same shape here, under the name the team uses.
     # ---- what the authority gap actually costs ----------------------------
-    # "A gap of 605" means nothing to a client. These bands turn it into link
-    # volume and months, which is what a retainer actually buys.
+    # OURS — he has no equivalent. "A gap of 605" means nothing to a client.
+    # These bands turn it into link volume and months, which is what a retainer
+    # actually buys.
     #
     # DataForSEO's rank is 0-1000 and logarithmic; the published benchmarks below
     # are on the 0-100 scale, so the score is divided by ten to compare. That is
@@ -9583,90 +9655,169 @@ PROPOSAL = {
         (1000, "24-48+ months", "300-1,000+ referring domains"),
     ],
     "gap_heading": "What the authority gap means",
+
+    # HOW BIG, AND CAN WE CLOSE IT. The bands above say what the work costs;
+    # these say what the number means, which is the question a client actually
+    # asks. Points are on the 0-100 scale (the raw 0-1000 score divided by ten),
+    # so a raw gap of 605 lands in the last band. MIRRORED in the template as
+    # GAP_VERDICTS — proposal_test.py asserts the two agree.
+    "gap_verdicts": [
+        (15, "a small gap",
+         "That is a small gap, and a very attainable one — comfortably inside "
+         "what a campaign of this size closes."),
+        (30, "a moderate gap",
+         "That is a moderate gap. It is well within reach with sustained work, "
+         "and closing it is the main thing the campaign below is funding."),
+        (50, "a wide gap",
+         "That is a wide gap. It is closeable with our help, but it takes a "
+         "consistent multi-year build rather than a few months — which is why "
+         "the more aggressive options exist."),
+        (1000, "a very large gap",
+         "That is a very large gap — the sites ahead are far more established "
+         "domains. We can take ground steadily and win the less contested terms "
+         "early, but the most competitive terms are a long-horizon target "
+         "rather than a first-year one."),
+    ],
+    "gap_level_verdict":
+        "{brand} already scores at or above the sites currently holding page "
+        "one, so authority is not what is holding these rankings back. That is "
+        "the most attainable position a campaign can start from — the gains "
+        "come from content, on-page work and targeting the right terms.",
+
+    # ---- AI Search (GEO) --------------------------------------------------
+    # Brendan runs this as a full parallel campaign with its own three options,
+    # priced IN ADDITION to SEO — see the Media Venue proposal, the only one of
+    # the ten that carries it. His words throughout; the SECTION NAME is the one
+    # change, because the team sells this as AI Search rather than GEO.
     "geo_heading": "AI Search (GEO)",
     "geo_intro": [
-        "AI Search optimization — also called Generative Engine Optimization "
-        "(GEO) — is the process of optimizing for AI-based search queries. "
-        "There are a variety of AI-based search engines currently in use, with "
-        "the largest being:",
+        "Generative Engine Optimization (GEO) is the process of optimizing for "
+        "AI based search queries.  There are a variety of AI based search "
+        "engines currently in use, with the most popular being:",
     ],
     "geo_engines": [
-        "Google's Gemini “AI Mode” and AI Overviews",
+        "Google’s Gemini “AI Mode” & AI Overviews",
         "ChatGPT",
         "Microsoft Copilot (Bing AI Search)",
-        "Dozens of other smaller players in the market",
+        "There are dozens of other small players in the market as well",
     ],
     "geo_context": [
-        "While AI search is certainly going to be a large part of search in the "
-        "future, today AI searches account for approximately 10% of all search "
-        "volume. Traditional search remains where the overwhelming majority of "
-        "queries happen, which is why we recommend AI Search alongside a core "
-        "SEO campaign rather than instead of one.",
-        "Many brands want to get ahead of the AI trend and leverage it for "
-        "additional brand exposure. We have been a pioneer in GEO and AI search, "
-        "one of the first companies to offer optimization for AI models, having "
-        "launched the service in 2023.",
+        "While AI search is certainly going to be the search of the future, "
+        "today AI searches only account for approximately 10% of all search "
+        "volume.  Traditional search, which is optimized through search engine "
+        "optimization or SEO campaigns, still dominates the marketplace with "
+        "the majority of search volume.  Furthermore, studies have shown "
+        "purchasing decisions are more heavily influenced still by traditional "
+        "search.",
+        "With that said, many brands are still wanting to get ahead of the AI "
+        "trend as well as leverage AI for additional brand exposure and are "
+        "beginning to engage in GEO campaigns.  Unlike SEO campaigns where a "
+        "fixed keyword set is defined and tracked at a keyword level, AI search "
+        "models can yield different results each time even for the same "
+        "question.  This makes them much more complex for optimization efforts "
+        "and much more difficult to track results/progress short of simply "
+        "asking the AI model questions and analyzing the outcome/result.",
+        "We have been a pioneer in the GEO and AI search industry being one of "
+        "the first companies to offer optimization searches for AI models.  We "
+        "launched this service in 2023 and have assisted numerous clients with "
+        "ranking higher in AI search models through strategic optimization of "
+        "the AI search models, strategic link and citation building, and robust "
+        "analysis of what information is being utilized in AI models to render "
+        "results to specific search queries.",
     ],
+    "geo_campaign_heading": "On-Going AI Search Campaign:",
+    "geo_campaign_lead": "All of our on-going campaigns include the following "
+                         "services each month:",
     "geo_services": [
-        ("Keyword & Topic Research",
-         ["Conduct full initial research to identify relevant search phrases on "
-          "AI models.",
-          "We generally identify 20-30 target search phrases and topics."]),
-        ("AI Model Optimization",
-         ["Full AI model optimization to train the core AI models with "
-          "information supporting your business being the recommended result "
-          "for a given AI search."]),
-        ("Off-Site Resources",
-         ["Guest posts/articles", "Directory type listings", "Citation building",
-          "Content distribution/creation", "Content sharing sites",
+        ("Conduct full initial keyword research to identify relevant search "
+         "phrases on AI models.",
+         ["We generally identify 20-30 target search phrases/topics"]),
+        ("We will conduct full AI model optimization to train the core AI "
+         "models providing them information supporting your business being the "
+         "recommended result for the given AI search queries", []),
+        ("We will engage in an off-site link building, content creation and "
+         "citation building campaign to help provide resources which the AI "
+         "model will read and analyze when making a decision on a given search "
+         "query.  This will provide outside influence to the AI model to "
+         "increase the confidence in recommending your brand in given search "
+         "queries.  These links will include:",
+         ["Guest posts/articles",
+          "Directory type listings",
+          "Citation building",
+          "Content distribution/creation",
+          "Content sharing sites",
           "Micro-blogs",
           "And additional link types as relevant to the campaign"]),
-        ("Reporting",
-         ["A monthly report outlining the work performed and any available "
-          "analytical metrics for your keywords and AI searches."]),
+        ("We will deliver a monthly report at the start of each month outlining "
+         "the work performed that month and any available analytical metrics "
+         "for our keywords and AI searches to document progress in improving "
+         "your AI results.", []),
     ],
+    "geo_options_heading": "AI Search Campaign Options:",
+    "geo_options_lead": "Depending on how aggressive you wish to be with an AI "
+                        "Search campaign, we have included three options below "
+                        "following a “good, better, best” model.  "
+                        "These campaign options would be in addition to one of "
+                        "the proposed SEO campaign options and are discounted "
+                        "accordingly in conjunction with an SEO campaign.",
     "geo_option_blurb": {
-        "base": "In our base AI Search campaign, we engage in GEO work to "
-                "steadily improve your brand appearing in recommendations "
-                "across AI models. We include everything outlined above and "
-                "would expect to see improvements after 6-10 months.",
-        "intermediate": "An intermediate campaign includes everything in a base "
-                        "campaign, and additionally targets 1-2 premium "
-                        "placements per month which are specifically analyzed "
-                        "by AI models when rendering results and "
-                        "recommendations, to impact AI search results faster.",
-        "advanced": "An advanced campaign includes everything in an "
-                    "intermediate campaign, and accelerates the pace at which "
-                    "we create premium placements to 3-4 per month. We expect "
-                    "to see improvements after 6 months.",
+        "base": ["In our base AI Search campaign, we are engaging in GEO work "
+                 "to slowly improve your brand appearing in recommendations in "
+                 "AI models.  In a base campaign, we include everything "
+                 "outlined above.  We would expect to see improvements starting "
+                 "after 6-10 months of optimization work."],
+        "intermediate": ["An intermediate campaign includes everything "
+                         "mentioned in a basic campaign, however we also target "
+                         "1-2 premium placements per month which are "
+                         "specifically analyzed by GEO models in rendering "
+                         "results and recommendations to more quickly impact "
+                         "the AI search results.  We expect to see ranking "
+                         "improvements after 5-8 months."],
+        "advanced": ["An advanced campaign includes everything mentioned in an "
+                     "intermediate campaign, however we accelerate the pace at "
+                     "which we create premium placements to 3-4 per month.  We "
+                     "expect to see ranking improvements after 6 months."],
     },
     "closing": [
         "Additional keywords can be added to any campaign for an additional fee "
         "upon request.",
         "We greatly appreciate the opportunity and your trust in evaluating us "
-        "as your digital partner. Everything we do is centered around providing "
-        "best in class service and results.",
+        "as your digital partner.  Everything we do is centered around "
+        "providing best in class customer service and getting you results.  As "
+        "such, we have included several reference projects and case studies "
+        "below as a showcase of our work.",
     ],
+    "case_projects_label": "SEO Projects:",
     "case_studies": [
-        "All Year Cooling \u2013 5+ year SEO client ranking #1 for \u201cMiami AC "
-        "Repair\u201d and over 100 other terms on page 1, resulting in a 1,000+% "
-        "increase in organic traffic.",
-        "Engage \u2013 7+ year SEO client ranking #1 for \u201cMotivational "
-        "Speakers\u201d, one of the most competitive keywords on the internet, as "
-        "well as dozens of other terms.",
-        "ERI \u2013 10+ year SEO client ranking #1 for \u201cElectronic "
-        "Recyclers\u201d, \u201cData Destruction\u201d, and hundreds of other terms "
-        "driving hundreds of leads per year.",
-        "Goldstone Financial \u2013 4+ year SEO client ranking #1 for "
-        "\u201cFinancial Advisor Chicago\u201d, \u201cFinancial Planner Chicago\u201d, "
-        "\u201cRetirement Advisor\u201d and dozens of other terms.",
-        "Lakeside Equipment \u2013 10+ year SEO client ranking #1 for over 50 "
-        "keywords in their industry, resulting in an over 5,000% increase in "
+        "All Year Cooling – 5+ year SEO client ranking #1 for “Miami "
+        "AC Repair” and over 100 other terms on page 1 resulting in a "
+        "1,000+% increase in organic traffic and leads.",
+        "Engage – 7+ year SEO client ranking #1 for “Motivational "
+        "Speakers”, one of the most competitive keywords on the internet, "
+        "as well as dozens of other terms driving hundreds of leads per month.",
+        "ERI – 10+ year SEO client ranking #1 for “Electronic "
+        "Recyclers”, “Data Destruction”, and hundreds of other "
+        "terms driving hundreds of leads per year.",
+        "Goldstone Financial – 4+ year SEO client ranking #1 for "
+        "“Financial Advisor Chicago”, “Financial Planner "
+        "Chicago”, “Retirement Advisor” and dozens of other "
+        "highly competitive terms.",
+        "Lakeside Equipment – 10+ year SEO client ranking #1 for over 50 "
+        "keywords in their industry resulting in an over 5,000% increase in "
         "organic traffic.",
     ],
     "case_closing": "Over the past two decades, we have managed hundreds of "
                     "digital marketing, web and SEO campaigns with a focus on "
-                    "delivering results and forging long term partnerships.",
+                    "delivering results and forging long term client "
+                    "relationships.  We have a 97+% client retention rate "
+                    "because we believe in going the extra mile for each and "
+                    "every client and greatly appreciate the opportunity to "
+                    "show your business how we can help you grow through "
+                    "digital.  When you’re ready to get started, simply "
+                    "email your account representative and we will send over a "
+                    "short digital contract to initiate our relationship.  "
+                    "We’re looking forward to working with you and your "
+                    "team!",
 }
 
 
@@ -10865,7 +11016,22 @@ def api_market_signals():
     health, health_err = fetch_technical_health(domain) if domain else ({}, "")
 
     client_rank = ranks.get(domain)
-    rival_ranks = [ranks[r] for r in rivals if r in ranks]
+    # A SOCIAL PROFILE IS NOT WHO YOU ARE COMPETING WITH, AND THE FILTER WAS
+    # ONLY ON ONE OF THE THREE NUMBERS. pageone_strength() has excluded these
+    # since the Instagram result put Pennsylvania Center in the national band —
+    # but the MEDIAN and the STRONGEST were still computed over everything, so a
+    # panel could read "page one strength 704 — national platforms" one line
+    # above "strongest 1,000", and the proposal's authority gap was measured
+    # against a Facebook page nobody is trying to out-rank. Same rule, all three
+    # figures. The list still SHOWS them, because they are genuinely on the page
+    # and hiding them would misdescribe it. (2026-08-19)
+    _real = [r for r in rivals
+             if str(r or "").lower().replace("www.", "") not in _PAGEONE_NON_RIVAL]
+    rival_ranks = [ranks[r] for r in _real if r in ranks]
+    # Fall back to the unfiltered set rather than reporting nothing: a page one
+    # made entirely of social profiles is a real, and telling, measurement.
+    if not rival_ranks:
+        rival_ranks = [ranks[r] for r in rivals if r in ranks]
     rival_ranks.sort()
     median_rival = (rival_ranks[len(rival_ranks) // 2] if rival_ranks else None)
     top_rival = (rival_ranks[-1] if rival_ranks else None)
@@ -11373,13 +11539,36 @@ def _lighthouse_health(dom, why):
     if not CFG.get("technical_health_fallback"):
         return {}, why
     try:
-        data = dfs_post("/on_page/lighthouse/live/json",
-                        [{"url": f"https://{dom}", "for_mobile": False,
-                          "categories": ["performance", "seo", "accessibility",
-                                         "best-practices"]}], timeout=40)
-        task0 = ((data or {}).get("tasks") or [{}])[0] or {}
-        if task0.get("status_code") not in (20000, None):
-            return {}, f"{why}; lighthouse {task0.get('status_code')}"
+        # SAME LESSON AS instant_pages, AND I DID NOT APPLY IT HERE. That
+        # endpoint answered `40501: Invalid Field` to a parameter I had taken
+        # from a docs summary, so the extras there are optional by construction
+        # — dropped by name and retried on rejection. This call was written the
+        # same afternoon with the same unverifiable docs and NO such retry, so
+        # `lighthouse 40501` is the fallback refusing the request rather than
+        # the client's site refusing us: the rescue never ran, and the line
+        # blamed the site for it. (2026-08-19)
+        extras = {"for_mobile": False,
+                  "categories": ["performance", "seo", "accessibility",
+                                 "best-practices"]}
+        task0, code = {}, None
+        for _ in range(len(extras) + 1):
+            payload = dict(extras)
+            payload["url"] = f"https://{dom}"
+            data = dfs_post("/on_page/lighthouse/live/json", [payload],
+                            timeout=40)
+            task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+            code = task0.get("status_code")
+            if code in (20000, None):
+                break
+            msg = str(task0.get("status_message") or "")
+            bad = re.search(r"Invalid Field:\s*'?\"?([a-z_]+)", msg, re.I)
+            if not (bad and bad.group(1) in extras):
+                break
+            app.logger.warning("lighthouse rejected %s — retrying without it",
+                               bad.group(1))
+            extras.pop(bad.group(1))
+        if code not in (20000, None):
+            return {}, f"{why}; lighthouse {code}"
         block = ((task0.get("result") or [{}])[0] or {})
         # DataForSEO wraps Google's report, and the docs render client-side so the
         # exact envelope could not be read before shipping. Both shapes are
@@ -14820,6 +15009,28 @@ def gap_effort(client_rank, rival_rank):
             "points": pts, "months": months, "links": links, "level": False}
 
 
+def gap_verdict(g, brand=""):
+    """Is the gap big or small, and can we close it — in one sentence.
+
+    "Their typical authority score is 313, against 380 for Grav" is a
+    measurement, and a client cannot tell from it whether they are nearly there
+    or nowhere near. This says which, and says it in terms of what our help
+    does about it. MIRRORED as GAP_VERDICTS in the template. (2026-08-19)
+    """
+    if not g:
+        return None
+    b = brand or "This site"
+    if g.get("level"):
+        return {"label": "no gap",
+                "line": PROPOSAL["gap_level_verdict"].format(brand=b)}
+    pts = float(g.get("points") or 0)
+    for ceiling, label, line in PROPOSAL["gap_verdicts"]:
+        if pts <= ceiling:
+            return {"label": label, "line": line}
+    ceiling, label, line = PROPOSAL["gap_verdicts"][-1]
+    return {"label": label, "line": line}
+
+
 def _p_money(v):
     try:
         return "$" + format(int(round(float(v))), ",")
@@ -14921,7 +15132,75 @@ def build_proposal_docx(d):
     def bullet(text):
         return doc.add_paragraph(text, style="List Bullet")
 
-    def option_box(title, blurb, scope_lines, price_line):
+    def subbullet(text):
+        """Brendan nests his detail under the sentence that introduces it."""
+        b = doc.add_paragraph(text, style="List Bullet 2")
+        b.paragraph_format.left_indent = Inches(0.62)
+        b.paragraph_format.space_after = Pt(1)
+        return b
+
+    def card_grid(cards, per_row=3):
+        """The page-one incumbents as bordered cards, three across.
+
+        A flat bullet list of six domains with an authority number after each
+        reads as an appendix; the same six as cards reads as a competitive
+        landscape, which is what it is and how the tool shows it on screen. A
+        borderless outer table does the layout and each cell carries its own
+        border, because that is the one construct Word and LibreOffice both
+        render identically. (2026-08-19)
+        """
+        if not cards:
+            return None
+        rows = (len(cards) + per_row - 1) // per_row
+        tb = doc.add_table(rows=rows, cols=per_row)
+        tb.autofit = False
+        for i, (title, sub) in enumerate(cards):
+            cell = tb.rows[i // per_row].cells[i % per_row]
+            cell.width = Inches(6.6 / per_row)
+            _box(cell, sz="6")
+            h = cell.paragraphs[0]
+            h.paragraph_format.space_before = Pt(0)
+            h.paragraph_format.space_after = Pt(1)
+            rh = h.add_run(title)
+            rh.bold = True
+            rh.font.size = Pt(9.5)
+            sp_ = cell.add_paragraph()
+            sp_.paragraph_format.space_before = Pt(0)
+            sp_.paragraph_format.space_after = Pt(0)
+            rs = sp_.add_run(sub)
+            rs.font.size = Pt(8.5)
+            rs.font.color.rgb = RGBColor(0x5A, 0x6B, 0x7C)
+        # Trailing cells in a short last row stay empty AND unbordered, so five
+        # incumbents do not print as five cards and one empty box.
+        for j in range(len(cards), rows * per_row):
+            tb.rows[j // per_row].cells[j % per_row].width = Inches(6.6 / per_row)
+        doc.add_paragraph()
+        return tb
+
+    def _box(cell, sz="10"):
+        """A navy border and interior padding on one table cell."""
+        tcPr = cell._tc.get_or_add_tcPr()
+        borders = OxmlElement("w:tcBorders")
+        for edge in ("top", "left", "bottom", "right"):
+            e = OxmlElement("w:" + edge)
+            e.set(qn("w:val"), "single")
+            e.set(qn("w:sz"), sz)
+            e.set(qn("w:color"), "002D58")
+            borders.append(e)
+        tcPr.append(borders)
+        # Breathing room inside the border — a box with text against its edges
+        # reads as a rendering accident rather than a design.
+        mar = OxmlElement("w:tcMar")
+        for edge, val in (("top", "110"), ("start", "150"),
+                          ("bottom", "110"), ("end", "150")):
+            m = OxmlElement("w:" + edge)
+            m.set(qn("w:w"), val)
+            m.set(qn("w:type"), "dxa")
+            mar.append(m)
+        tcPr.append(mar)
+        return cell
+
+    def option_box(title, blurbs, scope_lines, price_line):
         """One priced option, in a bordered box.
 
         A single-cell TABLE, because that is the only construct Word and
@@ -14940,25 +15219,7 @@ def build_proposal_docx(d):
         _trPr.append(_cant)
         cell = tb.rows[0].cells[0]
         cell.width = Inches(6.6)
-        tcPr = cell._tc.get_or_add_tcPr()
-        borders = OxmlElement("w:tcBorders")
-        for edge in ("top", "left", "bottom", "right"):
-            e = OxmlElement("w:" + edge)
-            e.set(qn("w:val"), "single")
-            e.set(qn("w:sz"), "10")
-            e.set(qn("w:color"), "002D58")
-            borders.append(e)
-        tcPr.append(borders)
-        # Breathing room inside the border — a box with text against its edges
-        # reads as a rendering accident rather than a design.
-        mar = OxmlElement("w:tcMar")
-        for edge, val in (("top", "110"), ("start", "150"),
-                          ("bottom", "110"), ("end", "150")):
-            m = OxmlElement("w:" + edge)
-            m.set(qn("w:w"), val)
-            m.set(qn("w:type"), "dxa")
-            mar.append(m)
-        tcPr.append(mar)
+        _box(cell)
 
         def _tight(par, before=0, after=2):
             par.paragraph_format.space_before = Pt(before)
@@ -14970,11 +15231,13 @@ def build_proposal_docx(d):
         rh.bold = True
         rh.font.size = Pt(12)
         rh.font.color.rgb = ATLAS
-        _tight(cell.add_paragraph(blurb))
+        # HIS PARAGRAPHS, HIS RUN-IN. The last one ends on "recommend
+        # targeting:" and the list follows it, so the bold "This option
+        # targets:" label that used to sit here is both redundant and words he
+        # never wrote. (2026-08-19)
+        for para in ([blurbs] if isinstance(blurbs, str) else list(blurbs)):
+            _tight(cell.add_paragraph(para))
         if scope_lines:
-            t = _tight(cell.add_paragraph())
-            rt = t.add_run("This option targets:")
-            rt.bold = True
             for line in scope_lines:
                 b = _tight(cell.add_paragraph(line, style="List Bullet"), 0, 0)
                 b.paragraph_format.left_indent = Inches(0.28)
@@ -15002,28 +15265,15 @@ def build_proposal_docx(d):
     # ---- background -------------------------------------------------------
     head(P["intro_heading"])
     desc = (d.get("business_desc") or "").strip()
-    markets = [str(x) for x in (d.get("geo_values") or []) if str(x).strip()]
-    where = (", ".join(markets[:6]) + (" and more" if len(markets) > 6 else "")
-             if markets else "nationally")
-    body(f"{brand} is requesting a proposal for assistance with improving their "
-         f"organic rankings, traffic, and lead flow through search engine "
-         f"optimization"
-         + (f", serving {where}" if markets else "")
-         + ".")
+    body(P["intro_line"].format(brand=brand))
     if desc:
         body(desc)
-    body("Please find our recommendations and proposal below.")
+    body(P["intro_close"])
 
     # ---- the SEO section --------------------------------------------------
     head(P["seo_heading"])
-    body(f"The primary objective of the SEO campaign will be to increase "
-         f"{brand}'s visibility for the terms their customers actually search, "
-         f"and to convert that visibility into qualified traffic and leads.")
-    body("The best long-term marketing strategy for driving online leads is "
-         "search engine optimization (SEO) — the practice of earning position "
-         "in the unpaid results, where the majority of clicks go.")
-    body("Based on our research, we built the keyword list below and measured "
-         "where the site currently ranks for each term.")
+    body(P["seo_intro"])
+    body(P["seo_table_lead"])
 
     # NO VOLUME COLUMN. A list where most terms read 10/mo argues against the
     # campaign, and Brendan's table does not carry one either. The demand total
@@ -15046,7 +15296,32 @@ def build_proposal_docx(d):
             c[2].text = row["tier"]
         doc.add_paragraph()
 
+    # OURS, AND IT BELONGS AGAINST THE TABLE. This is the one sentence that
+    # reads the table back — how many of those rows are already ranked, and how
+    # much demand the list carries — so it sits directly under it rather than
+    # after a screenshot. Brendan's own conclusion follows it. (2026-08-19)
+    ranked = len([r for r in rows if r["rank"].isdigit()])
+    demand = sum(r["vol"] for r in rows)
+    if rows:
+        body(f"Of the {len(rows)} terms above, {brand} currently ranks in the "
+             f"top 100 for {ranked}"
+             + (f", against roughly {format(demand, ',')} searches a month "
+                f"across the list" if demand else "")
+             + ".")
+    body(P["seo_after_table"])
+
+    body(P["keyword_sets_lead"])
+    for name, blurb in P["keyword_sets"]:
+        p = doc.add_paragraph(style="List Bullet")
+        rb = p.add_run(name + ": ")
+        rb.bold = True
+        p.add_run(blurb)
+    body(P["keyword_sets_close"])
+
     # ---- the live results page, if one was captured ------------------------
+    # Sits between the keyword work and what we measured, which is where it
+    # argues for both: the table says where they rank, this shows what that
+    # actually looks like, and the section below explains who is in the way.
     sp = d.get("serp") or {}
     if sp.get("img"):
         # THE CAPTION IS ROLLED BACK IF THE PICTURE DOES NOT LAND. Written the
@@ -15063,22 +15338,6 @@ def build_proposal_docx(d):
             app.logger.exception("serp image could not be embedded")
             cap._element.getparent().remove(cap._element)
 
-    ranked = len([r for r in rows if r["rank"].isdigit()])
-    demand = sum(r["vol"] for r in rows)
-    body(f"Of the {len(rows)} terms above, {brand} currently ranks in the top "
-         f"100 for {ranked}"
-         + (f", against roughly {format(demand, ',')} searches a month across "
-            f"the list" if demand else "")
-         + ". There is significant room for improvement in organic ranking "
-           "through an organic SEO campaign.")
-
-    body("All of our SEO campaigns focus on three primary keyword sets:", True)
-    for name, blurb in P["keyword_sets"]:
-        p = doc.add_paragraph(style="List Bullet")
-        rb = p.add_run(name + ": ")
-        rb.bold = True
-        p.add_run(blurb)
-
     # ---- what we measured — the part a generic proposal cannot show --------
     sig = d.get("signals") or {}
     if sig.get("rivals") or sig.get("pageone_rank"):
@@ -15090,50 +15349,52 @@ def build_proposal_docx(d):
         riv = [r for r in (sig.get("rivals") or []) if r.get("domain")][:6]
         if riv:
             body("Who currently holds page one for your terms:", True)
+            cards = []
             for r in riv:
                 bits = []
                 if r.get("rank") is not None:
                     bits.append(f"authority {format(int(r['rank']), ',')}")
                 if r.get("appearances"):
-                    bits.append(f"appears on {r['appearances']} of your terms")
-                bullet(f"{r['domain']}" + (f" — {', '.join(bits)}" if bits else ""))
+                    bits.append(f"{r['appearances']} of your terms")
+                cards.append((r["domain"], " · ".join(bits)))
+            card_grid(cards)
         if sig.get("median_rival_rank") is not None:
             gapline = (f"Their typical authority score is "
                        f"{format(int(sig['median_rival_rank']), ',')}")
             if sig.get("client_measured") and sig.get("client_rank") is not None:
                 gapline += (f", against {format(int(sig['client_rank']), ',')} for "
-                            f"{brand} — the gap this campaign is built to close")
+                            f"{brand}")
             body(gapline + ".")
-            # WHAT THE GAP COSTS, in the units a retainer buys. A score means
-            # nothing to a client; referring domains and months do.
+            # HOW BIG, AND CAN WE CLOSE IT — then what closing it costs. The
+            # measurement on its own does not tell a client whether they are
+            # nearly there or nowhere near, which is the only thing they want
+            # to know from it. (2026-08-19)
             g = gap_effort(sig.get("client_rank") if sig.get("client_measured")
                            else None, sig.get("median_rival_rank"))
-            if g and g.get("level"):
-                body(f"{brand} is already at the authority level of its own page "
-                     f"one. Links are not the constraint here — the ranking gains "
-                     f"will come from content, on-page work and targeting the "
-                     f"right terms, which is what the campaign below concentrates "
-                     f"on.", True)
-            elif g:
-                body(f"Closing that gap means roughly {g['points']} points of "
-                     f"authority. Published industry benchmarks put a move of "
+            v = gap_verdict(g, brand)
+            if v:
+                body(v["line"], True)
+            if g and not g.get("level"):
+                body(f"In practical terms that is roughly {g['points']} points "
+                     f"of authority. Published industry benchmarks put a move of "
                      f"that size at {g['links']} acquired over {g['months']} of "
                      f"sustained work — which is what the link building and "
-                     f"content elements of the campaign below are for.", True)
+                     f"content elements of the campaign below are for.")
         health = sig.get("health") or {}
         if health.get("failed"):
-            body("On-site issues found on your own site, which we address in the "
+            body("On-site issues found on your site, which we address in the "
                  "first months of the campaign:", True)
             for f in health["failed"][:8]:
                 bullet(f)
 
     # ---- the monthly campaign ---------------------------------------------
     head(P["campaign_heading"])
-    body("All of our ongoing SEO campaigns include the following each month:")
-    for name, items in P["services"]:
-        body(name, True)
+    body(P["campaign_lead"])
+    for lead, items in P["services"]:
+        bullet(lead)
         for it in items:
-            bullet(it)
+            subbullet(it)
+    body(P["campaign_close"])
 
     # ---- the options ------------------------------------------------------
     # THE THREE OPTIONS BELONG ON ONE PAGE. They are read against each other —
@@ -15142,9 +15403,7 @@ def build_proposal_docx(d):
     # A page break here, and tight spacing inside the boxes, fits all three.
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
     head(P["options_heading"])
-    body("Depending on how aggressive you wish to be with an SEO campaign, we "
-         "have included three options below following a “good, better, best” "
-         "model.")
+    body(P["options_lead"])
     tiers = {k: _vibe_adjust(v, d) for k, v in
              ((d.get("pricing") or {}).get("client_tiers") or {}).items()}
     term = int((d.get("pricing") or {}).get("min_term_months") or 6)
@@ -15157,6 +15416,7 @@ def build_proposal_docx(d):
                    f"This option would be a monthly investment of "
                    f"{_p_money(tiers.get(key))} with a {term} month term "
                    f"which then becomes a month-to-month commitment.")
+    head(P["additional_heading"], size=12)
     body(P["closing"][0])
 
     # ---- AI Search (GEO), when the quote carries it ------------------------
@@ -15174,22 +15434,22 @@ def build_proposal_docx(d):
             bullet(e)
         for para in P["geo_context"]:
             body(para)
-        body("An AI Search campaign consists of the following each month:", True)
-        for name, items in P["geo_services"]:
-            body(name, True)
+        head(P["geo_campaign_heading"], size=12)
+        body(P["geo_campaign_lead"])
+        for lead, items in P["geo_services"]:
+            bullet(lead)
             for it in items:
-                bullet(it)
-        head("AI Search (GEO) Campaign Options", size=12)
-        body("Depending on how aggressive you wish to be, we have included three "
-             "options below. These options are in addition to the SEO campaign "
-             "options above.")
+                subbullet(it)
+        head(P["geo_options_heading"], size=12)
+        body(P["geo_options_lead"])
         for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
             label = {"base": "Base", "intermediate": "Intermediate",
                      "advanced": "Advanced"}[key]
             option_box(f"Option {i}: {label} AI Search Campaign",
                        P["geo_option_blurb"][key], [],
                        f"This option would be a monthly cost of "
-                       f"{_p_money(ai_add.get(key))}.")
+                       f"{_p_money(ai_add.get(key))} with a month-to-month "
+                       f"commitment and 12 month minimum term.")
         tot = {k: _vibe_adjust(v, d)
                for k, v in (ai.get("client_total") or {}).items()}
         if tot.get("base"):
@@ -15201,7 +15461,7 @@ def build_proposal_docx(d):
     # ---- case studies -----------------------------------------------------
     head(P["case_heading"])
     body(P["closing"][1])
-    body("SEO Projects:", True)
+    body(P["case_projects_label"], True)
     for c in P["case_studies"]:
         bullet(c)
     body(P["case_closing"])
