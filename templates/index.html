@@ -2481,8 +2481,8 @@ $('step1').addEventListener('click', async()=>{
             ST.inputs.national_demand = true;
             const box=$('natdemand');
             if(box && !box.checked){
-              ST._natApplying=true; box.checked=true;
-              box.dispatchEvent(new Event('change')); ST._natApplying=false;
+              box.checked=true;
+              box.dispatchEvent(new Event('change'));   // untrusted
             }
             ST._natReason = ref.national_demand_reason || 'detected during the build';
           }
@@ -5017,6 +5017,7 @@ function reflectInputs(inp){
   if($('natdemand')) $('natdemand').checked = !!inp.national_demand;
   if($('goal')){ $('goal').value = inp.goal||''; try{ reflectGoals(); }catch(e){} }
   try{ renderNatDemand(); }catch(e){}
+  try{ renderScopeDerived(); }catch(e){}
   if($('pastseo_spend')) $('pastseo_spend').value = (inp.past_seo_spend!=null?inp.past_seo_spend:'');
   if($('client_budget')) $('client_budget').value = (inp.client_budget!=null?inp.client_budget:'');
   // The details block is hidden until Past SEO is on; restoring the value
@@ -6582,16 +6583,14 @@ function autoNatDemand(){
   if(why && !box.checked){
     box.checked=true;
     ST._natReason=why;
-    ST._natApplying=true;
-    box.dispatchEvent(new Event('change'));
-    ST._natApplying=false;
+    box.dispatchEvent(new Event('change'));   // untrusted — see the listener
     try{ scheduleAutoSave(); }catch(e){}
   }
   renderNatDemand();
 }
 if($('natdemand')){
-  $('natdemand').addEventListener('change', ()=>{
-    if(!ST._natApplying){ ST._natTouched=true; }
+  $('natdemand').addEventListener('change', (e)=>{
+    if(e && e.isTrusted) ST._natTouched=true;
     renderNatDemand();
   });
 }
@@ -6602,9 +6601,7 @@ function setScope(v){
   if(![...sel.options].some(o=>o.value===v)) return false;
   if(sel.value===v) return false;
   sel.value=v;
-  ST._scopeApplying=true;
-  sel.dispatchEvent(new Event('change'));
-  ST._scopeApplying=false;
+  sel.dispatchEvent(new Event('change'));   // untrusted — see the listener
   try{ scheduleAutoSave(); }catch(e){}
   return true;
 }
@@ -6634,8 +6631,18 @@ function renderScopeDerived(sg){
             + '<br><br>Change it if you disagree &mdash; a trade area a human recognises is not always what a distance function sees. Once you do, it stays yours.');
   const a=$('scopeEdit');
   if(a) a.onclick=(e)=>{ e.preventDefault();
+    // OPENING THE FIELD IS THE DECISION. Waiting for the select's own change
+    // event means relying on isTrusted, which is right for a human and false
+    // for anything a script does — including Playwright's selectOption, so it
+    // cannot be tested end to end. Clicking "change" is an unambiguous act of
+    // intent, it happens first, and it is the same answer. (2026-08-19)
+    ST._scopeTouched=true;
     const row=$('scopeRow'); if(row) row.classList.remove('hidden');
-    a.style.display='none'; };
+    a.style.display='none';
+    try{ renderScopeDerived(); }catch(_){}
+    const row2=$('scopeRow'); if(row2) row2.classList.remove('hidden');
+    const a2=$('scopeEdit'); if(a2) a2.style.display='none';
+  };
 }
 function wireScopeSuggestion(sg){
   const btn=$('applyScope');
@@ -6646,11 +6653,17 @@ function wireScopeSuggestion(sg){
     try{ scheduleMarketSummary(); }catch(e){}
   };
 }
+// ONLY A HUMAN COUNTS, AND isTrusted IS THE ONLY RELIABLE TEST. The first
+// version guarded a flag around each programmatic dispatch, which held right
+// until reflectInputs() — which fires a change on this select on every quote
+// RESTORE, to re-run the add-on toggle. Every reopened quote came back marked
+// "set by you", and the derivation was then suppressed for it forever: exactly
+// the failure the flag exists to prevent, arriving through a dispatch I had not
+// found. A flag has to be right everywhere; isTrusted is right by construction.
+// (2026-08-19)
 if($('geo_scope')){
-  $('geo_scope').addEventListener('change', ()=>{
-    // Only a real click counts. apply() above dispatches the same event, so the
-    // flag is set just before it fires and cleared straight after.
-    if(!ST._scopeApplying) ST._scopeTouched=true;
+  $('geo_scope').addEventListener('change', (e)=>{
+    if(e && e.isTrusted){ ST._scopeTouched=true; try{ renderScopeDerived(); }catch(_){} }
   });
 }
 
