@@ -2367,6 +2367,8 @@ $('step1').addEventListener('click', async()=>{
   // four lookups doing it. It runs again as soon as those terms are gone.
   // A list already at the slot count is the same case arriving by another route:
   // there is no room to add to, so the four calls would be pure cost. (2026-08-13)
+  // A new list means a new head term, so the old capture no longer describes it.
+  ST._serpRun=false; ST.serp=null;
   const _prev=new Set((ST.expandedSeeds||[]).map(v=>String(v).toLowerCase()));
   // RETROACTIVE, for a list assembled before the tool stopped proposing these.
   // A lookup the TOOL put on the board is still the tool's, so it comes back off
@@ -3735,6 +3737,18 @@ function renderStep4(p){
       if(h.kw===rec) o.selected=true;
       sel.appendChild(o);
     });
+    // FIRE IT ONCE, WITHOUT BEING ASKED. The capture is the one thing in the
+    // proposal that needed a human to remember a button, and forgetting it is
+    // silent — the document just ships without the picture that shows the client
+    // they are absent from page one.
+    //
+    // Once per built list, never on a re-price: it is a queued DataForSEO
+    // screenshot task and re-pricing five times should not buy five of them.
+    // Non-blocking, so nothing waits on it. (2026-08-18)
+    if(AUTO_SERP && !ST._serpRun && !(ST.serp&&ST.serp.img) && !REVIEW_MODE){
+      ST._serpRun=true;
+      try{ $('serpBtn').click(); }catch(e){}
+    }
   })();
 
   $('serpBtn').onclick=async()=>{
@@ -4712,6 +4726,9 @@ let CURRENT_QUOTE_NAME = '';
 
 // ---- READ-ONLY REVIEW MODE (shared /review/<token> links) ----
 const REVIEW_TOKEN = (location.pathname.match(/^\/review\/([A-Za-z0-9_-]+)/)||[])[1] || null;
+// Capture the live results page automatically when a quote is priced. Off with
+// ?noserp=1 for a session where the DataForSEO screenshot queue is busy.
+const AUTO_SERP = !/[?&]noserp=1/.test(location.search);
 const REVIEW_MODE = !!REVIEW_TOKEN;
 
 // A review link goes to someone pricing the work, not watching a demo. The
@@ -5576,7 +5593,11 @@ async function refreshMarketSummary(){
     }
     const same = entered === r.markets;
     const tip = `<span class="tipwrap"><i class="tipicon">i</i><div class="help">Areas within ${r.radius||25} miles of each other count as one market, named after the largest town. Counties and Cities are deduplicated.</div></span>`;
+    // Set the band from the areas BEFORE drawing this block, so the disagreement
+    // panel never renders for a disagreement that just resolved itself.
+    const _autoScope = autoApplyScope(r.scope_suggestion);
     box.innerHTML = `<div class="nf" style="font-size:12.5px">🗺 <b>${entered} ${entered===1?'area':'areas'} \u2192 ${r.markets} ${r.markets===1?'market':'markets'}</b>${tip}${same?'':` \u2014 towns within ${r.radius} miles of each other count as one`}: ${parts.join(' \u00b7 ')}${un}</div>`
+      + (_autoScope?`<div class="nf" style="font-size:12px;margin-top:3px">\u{1F9ED} <b>Geo scope set to ${escapeHtml(SCOPE_LABEL[_autoScope]||_autoScope)}</b> from these areas${tipOf('Read off the areas themselves &mdash; how many states, how far apart, and whether the clusters touch. The band picks the pricing anchor, so it is derived rather than asked.<br><br>Change the dropdown if you disagree; once you do it stays yours and is never set again.')}</div>`:'')
       + overlapHtml(r)
       + scopeSuggestionHtml(r.scope_suggestion);
     wireOverlap(r);
@@ -6491,18 +6512,49 @@ function scopeSuggestionHtml(sg){
     + `</div>`;
 }
 
+// DERIVED, NOT ASKED. suggest_geo_scope() reads the band off the entered areas —
+// how many states, how far apart, whether the clusters touch — and its own
+// docstring says it exists so the question does not have to be asked. It was
+// still only offering the answer behind a button, so a dropdown nobody
+// understands sat between the operator and the pricing anchor, and a wrong pick
+// is a wrong price.
+//
+// High confidence now applies itself. The dropdown stays and stays editable —
+// "Philadelphia + South Jersey" is one trade area to a human and two states to a
+// distance function — but touching it marks it as the operator's, and nothing
+// overrides it after that. (2026-08-18)
+function setScope(v){
+  const sel=$('geo_scope');
+  if(!sel || !v) return false;
+  if(![...sel.options].some(o=>o.value===v)) return false;
+  if(sel.value===v) return false;
+  sel.value=v;
+  ST._scopeApplying=true;
+  sel.dispatchEvent(new Event('change'));
+  ST._scopeApplying=false;
+  try{ scheduleAutoSave(); }catch(e){}
+  return true;
+}
+// Returns the band it set, or '' if it left the dropdown alone.
+function autoApplyScope(sg){
+  if(!sg || !sg.suggested || sg.confidence!=='high' || ST._scopeTouched) return '';
+  return setScope(sg.suggested) ? sg.suggested : '';
+}
 function wireScopeSuggestion(sg){
   const btn=$('applyScope');
-  if(!btn || !sg || !sg.suggested) return;
-  btn.onclick=()=>{
-    const sel=$('geo_scope'); if(!sel) return;
-    // Only pick an option that actually exists — the band list can change.
-    if(![...sel.options].some(o=>o.value===sg.suggested)) return;
-    sel.value=sg.suggested;
-    sel.dispatchEvent(new Event('change'));
+  if(btn) btn.onclick=()=>{
+    // An explicit click is the operator's own decision, so it sticks.
+    ST._scopeTouched=true;
+    setScope(sg && sg.suggested);
     try{ scheduleMarketSummary(); }catch(e){}
-    try{ scheduleAutoSave(); }catch(e){}
   };
+}
+if($('geo_scope')){
+  $('geo_scope').addEventListener('change', ()=>{
+    // Only a real click counts. apply() above dispatches the same event, so the
+    // flag is set just before it fires and cleared straight after.
+    if(!ST._scopeApplying) ST._scopeTouched=true;
+  });
 }
 
 function syncStateSummary(){

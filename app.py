@@ -14887,7 +14887,7 @@ def build_proposal_docx(d):
     """One SSG-shaped proposal, built from the quote the tool already holds."""
     from docx import Document
     from docx.shared import Pt, Inches, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
 
@@ -14952,30 +14952,38 @@ def build_proposal_docx(d):
         # Breathing room inside the border — a box with text against its edges
         # reads as a rendering accident rather than a design.
         mar = OxmlElement("w:tcMar")
-        for edge, val in (("top", "170"), ("start", "170"),
-                          ("bottom", "170"), ("end", "170")):
+        for edge, val in (("top", "110"), ("start", "150"),
+                          ("bottom", "110"), ("end", "150")):
             m = OxmlElement("w:" + edge)
             m.set(qn("w:w"), val)
             m.set(qn("w:type"), "dxa")
             mar.append(m)
         tcPr.append(mar)
 
-        h = cell.paragraphs[0]
+        def _tight(par, before=0, after=2):
+            par.paragraph_format.space_before = Pt(before)
+            par.paragraph_format.space_after = Pt(after)
+            return par
+
+        h = _tight(cell.paragraphs[0])
         rh = h.add_run(title)
         rh.bold = True
-        rh.font.size = Pt(12.5)
+        rh.font.size = Pt(12)
         rh.font.color.rgb = ATLAS
-        cell.add_paragraph(blurb)
+        _tight(cell.add_paragraph(blurb))
         if scope_lines:
-            t = cell.add_paragraph()
+            t = _tight(cell.add_paragraph())
             rt = t.add_run("This option targets:")
             rt.bold = True
             for line in scope_lines:
-                cell.add_paragraph(line, style="List Bullet")
-        pr = cell.add_paragraph()
+                b = _tight(cell.add_paragraph(line, style="List Bullet"), 0, 0)
+                b.paragraph_format.left_indent = Inches(0.28)
+        pr = _tight(cell.add_paragraph(), 4, 0)
         rp = pr.add_run(price_line)
         rp.bold = True
-        doc.add_paragraph()
+        # A thin gap between boxes, not a full empty paragraph — three of those
+        # is most of the reason Option 3 fell off the page.
+        _tight(doc.add_paragraph(), 0, 4)
         return tb
 
     # ---- cover ------------------------------------------------------------
@@ -15128,6 +15136,11 @@ def build_proposal_docx(d):
             bullet(it)
 
     # ---- the options ------------------------------------------------------
+    # THE THREE OPTIONS BELONG ON ONE PAGE. They are read against each other —
+    # that is the entire point of a good/better/best ladder — and Option 3
+    # landing alone on the next page turns a comparison into two separate asks.
+    # A page break here, and tight spacing inside the boxes, fits all three.
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
     head(P["options_heading"])
     body("Depending on how aggressive you wish to be with an SEO campaign, we "
          "have included three options below following a “good, better, best” "
