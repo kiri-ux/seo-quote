@@ -497,10 +497,13 @@
 
     <label>Industry <span class="req">*</span><span class="pl" title="adtini supplies this from the product line — you don't type it">pulled from product line</span></label>
     <div class="pillbox acwrap" data-for="industry"><input type="text" id="industry_in" autocomplete="off" placeholder="start typing — RZ category list, Enter to add"><div class="acdrop" id="industry_drop"></div></div>
-    <details id="indrules" style="border:2px dashed #b06fc9;border-radius:10px;padding:8px 13px;margin:8px 0 2px;background:#faf6fc">
-      <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — current industry pricing rules ▸ click to expand</summary>
-      <div id="indrules_body" class="help" style="margin:8px 0 4px">Loading…</div>
-    </details>
+    <!-- THE RULES LIVE IN CONFIG, WHICH IS WHERE THEY BELONG. This panel
+         printed the whole industry_pricing table into the order form — anchor
+         adds, step modes and the calibration notes behind each one, including
+         "Rockingham re-calibration 2026-07-20" and the open questions in them.
+         They are still exactly where they were (CFG["industry_pricing"] in
+         app.py, served by /api/config); they are simply not read out on the
+         page a partner is filling in. (2026-08-19) -->
     <datalist id="rz_industries"><option value="01 Other- No Matching Category Below"></option><option value="Adoption &amp; Foster Care"></option><option value="Adult Day Care"></option><option value="Advertising"></option><option value="Advocacy"></option><option value="Agriculture - Tractors / Equipment / Farming / Seeding"></option><option value="Airline Academy &amp; Training"></option><option value="Airports"></option><option value="Alcohol - Bars / Breweries"></option><option value="Alcohol - Wine &amp; Spirits"></option><option value="Alcohol - Winery"></option><option value="Apps"></option><option value="Arcade"></option><option value="Arts - Performing Arts Center / Music Hall / Dance / Orchestra / Theatre"></option><option value="Attractions - Halloween"></option><option value="Attractions - Waterpark / Theme Park"></option><option value="ATV Park/Trails"></option><option value="Auctions"></option><option value="Automobile - Golf Carts"></option><option value="Automotive -  Collision Center / Salvage / Auto Body Repair / Maintenance"></option><option value="Automotive -  Sports Vehicles / Motorcycles / Motor Sports"></option><option value="Automotive - Automotive Accessories"></option><option value="Automotive - Car Detailing and Automotive - Car Tinting"></option><option value="Automotive - Car washing"></option><option value="Automotive - Custom Car Design"></option><option value="Automotive - Disabilities Mobility"></option><option value="Automotive - Driving Education"></option><option value="Automotive - Luxury"></option><option value="Automotive - New or Used Cars"></option><option value="Automotive - Parts &amp; Services"></option><option value="Automotive - Registration services"></option><option value="Automotive - Rentals"></option><option value="Automotive - RVs &amp; Trailers"></option><option value="Automotive - Smog / Emmissions"></option><option value="Automotive - Tire Care"></option><option value="Automotive - Windshield Installation and Replacement"></option><option value="B2B -  Business Solutions / Small Business Development"></option><option value="B2B -  Insurance Business Solutions"></option><option value="B2B - Business IT / Communications / Security"></option><option value="B2B - Business Supplies"></option><option value="B2B - Coworking Space"></option><option value="B2B - Events"></option><option value="B2B - Food Retail"></option><option value="B2B - Hospitality"></option><option value="B2B - Other"></option><option value="Bail Bonds"></option><option value="Banking - Federal Credit Union / Bank"></option><option value="Banking - Mortgages"></option><option value="Banking - Personal / Title Loans"></option><option value="Banking - Other"></option><option value="Banking - Loans / Commercial Lending / Business Loans"></option><option value="Banking - Short Term / High Interest Loan"></option><option value="Boats"></option><option value="Bowling Alleys"></option><option value="Building Supplies"></option><option value="Butcher"></option><option value="Campground"></option><option value="Casino"></option><option value="Catering Services"></option><option value="CBD"></option><option value="Chamber of Commerce"></option><option value="Child and Youth Services"></option><option value="Child Care - Daycare / Day Camp / Summer Camp"></option><option value="Children's Fun Center"></option><option value="Chimney Cleaning"></option><option value="Cleaning Service"></option><option value="Clothing"></option><option value="Coffee Shop"></option><option value="Colleges &amp; Universities - Advanced Degrees Masters / Graduate / MBA / PHD"></option><option value="Colleges &amp; Universities - Continuing Studies / Certificates"></option><option value="Colleges &amp; Universities - Sports Event"></option><option value="Colleges &amp; Universities - Undergraduate"></option><option value="Commercial Roofing"></option><option value="Community Centers"></option><option value="Construction - Industrial"></option><option value="Construction - Rentals / Machinery"></option><option value="Construction - Supplies / Lumber / Building Materials"></option><option value="Consumer Packaged Goods (CPG)"></option><option value="Country Club"></option><option value="Cryptocurrency / Bitcoin"></option><option value="Dating Site / App"></option><option value="Dentistry - Family"></option><option value="Dentistry - General, Restorative, and Cosmetic"></option><option value="Dentistry - Orthodontics"></option><option value="Disability Services"></option><option value="Education - Career Advancement"></option><option value="Education - Enrichment Programs"></option><option value="Education - Private or Public K-12 school"></option><option value="Education - Religious"></option><option value="Education - Recruitment"></option><option value="Education - Vocational School"></option><option value="Electronics"></option><option value="Elevator Services"></option><option value="Engineering"></option><option value="Escape Room"></option><option value="Event Planning &amp; Catering"></option><option value="Event Venue - Special Events"></option><option value="Events - Conference"></option><option value="Events - Expo"></option><option value="Events - Festival"></option><option value="Events - Holiday"></option><option value="Events - Sports"></option><option value="Events - Wedding"></option><option value="Events - Concert"></option><option value="Fabrication"></option><option value="Family Support Services"></option><option value="Farm - Apple Orchard"></option><option value="Farmer's Market"></option><option value="Financial Services - Tax Preparer"></option><option value="Financial Services - Financial Advisor"></option><option value="Financial Services - Investment Planning"></option><option value="Financial Services - Residential Property Investor"></option><option value="Fire Protection"></option><option value="Food - Organization"></option><option value="Franchise Development"></option><option value="Fundraising"></option><option value="Funeral Services"></option><option value="Furniture"></option><option value="Furniture - Mattresses"></option><option value="Furniture - Repair"></option><option value="Gambling &amp; Lotteries"></option><option value="Generators"></option><option value="Gentlemen's Club"></option><option value="Go Karting"></option><option value="Golf Club"></option><option value="Government - Department of Education"></option><option value="Government - Parks &amp; Recreation Events"></option><option value="Government - Town Events promotion"></option><option value="Government - Census"></option><option value="Government - Economic Development"></option><option value="Government - Health / Safety"></option><option value="Government - Political"></option><option value="Government - Wildlife"></option><option value="Greenhouses"></option><option value="Grocery Store"></option><option value="Gun Shop"></option><option value="Hair &amp; Beauty"></option><option value="Health Services - Chiropractic"></option><option value="Health Services - Hair Restoration"></option><option value="Health Services - Hospice"></option><option value="Health Services - Hospital"></option><option value="Health Services - Maternity"></option><option value="Health Services - Physical Therapy"></option><option value="Health Services - Primary Care/Medical Group"></option><option value="Health Services - Rehabilitation"></option><option value="Health Services - Research / Medical Studies"></option><option value="Health Services - Skincare"></option><option value="Health Services - Urgent Care"></option><option value="Health Services - Cancer"></option><option value="Health Services - Weight Loss"></option><option value="Health Services - Hearing / Vision"></option><option value="Health Services - Heart &amp; Lung"></option><option value="Health Services - Medical Devices / Equipment / Software"></option><option value="Health Services - Men's Health"></option><option value="Health Services - Other"></option><option value="Health Services - Fitness Club"></option><option value="Health Services - Vascular &amp; Vein"></option><option value="Health Services - Home Care Services"></option><option value="Health Services - Pediatrics"></option><option value="Health Services - Pharmacy"></option><option value="Health Services - Senior Living Facilities"></option><option value="Health Services - Supplements"></option><option value="Health Services - Women's Health"></option><option value="Health Services - Podiatry"></option><option value="Hearing Aids"></option><option value="Hobbies"></option><option value="Home - Construction &amp; Renovation / Home Repair Contracting"></option><option value="Home - Bathroom Supplies"></option><option value="Home - Electrical"></option><option value="Home - Fire Places"></option><option value="Home - Flooring"></option><option value="Home - Garage Door"></option><option value="Home - Home &amp; Garden Design / Home Exterior Products"></option><option value="Home - Home Fuel"></option><option value="Home - Home Installations"></option><option value="Home - HVAC"></option><option value="Home - Interior Design"></option><option value="Home - Landscaping"></option><option value="Home - Lighting"></option><option value="Home - Patio / BBQ / Outdoors"></option><option value="Home - Pools &amp; Spas"></option><option value="Home - Roofing &amp; Insulation"></option><option value="Home - Roofing, Siding, and Windows"></option><option value="Home - Security"></option><option value="Home - Septic"></option><option value="Home - Shed / Garage Construction"></option><option value="Home - Kitchen"></option><option value="Home - Carpets"></option><option value="Hotel"></option><option value="Hunting"></option><option value="Insurance - Auto"></option><option value="Insurance - Business"></option><option value="Insurance - Health Insurance"></option><option value="Insurance - Home"></option><option value="Insurance - Life Insurance"></option><option value="Insurance - Settlement"></option><option value="Internal Media Promotion"></option><option value="Internet &amp; Phone - Internet Broadband Provider"></option><option value="Internet &amp; Phone - Authorized Dealer"></option><option value="Internet &amp; Phone - Internet, TV, and Phone Provider"></option><option value="Junk / Trash Removal"></option><option value="Laundromat"></option><option value="Lawn Care - Equipment"></option><option value="Legal - Defense"></option><option value="Legal - Fair claim"></option><option value="Legal - Fire Relief"></option><option value="Legal - Personal Injury"></option><option value="Legal - Workers Comp"></option><option value="Legal - Bankruptcy"></option><option value="Legal - CPA"></option><option value="Legal - Estate Planning"></option><option value="Legal - Family Law"></option><option value="Locksmith"></option><option value="Manufacturing"></option><option value="Marijuana / Cannabis"></option><option value="Med Spa"></option><option value="Medical - Blood/Lab"></option><option value="Medical - Orthopedics"></option><option value="Military"></option><option value="Internet &amp; Phone - Mobile Phones / Plans"></option><option value="Money Transfer Service"></option><option value="Movie Theater"></option><option value="Museum"></option><option value="Musical Artist / Musician"></option><option value="News"></option><option value="Nonprofit"></option><option value="Optometrist - Eyecare"></option><option value="Painting - Residential &amp; Commercial"></option><option value="Pawn Shop"></option><option value="Pest Control"></option><option value="Pet Care"></option><option value="Petroleum Provider / Bulk Fuel"></option><option value="Photography"></option><option value="Plumbing"></option><option value="Podcasting"></option><option value="Printing"></option><option value="Psychic"></option><option value="Public Adjuster"></option><option value="Public Library"></option><option value="Radio - Programming"></option><option value="Real Estate - Apartment"></option><option value="Real Estate - Commercial"></option><option value="Real Estate - Home"></option><option value="Real Estate - Luxury Apartments"></option><option value="Real Estate - Management"></option><option value="Real Estate - Property Management"></option><option value="Real Estate - Property Inspections"></option><option value="Real Estate - Agency"></option><option value="Real Estate - Builders"></option><option value="Real Estate - Investors"></option><option value="Recreation or Entertainment Venue"></option><option value="Recruitment"></option><option value="Recycling"></option><option value="Religion - Church / Place of Worship"></option><option value="Restaurants - Casual Dining"></option><option value="Restaurants - Chinese"></option><option value="Restaurants - Farmers Market"></option><option value="Restaurants - Fine Dining"></option><option value="Restaurants - Food Delivery"></option><option value="Restaurants - Ice Cream Parlor"></option><option value="Restaurants - Mexican"></option><option value="Restaurants - Pizza"></option><option value="Restaurants - Restaurant Supplier"></option><option value="Restaurants - Seafood"></option><option value="Restaurants - Burgers"></option><option value="Restaurants - Fast Food / Fast Casual"></option><option value="Restaurants - Quick Service"></option><option value="Restoration Services"></option><option value="Retail - Adult Store"></option><option value="Retail - Appliances"></option><option value="Retail - Art"></option><option value="Retail - Camera, Video"></option><option value="Retail - Collectibles"></option><option value="Retail - Convenience Stores"></option><option value="Retail - Discount"></option><option value="Retail - Flowers"></option><option value="Retail - Footwear"></option><option value="Retail - General / E-commerce"></option><option value="Retail - Gift"></option><option value="Retail - Household Cleaners / Laundry Supplies"></option><option value="Retail - Jewelry"></option><option value="Retail - Mall / Outlet Mall"></option><option value="Retail - Office Supplies"></option><option value="Retail - Shipping Center"></option><option value="Retail - Sporting Goods"></option><option value="Retail - Women's Clothing &amp; Accessories"></option><option value="Retail - Bicycle"></option><option value="Retail - Books"></option><option value="Retail - Toys"></option><option value="Retirement Home"></option><option value="Rock Climbing"></option><option value="Salon &amp; Spa"></option><option value="Senior Care / Senior Living Community"></option><option value="Sewing Machines"></option><option value="Solar Power"></option><option value="Spa &amp; Massage"></option><option value="Sporting Goods"></option><option value="Sports - Ski / Snowboard"></option><option value="Sports Betting"></option><option value="Storage"></option><option value="Tanning Salon"></option><option value="Tattoo Parlor"></option><option value="Technology"></option><option value="Technology - Tech Services"></option><option value="Therapy"></option><option value="Real Estate - Timeshares"></option><option value="Tourism"></option><option value="Towing"></option><option value="Transportation - Limo"></option><option value="Transportation - Moving Services"></option><option value="Transportation - Shipping"></option><option value="Transportation - Guided Tours"></option><option value="Transportation - Public Transportation"></option><option value="Transportation - Fleet"></option><option value="Tree Service"></option><option value="Truck Stop"></option><option value="TV - Programming"></option><option value="Unions"></option><option value="Utilities - Energy / Water / Electric"></option><option value="Vacation Rentals"></option><option value="Vape Shop"></option><option value="Veterans"></option><option value="Veterinarian"></option><option value="Virtual Reality Gaming Center"></option><option value="Volunteer"></option><option value="Waste Management/Utilities - Trash / Dumpster Rental"></option><option value="Water Sports"></option><option value="Water Well Builders"></option><option value="Wedding"></option><option value="Wholesale - Cleaning Supplies"></option><option value="Tobacco"></option><option value="E-Cigarettes"></option><option value="Fireworks"></option><option value="Government - Department of Public Works"></option><option value="Sports Marketing / NIL"></option><option value="Staffing"></option><option value="Real Estate - Mobile Homes"></option><option value="Warehousing / Fulfillment"></option><option value="Financial Services - Fund Advisor"></option><option value="Attractions - Circus"></option><option value="Appliance Repair"></option><option value="Raceway"></option><option value="Retail - Beef Food Products &amp; Boutique"></option><option value="Attractions - Historical"></option><option value="Estate Planning - Document Valut"></option><option value="Home - Fencing"></option></datalist>
 
     <!-- DERIVED, NOT ASKED. suggest_geo_scope() reads the band off the entered
@@ -531,8 +534,18 @@
 
 
 
-    <details style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
-      <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Demo only — validation UI<span id="stateSummary" style="font-weight:400;text-transform:none;letter-spacing:0"></span></summary>
+    <!-- SURFACED ONLY WHEN IT MATTERS, like the geo scope before it. In adtini
+         geos arrive already validated as city + state pairs, so the fallback
+         state has nothing to fall back FOR and the Check cities button has
+         nothing to check — and this panel sat open on every order asking a
+         question that was already answered. It is hidden rather than deleted
+         because the <select id="state"> is read on every path that builds a
+         keyword suffix or anchors a lookup; #stateNeeded below unhides it on
+         the one case that still needs a human: an untagged city with no state
+         to give it. (2026-08-19) -->
+    <div id="stateNeeded" class="hidden" style="margin:10px 0;padding:9px 12px;background:var(--warn-bg);border:1px solid #e8c98a;border-radius:8px;font-size:12.5px"></div>
+    <details id="geoValidate" class="hidden" style="border:2px dashed #b06fc9;border-radius:10px;padding:11px 13px;margin:14px 0;background:#faf6fc">
+      <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px">Fallback state<span id="stateSummary" style="font-weight:400;text-transform:none;letter-spacing:0"></span></summary>
       <div style="font-size:11px;font-weight:700;color:#7a3f92;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 2px">Validation UI: demo only — state data: real pipeline input</div>
       <div class="help" style="margin:0 0 9px">In adtini, geos arrive from line-item submission already validated as city + state pairs — they feed the pipeline exactly like a "City, ST" pill does here, so this fallback field and the Check cities button disappear — and the <b>search-phrase geos</b> field above maps 1:1 to a free-text field beside adtini&#39;s validated pickers — keyword text only, never location lookups. The state <b>data</b> itself is not demo: it builds each keyword&#39;s suffix ("cherry hill <b>nj</b>") and anchors every volume, bid, and rank lookup.</div>
 
@@ -822,6 +835,45 @@ function stripPlaceholders(v){
     const wrapped=/^[<\[\{\(]/.test(whole)||/[>\]\}\)]$/.test(whole);
     return (wrapped||_PH_NEVER_REAL.has(w)||w.startsWith('xxx')) ? ' ' : whole;
   }).replace(/\s+/g,' ').trim();
+}
+
+// PROVENANCE IS DERIVABLE, SO DERIVE IT. Recording the terms at the moment the
+// Apply button runs only marks quotes built after this shipped — every quote
+// already in the queue carries its report and no record of it, so Ski Barn
+// showed 59 chips and not one mark. The report is SAVED WITH THE QUOTE and its
+// keyword list is right there; matching it against the current list gets the
+// same answer without needing to have been present when the terms went in.
+//
+// Matched on the BARE form, because that is the form the apply path pushes: the
+// report says "ski shop wayne nj" and the list holds "ski shop", since this tool
+// crosses every term with every market itself. (2026-08-19)
+function reportTermSet(){
+  const out=new Set((ST.reportSeeds||[]).map(x=>String(x).toLowerCase()));
+  const reps=(ST.reports&&ST.reports.length)?ST.reports
+           : (window._report?[window._report]:[]);
+  const _save=window._report;
+  try{
+    reps.forEach(rep=>{
+      if(!rep||!rep.keywords) return;
+      window._report=rep;                 // _reportGeo() reads it
+      let geo=[]; try{ geo=_reportGeo(); }catch(e){}
+      (rep.keywords||[]).forEach(k=>{
+        const raw=String(k||'').trim(); if(!raw) return;
+        let v='';
+        try{ v=bareTerm(raw, geo)||''; }catch(e){ v=''; }
+        if(!v) v=raw.toLowerCase();
+        out.add(v);
+      });
+    });
+  }finally{ window._report=_save; }
+  return out;
+}
+function reportFileLabel(){
+  if(ST.reportSeedFile) return ST.reportSeedFile;
+  const reps=(ST.reports&&ST.reports.length)?ST.reports
+           : (window._report?[window._report]:[]);
+  const names=reps.map(r=>(r&&r.filename)||'').filter(Boolean);
+  return names.length===1?names[0]:(names.length?names.length+' reports':'');
 }
 
 function bareTerm(v, geo){
@@ -1198,7 +1250,7 @@ function wirePills(key, inputId){
       const sg=new Set((ST.expandedSeeds||[]).map(x=>String(x).toLowerCase()));
       const c=stores.kw.filter(v=>sg.has(String(v).toLowerCase())).length;
       if(c) extra=` \u00b7 ${c} suggested`;
-      const rp=new Set((ST.reportSeeds||[]).map(x=>String(x).toLowerCase()));
+      const rp=reportTermSet();
       const r=stores.kw.filter(v=>!sg.has(String(v).toLowerCase())
                                  && rp.has(String(v).toLowerCase())).length;
       if(r) extra+=` \u00b7 ${r} in their report`;
@@ -1220,9 +1272,8 @@ function wirePills(key, inputId){
     // the client's own SEO report is one they are already paying someone to
     // track, and once it is in the box it looked exactly like a term the
     // operator typed. Three origins, three appearances. (2026-08-19)
-    const rept=(key==='kw' && typeof ST!=='undefined')
-      ? new Set((ST.reportSeeds||[]).map(x=>String(x).toLowerCase())) : null;
-    const _rf=(typeof ST!=='undefined' && ST.reportSeedFile)?ST.reportSeedFile:'';
+    const rept=(key==='kw' && typeof ST!=='undefined') ? reportTermSet() : null;
+    const _rf=(key==='kw' && typeof ST!=='undefined') ? reportFileLabel() : '';
     shown.forEach((v,i)=>{
       const el=document.createElement('span');
       const isSugg=!!(sugg && sugg.has(String(v).toLowerCase()));
@@ -1425,6 +1476,7 @@ wirePills('neg','neg_in');
   det.addEventListener('toggle', async ()=>{
     if(!det.open || loaded) return;
     const body=document.getElementById('indrules_body');
+    if(!body) return;                       // panel removed — rules live in config
     try{
       const cfg=await (await fetch('/api/config')).json();
       const rules=cfg.industry_pricing||{};
@@ -3320,6 +3372,9 @@ function finishStep3(){
   try{ if(ST.signals) renderMarketSignals();
        else if(!ST._signalsRun){ ST._signalsRun=true; loadMarketSignals(); } }catch(e){}
   if($('step4')) $('step4').onclick = ()=>runStep4();
+  // The rankings the SERP picker was waiting for. Re-runs the recommendation
+  // now that there are positions to choose between, then fires the capture.
+  try{ refreshSerpPick(); }catch(e){}
   // A restored quote has rows but never made the call that reports the
   // location. Ask for it separately (no lookup is spent) and redraw, so
   // "0/20 found" is never shown without saying where it was measured.
@@ -3624,7 +3679,7 @@ function renderStep4(p){
     <div class="why">Captures a live Google results page for a head term — ideal for showing a prospect they're absent from page 1 while competitors rank. The recommended term is a "Not Found", high-competition, local keyword; change it if you like, then generate.</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="serpPhrase" style="flex:1;min-width:240px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px"></select>
-      <div id="serpBasis" class="nf" style="flex-basis:100%;margin-top:4px"></div>
+      <div id="serpBasis" class="nf" style="flex:0 0 100%;width:100%;margin-top:6px"></div>
       <button id="serpBtn" style="background:var(--velocity,#378ADD);color:#fff;border:none;padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">📸 Generate SERP</button>
     </div>
     <div id="serpOut" style="margin-top:12px"></div>
@@ -3782,9 +3837,15 @@ function renderStep4(p){
   };
 
   // ---- SERP screenshot: populate the phrase picker with an auto-recommendation ----
-  (async ()=>{
-    const head=[...ST.kw.ultra.map(r=>({kw:r.kw,comp:'Ultra'})),
-                ...ST.kw.competitive.map(r=>({kw:r.kw,comp:'Competitive'}))];
+  // Runs at the end of step 1 to fill the dropdown, and AGAIN at the end of
+  // step 3 once positions exist — the recommendation is only meaningful with
+  // them, and the picker must not still advertise a stale "(not measured)"
+  // beside a term the rank check has since found at #4. Global so renderStep3()
+  // can call it; defined here so it keeps this scope. (2026-08-19)
+  window.refreshSerpPick = async function(){
+    if(!ST.kw) return;
+    const head=[...(ST.kw.ultra||[]).map(r=>({kw:r.kw,comp:'Ultra'})),
+                ...(ST.kw.competitive||[]).map(r=>({kw:r.kw,comp:'Competitive'}))];
     const ranks={}; ST.table.forEach(r=>{ranks[r.kw]=r.pos;});
     let rec=null, basis='', weak=false;
     try{
@@ -3792,20 +3853,30 @@ function renderStep4(p){
       rec=rr.recommended; basis=rr.basis||''; weak=!!rr.weak;
     }catch(e){ /* fall back to first head term */ }
     const sel=$('serpPhrase'); if(!sel) return;
+    const _had=sel.value;
+    sel.innerHTML='';
     head.forEach(h=>{
       const o=document.createElement('option'); o.value=h.kw;
       const _r=ranks[h.kw];
-      o.textContent=h.kw+(_r==='Not Found'?'  (Not Found)':(_r?'  (#'+_r+')':'  (not measured)'));
+      // pos is not always a number: the table writes "Not Found", an em dash
+      // for an errored row, and nothing at all for a term never checked — so
+      // "(#—)" appeared in the picker. Only a digit prints as a position.
+      const _lbl=(_r==='Not Found'||_r===0) ? '  (Not Found)'
+               : (/^\d+$/.test(String(_r)) ? '  (#'+_r+')' : '  (not measured)');
+      o.textContent=h.kw+_lbl;
       if(h.kw===rec) o.selected=true;
       sel.appendChild(o);
     });
+    // A term the operator picked by hand outranks the recommendation — this
+    // redraw must not silently undo their choice.
+    if(_had && ST._serpPicked && head.some(h=>h.kw===_had)) sel.value=_had;
     // THE EXHIBIT IS SUPPOSED TO SHOW THEM MISSING. If the best term available
     // is one they already hold, or one nothing measured, the capture argues
     // against the campaign — and that is worth a line, not a silent default.
     const _sn=$('serpBasis');
     if(_sn) _sn.innerHTML = !basis ? ''
       : (weak
-         ? `<span class="err">Picked &ldquo;${escapeHtml(rec)}&rdquo; &mdash; ${escapeHtml(basis)}. The point of this capture is a page one without them on it; pick a term they are missing from if there is one.</span>`
+         ? `<div class="err" style="padding:7px 10px;border-radius:7px;line-height:1.45">Picked &ldquo;${escapeHtml(rec)}&rdquo; &mdash; ${escapeHtml(basis)}. The point of this capture is a page one without them on it; pick a term they are missing from if there is one.</div>`
          : `Picked &ldquo;${escapeHtml(rec)}&rdquo; &mdash; ${escapeHtml(basis)}.`);
     // FIRE IT ONCE, WITHOUT BEING ASKED. The capture is the one thing in the
     // proposal that needed a human to remember a button, and forgetting it is
@@ -3815,12 +3886,23 @@ function renderStep4(p){
     // Once per built list, never on a re-price: it is a queued DataForSEO
     // screenshot task and re-pricing five times should not buy five of them.
     // Non-blocking, so nothing waits on it. (2026-08-18)
-    if(AUTO_SERP && !ST._serpRun && !(ST.serp&&ST.serp.img) && !REVIEW_MODE){
-      ST._serpRun=true;
-      try{ $('serpBtn').click(); }catch(e){}
-    }
-  })();
+    // NOT BEFORE THE RANKINGS EXIST. This block runs at the end of step 1, and
+    // positions arrive in step 3 — so `ranks` was empty on every auto-fire and
+    // the recommendation could only ever be "no ranking measured for it". Ski
+    // Barn's capture came back with Ski Barn first in the local pack because of
+    // this, not because the picker preferred it: there was nothing to prefer.
+    //
+    // So the auto-capture waits for a measured table. renderStep3() calls
+    // maybeAutoSerp() when one exists, and this call covers a restored quote
+    // that already has one. (2026-08-19)
+    ST._serpWeak=weak; ST._serpRec=rec;
+    maybeAutoSerp();
+  };
+  refreshSerpPick();
 
+  if($('serpPhrase')) $('serpPhrase').addEventListener('change', e=>{
+    if(e.isTrusted) ST._serpPicked=true;
+  });
   $('serpBtn').onclick=async()=>{
     const kw=$('serpPhrase').value;
     const out=$('serpOut'), btn=$('serpBtn');
@@ -4093,6 +4175,19 @@ async function runBackmeasure(){
 // PNG off a canvas is ~1MB of base64 for a full-width screenshot, and it would
 // ride along in every autosave. JPEG at 0.72 is a tenth of that and a Google
 // results page has no transparency to lose. (2026-08-18)
+// One gate, two callers: the end of step 1 (for a restored quote whose table is
+// already there) and the end of step 3 (for a fresh build). Fires once per list.
+function maybeAutoSerp(){
+  if(!AUTO_SERP || ST._serpRun || REVIEW_MODE) return;
+  if(ST.serp && ST.serp.img) return;
+  const measured=(ST.table||[]).filter(r=>r && r.pos!==undefined && r.pos!==null
+                                        && r.pos!=='' && r.pos!=='—').length;
+  if(!measured) return;                      // nothing to choose between yet
+  if(!$('serpPhrase') || !$('serpBtn')) return;
+  ST._serpRun=true;
+  try{ $('serpBtn').click(); }catch(e){}
+}
+
 function toJpeg(dataUrl, q){
   return new Promise((res, rej)=>{
     const im=new Image();
@@ -6770,6 +6865,31 @@ function syncStateSummary(){
   if(!el||!sel) return;
   el.textContent = sel.value ? ` · fallback state: ${sel.value}` : ' · no fallback state set';
   el.style.color = sel.value ? 'var(--muted)' : 'var(--warn)';
+  try{ renderStateNeeded(); }catch(e){}
+}
+
+// A FALLBACK IS ONLY A QUESTION WHEN SOMETHING WILL FALL BACK. Every city typed
+// as "Wayne, NJ" carries its own state and ignores this field entirely, which
+// is every city on every quote that came from a line item. The one case that
+// still needs answering is a bare city with no state anywhere — and there the
+// suffix, the volume, the bid and the rank lookup are all built on a guess. So
+// the control appears exactly then, and stays out of the way otherwise.
+function renderStateNeeded(){
+  const box=$('stateNeeded'), det=$('geoValidate'), sel=$('state');
+  if(!box||!det||!sel) return;
+  const bare=(stores.geo||[]).map(v=>String(v||'').trim())
+    .filter(v=>v && !/,\s*[A-Za-z]{2,}\s*$/.test(v));
+  const need = bare.length>0 && !sel.value;
+  box.classList.toggle('hidden', !need);
+  det.classList.toggle('hidden', !need);
+  if(need){
+    det.open=true;
+    box.innerHTML='\u26a0 <b>'+bare.length+' area'+(bare.length===1?'':'s')+' with no state</b> \u2014 '
+      +bare.slice(0,6).map(escapeHtml).join(', ')
+      +(bare.length>6?' and '+(bare.length-6)+' more':'')
+      +'. Every keyword suffix, volume, bid and rank lookup is anchored on the state, so '
+      +'tag them (\u201cWayne, NJ\u201d) or set a fallback below.';
+  }
 }
 if($('state')){
   // 'change' only fires on user input. Restoring a quote, or the browser
