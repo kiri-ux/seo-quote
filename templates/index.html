@@ -3950,6 +3950,19 @@ function renderStep4(p){
     // THE EXHIBIT IS SUPPOSED TO SHOW THEM MISSING. If the best term available
     // is one they already hold, or one nothing measured, the capture argues
     // against the campaign — and that is worth a line, not a silent default.
+    // DESCRIBE WHAT IS SELECTED, NOT WHAT WAS RECOMMENDED. A hand pick (or a
+    // restored one) left the warning describing a term the dropdown was not on:
+    // "Picked 'ski helmets wayne nj' — no ranking measured for it" above a
+    // select reading "outdoor furniture wayne nj (#4)". (2026-08-19)
+    const _cur=sel.value, _cr=ranks[_cur];
+    if(_cur!==rec){
+      rec=_cur;
+      const _t=(_cr==='Not Found'||_cr===0) ? 3
+             : (/^\d+$/.test(String(_cr)) ? (Number(_cr)>20?2:0) : 1);
+      basis={3:'measured and not ranking',2:'ranking below the first two pages',
+             1:'no ranking measured for it',0:'they already rank for it'}[_t];
+      weak=_t<=1;
+    }
     const _sn=$('serpBasis');
     if(_sn) _sn.innerHTML = !basis ? ''
       : (weak
@@ -4312,11 +4325,11 @@ function gapEffort(clientRank, rivalRank){
 // whether they are nearly there or nowhere near, which is the only thing they
 // want to know from it. These say which, and say what our help does about it.
 const GAP_VERDICTS=[
-  [15,'a small gap','That is a small gap, and a very attainable one — comfortably inside what a campaign of this size closes.'],
-  [30,'a moderate gap','That is a moderate gap. It is well within reach with sustained work, and closing it is the main thing the campaign below is funding.'],
-  [50,'a wide gap','That is a wide gap. It is closeable with our help, but it takes a consistent multi-year build rather than a few months — which is why the more aggressive options exist.'],
-  [1000,'a very large gap','That is a very large gap — the sites ahead are far more established domains. We can take ground steadily and win the less contested terms early, but the most competitive terms are a long-horizon target rather than a first-year one.']];
-const GAP_LEVEL_VERDICT='{brand} already scores at or above the sites currently holding page one, so authority is not what is holding these rankings back. That is the most attainable position a campaign can start from — the gains come from content, on-page work and targeting the right terms.';
+  [15,'a small gap','That is a small gap, and the closest thing to a quick win in this proposal — an intermediate campaign would close it and move on to the harder terms inside the first year.'],
+  [30,'a moderate gap','That is a moderate gap, and the pace of the campaign is what decides how quickly it closes — an intermediate or advanced campaign gets there materially sooner.'],
+  [50,'a wide gap','That is a wide gap. An advanced campaign would close it considerably faster than the alternatives, because the rate of link acquisition and content production is the whole difference between them.'],
+  [1000,'a very large gap','That is a very large gap — the sites ahead are far more established domains. An advanced campaign is what makes it a realistic target; at a slower pace the most competitive terms stay out of reach for years.']];
+const GAP_LEVEL_VERDICT='{brand} already scores at or above the sites currently holding page one, which is the strongest position a campaign can start from: the authority is there and the rankings are not, so the gains come from content, on-page work and targeting the right terms. That is work that compounds with the pace it is done at, and an intermediate or advanced campaign converts the position faster.';
 function gapVerdict(g, brand){
   if(!g) return null;
   const b=brand||'This site';
@@ -6257,6 +6270,11 @@ function step1Grid(kw){
     // "ranked, and all 20 fit" changed nothing anyone can see — fold it. The
     // line earns its place on the panel only when the ranking DECIDED something,
     // i.e. some of the client's services are not in the quote.
+    // ROOM TO GROW, reported where the ranking that needed it is reported.
+    if((sr.headroom||[]).length){
+      const hn=x=>Number(x||0).toLocaleString();
+      auto.push(`\u{1F331} <b>${sr.headroom.length} slot${sr.headroom.length===1?'':'s'} held for terms they don't rank for yet</b> — ${sr.headroom.map(([t,v])=>escapeHtml(t)+' ('+hn(v)+'/mo)').join(' \u00b7 ')}${(sr.headroom_displaced||[]).length?`, in place of ${sr.headroom_displaced.map(([t])=>escapeHtml(t)).join(' \u00b7 ')}`:''}.${tipOf('Ranking the grid purely by measured demand hands every slot to the terms a client with existing SEO already owns &mdash; those are the ones with volume attached &mdash; so the proposal ends up arguing for a campaign to win what is already won.<br><br>These slots are reserved for the highest-demand terms the client is NOT ranking for, taken from the ones the demand ranking cut. They are the campaign&rsquo;s actual upside.<br><br>A reservation, not a quota: nothing is invented to fill it, and if every candidate is already ranked the grid is unchanged. Set <code>grid_headroom_slots</code> to 0 in pricing config to turn it off.')}`);
+    }
     (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
   }
 

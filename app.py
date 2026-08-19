@@ -650,6 +650,13 @@ CFG = {
     # way, then one volume request for the whole batch), and every term it
     # proposes is measured and floored before it can reach a chip. (2026-08-17)
     "industry_gap_n": 22,
+    # ROOM TO GROW. Slots held for terms the client does NOT already rank for.
+    # Ranking a grid purely by measured demand hands every slot to the terms a
+    # client with existing SEO already owns — Ski Barn came back ranking in the
+    # top 100 for 19 of 19, nine of them in the top four — so the proposal
+    # argued for winning what was already won. A reservation, not a quota:
+    # nothing is invented to fill it. 0 turns it off. (2026-08-19)
+    "grid_headroom_slots": 4,
     # HOW THE SITE READER INTRODUCES ITSELF. DataForSEO's default is
     # "Mozilla/5.0 (compatible; RSiteAuditor)", which is a bot string, and a
     # WAF that refuses it costs a whole client's site-condition reading.
@@ -7310,6 +7317,58 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                         "was": list(seeds),
                     }
                     seeds = _ordered + _folded + _tail
+                    # ---------------------------------------------------------
+                    # ROOM TO GROW. Ski Barn's quote came back ranking in the
+                    # top 100 for 19 of 19 terms — nine of them in the top four
+                    # — and Brendan's note was the right one: "a lot of these
+                    # keywords they are ranking for, it might be good to have
+                    # the tool find a few more that they don't rank for."
+                    #
+                    # Ranking purely by measured demand does this on any client
+                    # with existing SEO: the terms they already own are the ones
+                    # with volume attached, so they win every slot, and the
+                    # proposal argues for a campaign to win what is already won.
+                    #
+                    # So a few slots are reserved for terms they do NOT rank
+                    # for, taken in demand order from the ones the ranking cut.
+                    # They are the campaign's actual upside and the honest
+                    # answer to "what am I buying". A RESERVATION, NOT A QUOTA:
+                    # nothing is invented to fill it, and if every candidate is
+                    # already ranked the grid is unchanged. (2026-08-19)
+                    _room = int(CFG.get("grid_headroom_slots", 4) or 0)
+                    if _room and _slots:
+                        _vol = {r["term"]: r.get("volume") or 0
+                                for r in _sr["kept"]}
+                        _own = set()
+                        for _r in (ranked or []):
+                            _rt = _r.get("bare") or _r.get("term") or "" \
+                                  if isinstance(_r, dict) else str(_r)
+                            _rk = seed_norm(_rt, markets, state)
+                            if _rk:
+                                _own.add(_rk)
+                        _head, _tailseeds = seeds[:_slots], seeds[_slots:]
+                        _fresh = [t for t in _head if t not in _own]
+                        _want = min(_room, _slots)
+                        if len(_fresh) < _want:
+                            # best unranked candidates the cut left behind
+                            _cand = [t for t in _tailseeds if t not in _own]
+                            _cand.sort(key=lambda t: -_vol.get(t, 0))
+                            _need = _want - len(_fresh)
+                            _promote = _cand[:_need]
+                            if _promote:
+                                # displace the LOWEST-demand already-ranked
+                                # terms, never a term the ranking put on top
+                                _drop = [t for t in reversed(_head)
+                                         if t in _own][:len(_promote)]
+                                _dropset = set(_drop)
+                                _head = [t for t in _head if t not in _dropset]
+                                _head = _head + _promote
+                                seeds = _head + [t for t in _tailseeds
+                                                 if t not in set(_promote)] + _drop
+                                seed_ranking["headroom"] = [
+                                    [t, _vol.get(t, 0)] for t in _promote]
+                                seed_ranking["headroom_displaced"] = [
+                                    [t, _vol.get(t, 0)] for t in _drop]
             else:
                 seed_ranking = {"failed": _sr.get("error") or "no volume data",
                                 "was": list(seeds)}
@@ -9666,27 +9725,37 @@ PROPOSAL = {
     # "this is a wide gap" leaves the client to work out what to do about it,
     # three pages before the prices. Saying which campaign closes it faster is
     # the same sentence doing the selling it was written for. (2026-08-19)
+    # EVERY VERDICT POINTS UP. Naming the base campaign as sufficient argues the
+    # client down a tier inside the document that is trying to sell them one —
+    # and it is not even the honest read: the difference between the tiers is
+    # the PACE of link and content work, which is exactly what closes a gap.
+    # These say what each gap is and which campaign closes it soonest.
+    # (2026-08-19)
     "gap_verdicts": [
         (15, "a small gap",
-         "That is a small gap, and a base campaign is enough to close it."),
+         "That is a small gap, and the closest thing to a quick win in this "
+         "proposal — an intermediate campaign would close it and move on to the "
+         "harder terms inside the first year."),
         (30, "a moderate gap",
-         "That is a moderate gap. A base campaign closes it steadily; an "
-         "intermediate campaign would close it faster."),
+         "That is a moderate gap, and the pace of the campaign is what decides "
+         "how quickly it closes — an intermediate or advanced campaign gets "
+         "there materially sooner."),
         (50, "a wide gap",
-         "That is a wide gap. An intermediate or advanced campaign would close "
-         "it considerably faster than a base one, because the pace of link and "
-         "content work is the whole difference."),
+         "That is a wide gap. An advanced campaign would close it considerably "
+         "faster than the alternatives, because the rate of link acquisition "
+         "and content production is the whole difference between them."),
         (1000, "a very large gap",
          "That is a very large gap — the sites ahead are far more established "
-         "domains. An advanced campaign is what closes it fastest; a base "
-         "campaign would take ground on the less contested terms first and "
-         "reach the most competitive ones considerably later."),
+         "domains. An advanced campaign is what makes it a realistic target; at "
+         "a slower pace the most competitive terms stay out of reach for years."),
     ],
     "gap_level_verdict":
         "{brand} already scores at or above the sites currently holding page "
-        "one, so authority is not what is holding these rankings back. A base "
-        "campaign is enough here — the gains come from content, on-page work "
-        "and targeting the right terms rather than from closing a gap.",
+        "one, which is the strongest position a campaign can start from: the "
+        "authority is there and the rankings are not, so the gains come from "
+        "content, on-page work and targeting the right terms. That is work that "
+        "compounds with the pace it is done at, and an intermediate or advanced "
+        "campaign converts the position faster.",
 
     # ---- AI Search (GEO) --------------------------------------------------
     # Brendan runs this as a full parallel campaign with its own three options,
@@ -15227,13 +15296,23 @@ def build_proposal_docx(d):
         rows = (len(cards) + per_row - 1) // per_row
         tb = doc.add_table(rows=rows, cols=per_row)
         tb.autofit = False
-        # KEEP A ROW OF CARDS WHOLE. Word broke the first row across the page
-        # boundary and put three domain names at the bottom of one page and
-        # their three authority lines at the top of the next, so the figures
-        # read as belonging to the row below them. Same fix as the option
-        # boxes: a card is a unit or it is nothing. (2026-08-19)
-        for _r in tb.rows:
+        # KEEP A ROW OF CARDS WHOLE — AND THEN KEEP THE ROWS TOGETHER. cantSplit
+        # stopped Word splitting a row down the middle, which had put three
+        # domain names at the foot of one page and their three authority lines
+        # at the head of the next. It did nothing about the rows themselves:
+        # three cards then a page break then three more, with half a page of
+        # white between them, still reads as two unrelated exhibits.
+        #
+        # There is no "keep this table together" in the format, so this is
+        # keep-with-next on every paragraph in every row but the last, which is
+        # what Word actually honours: each row is glued to the one after it, so
+        # the block moves to the next page as a unit or not at all. (2026-08-19)
+        for _i, _r in enumerate(tb.rows):
             _r._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
+            if _i < len(tb.rows) - 1:
+                for _c in _r.cells:
+                    for _p in _c.paragraphs:
+                        _p.paragraph_format.keep_with_next = True
         for i, (title, sub) in enumerate(cards):
             cell = tb.rows[i // per_row].cells[i % per_row]
             cell.width = Inches(6.6 / per_row)
@@ -15428,7 +15507,8 @@ def build_proposal_docx(d):
              "holding those positions.")
         riv = [r for r in (sig.get("rivals") or []) if r.get("domain")][:6]
         if riv:
-            body("Who currently holds page one for your terms:", True)
+            _lead = body("Who currently holds page one for your terms:", True)
+            _lead.paragraph_format.keep_with_next = True
             cards = []
             for r in riv:
                 bits = []
