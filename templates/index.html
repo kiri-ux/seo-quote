@@ -2911,7 +2911,7 @@ function step3Html(){
   // Morristown and a rank of 4 in Knoxville are different facts, and the
   // per-market table is only auditable if the place is on the row.
   const multiLoc = new Set((ST.table||[]).map(r=>r&&r.loc).filter(Boolean)).size>1;
-  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td>${multiLoc?`<td class="nf" style="font-size:11.5px">${r.loc?escapeHtml(r.loc):'<span title="Location not recorded for this row — it finished by a path that did not report one">not recorded</span>'}</td>`:''}<td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
+  const rows=ST.table.map(r=>`<tr><td>${r.kw}</td>${multiLoc?`<td class="nf" style="font-size:11.5px">${r.loc?escapeHtml(r.loc):'<span title="Location not recorded for this row — it finished by a path that did not report one">not recorded</span>'}</td>`:''}<td class="${(r.pos==='Not Found'||r.error)?'nf':''}">${r.queued?'<span title="Slow crawl — finishing via Google\'s queue; fills in automatically">⏳ in Google\'s queue…</span>':r.expired?'<span title="This row was still in Google\'s queue when the quote was saved. The queue does not survive a reload — hit Retry to re-check it.">— (never landed — retry)</span>':r.error?'<span title="Lookup failed — not counted either way">— (check failed)</span>':r.pos}</td></tr>`).join('');
   const _sp=(ST.inputs&&ST.inputs.past_seo_spend)||null;
   const ctx=(ST.inputs&&ST.inputs.past_seo)
     ? `<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin:0 0 10px">⚑ <b>Client has done SEO before</b>${ST.inputs.past_seo_detail?` — ${escapeHtml(ST.inputs.past_seo_detail)}`:''}. Rankings below already reflect that history; weigh any cleanup work separately.</div>`
@@ -2931,7 +2931,7 @@ function step3Html(){
           const t20=ST.table.filter(r=>!r.error && typeof r.pos==='number' && r.pos<=20).length;
           if(!checked || t20===ST.ranked) return '';
           return ` <span class="nf">· <b>${t20}</b> in the top 20${tipOf(ST.ranked-t20+' rows sit past position 20. Top 100 is the proposal depth and the zero-ranking tier keys off it, so those count as ranked and lower the price — they are not visibility in any commercial sense.')}</span>`;
-        })()}`}${(()=>{const q=ST.table.filter(r=>r.queued).length;const f=ST.errored-q;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
+        })()}`}${(()=>{const q=ST.table.filter(r=>r.queued).length;const x=ST.table.filter(r=>r.expired).length;const f=ST.errored-q-x;let bits=[];if(q)bits.push(`${q} still in Google's queue — filling in automatically (Re-price after if you've already priced)`);if(x)bits.push(`<b>${x} never landed</b> — they were still queued when this quote was saved, and Google's queue does not survive a reload. Hit Retry below, then re-price`);if(f>0)bits.push(`${f} lookup${f>1?'s':''} failed and ${f>1?'were':'was'} excluded`);return bits.length?` <span class="nf">· ${bits.join(' · ')}</span>`:'';})()}</div>
       ${(()=>{
         // WHERE it was measured. A 0% result is uninterpretable without this —
         // Ski Barn read 0/20 because bare terms were being scored against the
@@ -3007,7 +3007,7 @@ function step3Html(){
         // Count only rows that actually FAILED. ST.errored includes queued rows,
         // which are still filling in on their own, so the button read "Retry 21
         // failed" beside text saying 7 failed. (2026-08-10)
-        const f=ST.errored-ST.table.filter(r=>r.queued).length;
+        const f=ST.errored-ST.table.filter(r=>r.queued).length;   // expired rows ARE retryable
         return f>0;
       })()?`<div style="margin:8px 0"><button id="retryFailed" style="background:#fff;color:var(--atlas);border:1px solid var(--atlas);padding:6px 13px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer">↻ Retry ${ST.errored-ST.table.filter(r=>r.queued).length} failed lookup${(ST.errored-ST.table.filter(r=>r.queued).length)>1?'s':''}</button> <span class="nf" style="font-size:11.5px">only re-fetches the missing ones — completed rows are kept</span></div>`:''}
       <details style="margin-top:6px"><summary style="cursor:pointer;user-select:none;font-size:12.5px;color:var(--velocity);font-weight:600">Show all ${ST.table.length} rank checks</summary>
@@ -3273,6 +3273,13 @@ async function loadMarketSignals(){
     .map(([domain,appearances])=>({domain,appearances}))
     .sort((a,b)=>b.appearances-a.appearances).slice(0,12);
   if(!rv.length && !(ST.inputs&&ST.inputs.domain)) return;
+  // NO INCUMBENTS IS NOT THE SAME AS AN EMPTY PAGE ONE. Incumbents come off the
+  // rank check's own SERPs, so a table where nothing landed has none to give —
+  // and the panel printed "Page one belongs to —" with a median of "—", which
+  // reads as a measurement that found nothing rather than as a measurement that
+  // never happened. Say which. (2026-08-19)
+  ST._signalsBlind = !rv.length &&
+    (ST.table||[]).some(r=>r && (r.queued || r.expired));
   try{
     ST.signals = await postJSON('/api/market_signals',
       {domain:(ST.inputs&&ST.inputs.domain)||'', rivals:rv});
@@ -3290,6 +3297,12 @@ function renderMarketSignals(){
   const num=v=>v===null||v===undefined?'—':Number(v).toLocaleString();
   const rivals=(s.rivals||[]).filter(r=>r.rank!==null&&r.rank!==undefined);
   const bits=[];
+  if(ST._signalsBlind && !(s.rivals||[]).length){
+    n.innerHTML=`<div style="font-weight:700">\u{1F52C} Market signals</div>
+      <div style="margin-top:5px">Page one could not be read \u2014 <b>no rank check has landed</b>, and the incumbents come off those same result pages. Retry the failed lookups above, then this fills in.</div>
+      ${s.health&&s.health.score!=null?`<div style="margin-top:4px"><b>Site condition</b> \u2014 on-page score ${num(s.health.score)}/100</div>`:''}`;
+    return;
+  }
   bits.push(`<div><b>Page one belongs to</b> ${(s.rivals||[]).slice(0,6).map(r=>
       escapeHtml(r.domain)+' <span class="nf">('+(r.rank!=null?'authority '+num(r.rank):'—')
       +(r.appearances?', '+r.appearances+' of your terms':'')+')</span>').join(' · ')||'—'}</div>`);
@@ -3504,6 +3517,82 @@ function focusHtml(){
 // Crop a (tall) screenshot to a clean landscape frame: keep full width, take the
 // top slice at the target aspect ratio, paint onto white so any transparent/dark
 // gaps read as a clean white proposal image. Returns a PNG data URL.
+// THE TOP OF A LOCAL SERP IS THE MAP PACK, AND THE MAP PACK IS THE CLIENT.
+// cropLandscape() took "the top portion (local pack + top competitors)" at 16:9,
+// which on "ski jackets wayne nj" is the search box, the filter chips and a
+// Places block with Ski Barn sitting at number one — an exhibit that argues
+// against the campaign it is in. The organic list, where they are absent, was
+// below the crop line and below the capture height.
+//
+// So: capture tall enough to contain the organic results, then find where they
+// start. Google separates the pack from the organic list with a full-width band
+// of background, so this scans down for the first such band past the top
+// quarter and cuts there. If it finds none — a page with no pack, or a layout
+// that does not separate — it returns the image uncropped rather than guessing,
+// because a wrong cut hides the argument entirely. (2026-08-19)
+// One place that draws the capture, so the two views swap without re-fetching.
+async function renderSerpShot(kw, url, organic){
+  const out=$('serpOut'); if(!out) return;
+  try{ ST.serp={kw:kw, img:await toJpeg(url, 0.72)};
+       try{ scheduleAutoSave(); }catch(e){} }catch(e){ ST.serp={kw:kw, img:url}; }
+  const both = !!(ST._serpFull && ST._serpOrganic);
+  out.innerHTML=`
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for &ldquo;${escapeHtml(kw)}&rdquo;${organic?' &mdash; organic listings':''}:</div>
+    <img src="${url}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
+    <div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <a href="${url}" download="serp_${String(kw).replace(/ /g,'_')}.png"
+         style="font-size:12.5px;color:var(--atlas);font-weight:600">&#8681; Download image for the proposal</a>
+      ${both?`<button type="button" id="serpToggle" class="btn2" style="padding:4px 11px;font-size:12px">${organic?'Show the whole page':'Cut the map pack'}</button>`:''}
+      ${(!organic&&ST._serpFull)?`<span class="nf" style="font-size:11.5px">The map pack could not be separated from the organic list, so the whole page is in the proposal.</span>`:''}
+    </div>`;
+  const t=$('serpToggle');
+  if(t) t.onclick=()=>renderSerpShot(kw, organic?ST._serpFull:ST._serpOrganic, !organic);
+}
+
+function cropBelowPack(dataUrl, opts){
+  const o=opts||{};
+  return new Promise((resolve)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const w=img.naturalWidth, h=img.naturalHeight;
+      if(!w||!h) return resolve({url:dataUrl, cut:0, found:false});
+      const c=document.createElement('canvas');
+      c.width=w; c.height=h;
+      const x=c.getContext('2d', {willReadFrequently:true});
+      x.fillStyle='#fff'; x.fillRect(0,0,w,h);
+      x.drawImage(img,0,0);
+      let px;
+      try{ px=x.getImageData(0,0,w,h).data; }
+      catch(e){ return resolve({url:dataUrl, cut:0, found:false}); }
+      // A row counts as background when almost every pixel across it is light.
+      const isBg=y=>{
+        let dark=0;
+        for(let i=0;i<w;i+=4){
+          const p=(y*w+i)*4;
+          if(px[p]<232 || px[p+1]<232 || px[p+2]<232){ dark++; if(dark>w/160) return false; }
+        }
+        return true;
+      };
+      const from=Math.floor(h*(o.after||0.22)), band=Math.max(14, Math.round(h*0.012));
+      let run=0, cut=0;
+      for(let y=from; y<Math.floor(h*0.72); y++){
+        if(isBg(y)){ run++; if(run>=band){ cut=y+1; break; } }
+        else run=0;
+      }
+      if(!cut) return resolve({url:dataUrl, cut:0, found:false});
+      const out=document.createElement('canvas');
+      out.width=w; out.height=h-cut;
+      const ox=out.getContext('2d');
+      ox.fillStyle='#fff'; ox.fillRect(0,0,w,h-cut);
+      ox.drawImage(img, 0, cut, w, h-cut, 0, 0, w, h-cut);
+      try{ resolve({url:out.toDataURL('image/png'), cut:cut, found:true}); }
+      catch(e){ resolve({url:dataUrl, cut:0, found:false}); }
+    };
+    img.onerror=()=>resolve({url:dataUrl, cut:0, found:false});
+    img.src=dataUrl;
+  });
+}
+
 function cropLandscape(dataUrl, ratio){
   return new Promise((resolve)=>{
     const img=new Image();
@@ -3914,7 +4003,12 @@ function renderStep4(p){
     // Fixed landscape capture sized for the proposal slide frame. Width kept
     // narrow (~1100) so Google's results column fills the frame and the mostly-
     // empty right rail is cropped out; height keeps a landscape (~16:9) ratio.
-    const sz={device:'desktop',width:1100,height:620,scale:2};
+    // 620px reached the filter chips and the top of the Places block and
+    // stopped — the organic results were never in the capture at all, so no
+    // crop could have recovered them. Tall enough for the pack AND the first
+    // organic listings; the blank-band collapse and the crop below bring it
+    // back to a usable exhibit. (2026-08-19)
+    const sz={device:'desktop',width:1100,height:1700,scale:2};
     try{
       // Step A — queue (quick)
       const q=await postJSON('/api/serp_queue',{
@@ -3931,21 +4025,16 @@ function renderStep4(p){
       }
       if(!done){ out.innerHTML=`<div class="err">SERP didn't finish in 2 minutes — DataForSEO's queue may be busy. Click Generate to retry (often works on a second try).</div>`; }
       else{
-        // Crop to a clean landscape frame: take the top portion of the capture
-        // (local pack + top competitors), at a 16:9 ratio, on a white background.
-        // Done client-side via canvas so there's no server image dependency.
-        const cropped = await cropLandscape(done.data_url, 16/9);
-        // KEPT, so the proposal page and the .docx can both use it. Re-encoded
-        // to JPEG first: the canvas hands back PNG, which for a full-width
-        // screenshot runs to about a megabyte of base64 and would go into every
-        // autosave of the quote payload. (2026-08-18)
-        try{ ST.serp={kw:done.keyword, img:await toJpeg(cropped, 0.72)};
-             try{ scheduleAutoSave(); }catch(e){} }catch(e){ ST.serp={kw:done.keyword, img:cropped}; }
-        out.innerHTML=`
-          <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for “${done.keyword}”:</div>
-          <img src="${cropped}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
-          <div style="margin-top:8px"><a href="${cropped}" download="serp_${kw.replace(/ /g,'_')}.png"
-            style="font-size:12.5px;color:var(--atlas);font-weight:600">⬇ Download image for the proposal</a></div>`;
+        // Cut off everything above the organic list — see cropBelowPack().
+        // Falls back to the full capture when the band cannot be found.
+        const _cb = await cropBelowPack(done.data_url);
+        ST._serpFull = done.data_url;
+        ST._serpOrganic = _cb.found ? _cb.url : null;
+        const cropped = _cb.found ? _cb.url : done.data_url;
+        // KEPT by renderSerpShot(), re-encoded to JPEG first: the canvas hands
+        // back PNG, which for a full-width screenshot runs to about a megabyte
+        // of base64 and would ride in every autosave of the quote. (2026-08-18)
+        renderSerpShot(done.keyword, cropped, _cb.found);
       }
     }catch(e){
       out.innerHTML=`<div class="err">${e.message}</div>`;
@@ -4286,6 +4375,7 @@ function vibeBlock(){
       <input id="vibePct" type="hidden" value="${v.pct||0}">
       ${on?`<button type="button" id="vibeClear" class="btn2" style="padding:4px 11px;font-size:12px;margin-left:6px">Reset</button>`:''}
     </div>
+    <div id="vibePreviewNote" class="nf hidden" style="text-align:center;margin:-4px 0 9px;font-size:12px"></div>
     <textarea id="vibeNote" rows="2" placeholder="Why — required. e.g. “Existing client, three referrals last year, hold at the old rate.”" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:inherit">${escapeHtml(v.note||'')}</textarea>
     <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">
       <button type="button" id="vibeApply" class="btn2" style="padding:5px 13px;font-size:12.5px;font-weight:600">Apply</button>
@@ -4299,6 +4389,41 @@ function vibeBlock(){
     </div>`:''}
   </div>`;
 }
+// THE PRICE MOVES WITH THE DIAL, ON SCREEN. The steppers moved a percentage and
+// the three figures above them did not budge until Apply, so the one question
+// the control exists to answer — what does +10% actually make this quote — took
+// a commit to see. This previews it.
+//
+// PREVIEW, NOT APPLY. ST.vibe is still only written by Apply, and Apply still
+// demands a reason, so nothing is saved and no quote changes from a stray
+// click. The cards say so while a preview is showing. (2026-08-19)
+function previewVibe(pct){
+  const host=$('ppTiers'); if(!host) return;
+  const p=ST.pricing||{};
+  const t=p.client_tiers||{}, ai=p.ai_search||null;
+  const live=Number(pct)||0, saved=vibePct();
+  const adj=n=>(!live||n===null||n===undefined||n==='')?n
+            :Math.round((Number(n)*(1+live/100))/50)*50;
+  ['base','intermediate','advanced'].forEach(k=>{
+    const seo=adj(t[k]);
+    const aiAdd=ai?adj((ai.client_add||{})[k]):null;
+    const total=ai?adj((ai.client_total||{})[k]):seo;
+    const a=host.querySelector(`[data-tier="${k}"]`);
+    if(a) a.textContent=ppMoney(total);
+    const so=host.querySelector(`[data-seo="${k}"]`);
+    if(so) so.textContent=ppMoney(seo);
+    const ao=host.querySelector(`[data-ai="${k}"]`);
+    if(ao) ao.textContent=ppMoney(aiAdd);
+  });
+  const note=$('vibePreviewNote');
+  if(note){
+    const pending = live!==saved;
+    note.classList.toggle('hidden', !pending);
+    if(pending) note.innerHTML='Showing <b>'+(live>0?'+':'')+live+'%</b> above &mdash; '
+      +'not saved to the quote until you write a reason and hit Apply.';
+  }
+}
+
 function wireVibe(){
   const set=pc=>{
     const note=($('vibeNote')||{}).value||'';
@@ -4321,8 +4446,10 @@ function wireVibe(){
       el.value=next;
       const d=$('vibeDial');
       if(d){ d.textContent=(next>0?'+':'')+next+'%'; d.style.color=next?'var(--atlas)':'var(--muted)'; }
+      previewVibe(next);
     };
   });
+  previewVibe(Number(($('vibePct')||{}).value||0));
   const ap=$('vibeApply'); if(ap) ap.onclick=()=>set(Number(($('vibePct')||{}).value||0));
   const cl=$('vibeClear'); if(cl) cl.onclick=()=>{ const n=$('vibeNote'); if(n) n.value=''; set(0); };
 }
@@ -4365,7 +4492,7 @@ function pricingChart(){
             : 'bids and difficulty both below the first break', !adder);
   row('Search volume', (vol?'+ '+ppMoney(vol):'—'),
       (ST.totalVol!=null?Number(ST.totalVol).toLocaleString()+'/mo across the list':'')
-      + (vol?'':' — under the paying threshold'), !vol);
+      + (vol?'':' — under the threshold'), !vol);
   if(ind) row('Industry rule', '+ '+ppMoney(ind), escapeHtml(p.industry_rule||'vertical premium'));
   if(po)  row('Page one', '+ '+ppMoney(po), escapeHtml(String(p.pageone_band||'').split(': ').pop()));
   if(up)  row('Current visibility', '× '+(1+up/100).toFixed(2),
@@ -4507,12 +4634,12 @@ function renderProposal(){
       </div>
       <button type="button" id="ppDownload" class="btn2" style="padding:7px 15px;font-size:13px;font-weight:600">⬇ Download proposal (.docx)</button>
     </div>
-    <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+    <div id="ppTiers" style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
       ${['base','intermediate','advanced'].map((k,i)=>`
         <div class="pptier${i===1?' lead':''}">
           <div class="lbl">${['Base','Intermediate','Advanced'][i]}</div>
-          <div class="amt">${ppMoney(shown[k])}</div>
-          <div class="per">per month${ai?`<br><span class="nf">SEO ${ppMoney(t[k])} + AI Search (GEO) ${ppMoney((aiAdd||{})[k])}</span>`:''}</div>
+          <div class="amt" data-tier="${k}">${ppMoney(shown[k])}</div>
+          <div class="per">per month${ai?`<br><span class="nf">SEO <span data-seo="${k}">${ppMoney(t[k])}</span> + AI Search (GEO) <span data-ai="${k}">${ppMoney((aiAdd||{})[k])}</span></span>`:''}</div>
         </div>`).join('')}
     </div>
     ${pricingChart()}
@@ -5089,6 +5216,22 @@ function restoreQuote(p){
   ST.inputs=p.inputs; ST.kw=p.kw; ST.adder=p.adder; ST.score=p.score;
   ST.adder_basis=p.adder_basis; ST.cpc_used=p.cpc_used;
   ST.table=p.table||[]; ST.paa=p.paa||[]; ST.ranked=p.ranked||0; ST.total=p.total||0;
+  // A QUEUED ROW CANNOT SURVIVE A RELOAD, AND IT SPUN FOREVER PRETENDING IT
+  // COULD. _bgQueuePoll() holds the DataForSEO task ids in a local; the table
+  // row keeps only {kw, queued:true}. So the poller lives and dies with the
+  // step-3 run that started it, and a quote saved mid-queue reopens with rows
+  // reading "⏳ in Google's queue… filling in automatically" and nothing on
+  // earth filling them in. Ski Barn reopened with all twenty like that, which
+  // is also why its page one was empty: no landed row, no incumbents, no
+  // authority — "(0 incumbents measured)" was the truth about a table that had
+  // measured nothing.
+  //
+  // They are not queued, they are lost. Marked as such so the Retry button
+  // picks them up, which is the one thing that actually recovers them.
+  // (2026-08-19)
+  ST.table=ST.table.map(r=>(r&&r.queued)
+    ? {kw:r.kw, pos:'—', ranked_top:false, error:true, expired:true, loc:r.loc||''}
+    : r);
   // Rebuilt from the restored table — it was simply never restored, leaving the
   // retry button and every denominator working off a stale 0.
   ST.errored=(ST.table||[]).filter(r=>r && (r.error||r.queued)).length;
@@ -5421,7 +5564,7 @@ function renderSaveRow(){
         <b>Edit link</b> ${copied?'(copied)':''} — opens this quote ready to revise; every save keeps the prior version in History:<br>
         <input type="text" readonly value="${editUrl}" onclick="this.select()" style="width:100%;margin:4px 0 8px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace">
         <b>Read-only link</b> — safe to send when it should be looked at, not touched. Opens straight at the price:<br>
-        <input type="text" readonly value="${r.url}#price" onclick="this.select()" style="width:100%;margin-top:4px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace"></div>`;
+        <input type="text" readonly value="${r.url}#proposal" onclick="this.select()" style="width:100%;margin-top:4px;padding:6px 8px;border:1px solid #b6e0c2;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace"></div>`;
     }catch(e){ msg.innerHTML=`<div class="err">${e.message}</div>`; }
   };
 }
@@ -5763,7 +5906,17 @@ function collapseOrderPanel(){
 // A share-for-review link can point straight at the price with #price, which
 // is what a reviewer opens the page for.
 function jumpToPriceIfHashed(){
-  if((location.hash||'').toLowerCase() !== '#price') return;
+  const h=(location.hash||'').toLowerCase();
+  // #proposal is what a share link carries now: the Proposal tab IS the thing a
+  // reviewer opens the page for, so the top of it is the right landing spot and
+  // scrolling into the build view's price panel would be scrolling past it.
+  // #price is still honoured — every link already sent out carries it.
+  if(h === '#proposal'){
+    const t=$('proposalView') || $('viewTabs');
+    if(t) t.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  if(h !== '#price') return;
   const t=$('p4'); if(t) t.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
