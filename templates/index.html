@@ -3606,10 +3606,22 @@ function renderStep4(p){
   const cpcOf=kw=>(ST.cpc&&ST.cpc[kw])?ST.cpc[kw]:'';
   const kdOf=kw=>(ST.kd&&ST.kd[kw]!=null)?ST.kd[kw]:'';
   // build export rows (CPC + difficulty available for head terms from Step 2)
+  // A LOOKUP THAT FAILED IS NOT A RANKING RESULT. An errored row carries
+  // pos:'—', which is truthy, so it printed as a bare dash next to genuine
+  // positions; a row that never existed printed "Not Found", which is a
+  // positive claim about a term nobody measured. Ski Barn's table showed three
+  // dashes from three 40101 errors and they read as three terms the client
+  // does not rank for — the opposite of a failure. (2026-08-19)
+  const rankOf=kw=>{
+    const row=ST.table.find(x=>x.kw===kw);
+    if(!row) return 'Not checked';
+    if(row.error||row.queued||row.expired) return 'Not checked';
+    return (row.pos===0||row.pos)?row.pos:'Not Found';
+  };
   const exp=[]
-    .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Ultra Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
-    .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
-    .concat(ST.longtail.map(r=>({kw:r.kw,rank:(ST.table.find(x=>x.kw===r.kw)||{}).pos||'Not Found',comp:'Long Tail',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})));
+    .concat(ST.kw.ultra.map(r=>({kw:r.kw,rank:rankOf(r.kw),comp:'Ultra Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
+    .concat(ST.kw.competitive.map(r=>({kw:r.kw,rank:rankOf(r.kw),comp:'Competitive',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})))
+    .concat(ST.longtail.map(r=>({kw:r.kw,rank:rankOf(r.kw),comp:'Long Tail',cpc:cpcOf(r.kw),kd:kdOf(r.kw)})));
   window._exportRows=exp; window._exportClient=ST.inputs.brand||'client';
   // Core SEO + AI Search is ONE PRODUCT: the tier cards show the combined
   // price (that IS the product's price); the SEO vs AI Search split is internal.
@@ -3621,7 +3633,7 @@ function renderStep4(p){
     <h4 class="sec">Step 4 · Price</h4>
     ${ST.rankUnmeasured?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No ranking adjustment in this price</b> — every rank lookup is still in Google's queue or failed, so nothing has been measured. The zero-ranking component is <b>0%</b> rather than a guess in either direction: an empty table reads as "0% ranked" (largest uplift) or "0% not ranking" (well-ranked discount) depending on which way you square it, and neither is a fact. <b>Re-price once the rows land.</b></div>`:''}
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
-    <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost × (1 + markup). Adjust the markup below to see the client price update.</div>
+    <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost ÷ (1 − margin) — the markup is the agency's share of gross, not a mark-on. Adjust it below to see the client price update.</div>
 
     <details class="demorail" style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:10px;padding:10px 13px;margin:10px 0">
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px">Demo only — internal costs${ai?', SEO vs AI Search split and calibration':' and calibration'} &#9656; click to expand</summary>
@@ -3746,7 +3758,7 @@ function renderStep4(p){
       <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
       <tbody>${exp.map(r=>`<tr>
         <td>${r.kw}</td>
-        <td class="${r.rank==='Not Found'?'nf':''}">${r.rank}</td>
+        <td class="${(r.rank==='Not Found'||r.rank==='Not checked')?'nf':''}"${r.rank==='Not checked'?' title="The rank lookup for this term failed or is still queued. It is not a result either way, and it is left out of the client proposal."':''}>${r.rank==='Not checked'?'<span style="color:#8a5a10">Not checked</span>':r.rank}</td>
         <td>${r.comp}</td>
         <td>${r.cpc?('$'+Number(r.cpc).toFixed(2)):'<span class="nf">—</span>'}</td>
       </tr>`).join('')}</tbody>
@@ -6279,12 +6291,22 @@ function step1Grid(kw){
     // cases now say so. (2026-08-19)
     if(sr.headroom_skipped){
       warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No slots held for unranked terms</b> \u2014 what this client already ranks for ${escapeHtml(sr.headroom_skipped)}, so the grid was filled on demand alone. On a client with existing SEO that hands most of the slots to terms they already own.${tipOf('The reservation needs to know which terms the client already ranks for. It reads the rankings panel first, then asks DataForSEO for the domain&rsquo;s ranked keywords. With neither, every term looks like headroom and the reservation would be satisfied without doing anything &mdash; so it stands down and says so rather than pretending it ran.')}</div>`);
+    } else if(sr.headroom_dry){
+      notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>No slots held for unranked terms</b> \u2014 ${escapeHtml(sr.headroom_dry)}, so there was nothing to promote.</div>`);
     } else if(sr.headroom_met){
       notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't rank for</b> \u2014 already past the ${'{'}reservation${'}'}, so nothing was swapped.</div>`.replace('{reservation}','reservation'));
     }
+    // The reservation ran and changed nothing, and said nothing about it —
+    // twice. Every outcome is now on the panel, and the raw counts sit in the
+    // tip so the next silent case is one hover away from an explanation.
+    if(sr.headroom_seen && !(sr.headroom||[]).length && !sr.headroom_skipped
+       && !sr.headroom_dry && !sr.headroom_met){
+      const _h=sr.headroom_seen;
+      notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>Unranked-term reservation ran and changed nothing.</b>${tipOf('Wanted '+_h.want+' slot(s) for terms they do not rank for. Found '+_h.fresh+' already in the grid, out of '+_h.own+' known ranked terms ('+escapeHtml(String(_h.source))+'), with '+_h.pool+' candidates below the cut.')}</div>`);
+    }
     if((sr.headroom||[]).length){
       const hn=x=>Number(x||0).toLocaleString();
-      auto.push(`\u{1F331} <b>${sr.headroom.length} slot${sr.headroom.length===1?'':'s'} held for terms they don't rank for yet</b> — ${sr.headroom.map(([t,v])=>escapeHtml(t)+' ('+hn(v)+'/mo)').join(' \u00b7 ')}${(sr.headroom_displaced||[]).length?`, in place of ${sr.headroom_displaced.map(([t])=>escapeHtml(t)).join(' \u00b7 ')}`:''}.${sr.headroom_basis?` <span class="nf">${escapeHtml(sr.headroom_basis)}.</span>`:''}${tipOf('Ranking the grid purely by measured demand hands every slot to the terms a client with existing SEO already owns &mdash; those are the ones with volume attached &mdash; so the proposal ends up arguing for a campaign to win what is already won.<br><br>These slots are reserved for the highest-demand terms the client is NOT ranking for, taken from the ones the demand ranking cut. They are the campaign&rsquo;s actual upside.<br><br>A reservation, not a quota: nothing is invented to fill it, and if every candidate is already ranked the grid is unchanged. Set <code>grid_headroom_slots</code> to 0 in pricing config to turn it off.')}`);
+      auto.push(`\u{1F331} <b>${sr.headroom.length} slot${sr.headroom.length===1?'':'s'} held for terms they don't rank for yet</b> — ${sr.headroom.map(([t,v])=>escapeHtml(t)+' ('+hn(v)+'/mo)').join(' \u00b7 ')}${(sr.headroom_displaced||[]).length?`, in place of ${sr.headroom_displaced.map(([t])=>escapeHtml(t)).join(' \u00b7 ')}`:''}.${sr.headroom_basis?` <span class="nf">${escapeHtml(sr.headroom_basis)}.</span>`:''}${sr.headroom_seen?tipOf('Wanted '+sr.headroom_seen.want+' slot(s). Found '+sr.headroom_seen.fresh+' already in the grid, out of '+sr.headroom_seen.own+' known ranked terms, with '+sr.headroom_seen.pool+' candidates below the cut.'):''}${tipOf('Ranking the grid purely by measured demand hands every slot to the terms a client with existing SEO already owns &mdash; those are the ones with volume attached &mdash; so the proposal ends up arguing for a campaign to win what is already won.<br><br>These slots are reserved for the highest-demand terms the client is NOT ranking for, taken from the ones the demand ranking cut. They are the campaign&rsquo;s actual upside.<br><br>A reservation, not a quota: nothing is invented to fill it, and if every candidate is already ranked the grid is unchanged. Set <code>grid_headroom_slots</code> to 0 in pricing config to turn it off.')}`);
     }
     (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
   }

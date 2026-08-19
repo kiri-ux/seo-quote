@@ -7378,12 +7378,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                         _head, _tailseeds = seeds[:_slots], seeds[_slots:]
                         _fresh = [t for t in _head if t not in _own]
                         _want = min(_room, _slots)
+                        # ALWAYS REPORT. This has now shipped twice looking like
+                        # it worked, because every outcome except a swap was
+                        # silent: no rankings to compare against, reservation
+                        # already met, nothing left to promote. Each of those is
+                        # a different answer and the panel has to distinguish
+                        # them or the next silent no-op costs another day.
+                        seed_ranking["headroom_seen"] = {
+                            "want": _want, "fresh": len(_fresh),
+                            "own": len(_own), "pool": len(_tailseeds),
+                            "source": _own_src}
                         if len(_fresh) < _want:
                             # best unranked candidates the cut left behind
                             _cand = [t for t in _tailseeds if t not in _own]
                             _cand.sort(key=lambda t: -_vol.get(t, 0))
                             _need = _want - len(_fresh)
                             _promote = _cand[:_need]
+                            if not _cand:
+                                seed_ranking["headroom_dry"] = (
+                                    "every candidate the ranking cut is also a "
+                                    "term they already rank for")
                             if _promote:
                                 # displace the LOWEST-demand already-ranked
                                 # terms, never a term the ranking put on top
@@ -15195,11 +15209,24 @@ def _proposal_rows(d):
             if not kw:
                 continue
             live = by_kw.get(kw.lower()) or {}
+            # AN UNMEASURED TERM DOES NOT GO IN A CLIENT DOCUMENT. A failed or
+            # still-queued lookup carries pos "—", and a term with no row at all
+            # carries nothing — both used to print as a rank, the first as a
+            # bare dash and the second as "Not Found". "Not Found" is a positive
+            # claim that the client does not rank for a term, made about a term
+            # nobody checked. Three of Ski Barn's rows were 40101 errors and
+            # would have gone to the client as three terms they are missing
+            # from. Left out entirely and counted separately. (2026-08-19)
+            if live.get("error") or live.get("queued") or live.get("expired"):
+                continue
             pos = live.get("pos")
+            if not live:
+                continue
+            if not isinstance(pos, int) and pos not in ("Not Found", None):
+                continue
             rows.append({
                 "kw": kw,
-                "rank": (str(pos) if isinstance(pos, int)
-                         else ("Not Found" if pos in ("Not Found", None) else str(pos))),
+                "rank": (str(pos) if isinstance(pos, int) else "Not Found"),
                 "tier": tier_label[tier],
                 "vol": int(r.get("vol") or 0),
             })
