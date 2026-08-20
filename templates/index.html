@@ -6173,7 +6173,12 @@ function step1Grid(kw){
   }
 
   // LOCAL OR NATIONAL, MEASURED. Same seeds priced twice: bare and with a city.
-  if(f.verdict==='national')
+  // AND "MEASURED" IS LOAD-BEARING: a refused lookup returns zeros, and zero
+  // local demand against real national demand is the exact signature this panel
+  // used to read as "go national". (2026-08-20)
+  if(f.verdict==='unmeasured')
+    warn.push(`<div class="calc" style="background:#fdecea;border-color:#e0a3a0">\u26a0 <b>Demand could not be measured</b> — ${escapeHtml(f.reason||'')} <b>Nothing here is a finding about this market.</b>${tipOf('A refused or timed-out volume lookup comes back as zeros, which is indistinguishable from a term nobody searches. The local-versus-national call is only made when both sides were actually read.<br><br>Rebuild in a minute or two; the calls are paced under the provider&rsquo;s per-minute cap and a retry normally lands.')}</div>`);
+  else if(f.verdict==='national')
     warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u{1F9ED} <b>Looks NATIONAL</b> — ${Number(f.national_total||0).toLocaleString()}/mo bare vs <b>${Number(f.local_total||0).toLocaleString()}/mo</b> with a city attached. Tick <b>Price on national demand</b> and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>The cities stay in the proposal grid and rankings are still measured in them &mdash; only the demand basis changes.')}</div>`);
   else if(f.verdict==='no_demand')
     warn.push(`<div class="calc" style="background:#fdecea;border-color:#e0a3a0">⚠ <b>${f.local_total==null?'These terms have no demand':'No demand either way'}</b> — ${Number(f.national_total||0).toLocaleString()}/mo total. Volume contributes <b>$0</b>. Reword the focus terms and rebuild.${tipOf(escapeHtml(f.reason||'')+'<br><br>Measured on '+(f.terms||[]).map(t=>escapeHtml(t)).join(', ')+'.<br><br>Use the phrases buyers type &mdash; short and specific beats descriptive.')}</div>`);

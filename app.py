@@ -657,6 +657,13 @@ CFG = {
     # argued for winning what was already won. A reservation, not a quota:
     # nothing is invented to fill it. 0 turns it off. (2026-08-19)
     "grid_headroom_slots": 4,
+    # DataForSEO allows 12 calls a minute. Pacing at 10 leaves headroom for the
+    # calls made outside the build (signals, the SERP screenshot poll) without
+    # anyone tripping the cap — see _dfs_take_slot(). 0 disables the pacing.
+    "dfs_calls_per_minute": 10,
+    # A throttled call is retried on its own budget, so a bad minute cannot
+    # spend the retries meant for timeouts and 5xx.
+    "dfs_rate_limit_retries": 4,
     # HOW THE SITE READER INTRODUCES ITSELF. DataForSEO's default is
     # "Mozilla/5.0 (compatible; RSiteAuditor)", which is a bot string, and a
     # WAF that refuses it costs a whole client's site-condition reading.
@@ -883,6 +890,44 @@ DFS_RATE_LIMIT_WAIT = 8.0
 _DFS_RATE_CODES = {40202, 40203, 40204, 40205}
 
 
+# ---------------------------------------------------------------------------
+# DON'T HIT THE LIMIT IN THE FIRST PLACE.
+#
+# The 12-per-minute cap was handled entirely by reacting to it: one retry after
+# an 8-second wait, and if that attempt landed in the same minute it was refused
+# again and the caller got zeros. Ski Barn's rebuild made the whole grid read
+# "(no data)": every exact-match volume came back empty, so total volume was 0,
+# so the price lost its volume component AND the panel advised switching the
+# client to national demand — "31,000/mo bare vs 0/mo with a city attached" is
+# what a throttled geo lookup looks like, not what a national business looks
+# like. A rate limit turned into a pricing decision and a strategy
+# recommendation.
+#
+# So requests are PACED. A token bucket holds the process under the cap, and
+# every caller waits its turn rather than firing and being refused. It is the
+# same total wall-clock — the calls were always going to take a minute — but
+# they come back with data. (2026-08-20)
+_DFS_BUCKET_LOCK = threading.Lock()
+_DFS_BUCKET = []          # timestamps of recent sends, newest last
+
+
+def _dfs_take_slot():
+    """Block until sending now keeps us under the per-minute cap."""
+    cap = int(CFG.get("dfs_calls_per_minute", 10) or 0)
+    if cap <= 0:
+        return
+    while True:
+        with _DFS_BUCKET_LOCK:
+            now = _time.monotonic()
+            while _DFS_BUCKET and now - _DFS_BUCKET[0] >= 60.0:
+                _DFS_BUCKET.pop(0)
+            if len(_DFS_BUCKET) < cap:
+                _DFS_BUCKET.append(now)
+                return
+            wait = 60.0 - (now - _DFS_BUCKET[0]) + 0.05
+        time.sleep(max(0.05, min(wait, 60.0)))
+
+
 def _dfs_rate_limited(data):
     """Is this HTTP 200 actually a rate-limit refusal?"""
     if not isinstance(data, dict):
@@ -923,28 +968,47 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     token = base64.b64encode(f"{login}:{pw}".encode()).decode()
     hdrs = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
     last = None
-    for attempt in range(int(retries) + 1):
+    # A rate limit is not a failure of the request, it is a failure of the
+    # PACING, and it is free to wait for. Given its own budget so a throttled
+    # minute cannot spend the transient-failure retries.
+    rl_left = int(CFG.get("dfs_rate_limit_retries", 4) or 0)
+    attempt = 0
+    total = int(retries)
+    while attempt <= total:
         try:
+            _dfs_take_slot()
             if method == "GET":
                 resp = requests.get(BASE + path, headers=hdrs, timeout=timeout)
             else:
                 resp = requests.post(BASE + path, headers=hdrs,
                                      data=json.dumps(payload), timeout=timeout)
-            if resp.status_code >= 500 and attempt < retries:
+            if resp.status_code >= 500 and attempt < total:
                 last = requests.HTTPError(f"HTTP {resp.status_code}")
+                attempt += 1
                 time.sleep(1.0 + attempt)
                 continue
             resp.raise_for_status()
             data = resp.json()
-            if attempt < retries and _dfs_rate_limited(data):
-                last = RuntimeError("40202: rate limit per minute exceeded")
-                time.sleep(DFS_RATE_LIMIT_WAIT)
-                continue
+            if _dfs_rate_limited(data):
+                if rl_left > 0:
+                    rl_left -= 1
+                    last = RuntimeError("40202: rate limit per minute exceeded")
+                    # Long enough to leave the minute that refused us, and the
+                    # bucket above means the next attempt is paced rather than
+                    # racing whatever else is in flight.
+                    app.logger.warning("dfs %s rate-limited, waiting %.0fs (%d left)",
+                                       path, DFS_RATE_LIMIT_WAIT, rl_left)
+                    time.sleep(DFS_RATE_LIMIT_WAIT)
+                    continue
+                # Out of patience: hand the refusal back AS a refusal. It must
+                # never reach a caller looking like an empty result.
+                raise RuntimeError("40202: rate limit per minute exceeded")
             return data
         except (requests.Timeout, requests.ConnectionError) as e:
             last = e
-            if attempt >= retries:
+            if attempt >= total:
                 break
+            attempt += 1
             time.sleep(1.0 + attempt)
     raise last
 
@@ -7905,22 +7969,39 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 loc_tot = sum(int(v or 0) for v in (vols or {}).values())
                 nat_tot = sum(int(v or 0) for v in (_nat or {}).values())
                 frame = {"local_total": loc_tot, "national_total": nat_tot,
-                         "terms": svc_names[:6], "error": _ne}
+                         "terms": svc_names[:6], "error": _ne or vol_err,
+                         "local_error": vol_err}
                 min_nat = int(CFG.get("frame_national_min", 200))
-                if not _ne and nat_tot >= min_nat and loc_tot == 0:
+                # ZERO LOCAL DEMAND AND NO LOCAL MEASUREMENT LOOK IDENTICAL, AND
+                # ONLY ONE OF THEM IS AN ARGUMENT FOR ANYTHING. Ski Barn's
+                # exact-match pull was refused by the 12/min cap, so every term
+                # carried no volume, loc_tot was 0, and this told the operator
+                # "31,000/mo bare vs 0/mo with a city attached — tick Price on
+                # national demand and rebuild". That is a rate limit wearing the
+                # shape of a market finding, and acting on it would have moved
+                # the client onto the national anchor. The local side has to
+                # have been READ before its zero means anything. (2026-08-20)
+                if vol_err or _ne:
+                    frame["verdict"] = "unmeasured"
+                    frame["reason"] = (
+                        f"The city-attached volumes could not be read "
+                        f"({str(vol_err)[:90]}), so there is nothing to compare "
+                        f"the national figure against. This is not a finding "
+                        f"about the market — rebuild once the lookup succeeds.")
+                elif nat_tot >= min_nat and loc_tot == 0:
                     frame["verdict"] = "national"
                     frame["reason"] = (
                         f"These services draw {nat_tot:,}/mo searches nationally "
                         f"and {loc_tot}/mo with a city attached. Nobody searches "
                         "them with a place, so the city grid is measuring "
                         "something that isn't there.")
-                elif not _ne and loc_tot > 0:
+                elif not _ne and not vol_err and loc_tot > 0:
                     frame["verdict"] = "local"
                     frame["reason"] = (
                         f"City-attached terms carry {loc_tot:,}/mo against "
                         f"{nat_tot:,}/mo nationally — people do search these with "
                         "a place, so the local frame is measuring real demand.")
-                elif not _ne and nat_tot == 0:
+                elif not _ne and not vol_err and nat_tot == 0:
                     frame["verdict"] = "no_demand"
                     frame["reason"] = (
                         "These services return no volume either locally OR "
