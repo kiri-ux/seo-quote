@@ -768,7 +768,18 @@ CFG = {
     # A word in more than this share of the seeds cannot partition them.
     "topic_token_max_share": 0.5,
     "topic_min_seeds": 2,          # below this it is a term, not a topic
-    "ranked_keywords_limit": 80,   # Labs rows pulled per client
+    "ranked_keywords_limit": 80,
+    # A MUCH DEEPER READ, FOR ONE PURPOSE. 80 is the right size for SEEDING a
+    # list — the client's best terms, most relevant first. It is the wrong size
+    # for asking "do they rank for this": Ski Barn ranks for far more than 80
+    # terms, so nineteen of twenty grid rows fell outside the sample and were
+    # reported as unranked while the live SERP had them at #1-#4.
+    #
+    # Labs charges the same for a deep page as a shallow one, so the ownership
+    # question gets the deep one. It is still ONE call, and it replaces the ten
+    # SERP calls the probe was spending to answer the same question.
+    # (2026-08-20)
+    "ranked_keywords_own_limit": 1000,   # Labs rows pulled per client
     # Above this multiple of the floor a vertical has real demand somewhere, so
     # the sub-floor terms are genuinely the dregs and the floor should hold. Below
     # it the whole market is small and the floor is refusing the only terms that
@@ -7430,8 +7441,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                 _own.add(_rk)
                         if not _own and domain:
                             try:
-                                _rk_rows = fetch_ranked_keywords(domain, markets,
-                                                                 state)
+                                _rk_rows = fetch_ranked_keywords(
+                                    domain, markets, state,
+                                    CFG.get("ranked_keywords_own_limit", 1000))
                                 for _r in _rk_rows:
                                     if _r.get("bare"):
                                         _own.add(_r["bare"])

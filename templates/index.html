@@ -3128,12 +3128,65 @@ function renderUnrankedGap(){
     setTimeout(()=>{ try{ findUnranked(true); }catch(e){} }, 400);
   }
 }
+// ONE LABS CALL INSTEAD OF TEN SERP CALLS.
+//
+// The probe was rank-checking candidates one batch at a time to find out what
+// the client does not rank for — the most expensive way to ask. ranked_keywords
+// answers it for the whole domain in a single call, and the tool already makes
+// that call; it was simply asking for the client's best 80 terms, which is the
+// right sample for SEEDING a list and the wrong one for asking "do they rank
+// for this". Ski Barn ranks for far more than 80, so nineteen of twenty rows
+// fell outside it.
+//
+// Deep read once, use it as a SIEVE, then spend SERP calls only confirming the
+// handful that survive. Ten calls becomes one plus three, and the three are
+// confirmations rather than a search. (2026-08-20)
+async function ownedTerms(){
+  if(ST._ownedCache) return ST._ownedCache;
+  const dom=(ST.inputs&&ST.inputs.domain)||'';
+  if(!dom) return null;
+  try{
+    const r=await postJSON('/api/ranked_keywords',{
+      domain:dom, geo_values:(ST.inputs&&ST.inputs.geo_values)||[],
+      state:(ST.inputs&&ST.inputs.state)||'', brand:(ST.inputs&&ST.inputs.brand)||'',
+      seeds:[], limit:1000});
+    const rows=[].concat(r.keywords||[], r.fresh||[], r.rows||[]);
+    const set=new Set();
+    rows.forEach(x=>{
+      const t=String((x&&(x.bare||x.term||x.kw))||'').toLowerCase().trim();
+      if(t) set.add(t);
+    });
+    ST._ownedCache={set:set, n:set.size};
+    return ST._ownedCache;
+  }catch(e){ return null; }
+}
+
 async function findUnranked(auto){
   const btn=$('findUnranked');
   const min=minUnranked();
   const cap=unrankedProbeMax();
-  const cands=unrankedCandidates().slice(0, cap);
+  let cands=unrankedCandidates();
   if(!cands.length) return;
+  // SIEVE FIRST. Anything the domain already ranks for nationally is not worth
+  // a SERP call — and a term that survives the sieve is the one worth spending
+  // one on. If the read fails we fall through and check the top candidates the
+  // old way rather than guessing.
+  let sieve=null;
+  if(btn){ btn.disabled=true; btn.textContent='Reading their rankings\u2026'; }
+  try{ sieve=await ownedTerms(); }catch(e){ sieve=null; }
+  let sieved=0;
+  if(sieve && sieve.set && sieve.set.size){
+    const before=cands.length;
+    cands=cands.filter(c=>!sieve.set.has(String(c.bare||'').toLowerCase())
+                        && !sieve.set.has(String(c.kw||'').toLowerCase()));
+    sieved=before-cands.length;
+  }
+  cands=cands.slice(0, cap);
+  if(!cands.length){
+    if(btn){ btn.disabled=false; btn.textContent="Find "+min+" they don't rank for"; }
+    renderUnrankedFound([], sieved, 0, {sieve:sieve, sieved:sieved, allOwned:true});
+    return;
+  }
   if(btn){ btn.disabled=true; btn.textContent=(auto?'Looking for terms they miss \u2014 ':'Checking ')+cands.length+'\u2026'; }
   if(auto){
     const g=$('unrankedGap');
@@ -3179,7 +3232,8 @@ async function findUnranked(auto){
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='Find '+min+' they don\'t rank for'; }
   }
-  renderUnrankedFound(found, cands.length, measured);
+  renderUnrankedFound(found, cands.length, measured,
+                      {sieve:sieve, sieved:sieved});
 }
 // PUT THE ANSWER WHERE THE QUESTION WAS. Both of these appended to the end of
 // #p3, which by then has Market signals in it — so the probe's result rendered
@@ -3204,12 +3258,30 @@ function renderUnrankedError(msg){
     +'. This says nothing about what the client ranks for.';
   _placeUnranked(n);
 }
-function renderUnrankedFound(found, checked, measured){
+function renderUnrankedFound(found, checked, measured, how){
   if(!$('p3')) return;
   const old=document.getElementById('unrankedFound'); if(old) old.remove();
   const n=document.createElement('div');
   n.id='unrankedFound'; n.className='calc';
   n.style.marginTop='8px';
+  const _h=how||{};
+  const _cost=(_h.sieve && _h.sieve.n)
+    ? ' <span class="nf" style="font-size:11.5px">1 rankings read ('+_h.sieve.n
+      +' terms)'+(_h.sieved?' ruled out '+_h.sieved+' without a SERP call':'')
+      +(checked?' \u00b7 '+checked+' confirmed live':'')+'.</span>'
+    : (_h.sieve
+       ? ' <span class="nf" style="font-size:11.5px">Their rankings read came back '
+         +'empty, so every candidate was checked live.</span>'
+       : '');
+  if(_h.allOwned){
+    n.style.cssText='background:var(--info-bg);margin-top:8px';
+    n.innerHTML='\u{1F50E} <b>Every candidate is a term they already rank for.</b> '
+      +'That is the finding: this client owns their market. The proposal should '
+      +'sell holding it and growing beyond it, not closing a gap that is not '
+      +'there.'+_cost;
+    _placeUnranked(n);
+    return;
+  }
   if(!found.length){
     // HOW MANY WERE ACTUALLY READ. "Checked 10" counted the errored probes too,
     // and an errored probe says nothing about the client either way.
@@ -3220,7 +3292,7 @@ function renderUnrankedFound(found, checked, measured){
         +(m===1?'that one':'all of them')+' too.</b> That is the finding: this client '
         +'owns their market. The proposal should sell holding it and growing beyond '
         +'it, not closing a gap that is not there.'
-        +(m<checked?' <span class="nf">('+(checked-m)+' more could not be read.)</span>':'')
+        +(m<checked?' <span class="nf">('+(checked-m)+' more could not be read.)</span>':'')+_cost
       : '\u26a0 <b>None of the '+checked+' probes could be read.</b> That is a lookup '
         +'problem, not a finding \u2014 try again in a minute.';
   }else{
@@ -3229,7 +3301,7 @@ function renderUnrankedFound(found, checked, measured){
       +' they do not rank for</b> \u2014 '
       +found.map(f=>escapeHtml(f.kw)+' <span class="nf">('+Number(f.vol||0).toLocaleString()+'/mo bare)</span>').join(' \u00b7 ')
       +' <button type="button" id="addUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Add to the grid</button>'
-      +' <span class="nf" style="font-size:11.5px">adds them as Long Tail and re-prices</span>';
+      +' <span class="nf" style="font-size:11.5px">adds them as Long Tail and re-prices</span>'+_cost;
   }
   _placeUnranked(n);
   const b=document.getElementById('addUnranked');
@@ -5523,6 +5595,7 @@ function restoreQuote(p){
   // leak that let one client's page one price another. (2026-08-20)
   ST._unrankedAuto=false;
   ST._unrankedTried=[];
+  ST._ownedCache=null;
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
   if(ST.reports.length){ window._report=ST.reports[ST.reports.length-1]; }
