@@ -5495,6 +5495,12 @@ function restoreQuote(p){
   ST.rivals=p.rivals||{};
   ST._signalsRun=!!p.signals;
   ST.rankLoc=null;
+  // THE ONE-SHOT LATCHES ARE PER CLIENT TOO. _unrankedAuto stops the probe
+  // buying a second round of SERP calls on a re-price — but left set, it also
+  // stops it running at all on the NEXT quote opened in the same session. Same
+  // leak that let one client's page one price another. (2026-08-20)
+  ST._unrankedAuto=false;
+  ST._unrankedTried=[];
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
   if(ST.reports.length){ window._report=ST.reports[ST.reports.length-1]; }
