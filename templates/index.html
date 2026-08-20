@@ -6306,9 +6306,9 @@ function step1Grid(kw){
     if(sr.headroom_skipped){
       warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No slots held for unranked terms</b> \u2014 what this client already ranks for ${escapeHtml(sr.headroom_skipped)}, so the grid was filled on demand alone. On a client with existing SEO that hands most of the slots to terms they already own.${tipOf('The reservation needs to know which terms the client already ranks for. It reads the rankings panel first, then asks DataForSEO for the domain&rsquo;s ranked keywords. With neither, every term looks like headroom and the reservation would be satisfied without doing anything &mdash; so it stands down and says so rather than pretending it ran.')}</div>`);
     } else if(sr.headroom_dry){
-      notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>No slots held for unranked terms</b> \u2014 ${escapeHtml(sr.headroom_dry)}, so there was nothing to promote.</div>`);
+      auto.push(`\u{1F331} <b>No slots held for unranked terms</b> \u2014 ${escapeHtml(sr.headroom_dry)}, so there was nothing to promote.${sr.headroom_seen?tipOf('Wanted '+sr.headroom_seen.want+' slot(s). '+sr.headroom_seen.fresh+' already in the grid, out of '+sr.headroom_seen.own+' known ranked terms ('+escapeHtml(String(sr.headroom_seen.source))+'), '+sr.headroom_seen.pool+' candidates below the cut.'):''}`);
     } else if(sr.headroom_met){
-      notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't rank for</b> \u2014 already past the ${'{'}reservation${'}'}, so nothing was swapped.</div>`.replace('{reservation}','reservation'));
+      auto.push(`\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't rank for</b> \u2014 already past the reservation, so nothing was swapped.${sr.headroom_seen?tipOf('Wanted '+sr.headroom_seen.want+' slot(s). '+sr.headroom_seen.fresh+' already in the grid, out of '+sr.headroom_seen.own+' known ranked terms ('+escapeHtml(String(sr.headroom_seen.source))+'), '+sr.headroom_seen.pool+' candidates below the cut.'):''}`);
     }
     // The reservation ran and changed nothing, and said nothing about it —
     // twice. Every outcome is now on the panel, and the raw counts sit in the
@@ -6316,7 +6316,7 @@ function step1Grid(kw){
     if(sr.headroom_seen && !(sr.headroom||[]).length && !sr.headroom_skipped
        && !sr.headroom_dry && !sr.headroom_met){
       const _h=sr.headroom_seen;
-      notes.push(`<div style="margin-top:4px" class="nf">\u{1F331} <b>Unranked-term reservation ran and changed nothing.</b>${tipOf('Wanted '+_h.want+' slot(s) for terms they do not rank for. Found '+_h.fresh+' already in the grid, out of '+_h.own+' known ranked terms ('+escapeHtml(String(_h.source))+'), with '+_h.pool+' candidates below the cut.')}</div>`);
+      auto.push(`\u{1F331} <b>Unranked-term reservation ran and changed nothing.</b>${tipOf('Wanted '+_h.want+' slot(s) for terms they do not rank for. Found '+_h.fresh+' already in the grid, out of '+_h.own+' known ranked terms ('+escapeHtml(String(_h.source))+'), with '+_h.pool+' candidates below the cut.')}`);
     }
     if((sr.headroom||[]).length){
       const hn=x=>Number(x||0).toLocaleString();
