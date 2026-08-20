@@ -3141,7 +3141,7 @@ async function findUnranked(auto){
       '<div class="nf" id="unrankedAutoNote" style="margin-top:5px">Running automatically because they rank for every quoted term.</div>');
   }
   ST._unrankedTried=(ST._unrankedTried||[]).concat(cands.map(c=>c.kw));
-  const found=[];
+  const found=[]; let measured=0;
   try{
     for(let i=0;i<cands.length && found.length<min;i+=3){
       const batch=cands.slice(i, i+3);
@@ -3169,6 +3169,7 @@ async function findUnranked(auto){
       }
       (got&&got.rows||[]).forEach(row=>{
         const c=batch.find(x=>x.kw===row.kw) || {};
+        if(!(row.error || row.queued)) measured++;
         // ONLY A MEASURED MISS COUNTS. An errored or queued probe says nothing
         // about the client and must not be offered as an opportunity.
         if(row.error || row.queued) return;
@@ -3178,29 +3179,50 @@ async function findUnranked(auto){
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='Find '+min+' they don\'t rank for'; }
   }
-  renderUnrankedFound(found, cands.length);
+  renderUnrankedFound(found, cands.length, measured);
+}
+// PUT THE ANSWER WHERE THE QUESTION WAS. Both of these appended to the end of
+// #p3, which by then has Market signals in it — so the probe's result rendered
+// below the authority panel, three sections from the amber box that triggered
+// it, and read as unrelated. It belongs immediately under its own prompt.
+// (2026-08-20)
+function _unrankedHost(){
+  return document.getElementById('unrankedGap') || $('p3');
+}
+function _placeUnranked(n){
+  const anchor=document.getElementById('unrankedGap');
+  if(anchor) anchor.insertAdjacentElement('afterend', n);
+  else { const h=$('p3'); if(h) h.appendChild(n); }
 }
 function renderUnrankedError(msg){
-  const host=$('p3'); if(!host) return;
+  if(!$('p3')) return;
   const old=document.getElementById('unrankedFound'); if(old) old.remove();
   const n=document.createElement('div');
   n.id='unrankedFound'; n.className='calc';
   n.style.cssText='background:#fdecea;border-color:#e0a3a0;margin-top:8px';
   n.innerHTML='\u26a0 <b>The check could not run</b> \u2014 '+escapeHtml(msg)
     +'. This says nothing about what the client ranks for.';
-  host.appendChild(n);
+  _placeUnranked(n);
 }
-function renderUnrankedFound(found, checked){
-  const host=$('p3'); if(!host) return;
+function renderUnrankedFound(found, checked, measured){
+  if(!$('p3')) return;
   const old=document.getElementById('unrankedFound'); if(old) old.remove();
   const n=document.createElement('div');
   n.id='unrankedFound'; n.className='calc';
   n.style.marginTop='8px';
   if(!found.length){
+    // HOW MANY WERE ACTUALLY READ. "Checked 10" counted the errored probes too,
+    // and an errored probe says nothing about the client either way.
+    const m=(measured===undefined?checked:measured);
     n.style.cssText='background:var(--info-bg);margin-top:8px';
-    n.innerHTML='\u{1F50E} <b>Checked '+checked+' more terms and they rank for all of them too.</b> '
-      +'That is the finding: this client owns their market. The proposal should sell '
-      +'holding it and growing beyond it, not closing a gap that is not there.';
+    n.innerHTML= m
+      ? '\u{1F50E} <b>Checked '+m+' more term'+(m===1?'':'s')+' and they rank for '
+        +(m===1?'that one':'all of them')+' too.</b> That is the finding: this client '
+        +'owns their market. The proposal should sell holding it and growing beyond '
+        +'it, not closing a gap that is not there.'
+        +(m<checked?' <span class="nf">('+(checked-m)+' more could not be read.)</span>':'')
+      : '\u26a0 <b>None of the '+checked+' probes could be read.</b> That is a lookup '
+        +'problem, not a finding \u2014 try again in a minute.';
   }else{
     n.style.cssText='background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6;margin-top:8px';
     n.innerHTML='\u2713 <b>'+found.length+' term'+(found.length===1?'':'s')
@@ -3209,7 +3231,7 @@ function renderUnrankedFound(found, checked){
       +' <button type="button" id="addUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Add to the grid</button>'
       +' <span class="nf" style="font-size:11.5px">adds them as Long Tail and re-prices</span>';
   }
-  host.appendChild(n);
+  _placeUnranked(n);
   const b=document.getElementById('addUnranked');
   if(b) b.onclick=()=>{
     found.forEach(f=>{
