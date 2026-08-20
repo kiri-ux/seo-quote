@@ -657,6 +657,14 @@ CFG = {
     # argued for winning what was already won. A reservation, not a quota:
     # nothing is invented to fill it. 0 turns it off. (2026-08-19)
     "grid_headroom_slots": 4,
+    # A client ranking for EVERYTHING has no story in the proposal. When the rank
+    # check comes back at or near 100%, this many terms they do NOT rank for are
+    # hunted down and offered. Measured with the real rank check, not inferred
+    # from ranked_keywords — those two disagreed on Ski Barn, where the labs
+    # lookup called 19 terms unranked that the SERP found at #1-#4. 0 turns it
+    # off. (2026-08-20)
+    "min_unranked_terms": 3,
+    "unranked_probe_max": 10,
     # DataForSEO allows 12 calls a minute. Pacing at 10 leaves headroom for the
     # calls made outside the build (signals, the SERP screenshot poll) without
     # anyone tripping the cap — see _dfs_take_slot(). 0 disables the pacing.
@@ -8463,6 +8471,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # WRONG rather than whether there were enough of them. The slot count
             # is known; the shortfall is worth naming. (2026-08-12)
             "service_slots": n_services,
+            # The reserve list the "find terms they don't rank for" probe draws
+            # from, and how many it is trying to find. Carried on the payload so
+            # the panel never has to guess either. (2026-08-20)
+            "min_unranked_terms": int(CFG.get("min_unranked_terms", 3) or 0),
+            "unranked_probe_max": int(CFG.get("unranked_probe_max", 10) or 0),
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
@@ -10427,6 +10440,8 @@ def api_refine():
         "seeds_folded": s1.get("seeds_folded") or [],
         "seed_quality": s1.get("seed_quality") or {},
         "service_slots": s1.get("service_slots") or 0,
+        "min_unranked_terms": s1.get("min_unranked_terms", 0),
+        "unranked_probe_max": s1.get("unranked_probe_max", 0),
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
         "seed_services_dropped": s1.get("seed_services_dropped", 0),

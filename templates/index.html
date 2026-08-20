@@ -3026,6 +3026,175 @@ let STEP3_RUNNING = false;
 function wireStep3Panel(){
   const r=$('retryFailed'); if(r) r.onclick=()=>runStep3(true);
   const s4=$('step4');      if(s4) s4.onclick=()=>runStep4();
+  const fu=$('findUnranked'); if(fu) fu.onclick=()=>findUnranked();
+  try{ renderUnrankedGap(); }catch(e){}
+}
+
+// ---- TERMS THEY DO NOT RANK FOR, MEASURED RATHER THAN INFERRED -------------
+//
+// Ski Barn came back ranking in the top 100 for every term the grid could
+// reach, and the proposal had nothing to argue for: seventeen rows, all of them
+// #1 to #10. The unranked-slot RESERVATION could not help, because it draws
+// from the terms the demand ranking cut and those are the same ski terms in the
+// same town — and because it decides "do they rank for this" from
+// ranked_keywords, which on this client disagreed with the SERP on nineteen of
+// twenty terms.
+//
+// So this asks the question the expensive way: take the best candidates the
+// grid did not quote, run them through the SAME rank check the grid rows went
+// through, and keep the ones that genuinely miss. A handful of SERP calls, run
+// on demand, and the answer is a measurement rather than a second opinion.
+// (2026-08-20)
+function gridSuffix(){
+  // Every grid row carries the same market suffix ("... wayne nj"). Recover it
+  // by finding the longest tail shared by all of them.
+  const all=((ST.kw&&ST.kw.all)||[]).map(r=>String(r.kw||'').trim()).filter(Boolean);
+  if(all.length<2) return '';
+  const parts=all.map(k=>k.split(/\s+/));
+  let tail=[];
+  for(let i=1;i<=Math.min(...parts.map(p=>p.length))-1;i++){
+    const w=parts[0][parts[0].length-i];
+    if(parts.every(p=>p[p.length-i]===w)) tail.unshift(w); else break;
+  }
+  return tail.join(' ');
+}
+function unrankedCount(){
+  return (ST.table||[]).filter(r=>r && r.pos==='Not Found').length;
+}
+function unrankedCandidates(){
+  const sr=((ST.kw||{}).seed_ranking)||{};
+  const inGrid=new Set(((ST.kw&&ST.kw.all)||[]).map(r=>String(r.kw||'').toLowerCase()));
+  const tried=new Set((ST._unrankedTried||[]).map(x=>String(x).toLowerCase()));
+  const sfx=gridSuffix();
+  // The cut list, best demand first — it is already sorted that way.
+  const cut=(sr.order||[]).map(([t,v])=>[t,v]);
+  const out=[];
+  for(const [t,v] of cut){
+    const kw=(sfx?`${t} ${sfx}`:t).toLowerCase().replace(/\s+/g,' ').trim();
+    if(inGrid.has(kw) || tried.has(kw)) continue;
+    out.push({kw:kw, bare:t, vol:v});
+  }
+  return out;
+}
+function renderUnrankedGap(){
+  const host=$('p3'); if(!host) return;
+  const old=document.getElementById('unrankedGap'); if(old) old.remove();
+  const min=Number((ST.kw||{}).min_unranked_terms||0);
+  if(!min) return;
+  const measured=(ST.table||[]).filter(r=>r && r.pos!==undefined && r.pos!==null
+                                        && r.pos!=='' && !r.error && !r.queued
+                                        && !r.expired).length;
+  if(!measured) return;                        // nothing checked yet
+  const have=unrankedCount();
+  if(have >= min) return;                      // the proposal already has a story
+  const cands=unrankedCandidates();
+  const n=document.createElement('div');
+  n.id='unrankedGap'; n.className='calc';
+  n.style.cssText='background:#fdf1d8;border-color:#e8c98a;margin-top:10px';
+  n.innerHTML='\u26a0 <b>They rank for '+(have?'all but '+have+' of':'every one of')
+    +' the quoted terms.</b> A proposal needs something to argue for, and there '
+    +(have===1?'is 1 term':'are '+have+' terms')+' here they are missing from.'
+    +(cands.length
+      ? ' <button type="button" id="findUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Find '+min+' they don\'t rank for</button>'
+        +' <span class="nf" style="font-size:11.5px">checks up to '
+        +Math.min(cands.length, Number((ST.kw||{}).unranked_probe_max||10))
+        +' of the terms the grid cut \u2014 a few SERP calls</span>'
+      : ' <span class="nf">No candidates left to check.</span>')
+    +tipOf('The unranked-slot reservation runs at BUILD time and decides what the client ranks for from their ranked-keywords report. On this client that disagreed with the live SERP on nineteen of twenty terms, so it stood down while the rank check found 100%.<br><br>This asks the expensive question instead: the best terms the grid did not quote, put through the SAME rank check the grid rows went through. What comes back as Not Found is measured, not inferred.');
+  host.appendChild(n);
+  const b=document.getElementById('findUnranked');
+  if(b) b.onclick=()=>findUnranked();
+}
+async function findUnranked(){
+  const btn=$('findUnranked');
+  const min=Number((ST.kw||{}).min_unranked_terms||3);
+  const cap=Number((ST.kw||{}).unranked_probe_max||10);
+  const cands=unrankedCandidates().slice(0, cap);
+  if(!cands.length) return;
+  if(btn){ btn.disabled=true; btn.textContent='Checking '+cands.length+'\u2026'; }
+  ST._unrankedTried=(ST._unrankedTried||[]).concat(cands.map(c=>c.kw));
+  const found=[];
+  try{
+    for(let i=0;i<cands.length && found.length<min;i+=3){
+      const batch=cands.slice(i, i+3);
+      if(btn) btn.textContent='Checking '+(i+1)+'\u2013'+Math.min(i+3,cands.length)
+                              +' of '+cands.length+'\u2026';
+      let got=null;
+      try{
+        got=await postJSON('/api/rankings',{
+          primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'',
+          geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
+          national_demand:!!(ST.inputs&&ST.inputs.national_demand),
+          goal:(ST.inputs&&ST.inputs.goal)||'',
+          batch: batch.map(c=>({kw:c.kw, city:cityForKw(c.kw)})),
+          domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
+          state:ST.inputs.state, brand:ST.inputs.brand});
+      }catch(e){
+        if(e instanceof TypeError || e instanceof ReferenceError){
+          console.error('unranked probe code error:', e);
+          if(btn){ btn.disabled=false;
+                   btn.textContent="Find "+min+" they don't rank for"; }
+          renderUnrankedError(String(e && e.message || e));
+          return;
+        }
+        continue;
+      }
+      (got&&got.rows||[]).forEach(row=>{
+        const c=batch.find(x=>x.kw===row.kw) || {};
+        // ONLY A MEASURED MISS COUNTS. An errored or queued probe says nothing
+        // about the client and must not be offered as an opportunity.
+        if(row.error || row.queued) return;
+        if(row.pos==='Not Found') found.push(Object.assign({}, c, {row:row}));
+      });
+    }
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='Find '+min+' they don\'t rank for'; }
+  }
+  renderUnrankedFound(found, cands.length);
+}
+function renderUnrankedError(msg){
+  const host=$('p3'); if(!host) return;
+  const old=document.getElementById('unrankedFound'); if(old) old.remove();
+  const n=document.createElement('div');
+  n.id='unrankedFound'; n.className='calc';
+  n.style.cssText='background:#fdecea;border-color:#e0a3a0;margin-top:8px';
+  n.innerHTML='\u26a0 <b>The check could not run</b> \u2014 '+escapeHtml(msg)
+    +'. This says nothing about what the client ranks for.';
+  host.appendChild(n);
+}
+function renderUnrankedFound(found, checked){
+  const host=$('p3'); if(!host) return;
+  const old=document.getElementById('unrankedFound'); if(old) old.remove();
+  const n=document.createElement('div');
+  n.id='unrankedFound'; n.className='calc';
+  n.style.marginTop='8px';
+  if(!found.length){
+    n.style.cssText='background:var(--info-bg);margin-top:8px';
+    n.innerHTML='\u{1F50E} <b>Checked '+checked+' more terms and they rank for all of them too.</b> '
+      +'That is the finding: this client owns their market. The proposal should sell '
+      +'holding it and growing beyond it, not closing a gap that is not there.';
+  }else{
+    n.style.cssText='background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6;margin-top:8px';
+    n.innerHTML='\u2713 <b>'+found.length+' term'+(found.length===1?'':'s')
+      +' they do not rank for</b> \u2014 '
+      +found.map(f=>escapeHtml(f.kw)+' <span class="nf">('+Number(f.vol||0).toLocaleString()+'/mo bare)</span>').join(' \u00b7 ')
+      +' <button type="button" id="addUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Add to the grid</button>'
+      +' <span class="nf" style="font-size:11.5px">adds them as Long Tail and re-prices</span>';
+  }
+  host.appendChild(n);
+  const b=document.getElementById('addUnranked');
+  if(b) b.onclick=()=>{
+    found.forEach(f=>{
+      ST.kw.all.push({kw:f.kw, vol:f.vol||0});
+      (ST.kw.long_tail=ST.kw.long_tail||[]).push({kw:f.kw, vol:f.vol||0});
+      ST.longtail=ST.longtail||[]; ST.longtail.push({kw:f.kw, vol:f.vol||0});
+      ST.table.push(f.row);
+      ST.total=(ST.total||0)+1;
+    });
+    try{ scheduleAutoSave(); }catch(e){}
+    try{ finishStep3(); }catch(e){}
+    try{ runStep4(); }catch(e){}
+  };
 }
 
 async function runStep3(retryOnlyFailed){
