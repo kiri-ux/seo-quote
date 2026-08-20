@@ -3149,12 +3149,13 @@ async function ownedTerms(){
     const r=await postJSON('/api/ranked_keywords',{
       domain:dom, geo_values:(ST.inputs&&ST.inputs.geo_values)||[],
       state:(ST.inputs&&ST.inputs.state)||'', brand:(ST.inputs&&ST.inputs.brand)||'',
-      seeds:[], limit:1000});
-    const rows=[].concat(r.keywords||[], r.fresh||[], r.rows||[]);
+      seeds:[], limit:1000, own:true});
+    // own:true returns the RAW set. The default response is a seeding list —
+    // family-capped to three per service and brand-filtered — which as a sieve
+    // says "not ranked" about most of what the client actually owns.
     const set=new Set();
-    rows.forEach(x=>{
-      const t=String((x&&(x.bare||x.term||x.kw))||'').toLowerCase().trim();
-      if(t) set.add(t);
+    (r.owned||[]).forEach(t=>{
+      const v=String(t||'').toLowerCase().trim(); if(v) set.add(v);
     });
     ST._ownedCache={set:set, n:set.size};
     return ST._ownedCache;

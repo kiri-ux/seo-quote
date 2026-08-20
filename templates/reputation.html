@@ -529,7 +529,11 @@ function render(d, payload){
     const artPages = artLines.reduce((a,l)=>a+(l.qty||0),0);
     const units = [...new Set(artLines.map(l=>l.unit))];
     const minUnit = Math.min.apply(null, units);
-    const rate = (units.length===1 ? money(units[0]) : 'from '+money(minUnit));
+    const oneRate = units.length===1;
+    const rate = money(oneRate ? units[0] : minUnit);
+    const ratePre = oneRate ? ''
+      : '<span style="font-size:13px;font-weight:600;color:var(--muted);'
+        +'display:block;line-height:1;margin-bottom:2px">from</span>';
     const stdPg = artLines.filter(l=>l.service.indexOf('Premium')===-1).reduce((a,l)=>a+(l.qty||0),0);
     const premPg = artPages - stdPg;
     const cmix = [];
@@ -537,7 +541,7 @@ function render(d, payload){
     if(cmix.length && premPg) cmix.push(premPg+'\u00d7 premium news / high-authority');
     const mix = cmix.length ? cmix.join(' · ')
               : ((stdPg && premPg) ? stdPg+' standard + '+premPg+' premium' : artPages+' page'+(artPages!==1?'s':''));
-    h += '<div class="tot"><div class="name">Site/article removals</div><div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' · up to '+money(artTotal)+'</div></div>';
+    h += '<div class="tot"><div class="name">Site/article removals</div>'+ratePre+'<div class="price">'+rate+'<span style="font-size:13px;color:var(--muted)">/removed page</span></div><div class="mo" style="font-size:12px;color:var(--muted);margin-top:3px">'+mix+' · up to '+money(artTotal)+'</div></div>';
   }
   h += '<div class="tot"><div class="name">Monthly recurring</div><div class="price">'+money(d.totals.monthly)+'<span style="font-size:13px;color:var(--muted)">/mo</span></div></div>';
   h += '</div>';

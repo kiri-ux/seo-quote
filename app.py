@@ -14462,6 +14462,12 @@ def api_ranked_keywords():
     if _famdrop:
         _keepset = set(_kept)
         fresh = [r for r in fresh if r["bare"] in _keepset]
+    if d.get("own"):
+        # THE OWNERSHIP QUESTION WANTS THE RAW SET. No family cap, no seed
+        # filter, no brand filter — every term the domain ranks for, bare, so
+        # the caller can ask "is this one of them" and get a true answer.
+        return jsonify({"owned": sorted({r["bare"] for r in rows if r.get("bare")}),
+                        "total": len(rows)})
     return jsonify({"keywords": fresh, "total": len(rows),
                     "brand_terms": brandy,
                     "family_capped": [{"term": t, "on": w} for t, w in _famdrop],
