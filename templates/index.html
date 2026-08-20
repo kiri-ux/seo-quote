@@ -3076,10 +3076,24 @@ function unrankedCandidates(){
   }
   return out;
 }
+// A QUOTE SAVED BEFORE THIS SHIPPED HAS NO SUCH KEY, and reading the payload
+// alone meant the control never appeared on the one quote it was built for.
+// Fourth time a new payload key has been invisible on a restored quote; the
+// default lives here so the feature works on every quote, and the payload only
+// OVERRIDES it when the config says something different. (2026-08-20)
+const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 10;
+function minUnranked(){
+  const v=(ST.kw||{}).min_unranked_terms;
+  return (v===undefined || v===null || v==='') ? MIN_UNRANKED_DEFAULT : Number(v);
+}
+function unrankedProbeMax(){
+  const v=(ST.kw||{}).unranked_probe_max;
+  return (v===undefined || v===null || v==='') ? UNRANKED_PROBE_DEFAULT : Number(v);
+}
 function renderUnrankedGap(){
   const host=$('p3'); if(!host) return;
   const old=document.getElementById('unrankedGap'); if(old) old.remove();
-  const min=Number((ST.kw||{}).min_unranked_terms||0);
+  const min=minUnranked();
   if(!min) return;
   const measured=(ST.table||[]).filter(r=>r && r.pos!==undefined && r.pos!==null
                                         && r.pos!=='' && !r.error && !r.queued
@@ -3097,21 +3111,35 @@ function renderUnrankedGap(){
     +(cands.length
       ? ' <button type="button" id="findUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Find '+min+' they don\'t rank for</button>'
         +' <span class="nf" style="font-size:11.5px">checks up to '
-        +Math.min(cands.length, Number((ST.kw||{}).unranked_probe_max||10))
+        +Math.min(cands.length, unrankedProbeMax())
         +' of the terms the grid cut \u2014 a few SERP calls</span>'
       : ' <span class="nf">No candidates left to check.</span>')
     +tipOf('The unranked-slot reservation runs at BUILD time and decides what the client ranks for from their ranked-keywords report. On this client that disagreed with the live SERP on nineteen of twenty terms, so it stood down while the rank check found 100%.<br><br>This asks the expensive question instead: the best terms the grid did not quote, put through the SAME rank check the grid rows went through. What comes back as Not Found is measured, not inferred.');
   host.appendChild(n);
   const b=document.getElementById('findUnranked');
   if(b) b.onclick=()=>findUnranked();
+  // AUTOMATIC WHEN THERE IS NOTHING AT ALL. Zero misses is not a close call —
+  // the proposal has no argument in it and somebody has to go looking. One shot
+  // per quote, so a re-price does not buy a second round of SERP calls, and the
+  // button stays for the 1-of-3 case where a human should decide whether it is
+  // worth the spend. (2026-08-20)
+  if(have===0 && cands.length && !ST._unrankedAuto){
+    ST._unrankedAuto=true;
+    setTimeout(()=>{ try{ findUnranked(true); }catch(e){} }, 400);
+  }
 }
-async function findUnranked(){
+async function findUnranked(auto){
   const btn=$('findUnranked');
-  const min=Number((ST.kw||{}).min_unranked_terms||3);
-  const cap=Number((ST.kw||{}).unranked_probe_max||10);
+  const min=minUnranked();
+  const cap=unrankedProbeMax();
   const cands=unrankedCandidates().slice(0, cap);
   if(!cands.length) return;
-  if(btn){ btn.disabled=true; btn.textContent='Checking '+cands.length+'\u2026'; }
+  if(btn){ btn.disabled=true; btn.textContent=(auto?'Looking for terms they miss \u2014 ':'Checking ')+cands.length+'\u2026'; }
+  if(auto){
+    const g=$('unrankedGap');
+    if(g) g.insertAdjacentHTML('beforeend',
+      '<div class="nf" id="unrankedAutoNote" style="margin-top:5px">Running automatically because they rank for every quoted term.</div>');
+  }
   ST._unrankedTried=(ST._unrankedTried||[]).concat(cands.map(c=>c.kw));
   const found=[];
   try{
@@ -6488,6 +6516,19 @@ function step1Grid(kw){
     } else if(sr.headroom_dry){
       auto.push(`\u{1F331} <b>No slots held for unranked terms</b> \u2014 ${escapeHtml(sr.headroom_dry)}, so there was nothing to promote.${sr.headroom_seen?tipOf('Wanted '+sr.headroom_seen.want+' slot(s). '+sr.headroom_seen.fresh+' already in the grid, out of '+sr.headroom_seen.own+' known ranked terms ('+escapeHtml(String(sr.headroom_seen.source))+'), '+sr.headroom_seen.pool+' candidates below the cut.'):''}`);
     } else if(sr.headroom_met){
+      // THE RANK CHECK OUTRANKS THE RANKED-KEYWORDS REPORT, AND SAYS SO. On Ski
+      // Barn this line read "20 of the quoted terms are ones they don't rank
+      // for" directly above "19/19 found in top 100 (100%)" — two numbers about
+      // the same twenty terms, flatly contradicting each other, because the
+      // reservation asks ranked_keywords and step 3 asks the SERP. When step 3
+      // has run, it is the answer; the reservation's guess is reported as the
+      // guess it was. (2026-08-20)
+      const _measured=(ST.table||[]).filter(r=>r && !r.error && !r.queued && !r.expired
+                                             && r.pos!==undefined && r.pos!==null && r.pos!=='');
+      const _miss=_measured.filter(r=>r.pos==='Not Found').length;
+      if(_measured.length && _miss < sr.headroom_met){
+        auto.push(`\u{1F331} <b>The reservation read ${sr.headroom_met} of the quoted terms as unranked \u2014 the rank check disagrees.</b> Step 3 measured ${_measured.length} and found ${_miss===0?'none':'only '+_miss} they miss.${tipOf('The reservation runs at BUILD time and asks the client&rsquo;s ranked-keywords report, which lists what a domain ranks for nationally. Step 3 asks the live result page for each keyword in the market it names. When they disagree, step 3 is the answer &mdash; it measured the exact phrase in the exact place.<br><br>Nothing was swapped, and on this evidence nothing should have been. The unranked-term check below works from the measured table instead.')}`);
+      } else
       auto.push(`\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't rank for</b> \u2014 already past the reservation, so nothing was swapped.${sr.headroom_seen?tipOf('Wanted '+sr.headroom_seen.want+' slot(s). '+sr.headroom_seen.fresh+' already in the grid, out of '+sr.headroom_seen.own+' known ranked terms ('+escapeHtml(String(sr.headroom_seen.source))+'), '+sr.headroom_seen.pool+' candidates below the cut.'):''}`);
     }
     // The reservation ran and changed nothing, and said nothing about it —
