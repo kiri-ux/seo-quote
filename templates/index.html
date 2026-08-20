@@ -3612,8 +3612,17 @@ function renderStep4(p){
   // positive claim about a term nobody measured. Ski Barn's table showed three
   // dashes from three 40101 errors and they read as three terms the client
   // does not rank for — the opposite of a failure. (2026-08-19)
+  // MATCHED THE WAY THE SERVER MATCHES IT. `ST.table.find(x=>x.kw===kw)` is an
+  // exact string compare; the document builds its index on kw.trim().lower().
+  // Any row whose stored casing or spacing differs from the grid chip missed
+  // here and matched there — so the tool reported "Not checked" for five terms
+  // the .docx printed with real positions, and before this the same mismatch
+  // was hidden as a plain "Not Found". Same key on both sides. (2026-08-19)
+  const _norm=v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const _byKw={};
+  (ST.table||[]).forEach(x=>{ const k=_norm(x.kw); if(k && !(k in _byKw)) _byKw[k]=x; });
   const rankOf=kw=>{
-    const row=ST.table.find(x=>x.kw===kw);
+    const row=_byKw[_norm(kw)];
     if(!row) return 'Not checked';
     if(row.error||row.queued||row.expired) return 'Not checked';
     return (row.pos===0||row.pos)?row.pos:'Not Found';

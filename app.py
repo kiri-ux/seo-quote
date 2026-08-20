@@ -15199,16 +15199,23 @@ def _proposal_rows(d):
     """
     tier_label = {"ultra": "Ultra Competitive", "competitive": "Competitive",
                   "long_tail": "Long Tail"}
+    # THE SAME KEY THE PANEL USES. Trim and collapse whitespace as well as
+    # lower-casing: the two sides matched differently and the document printed
+    # positions for five terms the tool was calling "Not checked". (2026-08-19)
+    def _nk(v):
+        return re.sub(r"\s+", " ", str(v or "").strip().lower())
     by_kw = {}
     for r in (d.get("table") or []):
-        by_kw[str(r.get("kw") or "").lower()] = r
+        k = _nk(r.get("kw"))
+        if k and k not in by_kw:
+            by_kw[k] = r
     rows = []
     for tier in ("ultra", "competitive", "long_tail"):
         for r in (d.get("kw") or {}).get(tier, []) or []:
             kw = str(r.get("kw") or r.get("keyword") or "").strip()
             if not kw:
                 continue
-            live = by_kw.get(kw.lower()) or {}
+            live = by_kw.get(_nk(kw)) or {}
             # AN UNMEASURED TERM DOES NOT GO IN A CLIENT DOCUMENT. A failed or
             # still-queued lookup carries pos "—", and a term with no row at all
             # carries nothing — both used to print as a rank, the first as a

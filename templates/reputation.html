@@ -713,6 +713,7 @@ $('scanBtn').onclick = async ()=>{
   window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
   window._scanData = {}; window._negDone = null; window._scanProv = null; negGen++; reviewTasks = [];
   $('scanOut').innerHTML = '<div id="termsBlock"></div><div id="serpBlock"></div><div id="locsBlock"></div>';
+  try{ renderBrandDomainWarning(); }catch(e){}
   // Steps run independently — one failure can't kill the rest — and non-JSON
   // responses (Render timeout pages etc.) surface as readable errors.
   async function fetchJSON(url, o, _retried){
@@ -1197,20 +1198,131 @@ function locBadge(text, kind, tip){
   return ' <span title="'+(tip||'')+'" style="'+c+';font-size:10.5px;padding:1px 7px;'
        + 'border-radius:9px;vertical-align:1px;white-space:nowrap">'+text+'</span>';
 }
+// IT SAID "ADDRESS MATCHES" AND IT COMPARED THE STATE. Ooten Law Firm is at
+// 1341 Branton Blvd, Knoxville TN. The tool matched Otten Law Firm at 124 N
+// Winston Rd, Knoxville TN — a different firm, one letter apart — and stamped
+// it "address matches", because both are in Tennessee. The tooltip said "same
+// state" and nobody reads tooltips before believing a green badge. The label
+// now says exactly what was compared. (2026-08-19)
 function locTags(nameOk, regionOk, ref){
   let out = nameOk
     ? locBadge('name matches', 'ok', 'Listing title matches the client name')
     : locBadge('name differs', 'warn', 'Listing title does not match the client name \u2014 not counted automatically');
-  // With no name-matched US listing there is no reference address to compare
-  // against, so claiming a match or a mismatch would both be guesses.
   if(!ref){
-    out += locBadge('address unverified', 'muted', 'No name-matched US listing to compare against, so the region could not be checked');
+    out += locBadge('state unchecked', 'muted', 'No name-matched US listing to compare against, so the state could not be checked. The street address is not compared at all.');
   }else if(regionOk){
-    out += locBadge('address matches', 'ok', 'Same state as the client\u2019s main listing ('+ref+')');
+    out += locBadge('same state', 'ok', 'Same state as the client\u2019s main listing ('+ref+'). THE STREET ADDRESS IS NOT COMPARED \u2014 two different businesses in one city both pass this.');
   }else{
-    out += locBadge('address differs', 'warn', 'Different state or country from the client\u2019s main listing ('+ref+') \u2014 not counted automatically');
+    out += locBadge('different state', 'warn', 'Different state or country from the client\u2019s main listing ('+ref+') \u2014 not counted automatically');
   }
   return out;
+}
+
+// THE SCAN RAN ON A DIFFERENT COMPANY. "Otten Law Firm" against
+// ootenlawfirm.com is one transposed letter and two unrelated businesses: the
+// real client has 227 reviews at 4.8, the firm the scan found has none, and
+// every "negative" it turned up was Otten Law Offices in Burnsville, Minnesota.
+// The quote was built on all of it.
+//
+// The website is the one input that cannot be a typo — it was clicked through
+// to. So the brand is checked against it, and a mismatch is a blocking-looking
+// warning at the top of the scan rather than a green badge further down.
+// (2026-08-19)
+function _esc(v){
+  return String(v==null?'':v).replace(/[&<>"']/g, c=>(
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function domainStem(url){
+  let d = String(url||'').trim().toLowerCase()
+    .replace(/^https?:\/\//,'').replace(/^www\./,'').split(/[\/?#]/)[0];
+  if(!d) return '';
+  d = d.split('.')[0];
+  return d.replace(/[^a-z0-9]/g,'');
+}
+// COMPARED LIKE FOR LIKE. The first pass stripped "law firm" out of the name
+// and left it in the domain, so "otten" against "ootenlawfirm" measured seven
+// characters apart and the one-letter difference that mattered was invisible.
+// Both sides are reduced the same way, and the pair is compared BOTH ways —
+// core against core and whole against whole — because which side carries the
+// boilerplate depends on the client. (2026-08-19)
+const _BRAND_STOP = ['the','a','an','of','and','llc','pllc','inc','pc','llp',
+                     'corp','co','company','group','firm','law','attorney',
+                     'attorneys','lawyer','lawyers','associates','dental',
+                     'clinic','center','centre','services','solutions'];
+function brandStem(name){
+  const stop = new Set(_BRAND_STOP);
+  const toks = String(name||'').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const core = toks.filter(t=>!stop.has(t));
+  return (core.length?core:toks).join('');
+}
+function brandWhole(name){
+  return String(name||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+// A domain has no separators, so the same words come off as substrings.
+function domainCore(stemmed){
+  let d = String(stemmed||'');
+  for(const w of _BRAND_STOP.slice().sort((a,b)=>b.length-a.length)){
+    if(w.length < 2) continue;
+    const next = d.split(w).join('');
+    if(next.length >= 3) d = next;
+  }
+  return d || String(stemmed||'');
+}
+function editDistance(a,b){
+  const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);
+  for(let j=0;j<=n;j++) d[0][j]=j;
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)
+    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return d[m][n];
+}
+function brandDomainCheck(){
+  const brand=($('brand').value||'').trim(), url=($('domain').value||'').trim();
+  const bs=brandStem(brand), ds=domainStem(url);
+  if(!bs || !ds) return null;
+  if(ds.includes(bs) || bs.includes(ds)) return null;      // clean match
+  const bw=brandWhole(brand), dc=domainCore(ds);
+  if(dc && (dc.includes(bs) || bs.includes(dc))) return null;
+  if(bw && (ds.includes(bw) || bw.includes(ds))) return null;
+  // The smallest honest reading of the difference: core-to-core where both
+  // sides reduce, whole-to-whole where they do not.
+  const pairs=[[bs,ds]];
+  if(dc) pairs.push([bs,dc]);
+  if(bw) pairs.push([bw,ds]);
+  let best=pairs[0], dist=editDistance(pairs[0][0], pairs[0][1]);
+  for(const pr of pairs.slice(1)){
+    const dd=editDistance(pr[0], pr[1]);
+    if(dd < dist){ dist=dd; best=pr; }
+  }
+  // A near-miss is the dangerous case: far enough to be a different company,
+  // close enough that nobody notices. A wholly different name is usually a
+  // trading name and is only worth a quiet note.
+  return {brand:brand, site:url, bs:best[0], ds:best[1], dist:dist,
+          near: dist>0 && dist<=Math.max(2,
+                Math.round(Math.max(best[0].length, best[1].length)*0.25))};
+}
+function renderBrandDomainWarning(){
+  const old=document.getElementById('brandDomainWarn'); if(old) old.remove();
+  const c=brandDomainCheck(); if(!c) return;
+  const box=document.createElement('div');
+  box.id='brandDomainWarn';
+  box.style.cssText='margin:0 0 12px;padding:11px 13px;border-radius:9px;font-size:13px;line-height:1.5;'
+    +(c.near?'background:#fdecea;border:1px solid #e0a49c;color:#7a2318'
+            :'background:var(--warn-bg);border:1px solid #e8c98a');
+  box.innerHTML = (c.near?'\u26a0 <b>The client name and the website do not match.</b>':'\u2139 <b>The client name is not in the website.</b>')
+    + ' You entered <b>'+_esc(c.brand)+'</b> and the site is <b>'+_esc(c.site)+'</b>'
+    + (c.near?' \u2014 <b>'+c.dist+' character'+(c.dist===1?'':'s')+' apart</b>. That is the shape of a different company with a similar name, and everything below \u2014 the results table, the review counts, the negatives \u2014 is about whichever one the name matched.'
+             :'. If the client trades under a different name that is fine; if not, the scan is about the wrong business.')
+    + ' <a href="#" id="useDomainName" style="font-weight:600">Use the name from the website</a>.';
+  const host=$('scanOut'); if(host) host.prepend(box);
+  const a=document.getElementById('useDomainName');
+  if(a) a.onclick=(e)=>{
+    e.preventDefault();
+    const stem=domainStem($('domain').value);
+    if(!stem) return;
+    // Title-case the domain stem as a starting point; the operator edits it.
+    $('brand').value = stem.charAt(0).toUpperCase()+stem.slice(1);
+    box.remove();
+  };
 }
 
 function renderLocs(d, live){
