@@ -3298,6 +3298,150 @@ function renderUnrankedError(msg){
     +'. This says nothing about what the client ranks for.';
   _placeUnranked(n);
 }
+// What was actually established, and where. Every term the probe and the grid
+// have checked carries the primary market's suffix, so the finding is about
+// that town — and the markets the build declined to cross were never looked at
+// even once.
+function unrankedScopeNote(){
+  const pm=(typeof primaryMarket==='function' ? (primaryMarket()||'') : '');
+  const all=((ST.inputs&&ST.inputs.geo_values)||[]).map(v=>String(v||'').trim())
+             .filter(Boolean);
+  const others=all.filter(v=>v.toLowerCase()!==String(pm).toLowerCase());
+  const checked=(ST.table||[]).filter(r=>r && !r.error && !r.queued && !r.expired
+                                        && r.pos!==undefined && r.pos!==null).length;
+  let out='That is the finding <b>for '+escapeHtml(pm||'the primary market')+'</b>: '
+    +checked+' term'+(checked===1?'':'s')+' measured there, and they rank for '
+    +(checked===1?'it':'all of them')+'. The proposal should sell holding that '
+    +'position rather than closing a gap that is not there.';
+  if(others.length){
+    out+=' <span style="color:#8a5a10">Nothing has been checked in '
+      +others.slice(0,4).map(escapeHtml).join(', ')
+      +(others.length>4?' and '+(others.length-4)+' more':'')
+      +' \u2014 the build did not cross those markets, so this says nothing about '
+      +'them.</span>';
+  }
+  return out;
+}
+
+// ---- THE SAME TERMS, THE MARKETS NOBODY CROSSED ---------------------------
+//
+// Ski Barn ranks for all 28 terms ever checked, and every one of them ends in
+// "wayne nj" — the build spends the term budget on services and drops the other
+// four markets, so Paramus, Shrewsbury, Lawrenceville and New York City have
+// never been looked at once. "They rank for everything" is a claim about one
+// town.
+//
+// This takes the terms they rank BEST for and asks the same question in the
+// markets that were dropped. A #1 in Wayne that is absent in Paramus is the
+// clearest argument a proposal can carry, and it is what the add-on market
+// pricing already exists to sell.
+//
+// REPORT ONLY. It never offers to put these in the grid: the grid is built on
+// one market's suffix, and mixing another market's terms into it would move the
+// tier split, the total volume and therefore the price. The keyword list is not
+// touched by this. (2026-08-21)
+function crossMarketCandidates(limit){
+  const sfx=gridSuffix();
+  const pm=(typeof primaryMarket==='function' ? (primaryMarket()||'') : '');
+  const others=((ST.inputs&&ST.inputs.geo_values)||[])
+    .map(v=>String(v||'').trim()).filter(Boolean)
+    .filter(v=>v.toLowerCase()!==String(pm).toLowerCase());
+  if(!sfx || !others.length) return {terms:[], markets:[]};
+  const best=(ST.table||[])
+    .filter(r=>r && !r.error && !r.queued && !r.expired && /^\d+$/.test(String(r.pos)))
+    .sort((a,b)=>Number(a.pos)-Number(b.pos))
+    .slice(0, limit||2)
+    .map(r=>({bare:String(r.kw).replace(new RegExp('\\s*'+sfx+'$','i'),'').trim(),
+              pos:Number(r.pos)}));
+  return {terms:best.filter(b=>b.bare), markets:others};
+}
+function marketSuffix(market){
+  return String(market||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+function crossMarketButton(){
+  const {terms, markets}=crossMarketCandidates(2);
+  if(!terms.length || !markets.length) return '';
+  return ' <button type="button" id="crossMkt" class="btn2" style="padding:3px 11px;'
+    +'font-size:12px;margin-left:4px">Check the markets that were not crossed</button>'
+    +' <span class="nf" style="font-size:11.5px">their best '+terms.length
+    +' terms in '+Math.min(markets.length,3)+' other market'
+    +(Math.min(markets.length,3)===1?'':'s')+' · report only, the list is not touched</span>';
+}
+function _wireCrossMkt(){
+  const c=document.getElementById('crossMkt');
+  if(c) c.onclick=()=>checkOtherMarkets();
+}
+async function checkOtherMarkets(){
+  const btn=$('crossMkt');
+  const {terms, markets}=crossMarketCandidates(2);
+  if(!terms.length || !markets.length) return;
+  const pairs=[];
+  markets.slice(0,3).forEach(m=>terms.forEach(t=>pairs.push({
+    kw:(t.bare+' '+marketSuffix(m)).replace(/\s+/g,' ').trim(),
+    bare:t.bare, market:m, home:t.pos})));
+  if(btn){ btn.disabled=true; btn.textContent='Checking '+pairs.length+' …'; }
+  const rows=[];
+  try{
+    for(let i=0;i<pairs.length;i+=3){
+      const batch=pairs.slice(i, i+3);
+      let got=null;
+      try{
+        got=await postJSON('/api/rankings',{
+          primary_market:batch[0].market, industry:(ST.inputs&&ST.inputs.industry)||'',
+          geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
+          national_demand:false, goal:(ST.inputs&&ST.inputs.goal)||'',
+          batch: batch.map(c=>({kw:c.kw, city:c.market})),
+          domain:ST.inputs.domain, geo_values:[batch[0].market],
+          state:ST.inputs.state, brand:ST.inputs.brand});
+      }catch(e){ continue; }
+      ((got&&(got.results||got.rows))||[]).forEach(r=>{
+        const c=batch.find(x=>x.kw===r.kw); if(!c) return;
+        if(r.error || r.queued) return;
+        rows.push(Object.assign({}, c, {pos:r.pos}));
+      });
+    }
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='Check the markets that were not crossed'; }
+  }
+  renderCrossMarket(rows, pairs.length);
+}
+function renderCrossMarket(rows, sent){
+  const old=document.getElementById('crossMktOut'); if(old) old.remove();
+  const n=document.createElement('div');
+  n.id='crossMktOut'; n.className='calc'; n.style.marginTop='8px';
+  if(!rows.length){
+    n.style.cssText='background:#fdecea;border-color:#e0a3a0;margin-top:8px';
+    n.innerHTML='⚠ <b>None of the '+sent+' cross-market probes could be read.</b> '
+      +'A lookup problem, not a finding — try again in a minute.';
+  }else{
+    const miss=rows.filter(r=>r.pos==='Not Found');
+    n.style.cssText=(miss.length?'background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6'
+                                :'background:var(--info-bg)')+';margin-top:8px';
+    n.innerHTML=(miss.length
+        ? '✓ <b>'+miss.length+' of '+rows.length+' checks came back not ranking '
+          +'outside the primary market.</b>'
+        : '\u{1F50E} <b>They rank in the other markets too</b> — all '+rows.length
+          +' checks came back with a position.')
+      +'<div class="nf" style="margin-top:5px">'
+      +rows.map(r=>escapeHtml(r.bare)+' in <b>'+escapeHtml(r.market)+'</b> — '
+        +(r.pos==='Not Found'
+          ? '<span style="color:#1a7f4b;font-weight:700">not ranking</span>'
+          : '#'+escapeHtml(String(r.pos)))
+        +' <span style="opacity:.7">(#'+r.home+' at home)</span>').join('<br>')
+      +'</div>'
+      +(miss.length
+        ? '<div class="nf" style="margin-top:6px">This is the campaign’s argument, and '
+          +'it is what <b>add-on markets</b> price. Nothing has been added to the keyword '
+          +'list — the grid is built on one market’s suffix and mixing another '
+          +'market in would move the tier split and the price.</div>'
+        : '');
+  }
+  const anchor=document.getElementById('unrankedFound')
+            || document.getElementById('unrankedGap');
+  if(anchor) anchor.insertAdjacentElement('afterend', n);
+  else { const h=$('p3'); if(h) h.appendChild(n); }
+}
+
 function renderUnrankedFound(found, checked, measured, how){
   if(!$('p3')) return;
   const old=document.getElementById('unrankedFound'); if(old) old.remove();
@@ -3319,10 +3463,9 @@ function renderUnrankedFound(found, checked, measured, how){
   if(_h.allOwned){
     n.style.cssText='background:var(--info-bg);margin-top:8px';
     n.innerHTML='\u{1F50E} <b>Every candidate is a term they already rank for.</b> '
-      +'That is the finding: this client owns their market. The proposal should '
-      +'sell holding it and growing beyond it, not closing a gap that is not '
-      +'there.'+_cost;
+      +unrankedScopeNote()+_cost+crossMarketButton();
     _placeUnranked(n);
+    _wireCrossMkt();
     return;
   }
   if(!found.length){
@@ -3332,10 +3475,9 @@ function renderUnrankedFound(found, checked, measured, how){
     n.style.cssText='background:var(--info-bg);margin-top:8px';
     n.innerHTML= m
       ? '\u{1F50E} <b>Checked '+m+' more term'+(m===1?'':'s')+' and they rank for '
-        +(m===1?'that one':'all of them')+' too.</b> That is the finding: this client '
-        +'owns their market. The proposal should sell holding it and growing beyond '
-        +'it, not closing a gap that is not there.'
-        +(m<checked?' <span class="nf">('+(checked-m)+' more could not be read.)</span>':'')+_cost
+        +(m===1?'that one':'all of them')+' too.</b> '+unrankedScopeNote()
+        +(m<checked?' <span class="nf">('+(checked-m)+' more could not be read.)</span>':'')
+        +_cost+crossMarketButton()
       : '\u26a0 <b>None of the '+checked+' probes could be read.</b> That is a lookup '
         +'problem, not a finding \u2014 try again in a minute.';
   }else{
@@ -3347,6 +3489,7 @@ function renderUnrankedFound(found, checked, measured, how){
       +' <span class="nf" style="font-size:11.5px">adds them as Long Tail and re-prices</span>'+_cost;
   }
   _placeUnranked(n);
+  _wireCrossMkt();
   const b=document.getElementById('addUnranked');
   if(b) b.onclick=()=>{
     found.forEach(f=>{
