@@ -4293,7 +4293,7 @@ function renderStep4(p){
 
     ${p.ai_search?`
       <b style="color:var(--atlas)">Internal breakdown — SEO vs AI Search</b>
-      <span class="nf">${p.ai_search.mode==='card'?'(AI Search at the bundled rate card; the client sees one product price — the cards above)':`(AI Search priced at <b>${p.ai_search.geo_pct}% of Core SEO</b>${p.ai_search.geo_pct_basis?` — ${p.ai_search.geo_pct_basis}`:''})`}</span><br>
+      <span class="nf">${p.ai_search.mode==='card'?'(AI Search at the bundled rate card; the client sees one product price — the cards above)':`(<b>AI Search %</b> — <b style="color:var(--atlas)">${p.ai_search.geo_pct}%</b> of Core SEO${p.ai_search.geo_pct_basis?`, ${p.ai_search.geo_pct_basis}`:''})`}</span><br>
       <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
         <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
         <tr><td style="padding:2px 12px 2px 0">Core SEO component</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
@@ -4351,13 +4351,13 @@ function renderStep4(p){
           <label style="margin:0;font-size:12px">AI Search partner hard cost</label>
           <input type="text" id="geo_override" value="${(p.ai_search.manual_geo&&p.ai_search.hard_add)?p.ai_search.hard_add.base:''}" placeholder="optional"
             style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-          <span class="nf" style="font-size:12px">leave blank to keep the ${p.ai_search.geo_pct||''}% calculation. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
+          <span class="nf" style="font-size:12px">leave blank to keep the <b>AI Search %</b> of ${p.ai_search.geo_pct||''}%. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
         </div>`:''}
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px">
           <label style="margin:0;font-size:12px">Add-on market partner hard cost</label>
           <input type="text" id="addon_override" value="${p.manual_addon&&p.hard_addon_per_market?p.hard_addon_per_market.base:''}" placeholder="optional"
             style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-          <span class="nf" style="font-size:12px">leave blank to keep the standard ratio of the tier. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
+          <span class="nf" style="font-size:12px">leave blank to keep the ratio of the tier <b>less the Add-On Market %</b> for the market count. A rate typed here is used as entered — the bracket is <b>not</b> applied on top of it. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
         </div>
         <label style="margin:10px 0 4px;font-size:12px">Reason for the override <span class="req">*</span></label>
         <textarea id="base_reason" placeholder="Why the formula doesn&#39;t fit this client — e.g. established brand already ranking, existing agency relationship, scope outside the standard ladder"
@@ -4496,7 +4496,15 @@ function renderStep4(p){
   ST.addonRates = {primary:(p.ai_search? p.ai_search.client_total : p.client_tiers),
                    seo:p.client_tiers, ai:(p.ai_search? p.ai_search.client_add : null),
                    each:p.client_addon_per_market, hard:p.hard_addon_per_market,
-                   hardPrimary:p.hard_true_tiers, aiHard:(p.ai_search? p.ai_search.hard_add : null)};
+                   hardPrimary:p.hard_true_tiers, aiHard:(p.ai_search? p.ai_search.hard_add : null),
+                   // The whole bracket table, priced server-side. The stepper
+                   // looks its row up rather than recomputing — see the note on
+                   // addon_schedule in stage4_price.
+                   schedule:p.addon_schedule||[],
+                   listEach:p.client_addon_list_per_market||p.client_addon_per_market,
+                   listHard:p.hard_addon_list_per_market||p.hard_addon_per_market,
+                   manualAddon:!!p.manual_addon,
+                   discountBasis:p.addon_discount_basis||''};
   try{ wireAddonField(); }catch(e){}
   try{ refreshAddonSuggestion(); }catch(e){}
   try{ jumpToPriceIfHashed(); }catch(e){}
@@ -4744,15 +4752,32 @@ async function checkStoredPrice(){
     const now=((fresh.ai_search||{}).client_total)||fresh.client_tiers||{};
     const T=['base','intermediate','advanced'];
     const diff=T.filter(k=>Number(was[k]||0)!==Number(now[k]||0));
-    if(!diff.length) return;
+    // THE ADD-ON LEG MOVES ON ITS OWN. This compared the primary campaign only,
+    // so a change that touches add-on markets and nothing else — the Add-On
+    // Market % is exactly that — passed the check silently while the quote's
+    // actual total was out by the whole discount. A quote with twelve add-on
+    // markets carries most of its money in the leg that was not being read.
+    // (2026-08-21)
+    const nA=Number((ST.inputs||{}).addon_markets||0)||0;
+    const wasA=ST.pricing.client_addon_per_market||{};
+    const nowA=fresh.client_addon_per_market||{};
+    const adiff = nA ? T.filter(k=>Number(wasA[k]||0)!==Number(nowA[k]||0)) : [];
+    if(!diff.length && !adiff.length) return;
     const money=v=>'$'+Number(v||0).toLocaleString();
     const box=document.createElement('div');
     box.className='calc';
     box.style.cssText='background:#fdf1d8;border-color:#e8c98a;margin-bottom:10px';
-    box.innerHTML=`\u26a0 <b>These numbers were priced on an earlier build</b> \u2014 saved as
+    box.innerHTML=`\u26a0 <b>These numbers were priced on an earlier build</b>`
+      +(diff.length?` \u2014 saved as
       ${T.map(k=>money(was[k])).join(' / ')}, and the formula now gives
-      <b>${T.map(k=>money(now[k])).join(' / ')}</b> from the same inputs.
-      Nothing has been changed: a quote that has already gone out keeps the price it went out with.
+      <b>${T.map(k=>money(now[k])).join(' / ')}</b> from the same inputs.`:'.')
+      +(adiff.length?` <b>Each add-on market</b> was
+      ${T.map(k=>money(wasA[k])).join(' / ')} and is now
+      <b>${T.map(k=>money(nowA[k])).join(' / ')}</b>${fresh.addon_discount_pct
+        ?` \u2014 the <b>Add-On Market %</b> for ${nA} market${nA===1?'':'s'} is
+          ${fresh.addon_discount_pct}% off, worth
+          ${money((Number(wasA.base||0)-Number(nowA.base||0))*nA)}/mo on Base.`:'.'}`:'')
+      +` Nothing has been changed: a quote that has already gone out keeps the price it went out with.
       <button type="button" id="repriceNow" class="btn2" style="padding:2px 10px;font-size:12px;margin-left:5px">Re-price now</button>`;
     host.insertBefore(box, host.firstChild);
     const b=$('repriceNow');
@@ -5127,6 +5152,8 @@ function pricingChart(){
   const mk=p.markup_pct!=null?p.markup_pct:35;
   const t=p.client_tiers||{}, ai=p.ai_search||null;
   const nAdd=p.addon_markets||0, addPer=(p.client_addon_per_market||{}).base||0;
+  const addList=(p.client_addon_list_per_market||{}).base||0;
+  const addPct=p.addon_discount_pct||0;
   const cpc=(ST.cpc_used!=null?ST.cpc_used:null);
   const rows=[];
   const row=(what, amt, src, muted)=>rows.push(
@@ -5166,12 +5193,20 @@ function pricingChart(){
   if(p.floored) row('Minimum', ppMoney(p.client_floor), 'computed below the floor — the floor is the price');
   row('Margin', mk+'%', 'agency share of gross · everything above is partner cost');
   sum('Core SEO', ppMoney(t.base), 'monthly, base tier');
+  // BOTH RATES ARE NAMED. Two percentages set two components of this price and
+  // neither had a label, so "57%" and "15%" could only be told apart by which
+  // row they sat on.
   if(ai && (ai.client_add||{}).base)
     sum('AI Search (GEO)', '+ '+ppMoney(ai.client_add.base),
-        `${ai.uplift_pct!=null?ai.uplift_pct+'% of Core SEO':''}`);
+        `${ai.uplift_pct!=null?'<b>AI Search %</b> '+ai.uplift_pct+'% of Core SEO':''}`);
   if(nAdd && addPer)
     sum('Add-on markets', '+ '+ppMoney(addPer*nAdd),
-        `${nAdd} separately-activated campaign${nAdd===1?'':'s'} × ${ppMoney(addPer)}`);
+        `${nAdd} separately-activated campaign${nAdd===1?'':'s'} × ${ppMoney(addPer)}`
+        + (addPct
+           ? ` · <b>Add-On Market %</b> ${addPct}% off${addList?' the '+ppMoney(addList)+' list rate':''}`
+           : (p.manual_addon
+              ? ' · <b>Add-On Market %</b> not applied — manual rate'
+              : '')));
   const grand=((ai&&(ai.client_total||{}).base)||t.base)+(nAdd&&addPer?addPer*nAdd:0);
   const pc=vibePct();
   if(pc) sum('Vibe check', (pc>0?'+':'')+pc+'%', escapeHtml((ST.vibe||{}).note||'operator judgement'));
@@ -5630,6 +5665,8 @@ async function loadConfig(){
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
       cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'× tier price')+
+      `<div class="tierhelp"><b>Add-On Market %</b> — the volume break, <b>flat by bracket</b>. The total count picks ONE percentage and every add-on market on the quote is priced at it: twelve markets is 15% off all twelve, not nine at 10% and three at 15%. Read high to low, first match wins. The percentage comes off <b>partner cost</b>, and the client figure is derived from that cost through the margin, so realised margin holds as markets accumulate.</div>`+
+      tierRows(c.addon_volume_discount_tiers,'cf_addond','From','add-on markets → Add-On Market % is','% off')+
       cfgRow('Default markup (%)','cf_markup',c.default_markup_pct)+
       cfgRow('Nationwide extras multiplier','cf_nwx',c.nationwide_service_extras,'1 = volume + visibility apply at national scope (they are what separate national clients); 0 mutes both'),
       'confirmed') +
@@ -5681,6 +5718,7 @@ $('cfgApply').addEventListener('click', async()=>{
     nationwide_service_extras:v('cf_nwx'),
     vol_add_ramp:[v('cf_ramp_lo'), v('cf_ramp_hi')],
     geo_pct_tiers:readTierRows('cf_geot'),
+    addon_volume_discount_tiers:readTierRows('cf_addond'),
     geo_pct_default:v('cf_geodef'),
     geo_bundle_discount_pct:v('cf_geodisc'),
     min_term_months:v('cf_term'),
@@ -6417,11 +6455,40 @@ function primaryMarket(){
 // Recompute the client total in the browser. The figures are already on the
 // page, so the number moves with the button rather than after a round-trip —
 // which is the point of a stepper.
+// WHICH BRACKET IS THIS QUOTE IN. Flat by bracket: the total count picks one
+// Add-On Market %, and every add-on market on the quote is priced at it.
+// Returns the server-priced row so the browser never rounds anything itself.
+function addonBracket(n){
+  const R=ST.addonRates||{}, sched=R.schedule||[];
+  let hit=null;
+  sched.forEach(b=>{ if(n>=b.min_markets) hit=b; });
+  return hit;
+}
+// The next bracket down in price, and what the quote would cost there. A flat
+// bracket has a cliff at its edge — twenty-six markets can total LESS than
+// twenty-five — and an operator sitting one market short should be told, not
+// left to find it by nudging the stepper.
+function addonBracketLabel(b){
+  const sched=(ST.addonRates||{}).schedule||[];
+  const hi=(sched.find(x=>x.min_markets>b.min_markets)||{}).min_markets;
+  return b.min_markets+(hi?'\u2013'+(hi-1):'+')+' markets';
+}
+function addonNextBracket(n){
+  const R=ST.addonRates||{}, sched=R.schedule||[];
+  return sched.find(b=>b.min_markets>n) || null;
+}
 function renderAddonCost(){
   const box=$('addonCost'); if(!box) return;
   const R=ST.addonRates;
   const n=parseInt(($('addon')||{}).value||'0',10)||0;
   if(!R || !R.each){ box.innerHTML=''; return; }
+  // The stepper moves without a round-trip, so the rate has to move with it.
+  // A MANUAL RATE IGNORES THE TABLE. The server sends no schedule with an
+  // override, but the panel must not depend on that: reading the bracket here
+  // would have shown a discounted figure beside a rate the operator typed.
+  const br=R.manualAddon? null : addonBracket(n);
+  if(br){ R.each=br.client; R.hard=br.hard; R.pct=br.pct; }
+  else   { R.each=R.listEach||R.each; R.hard=R.listHard||R.hard; R.pct=0; }
   const K0=['base','intermediate','advanced'];
   // Keep the headline cards in step with the stepper — they are the number the
   // client is quoted, and a card that ignores seven add-on markets is wrong by
@@ -6433,15 +6500,56 @@ function renderAddonCost(){
   });
   if(!n){ box.innerHTML=''; return; }
   const K=['base','intermediate','advanced'], L=['Base','Intermediate','Advanced'];
-  box.innerHTML=`<table style="width:100%;font-size:12.5px;border-collapse:collapse">
+  // THE RATE, NAMED. The panel used to show only the resulting dollar figure,
+  // so the discount that produced it could be found only by dividing two
+  // numbers and guessing which bracket that implied.
+  // A manual rate has no next bracket. Printing one would put "20% off" on a
+  // screen whose whole message is that no percentage is being applied.
+  const nxt=R.manualAddon? null : addonNextBracket(n);
+  const nxtTotal=nxt? (R.primary.base + nxt.client.base*nxt.min_markets) : 0;
+  const nowTotal=R.primary.base + R.each.base*n;
+  const pctBlock = (!br && !R.manualAddon)
+    // A QUOTE SAVED BEFORE THE BRACKET EXISTED CARRIES NO SCHEDULE, and the
+    // per-market figure on it is the old undiscounted one. Printing "0% off"
+    // beside it would read as a rate that had been applied.
+    ? `<div style="margin-bottom:7px;padding:6px 9px;background:var(--warn-bg);border-radius:5px;font-size:12.5px">
+         <b>Add-On Market %</b> — <b>not on this quote</b>
+         <span class="nf">it was priced before the bracket existed, so these are
+         the full per-market rates. Use <b>Re-price now</b> above to apply it.</span></div>`
+    : R.manualAddon
+    ? `<div style="margin-bottom:7px;padding:6px 9px;background:var(--warn-bg);border-radius:5px;font-size:12.5px">
+         <b>Add-On Market %</b> &mdash; <b>not applied</b>
+         <span class="nf">a manual per-market rate is set, and it is used as entered.
+         Clear the override to price by bracket.</span></div>`
+    : `<div style="margin-bottom:7px;padding:6px 9px;background:var(--info-bg);border-radius:5px;font-size:12.5px">
+         <b>Add-On Market %</b> &mdash;
+         <b style="font-size:15px;color:var(--atlas)">${(R.pct||0)}% off</b>
+         <span class="nf">every one of the ${n} add-on market${n===1?'':'s'} &mdash;
+         the count falls in the <b>${br?addonBracketLabel(br):'\u2014'}</b> bracket.
+         One rate for the whole quote, not a different rate per market.</span>
+         <div class="nf" style="margin-top:4px">${(R.schedule||[]).map(b=>
+           `<span style="margin-right:10px${(br&&b.min_markets===br.min_markets)
+              ?';font-weight:700;color:var(--atlas)':''}">`
+           +addonBracketLabel(b)+' &rarr; '+b.pct+'%</span>').join('')}</div>
+       </div>`;
+  box.innerHTML=pctBlock+`<table style="width:100%;font-size:12.5px;border-collapse:collapse">
     <tr><td></td>${L.map(l=>`<td style="text-align:right;font-weight:600">${l}</td>`).join('')}</tr>
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market${R.ai?' (SEO + AI Search)':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.primary[k])}</td>`).join('')}</tr>
     ${R.ai?`<tr class="nf"><td style="padding:2px 10px 2px 0">of which Core SEO</td>${K.map(k=>`<td style="text-align:right">${money(R.seo[k])}</td>`).join('')}</tr>`:''}
-    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' <span class="nf" style="font-size:11px">(a share of Core SEO, not the combined price)</span>':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}<span class="nf" style="font-size:10.5px"> &middot; ${Math.round(R.each[k]/(R.seo[k]||1)*100)}%</span></td>`).join('')}</tr>
+    ${(R.pct&&R.listEach)?`<tr class="nf"><td style="padding:2px 10px 2px 0">Each add-on at list</td>${K.map(k=>`<td style="text-align:right;text-decoration:line-through;opacity:.75">${money(R.listEach[k])}</td>`).join('')}</tr>`:''}
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' <span class="nf" style="font-size:11px">(a share of Core SEO, not the combined price)</span>':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}<span class="nf" style="font-size:10.5px"> &middot; ${Math.round(R.each[k]/(R.seo[k]||1)*100)}% of SEO</span></td>`).join('')}</tr>
+    ${(R.pct&&R.listEach)?`<tr><td style="padding:2px 10px 2px 0;color:var(--ok,#1a7f4b);font-weight:600">Saved per add-on</td>${K.map(k=>`<td style="text-align:right;color:var(--ok,#1a7f4b);font-weight:600">&minus;${money(R.listEach[k]-R.each[k])}</td>`).join('')}</tr>`:''}
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">${n} add-on${n===1?'':'s'}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k]*n)}</td>`).join('')}</tr>
     <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Client total</td>${K.map(k=>`<td style="text-align:right;border-top:1px solid var(--line)">${money(R.primary[k]+R.each[k]*n)}</td>`).join('')}</tr>
   </table>
-  <div class="nf" style="font-size:11.5px;margin-top:3px">Partner hard cost per add-on — ${money(R.hard.base)} / ${money(R.hard.intermediate)} / ${money(R.hard.advanced)}.</div>
+  <div class="nf" style="font-size:11.5px;margin-top:3px">Partner hard cost per add-on — ${money(R.hard.base)} / ${money(R.hard.intermediate)} / ${money(R.hard.advanced)}${(R.pct&&R.listHard)?` <span style="opacity:.8">(list ${money(R.listHard.base)} / ${money(R.listHard.intermediate)} / ${money(R.listHard.advanced)}, less the ${R.pct}%)</span>`:''}.${R.pct?' The Add-On Market % comes off <b>cost</b>, and the client figure is derived from that cost through the margin — which is why the realised margin below does not sag as markets are added.':''}</div>
+  ${(nxt && nxtTotal && nxtTotal<nowTotal)?`<div class="calc" style="background:var(--warn-bg);border-color:#e0c08a;margin-top:6px;font-size:12px">
+    ⚠ <b>${nxt.min_markets} markets would cost LESS than ${n}.</b>
+    At ${nxt.min_markets} the whole quote reprices at ${nxt.pct}% —
+    ${money(nxtTotal)}/mo against ${money(nowTotal)}/mo here, on Base.
+    <span class="nf">That is what a flat bracket does at its edge. Worth knowing
+    before the count gets argued down.</span></div>`
+    :(nxt?`<div class="nf" style="font-size:11.5px;margin-top:4px">Next bracket at <b>${nxt.min_markets} markets</b> → ${nxt.pct}% off, ${money(nxt.client.base)}/mo each on Base.</div>`:'')}
   ${(!R.ai && R.hardPrimary)?`<div class="nf" style="font-size:11.5px;margin-top:3px">Realised margin — ${K.map((k,i)=>{
       const tot=R.primary[k]+R.each[k]*n, hc=(R.hardPrimary[k]||0)+(R.hard[k]||0)*n;
       return `${L[i]} <b>${tot?((tot-hc)/tot*100).toFixed(1):'0.0'}%</b>`;

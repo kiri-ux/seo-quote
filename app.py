@@ -568,6 +568,20 @@ CFG = {
     # alone. Confirm before treating it as settled.
     "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
     "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
+    # ADD-ON MARKET % — the volume break, FLAT BY BRACKET, not graduated.
+    # Twelve markets is 15% off all twelve, not nine at 10% and three at 15%.
+    # One rate per quote, because that is the number the client argues about;
+    # a blended 11.3% is a number nobody can check against a rate card.
+    #
+    # [min_market_count, percent_off] — read HIGH TO LOW, first match wins,
+    # same convention as geo_pct_tiers.
+    #
+    # The break comes off PARTNER COST, and the client price is then derived
+    # from that cost through the margin exactly as every other figure here is.
+    # Discounting retail while cost stood still would have walked realised
+    # margin down as markets accumulated — which is the specific failure the
+    # 2026-08-05 rewrite of add-on pricing was done to end. (2026-08-21)
+    "addon_volume_discount_tiers": [[26, 20], [10, 15], [1, 10]],
     # Campaign goals that flip the national-demand switch. See
     # GOAL_NATIONAL_DEMAND — editable here so the list can be widened without a
     # deploy. Matched case-insensitively against the exact order-form option.
@@ -871,6 +885,26 @@ CFG = {
 
 def r50(x):
     return int(round(x / 50.0) * 50)
+
+
+def addon_discount_pct(n):
+    """The one Add-On Market % that applies to EVERY add-on market on a quote.
+
+    Flat by bracket. A quote with 12 add-on markets is 15% off all twelve, not
+    nine at 10% and three at 15% — so there is a single percentage to put on
+    the quote and defend, rather than a blended rate that matches no published
+    number.
+    """
+    n = max(0, int(n or 0))
+    if n <= 0:
+        return 0.0
+    for lo, pct in (CFG.get("addon_volume_discount_tiers") or []):
+        try:
+            if n >= int(lo):
+                return float(pct)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
 
 # REQUEST TIMEOUT BUDGET (2026-07-27).
 # dfs_post defaulted to a 120s timeout while gunicorn's default worker timeout
@@ -9683,8 +9717,43 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # cost / (1 - margin), rounded UP to $50. Because every component rounds up,
     # the total is automatically a $50 multiple and the margin can never land
     # below target - verified across all 1,650 anchor x ratio x count cases.
-    hard_addon   = {k: r50n(hard_cost[k] * _r(k)) for k in hard_cost}
+    _n_addon = max(0, int(addon_markets or 0))
+    # LIST — one add-on market before the volume break.
+    hard_addon_list   = {k: r50n(hard_cost[k] * _r(k)) for k in hard_cost}
+    client_addon_list = {k: retail_of(hard_addon_list[k]) for k in hard_addon_list}
+    # ADD-ON MARKET % — flat by bracket, applied to partner cost so the client
+    # price falls out of the margin the way every other price here does.
+    #
+    # The DISCOUNTED cost is rounded to $10, not $50. At $50 the brackets
+    # collapsed into each other: an $800 list cost is $720 at 10% off and $680
+    # at 15%, and both snap to $700 — so crossing from nine markets to ten
+    # displayed "15%" and changed the price by nothing. The $50 grid belongs to
+    # the numbers a client reads; this one is an internal cost, and the client
+    # figure derived from it still lands on $50 through retail_of.
+    _ad_pct = addon_discount_pct(_n_addon)
+    _ad_basis = ("%d add-on markets" % _n_addon) if _ad_pct else (
+        "no add-on markets" if not _n_addon else "below the first bracket")
+    hard_addon   = {k: int(round(round(hard_addon_list[k]
+                                       * (1.0 - _ad_pct / 100.0), 6) / 10.0) * 10)
+                    for k in hard_addon_list}
     client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
+    # EVERY BRACKET, PRICED BY THE SERVER. The stepper moves the count without a
+    # round-trip, and reimplementing r50/retail_of in the browser would put two
+    # rounding rules in play — JS rounds .5 up, Python rounds it to even, so a
+    # $25 remainder would show one price on screen and quote another. The panel
+    # looks its bracket up in this table instead of computing anything.
+    def _bracket(pct):
+        h = {k: int(round(round(hard_addon_list[k] * (1.0 - pct / 100.0), 6)
+                          / 10.0) * 10) for k in hard_addon_list}
+        return {"min_markets": None, "pct": pct, "hard": h,
+                "client": {k: retail_of(h[k]) for k in h}}
+
+    addon_schedule = []
+    for _lo, _pct in (CFG.get("addon_volume_discount_tiers") or []):
+        _b = _bracket(float(_pct))
+        _b["min_markets"] = int(_lo)
+        addon_schedule.append(_b)
+    addon_schedule.sort(key=lambda b: b["min_markets"])
     # An add-on market can be negotiated independently of the ratio. A client
     # taking eleven of them will argue the per-market rate long before the
     # primary campaign, and the alternative is distorting the whole ladder to
@@ -9702,13 +9771,19 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                 for k in hard_cost}
         hard_addon   = {k: r50n(_ao * _ar2[k]) for k in hard_cost}
         client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
+        # A NEGOTIATED RATE IS THE RATE. Taking another 20% off a number the
+        # operator typed in would move a price they had already settled, and
+        # they would have no way to see it happen. The bracket is reported as
+        # not applied rather than silently skipped.
+        hard_addon_list, client_addon_list = dict(hard_addon), dict(client_addon)
+        _ad_pct, _ad_basis = 0.0, "not applied — manual per-market rate"
+        addon_schedule = []
     # True partner cost is a share of RETAIL, so derive it from the client
     # tiers rather than from the calibration basis.
     hard_true = dict(hard_cost)          # already clean $50 figures
     # The COMBINED MONTHLY BUDGET — the single figure the adtini product form
     # needs. Package retail plus the per-market retail times the market count;
     # every term is already a $50 multiple, so the sum is too.
-    _n_addon = max(0, int(addon_markets or 0))
     combined = {k: client[k] + client_addon[k] * _n_addon for k in client}
     combined_hard = {k: hard_cost[k] + hard_addon[k] * _n_addon for k in hard_cost}
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
@@ -9749,6 +9824,17 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
             "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
+            # The Add-On Market % and what it was applied to, so the panel can
+            # print the rate rather than leave the operator to divide two
+            # numbers and guess which bracket they landed in.
+            "addon_discount_pct": _ad_pct,
+            "addon_discount_basis": _ad_basis,
+            "addon_discount_tiers": CFG.get("addon_volume_discount_tiers") or [],
+            "addon_schedule": addon_schedule,
+            "hard_addon_list_per_market": hard_addon_list,
+            "client_addon_list_per_market": client_addon_list,
+            "addon_savings_per_market": {k: client_addon_list[k] - client_addon[k]
+                                         for k in client_addon},
             "markup_pct": markup_pct, "addon_markets": addon_markets,
             "tiers": client, "addon_per_market": client_addon}
 
@@ -10199,7 +10285,10 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
     else:
         step = r50(base * CFG["step_ratio"])
     tiers = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
-    addon_per = {k: r50(v * CFG["addon_market_ratio"]) for k, v in tiers.items()}
+    # The demo prices add-ons through the same bracket the real path does, so a
+    # walkthrough does not show a number the tool would never quote.
+    _dm = 1.0 - addon_discount_pct(addon) / 100.0
+    addon_per = {k: r50(v * CFG["addon_market_ratio"] * _dm) for k, v in tiers.items()}
 
     export_rows = (
         [{"kw": r["kw"], "rank": "Not Found", "comp": "Ultra Competitive"} for r in ultra] +
@@ -12496,6 +12585,14 @@ def api_price():
                     "hard_tiers": p["hard_tiers"], "client_tiers": p["client_tiers"],
                     "hard_addon_per_market": p["hard_addon_per_market"],
                     "client_addon_per_market": p["client_addon_per_market"],
+                    "addon_discount_pct": p["addon_discount_pct"],
+                    "addon_discount_basis": p["addon_discount_basis"],
+                    "addon_discount_tiers": p["addon_discount_tiers"],
+                    "addon_schedule": p["addon_schedule"],
+                    "hard_addon_list_per_market": p["hard_addon_list_per_market"],
+                    "client_addon_list_per_market": p["client_addon_list_per_market"],
+                    "addon_savings_per_market": p["addon_savings_per_market"],
+                    "margin_pct_of_gross": p["margin_pct_of_gross"],
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
 @app.route("/api/config", methods=["GET"])
@@ -12525,6 +12622,7 @@ def api_config_get():
         "geo_pricing_mode": CFG.get("geo_pricing_mode", "pct"),
         "geo_pct_tiers": CFG.get("geo_pct_tiers", []),
         "geo_pct_default": CFG.get("geo_pct_default", 60),
+        "addon_volume_discount_tiers": CFG.get("addon_volume_discount_tiers", []),
         "geo_bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
         "min_term_months": CFG.get("min_term_months", 6),
         "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
@@ -12613,6 +12711,26 @@ def api_config_set():
                     gt.append([float(pair[0]), float(pair[1])])
             gt.sort(key=lambda t: t[0], reverse=True)
             CFG["geo_pct_tiers"] = gt
+        # addon_volume_discount_tiers: [[min_market_count, pct_off], ...]
+        # high-to-low, first match wins. Counts are whole markets; a fractional
+        # threshold would make "10 markets" mean different things on two runs.
+        if ("addon_volume_discount_tiers" in d
+                and isinstance(d["addon_volume_discount_tiers"], list)):
+            at = []
+            for pair in d["addon_volume_discount_tiers"]:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    try:
+                        lo, pct = int(float(pair[0])), float(pair[1])
+                    except (TypeError, ValueError):
+                        continue
+                    # A 100%-off bracket prices add-on markets at nothing and a
+                    # negative one charges more for buying more. Neither is a
+                    # discount, and both would price silently.
+                    if lo >= 1 and 0.0 <= pct < 100.0:
+                        at.append([lo, pct])
+            at.sort(key=lambda t: t[0], reverse=True)
+            if at:
+                CFG["addon_volume_discount_tiers"] = at
         if "vol_add_ramp" in d and isinstance(d["vol_add_ramp"], list) and len(d["vol_add_ramp"]) == 2:
             CFG["vol_add_ramp"] = [float(d["vol_add_ramp"][0]), float(d["vol_add_ramp"][1])]
         if "geo_pricing_mode" in d and d["geo_pricing_mode"] in ("pct", "card"):
