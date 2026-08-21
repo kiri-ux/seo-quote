@@ -995,6 +995,12 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
         timeout = DFS_TIMEOUT
     login = os.environ.get("DFS_LOGIN", "")
     pw    = os.environ.get("DFS_PASSWORD", "")
+    # No credentials means no call can succeed, and pacing a call that cannot
+    # be made spends a minute of the per-minute budget on a guaranteed 401.
+    # Fail on the first one instead of queueing every later call behind it.
+    if not login or not pw:
+        raise requests.HTTPError(
+            "DataForSEO credentials are not set (DFS_LOGIN / DFS_PASSWORD).")
     token = base64.b64encode(f"{login}:{pw}".encode()).decode()
     hdrs = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
     last = None
@@ -1380,9 +1386,67 @@ def usable_markets(markets):
             if str(m).strip() and not is_non_place_geo(m)]
 
 
+# WHAT PEOPLE CALL A CITY IS NOT ALWAYS WHAT THE PROVIDER CALLS IT.
+#
+# DataForSEO's location database holds "New York,New York,United States". A
+# market typed the way everyone types it — "New York City, NY" — builds
+# "New York City,New York,United States", which is not a place, so the lookup
+# comes back 40501 and the row records as a failed check.
+#
+# It failed silently for as long as it has existed, because NYC has only ever
+# been a secondary market here: the grid drops it and nothing else asked. The
+# cross-market probe asked, got nothing back three runs in a row, and the
+# panel reported it as "could not be read" — a lookup problem, which it was,
+# just not a transient one. Any client whose PRIMARY market is New York would
+# have had every rank check in the quote fail this way. (2026-08-21)
+_CITY_ALIAS = {
+    "new york city": "New York",
+    "nyc": "New York",
+    "new york, ny": "New York",
+    "philly": "Philadelphia",
+    "st louis": "St. Louis",
+    "st. paul": "Saint Paul",
+    "ft lauderdale": "Fort Lauderdale",
+    "ft. lauderdale": "Fort Lauderdale",
+    "ft worth": "Fort Worth",
+    "ft. worth": "Fort Worth",
+    "washington dc": "Washington",
+    "washington, d.c.": "Washington",
+    "d.c.": "Washington",
+}
+
+# "Washington" alone is a state before it is a city, so the DC aliases cannot
+# go through CITY_STATE without rewriting Seattle. They carry their own state.
+_CITY_ALIAS_STATE = {
+    "washington dc": "District of Columbia",
+    "washington, d.c.": "District of Columbia",
+    "d.c.": "District of Columbia",
+}
+
+
+def provider_city_state(city):
+    """The state the provider files an aliased city under, if it needs one."""
+    return _CITY_ALIAS_STATE.get(
+        re.sub(r"\s+", " ", str(city or "").strip().lower()), "")
+
+
+def provider_city(city):
+    """The provider's name for a city, or the city unchanged."""
+    return _CITY_ALIAS.get(re.sub(r"\s+", " ", str(city or "").strip().lower()),
+                           city)
+
+
 def loc_string(markets, state):
     for m in usable_markets(markets) or []:
         city, st = parse_market(m, state)
+        st = provider_city_state(city) or st
+        city = provider_city(city)
+        # A two-letter fallback state reaches here unexpanded when the market
+        # carries no ",ST" of its own, and "New York,NY,United States" is not a
+        # place in the provider's database any more than "New York City" is —
+        # same silent failure, different half of the string. (2026-08-21)
+        st = _abbrev_to_state().get(str(st or "").strip().lower(), st).title() \
+            if str(st or "").strip().lower() in _abbrev_to_state() else st
         if city and st:
             return f"{city},{st},United States"
         if city:                      # city without state — still localizes

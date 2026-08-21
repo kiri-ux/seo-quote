@@ -3428,6 +3428,11 @@ async function checkOtherMarkets(nMarkets){
     bare:t.bare, market:m, home:t.pos})));
   if(btn){ btn.disabled=true; btn.textContent='Checking '+pairs.length+' …'; }
   const rows=[];
+  // The server names the reason a probe failed (error_reason) and it has been
+  // discarded at this line for every run so far. "40501 Invalid Field:
+  // 'location_name'" and "read timeout" both printed as "could not be read",
+  // so a market the provider does not have by that name looked like bad luck.
+  const reasons=[];
   try{
     for(let i=0;i<pairs.length;i+=3){
       const batch=pairs.slice(i, i+3);
@@ -3440,7 +3445,8 @@ async function checkOtherMarkets(nMarkets){
           batch: batch.map(c=>({kw:c.kw, city:c.market})),
           domain:ST.inputs.domain, geo_values:[batch[0].market],
           state:marketState(batch[0].market), brand:ST.inputs.brand});
-      }catch(e){ continue; }
+      }catch(e){ reasons.push(String((e&&e.message)||e)); continue; }
+      if(got&&got.error_reason) reasons.push(got.error_reason);
       ((got&&(got.results||got.rows))||[]).forEach(r=>{
         const c=batch.find(x=>x.kw===r.kw); if(!c) return;
         if(r.error || r.queued) return;
@@ -3462,7 +3468,8 @@ async function checkOtherMarkets(nMarkets){
             batch: batch.map(c=>({kw:c.kw, city:c.market})),
             domain:ST.inputs.domain, geo_values:[batch[0].market],
             state:marketState(batch[0].market), brand:ST.inputs.brand});
-        }catch(e){ continue; }
+        }catch(e){ reasons.push(String((e&&e.message)||e)); continue; }
+        if(got&&got.error_reason) reasons.push(got.error_reason);
         ((got&&(got.results||got.rows))||[]).forEach(r=>{
           const c=batch.find(x=>x.kw===r.kw); if(!c) return;
           if(r.error || r.queued) return;
@@ -3473,9 +3480,24 @@ async function checkOtherMarkets(nMarkets){
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='Check the markets that were not crossed'; }
   }
-  renderCrossMarket(rows, pairs.length, markets.length - take);
+  renderCrossMarket(rows, pairs.length, markets.length - take, reasons);
 }
-function renderCrossMarket(rows, sent, notYetChecked){
+// A failed probe is either "try again" or "this will never work". Only the
+// provider's own message separates them, so print it rather than guessing.
+function crossReasonHtml(reasons){
+  const list=[...new Set((reasons||[]).map(r=>String(r||'').trim()).filter(Boolean))];
+  if(!list.length) return '';
+  const geo=list.some(r=>/40501|invalid field|location/i.test(r));
+  return '<div class="nf" style="margin-top:6px">The provider said: <b>'
+    +escapeHtml(list.slice(0,2).join(' / '))+'</b>'
+    +(geo
+      ? ' \u2014 that is the market name, not a busy line. The provider does not carry '
+        +'a location by that name, so every retry fails identically. Fix the market '
+        +'to the city as the provider lists it (New York, not New York City) and run it again.'
+      : ' \u2014 a timing failure. Give it a minute and press the button again.')
+    +'</div>';
+}
+function renderCrossMarket(rows, sent, notYetChecked, reasons){
   const old=document.getElementById('crossMktOut'); if(old) old.remove();
   const n=document.createElement('div');
   n.id='crossMktOut'; n.className='calc'; n.style.marginTop='8px';
@@ -3483,7 +3505,8 @@ function renderCrossMarket(rows, sent, notYetChecked){
     n.style.cssText='background:#fdecea;border-color:#e0a3a0;margin-top:8px';
     n.innerHTML='⚠ <b>None of the '+sent+' cross-market probes could be read.</b> '
       +'A lookup problem, not a finding.'
-      +tipOf('Rank lookups are paced under the provider&rsquo;s per-minute cap. When a run has just spent that budget &mdash; the home probe, its retries, a rank re-check &mdash; the next calls queue for a slot and can time out waiting. Give it a minute and press the button again; nothing here is a statement about the client.');
+      +tipOf('Rank lookups are paced under the provider&rsquo;s per-minute cap. When a run has just spent that budget &mdash; the home probe, its retries, a rank re-check &mdash; the next calls queue for a slot and can time out waiting. Give it a minute and press the button again; nothing here is a statement about the client.')
+      +crossReasonHtml(reasons);
   }else{
     const miss=rows.filter(r=>r.pos==='Not Found');
     n.style.cssText=(miss.length?'background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6'
@@ -3520,6 +3543,7 @@ function renderCrossMarket(rows, sent, notYetChecked){
           +'list — the grid is built on one market’s suffix and mixing another '
           +'market in would move the tier split and the price.</div>'
         : '');
+    if((sent-rows.length)>0) n.innerHTML += crossReasonHtml(reasons);
   }
   const anchor=document.getElementById('unrankedFound')
             || document.getElementById('unrankedGap');
