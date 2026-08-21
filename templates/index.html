@@ -3221,7 +3221,17 @@ async function findUnranked(auto){
         }
         continue;
       }
-      (got&&got.rows||[]).forEach(row=>{
+      // `results`, NOT `rows`. /api/rankings has always answered with
+      // `results` — step 3 has read it that way since the beginning — and this
+      // probe asked for `rows`, so it made all ten SERP calls, got all ten
+      // answers, and threw every one of them away. Five builds of "None of the
+      // probes could be read" were ten successful lookups being read with the
+      // wrong key.
+      //
+      // My own test stubbed `rows` too, so it validated the mistake instead of
+      // catching it. proposal_test.py now asserts this key against what the
+      // server actually returns. (2026-08-21)
+      ((got&&(got.results||got.rows))||[]).forEach(row=>{
         const c=batch.find(x=>x.kw===row.kw) || {};
         if(!(row.error || row.queued)) measured++;
         // ONLY A MEASURED MISS COUNTS. An errored or queued probe says nothing
