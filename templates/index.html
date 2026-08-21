@@ -3370,6 +3370,12 @@ function crossMarketCandidates(limit){
               pos:Number(r.pos)}));
   return {terms:best.filter(b=>b.bare), markets:others};
 }
+// A market tagged ", NY" is in New York whatever the client's home state says.
+// Only an untagged market falls back to the client's state.
+function marketState(market){
+  return /,\s*[A-Za-z]{2}\s*$/.test(String(market||''))
+    ? '' : ((ST.inputs&&ST.inputs.state)||'');
+}
 function marketSuffix(market){
   return String(market||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 }
@@ -3386,12 +3392,13 @@ function _wireCrossMkt(){
   const c=document.getElementById('crossMkt');
   if(c) c.onclick=()=>checkOtherMarkets();
 }
-async function checkOtherMarkets(){
+async function checkOtherMarkets(nMarkets){
   const btn=$('crossMkt');
   const {terms, markets}=crossMarketCandidates(2);
   if(!terms.length || !markets.length) return;
+  const take=Math.min(markets.length, nMarkets || CROSS_MARKET_MAX);
   const pairs=[];
-  markets.slice(0, CROSS_MARKET_MAX).forEach(m=>terms.forEach(t=>pairs.push({
+  markets.slice(0, take).forEach(m=>terms.forEach(t=>pairs.push({
     kw:(t.bare+' '+marketSuffix(m)).replace(/\s+/g,' ').trim(),
     bare:t.bare, market:m, home:t.pos})));
   if(btn){ btn.disabled=true; btn.textContent='Checking '+pairs.length+' …'; }
@@ -3407,7 +3414,7 @@ async function checkOtherMarkets(){
           national_demand:false, goal:(ST.inputs&&ST.inputs.goal)||'',
           batch: batch.map(c=>({kw:c.kw, city:c.market})),
           domain:ST.inputs.domain, geo_values:[batch[0].market],
-          state:ST.inputs.state, brand:ST.inputs.brand});
+          state:marketState(batch[0].market), brand:ST.inputs.brand});
       }catch(e){ continue; }
       ((got&&(got.results||got.rows))||[]).forEach(r=>{
         const c=batch.find(x=>x.kw===r.kw); if(!c) return;
@@ -3415,12 +3422,35 @@ async function checkOtherMarkets(){
         rows.push(Object.assign({}, c, {pos:r.pos}));
       });
     }
+    const answered=new Set(rows.map(r=>r.kw));
+    const missed=pairs.filter(c=>!answered.has(c.kw));
+    if(missed.length){
+      if(btn) btn.textContent='Retrying '+missed.length+' that did not answer…';
+      for(let i=0;i<missed.length;i+=3){
+        const batch=missed.slice(i, i+3);
+        let got=null;
+        try{
+          got=await postJSON('/api/rankings',{
+            primary_market:batch[0].market, industry:(ST.inputs&&ST.inputs.industry)||'',
+            geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
+            national_demand:false, goal:(ST.inputs&&ST.inputs.goal)||'',
+            batch: batch.map(c=>({kw:c.kw, city:c.market})),
+            domain:ST.inputs.domain, geo_values:[batch[0].market],
+            state:marketState(batch[0].market), brand:ST.inputs.brand});
+        }catch(e){ continue; }
+        ((got&&(got.results||got.rows))||[]).forEach(r=>{
+          const c=batch.find(x=>x.kw===r.kw); if(!c) return;
+          if(r.error || r.queued) return;
+          rows.push(Object.assign({}, c, {pos:r.pos}));
+        });
+      }
+    }
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='Check the markets that were not crossed'; }
   }
-  renderCrossMarket(rows, pairs.length);
+  renderCrossMarket(rows, pairs.length, markets.length - take);
 }
-function renderCrossMarket(rows, sent){
+function renderCrossMarket(rows, sent, notYetChecked){
   const old=document.getElementById('crossMktOut'); if(old) old.remove();
   const n=document.createElement('div');
   n.id='crossMktOut'; n.className='calc'; n.style.marginTop='8px';
@@ -3443,8 +3473,8 @@ function renderCrossMarket(rows, sent){
       // counting errored probes as ranked.
       +((sent-rows.length)>0
         ? ' <span style="color:#8a5a10">'+(sent-rows.length)+' probe'
-          +((sent-rows.length)===1?'':'s')+' did not answer, so any market not '
-          +'listed below is still unchecked.</span>'
+          +((sent-rows.length)===1?'':'s')+' did not answer even on a retry, so '
+          +'any market not listed below is still unchecked.</span>'
         : '')
       +'<div class="nf" style="margin-top:5px">'
       +rows.map(r=>escapeHtml(r.bare)+' in <b>'+escapeHtml(r.market)+'</b> — '
@@ -3453,6 +3483,11 @@ function renderCrossMarket(rows, sent){
           : '#'+escapeHtml(String(r.pos)))
         +' <span style="opacity:.7">(#'+r.home+' at home)</span>').join('<br>')
       +'</div>'
+      +(notYetChecked
+        ? '<div class="nf" style="margin-top:6px">'+notYetChecked+' further market'
+          +(notYetChecked===1?'':'s')+' not checked \u2014 use the button above to '
+          +'take them too.</div>'
+        : '')
       +(miss.length
         ? '<div class="nf" style="margin-top:6px">This is the campaign’s argument, and '
           +'it is what <b>add-on markets</b> price. Nothing has been added to the keyword '
@@ -3514,6 +3549,12 @@ function renderUnrankedFound(found, checked, measured, how){
   }
   _placeUnranked(n);
   _wireCrossMkt();
+  // No misses at home is the case with nothing to sell, and it is the case
+  // where the next market is worth two calls without being asked.
+  if(!found.length && !ST._crossAuto && crossMarketCandidates(2).markets.length){
+    ST._crossAuto=true;
+    setTimeout(()=>{ try{ checkOtherMarkets(1); }catch(e){} }, 400);
+  }
   const b=document.getElementById('addUnranked');
   if(b) b.onclick=()=>{
     found.forEach(f=>{
@@ -5846,6 +5887,7 @@ function restoreQuote(p){
   ST._unrankedAuto=false;
   ST._unrankedTried=[];
   ST._ownedCache=null;
+  ST._crossAuto=false;
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
   if(ST.reports.length){ window._report=ST.reports[ST.reports.length-1]; }
