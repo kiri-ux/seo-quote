@@ -3854,6 +3854,35 @@ function cropWindow(dataUrl, ratio, offset){
   });
 }
 
+// THE CAPTURE WAS ALWAYS SAVED; NOTHING EVER PAINTED IT BACK.
+//
+// ST.serp rides in the quote payload and restores with it — the proposal tab
+// and the .docx have both been using it — but #serpOut is only ever written by
+// the generate handler, so reopening a quote showed an empty capture box above
+// a picker warning about the term it had chosen. It read as lost work and the
+// obvious response is to spend another 30-60 seconds regenerating it.
+//
+// The FRAMED image is what was saved, and that is what the document uses, so
+// painting it back is enough. The pan controls need the full-height original,
+// which is roughly a megabyte and does not belong in every autosave — so they
+// appear only while it is still in memory from this session's capture, and the
+// panel says so rather than offering a control that cannot work. (2026-08-20)
+function renderSavedSerp(){
+  const out=$('serpOut'); if(!out) return false;
+  const sp=ST.serp;
+  if(!sp || !sp.img) return false;
+  if(ST._serpFull){ renderSerpShot(sp.kw||'', ST._serpOffset||0); return true; }
+  out.innerHTML=`
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Live Google results for &ldquo;${escapeHtml(sp.kw||'')}&rdquo; <span class="nf">&mdash; saved with this quote</span>:</div>
+    <img src="${sp.img}" style="max-width:100%;border:1px solid var(--line);border-radius:8px">
+    <div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <a href="${sp.img}" download="serp_${String(sp.kw||'serp').replace(/ /g,'_')}.png"
+         style="font-size:12.5px;color:var(--atlas);font-weight:600">&#8681; Download image for the proposal</a>
+      <span class="nf" style="font-size:11.5px">This is the framed image the proposal uses. To move the frame, capture again.</span>
+    </div>`;
+  return true;
+}
+
 // One place that draws the capture, so moving the frame never re-fetches it.
 async function renderSerpShot(kw, offset){
   const out=$('serpOut'); if(!out || !ST._serpFull) return;
@@ -4271,6 +4300,14 @@ function renderStep4(p){
     // A term the operator picked by hand outranks the recommendation — this
     // redraw must not silently undo their choice.
     if(_had && ST._serpPicked && head.some(h=>h.kw===_had)) sel.value=_had;
+    // A saved capture is a decision already taken. The picker should show the
+    // term it was taken for, not go on recommending a different one — that is
+    // what left a red "picked weber grill" warning above an image of something
+    // else. (2026-08-20)
+    if(ST.serp && ST.serp.img && ST.serp.kw && head.some(h=>h.kw===ST.serp.kw)){
+      sel.value=ST.serp.kw; rec=ST.serp.kw;
+      basis='the capture saved with this quote'; weak=false;
+    }
     // THE EXHIBIT IS SUPPOSED TO SHOW THEM MISSING. If the best term available
     // is one they already hold, or one nothing measured, the capture argues
     // against the campaign — and that is worth a line, not a silent default.
@@ -4310,6 +4347,9 @@ function renderStep4(p){
     // maybeAutoSerp() when one exists, and this call covers a restored quote
     // that already has one. (2026-08-19)
     ST._serpWeak=weak; ST._serpRec=rec;
+    // A capture already saved with this quote is shown before anything is
+    // fired; maybeAutoSerp() already declines when one exists.
+    try{ renderSavedSerp(); }catch(e){}
     maybeAutoSerp();
   };
   refreshSerpPick();
