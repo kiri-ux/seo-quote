@@ -3114,7 +3114,7 @@ function renderUnrankedGap(){
         +Math.min(cands.length, unrankedProbeMax())
         +' of the terms the grid cut \u2014 a few SERP calls</span>'
       : ' <span class="nf">No candidates left to check.</span>')
-    +tipOf('The unranked-slot reservation runs at BUILD time and decides what the client ranks for from their ranked-keywords report. On this client that disagreed with the live SERP on nineteen of twenty terms, so it stood down while the rank check found 100%.<br><br>This asks the expensive question instead: the best terms the grid did not quote, put through the SAME rank check the grid rows went through. What comes back as Not Found is measured, not inferred.');
+    +tipOf('The rankings read covers the domain NATIONALLY, which is what that dataset holds. It can prove a client DOES rank for something; it cannot prove they do not, because a position held only in a local result page never appears in it. So it is used to skip candidates it already knows about, and everything else still goes to the live rank check.<br><br>The unranked-slot reservation runs at BUILD time and decides what the client ranks for from their ranked-keywords report. On this client that disagreed with the live SERP on nineteen of twenty terms, so it stood down while the rank check found 100%.<br><br>This asks the expensive question instead: the best terms the grid did not quote, put through the SAME rank check the grid rows went through. What comes back as Not Found is measured, not inferred.');
   host.appendChild(n);
   const b=document.getElementById('findUnranked');
   if(b) b.onclick=()=>findUnranked();
@@ -3195,7 +3195,7 @@ async function findUnranked(auto){
       '<div class="nf" id="unrankedAutoNote" style="margin-top:5px">Running automatically because they rank for every quoted term.</div>');
   }
   ST._unrankedTried=(ST._unrankedTried||[]).concat(cands.map(c=>c.kw));
-  const found=[]; let measured=0;
+  const found=[]; const retried=[]; let measured=0;
   try{
     for(let i=0;i<cands.length && found.length<min;i+=3){
       const batch=cands.slice(i, i+3);
@@ -3233,12 +3233,41 @@ async function findUnranked(auto){
       // server actually returns. (2026-08-21)
       ((got&&(got.results||got.rows))||[]).forEach(row=>{
         const c=batch.find(x=>x.kw===row.kw) || {};
-        if(!(row.error || row.queued)) measured++;
+        if(row.error || row.queued){
+          const _c=batch.find(x=>x.kw===row.kw);
+          if(_c) retried.push(_c);
+        } else measured++;
         // ONLY A MEASURED MISS COUNTS. An errored or queued probe says nothing
         // about the client and must not be offered as an opportunity.
         if(row.error || row.queued) return;
         if(row.pos==='Not Found') found.push(Object.assign({}, c, {row:row}));
       });
+    }
+    // The unreadable ones get one more pass. With the per-minute pacing in
+    // place a second attempt usually lands, and reporting "could not be read"
+    // on a term that would have answered is the same non-finding as before.
+    if(found.length<min && retried.length){
+      if(btn) btn.textContent='Retrying '+retried.length+' that did not answer\u2026';
+      for(let i=0;i<retried.length && found.length<min;i+=3){
+        const batch=retried.slice(i, i+3);
+        let got=null;
+        try{
+          got=await postJSON('/api/rankings',{
+            primary_market:primaryMarket(), industry:(ST.inputs&&ST.inputs.industry)||'',
+            geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'',
+            national_demand:!!(ST.inputs&&ST.inputs.national_demand),
+            goal:(ST.inputs&&ST.inputs.goal)||'',
+            batch: batch.map(c=>({kw:c.kw, city:cityForKw(c.kw)})),
+            domain:ST.inputs.domain, geo_values:ST.inputs.geo_values,
+            state:ST.inputs.state, brand:ST.inputs.brand});
+        }catch(e){ continue; }
+        ((got&&(got.results||got.rows))||[]).forEach(row=>{
+          const c=batch.find(x=>x.kw===row.kw) || {};
+          if(row.error || row.queued) return;
+          measured++;
+          if(row.pos==='Not Found') found.push(Object.assign({}, c, {row:row}));
+        });
+      }
     }
   }finally{
     if(btn){ btn.disabled=false; btn.textContent='Find '+min+' they don\'t rank for'; }
@@ -3279,7 +3308,10 @@ function renderUnrankedFound(found, checked, measured, how){
   const _cost=(_h.sieve && _h.sieve.n)
     ? ' <span class="nf" style="font-size:11.5px">1 rankings read ('+_h.sieve.n
       +' terms)'+(_h.sieved?' ruled out '+_h.sieved+' without a SERP call':'')
-      +(checked?' \u00b7 '+checked+' confirmed live':'')+'.</span>'
+      +(checked?' \u00b7 '+checked+' sent to the rank check'
+               +(measured!==undefined && measured<checked
+                 ? ', '+measured+' answered' : '')
+        :'')+'.</span>'
     : (_h.sieve
        ? ' <span class="nf" style="font-size:11.5px">Their rankings read came back '
          +'empty, so every candidate was checked live.</span>'
