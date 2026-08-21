@@ -12441,6 +12441,14 @@ def api_config_get():
     return jsonify({
         "geo_anchor": CFG["geo_anchor"],
         "industry_pricing": CFG.get("industry_pricing", {}),
+        # Operational knobs the panel reads LIVE. They also ride on the step-1
+        # payload, but that copy is written when the keyword list is built and
+        # restored verbatim forever after — so a quote built on Wednesday kept
+        # Wednesday's call budget and every change to these was invisible until
+        # someone rebuilt step 1. The panel prefers these. (2026-08-21)
+        "min_unranked_terms": CFG.get("min_unranked_terms", 3),
+        "unranked_probe_max": CFG.get("unranked_probe_max", 4),
+        "dfs_calls_per_minute": CFG.get("dfs_calls_per_minute", 10),
         "competitive_adder": CFG["competitive_adder"],
         "bid_score_breaks": CFG["bid_score_breaks"],
         "cpc_adder_enabled": CFG.get("cpc_adder_enabled", True),
