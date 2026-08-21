@@ -3340,6 +3340,7 @@ function unrankedScopeNote(){
 // one market's suffix, and mixing another market's terms into it would move the
 // tier split, the total volume and therefore the price. The keyword list is not
 // touched by this. (2026-08-21)
+const CROSS_MARKET_MAX = 4;
 function crossMarketCandidates(limit){
   const sfx=gridSuffix();
   const pm=(typeof primaryMarket==='function' ? (primaryMarket()||'') : '');
@@ -3347,6 +3348,20 @@ function crossMarketCandidates(limit){
     .map(v=>String(v||'').trim()).filter(Boolean)
     .filter(v=>v.toLowerCase()!==String(pm).toLowerCase());
   if(!sfx || !others.length) return {terms:[], markets:[]};
+  // NEW YORK CITY WAS FOURTH IN THE LIST AND THE SLICE TOOK THREE. It kept
+  // Paramus, Shrewsbury and Lawrenceville — three New Jersey towns within an
+  // hour of Wayne — and dropped the one market that asked a different
+  // question. Ski Barn at #2 in Paramus says almost nothing; Ski Barn against
+  // every ski shop in Manhattan says everything. Ordered by how DIFFERENT the
+  // market is rather than by where it sat in the input. (2026-08-21)
+  const hs=(typeof homeStateAbbr==='function' ? (homeStateAbbr()||'') : '');
+  const st=v=>{ const m=String(v||'').match(/,\s*([A-Za-z]{2})\s*$/);
+                return m ? m[1].toUpperCase() : ''; };
+  others.sort((a,b)=>{
+    const oa=(hs && st(a) && st(a)!==hs) ? 0 : 1;
+    const ob=(hs && st(b) && st(b)!==hs) ? 0 : 1;
+    return oa-ob;
+  });
   const best=(ST.table||[])
     .filter(r=>r && !r.error && !r.queued && !r.expired && /^\d+$/.test(String(r.pos)))
     .sort((a,b)=>Number(a.pos)-Number(b.pos))
@@ -3364,8 +3379,8 @@ function crossMarketButton(){
   return ' <button type="button" id="crossMkt" class="btn2" style="padding:3px 11px;'
     +'font-size:12px;margin-left:4px">Check the markets that were not crossed</button>'
     +' <span class="nf" style="font-size:11.5px">their best '+terms.length
-    +' terms in '+Math.min(markets.length,3)+' other market'
-    +(Math.min(markets.length,3)===1?'':'s')+' · report only, the list is not touched</span>';
+    +' terms in '+Math.min(markets.length,CROSS_MARKET_MAX)+' other market'
+    +(Math.min(markets.length,CROSS_MARKET_MAX)===1?'':'s')+' · report only, the list is not touched</span>';
 }
 function _wireCrossMkt(){
   const c=document.getElementById('crossMkt');
@@ -3376,7 +3391,7 @@ async function checkOtherMarkets(){
   const {terms, markets}=crossMarketCandidates(2);
   if(!terms.length || !markets.length) return;
   const pairs=[];
-  markets.slice(0,3).forEach(m=>terms.forEach(t=>pairs.push({
+  markets.slice(0, CROSS_MARKET_MAX).forEach(m=>terms.forEach(t=>pairs.push({
     kw:(t.bare+' '+marketSuffix(m)).replace(/\s+/g,' ').trim(),
     bare:t.bare, market:m, home:t.pos})));
   if(btn){ btn.disabled=true; btn.textContent='Checking '+pairs.length+' …'; }
@@ -3420,8 +3435,17 @@ function renderCrossMarket(rows, sent){
     n.innerHTML=(miss.length
         ? '✓ <b>'+miss.length+' of '+rows.length+' checks came back not ranking '
           +'outside the primary market.</b>'
-        : '\u{1F50E} <b>They rank in the other markets too</b> — all '+rows.length
-          +' checks came back with a position.')
+        : '\u{1F50E} <b>They rank in '+[...new Set(rows.map(r=>r.market))].join(' and ')
+          +' too</b> — all '+rows.length
+          +' checks that answered came back with a position.')
+      // "All 4 checks came back with a position" was true of the four that
+      // answered and silent about the two that did not — the same shape as
+      // counting errored probes as ranked.
+      +((sent-rows.length)>0
+        ? ' <span style="color:#8a5a10">'+(sent-rows.length)+' probe'
+          +((sent-rows.length)===1?'':'s')+' did not answer, so any market not '
+          +'listed below is still unchecked.</span>'
+        : '')
       +'<div class="nf" style="margin-top:5px">'
       +rows.map(r=>escapeHtml(r.bare)+' in <b>'+escapeHtml(r.market)+'</b> — '
         +(r.pos==='Not Found'
