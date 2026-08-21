@@ -664,7 +664,18 @@ CFG = {
     # lookup called 19 terms unranked that the SERP found at #1-#4. 0 turns it
     # off. (2026-08-20)
     "min_unranked_terms": 3,
-    "unranked_probe_max": 10,
+    # FOUR, NOT TEN — THE PROBES WERE STARVING EACH OTHER. The pacing holds the
+    # process to dfs_calls_per_minute; a probe that queues ten SERP lookups, then
+    # retries the ones that did not answer, then hands over to the cross-market
+    # check, puts more than a minute of work into a minute. The later calls sit
+    # waiting for a slot until the request times out, and a timed-out probe is
+    # reported as "could not be read" — which is how six of ten and then two of
+    # two came back unread on a client whose earlier runs answered fine.
+    #
+    # Four candidates is two batches. With the sieve in front of it that is
+    # usually enough to find three misses, and what it does not spend is what
+    # the cross-market check needs. (2026-08-21)
+    "unranked_probe_max": 4,
     # DataForSEO allows 12 calls a minute. Pacing at 10 leaves headroom for the
     # calls made outside the build (signals, the SERP screenshot poll) without
     # anyone tripping the cap — see _dfs_take_slot(). 0 disables the pacing.

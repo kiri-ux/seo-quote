@@ -3457,7 +3457,8 @@ function renderCrossMarket(rows, sent, notYetChecked){
   if(!rows.length){
     n.style.cssText='background:#fdecea;border-color:#e0a3a0;margin-top:8px';
     n.innerHTML='⚠ <b>None of the '+sent+' cross-market probes could be read.</b> '
-      +'A lookup problem, not a finding — try again in a minute.';
+      +'A lookup problem, not a finding.'
+      +tipOf('Rank lookups are paced under the provider&rsquo;s per-minute cap. When a run has just spent that budget &mdash; the home probe, its retries, a rank re-check &mdash; the next calls queue for a slot and can time out waiting. Give it a minute and press the button again; nothing here is a statement about the client.');
   }else{
     const miss=rows.filter(r=>r.pos==='Not Found');
     n.style.cssText=(miss.length?'background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6'
@@ -3553,7 +3554,12 @@ function renderUnrankedFound(found, checked, measured, how){
   // where the next market is worth two calls without being asked.
   if(!found.length && !ST._crossAuto && crossMarketCandidates(2).markets.length){
     ST._crossAuto=true;
-    setTimeout(()=>{ try{ checkOtherMarkets(1); }catch(e){} }, 400);
+    // THE HOME PROBE HAS TO LEAVE ROOM FOR THE ONE THAT FOLLOWS IT. Rank
+    // lookups are paced under the provider's per-minute cap; firing this 400ms
+    // after the home probe put both sets of calls in the same minute, so the
+    // second set queued for a slot until the request timed out and came back
+    // "could not be read". Long enough that the queue has drained.
+    setTimeout(()=>{ try{ checkOtherMarkets(1); }catch(e){} }, 12000);
   }
   const b=document.getElementById('addUnranked');
   if(b) b.onclick=()=>{
