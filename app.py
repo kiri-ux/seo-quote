@@ -645,6 +645,11 @@ CFG = {
     # Maps card. Opening 40% down lands on organic results on a typical page;
     # the frame still slides either way. (2026-08-22)
     "serp_frame_offset": 0.40,
+    # Pixels of the ORIGINAL capture kept on top of the frame: the Google bar
+    # and the query. Without it a slid frame is a result page that never says
+    # what was searched. 190 covers the logo row and the search box at 1100px
+    # wide; it is joined to the results window with a hairline.
+    "serp_head_px": 190,
     "perf_table_terms": 50,
     "perf_initial_term_months": 12,
     "perf_tail_months": 6,
@@ -13197,6 +13202,7 @@ def api_config_get():
         "perf_page1_mult": CFG.get("perf_page1_mult", 2.1),
         "perf_page1_floor": CFG.get("perf_page1_floor", 80),
         "serp_frame_offset": CFG.get("serp_frame_offset", 0.40),
+        "serp_head_px": CFG.get("serp_head_px", 190),
         "geo_bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
         "min_term_months": CFG.get("min_term_months", 6),
         "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
@@ -16278,7 +16284,7 @@ def _clean_desc(text):
     return t
 
 
-def build_proposal_docx(d):
+def build_proposal_docx(d, _notes=None):
     """One SSG-shaped proposal, built from the quote the tool already holds."""
     from docx import Document
     from docx.shared import Pt, Inches, RGBColor
@@ -16671,16 +16677,31 @@ def build_proposal_docx(d):
     # gate decides and the operator can veto. perf_on False means off whatever
     # the numbers say; True or absent both mean "follow the gate", so a quote
     # saved before any of this existed behaves like a new one.
+    _notes = _notes if isinstance(_notes, dict) else {}
+    perf_omitted = "not requested"
     if d.get("perf_on") is not False:
         elig = perf_eligibility(d.get("table") or [])
-        # SAME BIDS THE PANEL PRICED ON. Without this the document re-derives
-        # the table from head terms alone, lands under the minimum and drops the
-        # section silently — which is exactly what it did. (2026-08-22)
-        _pd, _ = _perf_fill_bids(d, elig.get("eligible"))
-        prows = _perf_rows(_pd) if elig.get("eligible") else []
-        total = sum(r["page1"] for r in prows)
+        # WHAT THE PANEL SHOWED IS WHAT THE DOCUMENT CARRIES. The table used to
+        # be recomputed here, which meant a SECOND live bid lookup deciding a
+        # client document: if that one answered differently — or not at all —
+        # the rows floored, the total fell under the minimum and the section
+        # removed itself with nothing on screen to say so. The panel's rows were
+        # server-computed moments earlier; use them, and only recompute when
+        # they are absent. (2026-08-22)
+        prows = [r for r in (d.get("perf_rows") or [])
+                 if isinstance(r, dict) and r.get("kw") and r.get("page1")]
+        if not prows and elig.get("eligible"):
+            _pd, _ = _perf_fill_bids(d, True)
+            prows = _perf_rows(_pd)
+        total = sum(int(r.get("page1") or 0) for r in prows)
         floor = int(CFG.get("perf_min_monthly_value", 10000) or 0)
-        if prows and total >= floor:
+        perf_omitted = ("" if (prows and total >= floor and elig.get("eligible"))
+                        else (elig.get("reason") or "")
+                        if not elig.get("eligible")
+                        else "no priced terms" if not prows
+                        else f"potential value {_p_money(total)} is under the "
+                             f"{_p_money(floor)} minimum")
+        if prows and total >= floor and elig.get("eligible"):
             doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
             head(P["perf_heading"])
             _fmt = {"tail": int(CFG.get("perf_tail_months", 6)),
@@ -16698,9 +16719,11 @@ def build_proposal_docx(d):
                 rr.font.size = Pt(8)
             for r in prows:
                 c = tb.add_row().cells
-                vals = [r["kw"], r["area"], r["tier"], r["rank"],
-                        _p_money(r["page1"]), _p_money(r["top5"]),
-                        _p_money(r["top3"]), _p_money(r["one"]), r["achieved"]]
+                vals = [r.get("kw", ""), r.get("area", ""), r.get("tier", ""),
+                        r.get("rank", ""),
+                        _p_money(r.get("page1")), _p_money(r.get("top5")),
+                        _p_money(r.get("top3")), _p_money(r.get("one")),
+                        r.get("achieved", "")]
                 for i, v in enumerate(vals):
                     c[i].text = ""
                     rr = c[i].paragraphs[0].add_run(str(v))
@@ -16715,6 +16738,7 @@ def build_proposal_docx(d):
         bullet(c)
     body(P["case_closing"])
 
+    _notes["perf_omitted"] = perf_omitted
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
@@ -16725,8 +16749,9 @@ def build_proposal_docx(d):
 def api_proposal_docx():
     """The quote as an SSG-shaped Word document."""
     d = request.get_json(force=True) or {}
+    notes = {}
     try:
-        buf = build_proposal_docx(d)
+        buf = build_proposal_docx(d, notes)
     except ImportError:
         return jsonify({"error": "python-docx is not installed on this server."}), 500
     except Exception as e:                                    # noqa: BLE001
@@ -16734,7 +16759,14 @@ def api_proposal_docx():
         return jsonify({"error": str(e)[:200]}), 500
     name = re.sub(r"[^A-Za-z0-9]+", "_",
                   (d.get("brand") or "proposal")).strip("_") or "proposal"
-    return send_file(buf, as_attachment=True,
+    resp = send_file(buf, as_attachment=True,
                      download_name=f"{name}_SEO_Proposal.docx",
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
+    # A SECTION THAT REMOVES ITSELF HAS TO SAY SO. The performance table
+    # dropped out of two built documents while the panel showed it on screen,
+    # and nothing anywhere reported the decision. The header rides back with
+    # the file and the panel prints it. (2026-08-22)
+    if notes.get("perf_omitted"):
+        resp.headers["X-Perf-Omitted"] = str(notes["perf_omitted"])[:200]
+    return resp

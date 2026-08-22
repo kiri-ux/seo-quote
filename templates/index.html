@@ -4144,7 +4144,12 @@ function focusHtml(){
 // so the exhibit still lands the way it always did — and the only thing that
 // moves is where the window sits on the page. One click, visible immediately,
 // and it cannot be wrong without being obviously wrong. (2026-08-19)
-function cropWindow(dataUrl, ratio, offset){
+// THE SEARCH BOX AND THE ORGANIC RESULTS ARE 700px APART and a 16:9 window is
+// about 640px tall, so no single frame holds both. Sliding down past the AI
+// Overview cost the query — an exhibit of a result page that does not say what
+// was searched proves nothing. So keep a strip of the top and join the results
+// window underneath it, which is what anyone would do by hand. (2026-08-22)
+function cropWindow(dataUrl, ratio, offset, headPx){
   return new Promise((resolve)=>{
     const img=new Image();
     img.onload=()=>{
@@ -4153,11 +4158,20 @@ function cropWindow(dataUrl, ratio, offset){
       const winH=Math.min(Math.round(w/(ratio||16/9)), h);
       const room=Math.max(0, h-winH);
       const off=Math.round(room*Math.max(0, Math.min(1, Number(offset)||0)));
+      // The strip only earns its place once the frame has actually moved off
+      // the top — at the top the query is already in shot.
+      const head=(off>0)? Math.max(0, Math.min(Number(headPx)||0, Math.round(winH*0.45))) : 0;
+      const bodyH=winH-head;
       const c=document.createElement('canvas');
       c.width=w; c.height=winH;
       const x=c.getContext('2d');
       x.fillStyle='#fff'; x.fillRect(0,0,w,winH);
-      x.drawImage(img, 0, off, w, winH, 0, 0, w, winH);
+      if(head){
+        x.drawImage(img, 0, 0, w, head, 0, 0, w, head);
+        // A hairline so the join reads as a join rather than a rendering fault.
+        x.fillStyle='#dfe3e8'; x.fillRect(0, head-1, w, 1);
+      }
+      x.drawImage(img, 0, off+head, w, bodyH, 0, head, w, bodyH);
       try{ resolve(c.toDataURL('image/png')); }catch(e){ resolve(dataUrl); }
     };
     img.onerror=()=>resolve(dataUrl);
@@ -4194,6 +4208,10 @@ function renderSavedSerp(){
   return true;
 }
 
+function serpHeadPx(){
+  const v=Number((liveCfg()||{}).serp_head_px);
+  return (isFinite(v) && v>=0) ? v : 190;
+}
 function serpFrameOffset(){
   const v=Number((liveCfg()||{}).serp_frame_offset);
   return (isFinite(v) && v>=0 && v<=1) ? v : 0.40;
@@ -4203,7 +4221,7 @@ async function renderSerpShot(kw, offset){
   const out=$('serpOut'); if(!out || !ST._serpFull) return;
   const off=Math.max(0, Math.min(1, Number(offset)||0));
   ST._serpOffset=off;
-  const url=await cropWindow(ST._serpFull, 16/9, off);
+  const url=await cropWindow(ST._serpFull, 16/9, off, serpHeadPx());
   try{ ST.serp={kw:kw, img:await toJpeg(url, 0.72), offset:off};
        try{ scheduleAutoSave(); }catch(e){} }catch(e){ ST.serp={kw:kw, img:url}; }
   out.innerHTML=`
@@ -4219,7 +4237,7 @@ async function renderSerpShot(kw, offset){
       <button type="button" class="btn2 serpPan" data-d="0.15" title="Move the frame down" style="padding:3px 11px;font-size:13px">&darr;</button>
       ${off?`<button type="button" class="btn2 serpPan" data-d="reset" style="padding:3px 10px;font-size:12px">Top</button>`:''}
     </div>
-    <div class="nf" style="margin-top:4px;font-size:11.5px">Opens below the AI Overview, the ads and the map pack, which is where the organic results usually start \u2014 slide it either way to land on them exactly. That is where the client is missing.</div>`;
+    <div class="nf" style="margin-top:4px;font-size:11.5px">${off?'The search box is kept on top and the frame below it shows the organic results \u2014 slide it to land on them exactly.':'Sitting at the top of the page.'} That is where the client is missing.</div>`;
   document.querySelectorAll('.serpPan').forEach(b=>{
     b.onclick=()=>{
       const d=b.getAttribute('data-d');
@@ -5387,6 +5405,9 @@ async function renderProposalPerf(){
       national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
   }catch(e){ box.innerHTML=''; return; }
   const e=r.eligibility||{};
+  // WYSIWYG: the document carries these exact rows rather than recomputing
+  // them off a second live lookup that can answer differently.
+  ST.perfRows = (e.eligible && r.meets_minimum) ? (r.rows||[]) : [];
   if(!e.eligible || !r.meets_minimum){ box.innerHTML=''; return; }
   const earning=(r.rows||[]).filter(x=>x.achieved && x.achieved!=='Not ranking'
                                       && x.achieved!=='Not Page 1');
@@ -5423,6 +5444,7 @@ async function downloadProposal(){
         strategy:((ST.inputs||{}).strategy)||'',
         perf_on:(ST.perfOn===undefined? null : !!ST.perfOn),
         cpc:ST.cpc||{}, perf_extra:ST.perfExtra||[],
+        perf_rows:ST.perfRows||[],
         perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
         state:((ST.inputs||{}).state)||'',
         inputs:{geo_values:((ST.inputs||{}).geo_values)||[]},
@@ -5430,6 +5452,9 @@ async function downloadProposal(){
         // the document rather than being reported as missing.
         serp:(ST.serp&&ST.serp.img)?ST.serp:adoptSerpFromDom()})});
     if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
+    const _omit=res.headers.get('X-Perf-Omitted');
+    if(_omit && msg){ msg.innerHTML='<span style="color:#8a5a10">\u26a0 Performance section left out \u2014 '
+      +escapeHtml(_omit)+'.</span>'; }
     const blob=await res.blob();
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
