@@ -638,6 +638,13 @@ CFG = {
     # which is why Brendan calls it "a sample set of potential keywords" — so it
     # draws from a wider pool. Terms past the grid still need a measured rank
     # before they can appear in a client document. (2026-08-22)
+    # WHERE THE PROPOSAL SCREENSHOT OPENS. The capture is 1100x1700 and framed
+    # 16:9, so it shows roughly the top 640px of a page whose first 700+ are an
+    # AI Overview map, the ads and the local pack — none of which is the
+    # organic result the client is missing from. Ooten's exhibit was a Google
+    # Maps card. Opening 40% down lands on organic results on a typical page;
+    # the frame still slides either way. (2026-08-22)
+    "serp_frame_offset": 0.40,
     "perf_table_terms": 50,
     "perf_initial_term_months": 12,
     "perf_tail_months": 6,
@@ -13041,6 +13048,18 @@ def api_price():
                     "volume_add": p["volume_add"],
                     "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
                     "base": p["base"], "step": p["step"],
+                    # THE CHART IS A CLIENT-FACING BREAKDOWN AND IT WAS SHORT.
+                    # competitive_adder never reached it, so Ooten's proposal
+                    # printed "Competition —  bids and difficulty both below the
+                    # first break" while $1,000 of adder sat inside the $5,450 it
+                    # was breaking down. The rows did not add up to the total and
+                    # nothing said so. (2026-08-22)
+                    "competitive_adder": p.get("competitive_adder", 0),
+                    "pageone_anchor_add": p.get("pageone_anchor_add", 0),
+                    "pageone_band": p.get("pageone_band"),
+                    "pageone_measured": p.get("pageone_measured", False),
+                    "floored": p.get("floored", False),
+                    "client_floor": p.get("client_floor"),
                     "hard_tiers": p["hard_tiers"], "client_tiers": p["client_tiers"],
                     "hard_addon_per_market": p["hard_addon_per_market"],
                     "client_addon_per_market": p["client_addon_per_market"],
@@ -13054,26 +13073,21 @@ def api_price():
                     "margin_pct_of_gross": p["margin_pct_of_gross"],
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
-@app.route("/api/perf_quote", methods=["POST"])
-@_json_error_guard
-def api_perf_quote():
-    """Pay-for-performance: is this client eligible, and what would it bill?"""
-    d = request.get_json(force=True) or {}
-    # Eligibility is judged on the GRID, not on terms added for this table —
-    # the gate is about the client's existing position, and padding the list
-    # with terms chosen for their bid would move it.
-    elig = perf_eligibility(d.get("table") or [])
-    d = _perf_merge_extra(d)
-    # EVERY QUOTED TERM NEEDS A BID, NOT JUST THE HEAD TERMS. Step 2 scores the
-    # head terms only — that is all the competitive adder needs — so on Ooten
-    # eleven of twenty rows reached this table with no bid and fell to the $80
-    # floor, and the potential value read $2,080 against Brendan's $25,540. The
-    # floor is the right answer for a term nobody will quote a bid on; it is the
-    # wrong answer for a term nobody ASKED about. One Labs call covers up to a
-    # thousand keywords and returns the bid beside the volume. (2026-08-22)
+def _perf_fill_bids(d, eligible=True):
+    """Give every quoted term a bid before the performance table prices it.
+
+    Step 2 scores the HEAD terms only — that is all the competitive adder needs
+    — so most rows reach this table with nothing to price on and fall to the
+    floor. One Labs call covers up to a thousand keywords.
+
+    SHARED WITH THE DOCUMENT BUILDER ON PURPOSE. This lived inside the API
+    endpoint, so the panel saw filled bids and the .docx did not: the document
+    priced the same table off head terms alone, came in under the $10,000
+    minimum and dropped the whole section without a word. (2026-08-22)
+    """
     backfill = {"asked": 0, "filled": 0, "error": ""}
     cpc = dict(d.get("cpc") or {})
-    if elig.get("eligible"):
+    if eligible:
         _nk = lambda v: re.sub(r"\s+", " ", str(v or "").strip().lower())
         have = {_nk(k) for k, v in cpc.items() if v}
         _prows = _proposal_rows(d)
@@ -13106,6 +13120,27 @@ def api_perf_quote():
                     cpc[k] = v
                     backfill["filled"] += 1
         d = dict(d, cpc=cpc)
+    return d, backfill
+
+
+@app.route("/api/perf_quote", methods=["POST"])
+@_json_error_guard
+def api_perf_quote():
+    """Pay-for-performance: is this client eligible, and what would it bill?"""
+    d = request.get_json(force=True) or {}
+    # Eligibility is judged on the GRID, not on terms added for this table —
+    # the gate is about the client's existing position, and padding the list
+    # with terms chosen for their bid would move it.
+    elig = perf_eligibility(d.get("table") or [])
+    d = _perf_merge_extra(d)
+    # EVERY QUOTED TERM NEEDS A BID, NOT JUST THE HEAD TERMS. Step 2 scores the
+    # head terms only — that is all the competitive adder needs — so on Ooten
+    # eleven of twenty rows reached this table with no bid and fell to the $80
+    # floor, and the potential value read $2,080 against Brendan's $25,540. The
+    # floor is the right answer for a term nobody will quote a bid on; it is the
+    # wrong answer for a term nobody ASKED about. One Labs call covers up to a
+    # thousand keywords and returns the bid beside the volume. (2026-08-22)
+    d, backfill = _perf_fill_bids(d, elig.get("eligible"))
     rows = _perf_rows(d) if elig.get("eligible") else []
     total = sum(r["page1"] for r in rows)
     floor = int(CFG.get("perf_min_monthly_value", 10000) or 0)
@@ -13161,6 +13196,7 @@ def api_config_get():
         "perf_min_monthly_value": CFG.get("perf_min_monthly_value", 10000),
         "perf_page1_mult": CFG.get("perf_page1_mult", 2.1),
         "perf_page1_floor": CFG.get("perf_page1_floor", 80),
+        "serp_frame_offset": CFG.get("serp_frame_offset", 0.40),
         "geo_bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
         "min_term_months": CFG.get("min_term_months", 6),
         "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
@@ -16637,7 +16673,11 @@ def build_proposal_docx(d):
     # saved before any of this existed behaves like a new one.
     if d.get("perf_on") is not False:
         elig = perf_eligibility(d.get("table") or [])
-        prows = _perf_rows(d) if elig.get("eligible") else []
+        # SAME BIDS THE PANEL PRICED ON. Without this the document re-derives
+        # the table from head terms alone, lands under the minimum and drops the
+        # section silently — which is exactly what it did. (2026-08-22)
+        _pd, _ = _perf_fill_bids(d, elig.get("eligible"))
+        prows = _perf_rows(_pd) if elig.get("eligible") else []
         total = sum(r["page1"] for r in prows)
         floor = int(CFG.get("perf_min_monthly_value", 10000) or 0)
         if prows and total >= floor:

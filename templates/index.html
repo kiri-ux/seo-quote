@@ -4194,6 +4194,10 @@ function renderSavedSerp(){
   return true;
 }
 
+function serpFrameOffset(){
+  const v=Number((liveCfg()||{}).serp_frame_offset);
+  return (isFinite(v) && v>=0 && v<=1) ? v : 0.40;
+}
 // One place that draws the capture, so moving the frame never re-fetches it.
 async function renderSerpShot(kw, offset){
   const out=$('serpOut'); if(!out || !ST._serpFull) return;
@@ -4215,7 +4219,7 @@ async function renderSerpShot(kw, offset){
       <button type="button" class="btn2 serpPan" data-d="0.15" title="Move the frame down" style="padding:3px 11px;font-size:13px">&darr;</button>
       ${off?`<button type="button" class="btn2 serpPan" data-d="reset" style="padding:3px 10px;font-size:12px">Top</button>`:''}
     </div>
-    <div class="nf" style="margin-top:4px;font-size:11.5px">Same frame the proposal has always used \u2014 slide it down past the ads, the map pack and the shopping panels to land on the organic results, which is where the client is missing.</div>`;
+    <div class="nf" style="margin-top:4px;font-size:11.5px">Opens below the AI Overview, the ads and the map pack, which is where the organic results usually start \u2014 slide it either way to land on them exactly. That is where the client is missing.</div>`;
   document.querySelectorAll('.serpPan').forEach(b=>{
     b.onclick=()=>{
       const d=b.getAttribute('data-d');
@@ -4715,7 +4719,10 @@ function renderStep4(p){
         // KEPT by renderSerpShot(), re-encoded to JPEG first: the canvas hands
         // back PNG, which for a full-width screenshot runs to about a megabyte
         // of base64 and would ride in every autosave of the quote. (2026-08-18)
-        await renderSerpShot(done.keyword, 0);
+        // NOT THE TOP. The first 700px of a legal SERP is an AI Overview map,
+        // the ads and the local pack — Ooten's exhibit came out as a Google
+        // Maps card. Open where the organic results usually are.
+        await renderSerpShot(done.keyword, serpFrameOffset());
       }
     }catch(e){
       out.innerHTML=`<div class="err">${e.message}</div>`;
@@ -5351,6 +5358,7 @@ function renderProposal(){
         </div>`).join('')}
     </div>
     ${pricingChart()}
+    <div id="ppPerf"></div>
     ${vibeBlock()}
     ${proposalSignals()}
     ${proposalSerp()}
@@ -5358,6 +5366,43 @@ function renderProposal(){
     <div id="ppMsg" class="nf" style="margin-top:10px"></div>`;
   const b=$('ppDownload'); if(b) b.onclick=downloadProposal;
   try{ wireVibe(); }catch(e){}
+  try{ renderProposalPerf(); }catch(e){}
+}
+
+// THE PROPOSAL VIEW IS WHERE THE PRICE IS READ BACK, and pay-for-performance
+// is a second way this client can be billed — it belongs beside the three
+// monthly options rather than only on the build tab. Shows what the document
+// will carry: the four rungs, the term count, and the terms already earning.
+async function renderProposalPerf(){
+  const box=$('ppPerf'); if(!box) return;
+  if(ST.perfOn===false || !(ST.table||[]).length){ box.innerHTML=''; return; }
+  let r=null;
+  try{
+    r=await postJSON('/api/perf_quote',{
+      table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
+      perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
+      perf_extra:ST.perfExtra||[],
+      inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
+      state:(ST.inputs&&ST.inputs.state)||'',
+      national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
+  }catch(e){ box.innerHTML=''; return; }
+  const e=r.eligibility||{};
+  if(!e.eligible || !r.meets_minimum){ box.innerHTML=''; return; }
+  const earning=(r.rows||[]).filter(x=>x.achieved && x.achieved!=='Not ranking'
+                                      && x.achieved!=='Not Page 1');
+  const billing=earning.reduce((a,x)=>a+(x.achieved==='#1'?x.one
+                                       :x.achieved==='Top 3'?x.top3
+                                       :x.achieved==='Top 5'?x.top5:x.page1),0);
+  box.innerHTML=`<div class="pph" style="margin-top:22px">Performance based \u2014 an alternative to the options above</div>
+  <div class="ppwrap"><table>
+    <tr><th>If the term reaches</th><th style="text-align:right">Monthly, all ${r.rows.length} terms</th><th>What it means</th></tr>
+    <tr><td>Page 1</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(r.total_page1)}</td><td class="nf">every quoted term on page one</td></tr>
+    <tr><td>Top 5</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(r.total_top5)}</td><td class="nf">&nbsp;</td></tr>
+    <tr><td>Top 3</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(r.total_top3)}</td><td class="nf">&nbsp;</td></tr>
+    <tr><td>#1</td><td style="text-align:right;font-variant-numeric:tabular-nums">${ppMoney(r.total_one)}</td><td class="nf">the ceiling, not a forecast</td></tr>
+    <tr class="sum"><td><b>Billing today</b></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>${ppMoney(billing)}</b></td><td class="nf">${earning.length} of ${r.rows.length} terms already rank inside page one</td></tr>
+  </table></div>
+  <div class="nf" style="font-size:12px;margin-top:5px">Nothing is charged until a term ranks. ${r.term_months} month initial term, then month to month, with a ${r.tail_months} month tail on any term still ranking after cancellation. Minimum ${ppMoney(r.minimum)} of potential value to initiate \u2014 this list carries ${ppMoney(r.total_page1)}.</div>`;
 }
 
 async function downloadProposal(){
