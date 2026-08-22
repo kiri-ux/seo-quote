@@ -2921,6 +2921,12 @@ function step3Html(){
   const checked = Math.max((ST.total||0) - excludedRows(), 0);
   const frac = checked ? Math.round(ST.ranked/checked*100) : 0;
   try{ refreshAddonSuggestion(); }catch(e){}
+  // THE VERDICT FOLLOWS THE TABLE IT IS COMPUTED FROM. Pay-for-performance
+  // eligibility is a reading of the rank check, but it only recomputed when
+  // step 4 repainted — so retrying the failed lookups fixed step 3 and left the
+  // panel below still saying "3 never answered" about rows that had just
+  // landed. Same wiring the add-on suggestion has used all along. (2026-08-22)
+  try{ refreshPerf(); }catch(e){}
   // Show WHERE each row was measured once the locations differ. A rank of 4 in
   // Morristown and a rank of 4 in Knoxville are different facts, and the
   // per-market table is only auditable if the place is on the row.
