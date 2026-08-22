@@ -566,8 +566,24 @@ CFG = {
     # content placements, which lift the whole brand rather than a suburb — but
     # it is worth a lot: at Woodstock's 7 add-ons it is ~$5,600/mo on base
     # alone. Confirm before treating it as settled.
-    "addon_market_ratio": 0.42,                    # legacy flat value, kept as fallback
-    "addon_market_ratio_tiers": {"base": 0.42, "intermediate": 0.42, "advanced": 0.48},
+    # RETIRED (2026-08-21). An add-on market was priced at a FRACTION of the
+    # tier — 0.42 base/intermediate, 0.48 advanced, confirmed against TN Water
+    # & Air — on the reasoning that one extra city is a smaller piece of work
+    # than the primary campaign. That fraction sat next to the Add-On Market %
+    # and read as a second, larger discount, and the decision is that the
+    # bracket is the ONLY thing between the tier price and the add-on price.
+    #
+    # An add-on market is now priced as a full campaign at that tier, less the
+    # Add-On Market % for the market count. This is a ~2.4x increase on the
+    # add-on leg and a deliberate departure from the TN Water & Air figure;
+    # nothing in bench.py measures this leg, so there is no test that would
+    # have argued with either number.
+    #
+    # Both keys are kept so a saved config payload still round-trips, and both
+    # are ignored by the price. Use addon_override to negotiate a per-market
+    # rate on a single quote.
+    "addon_market_ratio": 1.0,                     # RETIRED — ignored by stage4_price
+    "addon_market_ratio_tiers": {},                # RETIRED — ignored by stage4_price
     # ADD-ON MARKET % — the volume break, FLAT BY BRACKET, not graduated.
     # Twelve markets is 15% off all twelve, not nine at 10% and three at 15%.
     # One rate per quote, because that is the number the client argues about;
@@ -9704,8 +9720,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         ai["bundle_savings"] = {k: ai["client_list"][k] - ai["client_add"][k]
                                 for k in client} if "client_list" in ai else {}
 
-    _ar = CFG.get("addon_market_ratio_tiers") or {}
-    _r  = lambda k: float(_ar.get(k, CFG["addon_market_ratio"]))
+    # AN ADD-ON MARKET IS A FULL CAMPAIGN IN ANOTHER CITY. There is no scope
+    # fraction any more (see the RETIRED note on addon_market_ratio): the list
+    # partner cost of an add-on market IS the tier's partner cost, and the
+    # Add-On Market % is the only thing that comes off it.
     # ADD-ON MARKETS ARE PRICED THROUGH THE MARGIN, NOT AS A RATIO OF RETAIL
     # (2026-08-05). The client side used to be ratio x retail, computed
     # independently of the add-on's own cost. That made the per-market retail
@@ -9719,8 +9737,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # below target - verified across all 1,650 anchor x ratio x count cases.
     _n_addon = max(0, int(addon_markets or 0))
     # LIST — one add-on market before the volume break.
-    hard_addon_list   = {k: r50n(hard_cost[k] * _r(k)) for k in hard_cost}
-    client_addon_list = {k: retail_of(hard_addon_list[k]) for k in hard_addon_list}
+    hard_addon_list   = {k: r50n(hard_cost[k]) for k in hard_cost}
+    # THE LIST PRICE OF AN ADD-ON MARKET IS THE TIER PRICE, exactly as shown on
+    # the cards — that is what "a full campaign in another city" means. Taken
+    # from `client` rather than re-derived through retail_of(hard_cost): on a
+    # FLOORED quote the cost was restated from the floored retail, and the trip
+    # back out loses $50 to rounding, so a $2,950 campaign would have shown a
+    # $2,900 list price for the same thing.
+    client_addon_list = dict(client)
     # ADD-ON MARKET % — flat by bracket, applied to partner cost so the client
     # price falls out of the margin the way every other price here does.
     #
@@ -9733,10 +9757,17 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     _ad_pct = addon_discount_pct(_n_addon)
     _ad_basis = ("%d add-on markets" % _n_addon) if _ad_pct else (
         "no add-on markets" if not _n_addon else "below the first bracket")
-    hard_addon   = {k: int(round(round(hard_addon_list[k]
-                                       * (1.0 - _ad_pct / 100.0), 6) / 10.0) * 10)
-                    for k in hard_addon_list}
-    client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
+    if _ad_pct:
+        hard_addon   = {k: int(round(round(hard_addon_list[k]
+                                          * (1.0 - _ad_pct / 100.0), 6) / 10.0) * 10)
+                        for k in hard_addon_list}
+        client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
+    else:
+        # NO DISCOUNT MEANS NO DISCOUNT. Sending the list cost back out through
+        # retail_of loses $50 to rounding on a floored quote, so a 0% bracket
+        # charged $2,900 against a $2,950 list — a phantom saving the operator
+        # could not explain and nobody had asked for.
+        hard_addon, client_addon = dict(hard_cost), dict(client_addon_list)
     # EVERY BRACKET, PRICED BY THE SERVER. The stepper moves the count without a
     # round-trip, and reimplementing r50/retail_of in the browser would put two
     # rounding rules in play — JS rounds .5 up, Python rounds it to even, so a
@@ -10288,7 +10319,7 @@ def mock_pipeline(seeds, markets, state, domain, brand, band, addon):
     # The demo prices add-ons through the same bracket the real path does, so a
     # walkthrough does not show a number the tool would never quote.
     _dm = 1.0 - addon_discount_pct(addon) / 100.0
-    addon_per = {k: r50(v * CFG["addon_market_ratio"] * _dm) for k, v in tiers.items()}
+    addon_per = {k: r50(v * _dm) for k, v in tiers.items()}
 
     export_rows = (
         [{"kw": r["kw"], "rank": "Not Found", "comp": "Ultra Competitive"} for r in ultra] +

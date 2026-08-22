@@ -4357,7 +4357,7 @@ function renderStep4(p){
           <label style="margin:0;font-size:12px">Add-on market partner hard cost</label>
           <input type="text" id="addon_override" value="${p.manual_addon&&p.hard_addon_per_market?p.hard_addon_per_market.base:''}" placeholder="optional"
             style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-          <span class="nf" style="font-size:12px">leave blank to keep the ratio of the tier <b>less the Add-On Market %</b> for the market count. A rate typed here is used as entered — the bracket is <b>not</b> applied on top of it. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
+          <span class="nf" style="font-size:12px">leave blank to keep the tier's own partner cost <b>less the Add-On Market %</b> for the market count. A rate typed here is used as entered — the bracket is <b>not</b> applied on top of it. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
         </div>
         <label style="margin:10px 0 4px;font-size:12px">Reason for the override <span class="req">*</span></label>
         <textarea id="base_reason" placeholder="Why the formula doesn&#39;t fit this client — e.g. established brand already ranking, existing agency relationship, scope outside the standard ladder"
@@ -5664,7 +5664,7 @@ async function loadConfig(){
       cfgRow('Step ratio (fallback)','cf_step',c.step_ratio,'0.38 = 38% — only used when flat step is blank')+
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
-      cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'× tier price')+
+      cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'RETIRED \u2014 an add-on market is a full campaign at that tier now, so there is no scope fraction. Ignored by the price; the Add-On Market % below is the only thing that comes off the tier price')+
       `<div class="tierhelp"><b>Add-On Market %</b> — the volume break, <b>flat by bracket</b>. The total count picks ONE percentage and every add-on market on the quote is priced at it: twelve markets is 15% off all twelve, not nine at 10% and three at 15%. Read high to low, first match wins. The percentage comes off <b>partner cost</b>, and the client figure is derived from that cost through the margin, so realised margin holds as markets accumulate.</div>`+
       tierRows(c.addon_volume_discount_tiers,'cf_addond','From','add-on markets → Add-On Market % is','% off')+
       cfgRow('Default markup (%)','cf_markup',c.default_markup_pct)+
@@ -6537,7 +6537,7 @@ function renderAddonCost(){
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market${R.ai?' (SEO + AI Search)':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.primary[k])}</td>`).join('')}</tr>
     ${R.ai?`<tr class="nf"><td style="padding:2px 10px 2px 0">of which Core SEO</td>${K.map(k=>`<td style="text-align:right">${money(R.seo[k])}</td>`).join('')}</tr>`:''}
     ${(R.pct&&R.listEach)?`<tr class="nf"><td style="padding:2px 10px 2px 0">Each add-on at list</td>${K.map(k=>`<td style="text-align:right;text-decoration:line-through;opacity:.75">${money(R.listEach[k])}</td>`).join('')}</tr>`:''}
-    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' <span class="nf" style="font-size:11px">(a share of Core SEO, not the combined price)</span>':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}<span class="nf" style="font-size:10.5px"> &middot; ${Math.round(R.each[k]/(R.seo[k]||1)*100)}% of SEO</span></td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' <span class="nf" style="font-size:11px">(priced off Core SEO, not the combined price)</span>':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}<span class="nf" style="font-size:10.5px"> &middot; ${Math.round(R.each[k]/(R.seo[k]||1)*100)}% of the tier</span></td>`).join('')}</tr>
     ${(R.pct&&R.listEach)?`<tr><td style="padding:2px 10px 2px 0;color:var(--ok,#1a7f4b);font-weight:600">Saved per add-on</td>${K.map(k=>`<td style="text-align:right;color:var(--ok,#1a7f4b);font-weight:600">&minus;${money(R.listEach[k]-R.each[k])}</td>`).join('')}</tr>`:''}
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">${n} add-on${n===1?'':'s'}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k]*n)}</td>`).join('')}</tr>
     <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Client total</td>${K.map(k=>`<td style="text-align:right;border-top:1px solid var(--line)">${money(R.primary[k]+R.each[k]*n)}</td>`).join('')}</tr>
