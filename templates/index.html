@@ -5664,8 +5664,7 @@ async function loadConfig(){
       cfgRow('Step ratio (fallback)','cf_step',c.step_ratio,'0.38 = 38% — only used when flat step is blank')+
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
-      cfgRow('Add-on market ratio','cf_addon',c.addon_market_ratio,'RETIRED \u2014 an add-on market is a full campaign at that tier now, so there is no scope fraction. Ignored by the price; the Add-On Market % below is the only thing that comes off the tier price')+
-      `<div class="tierhelp"><b>Add-On Market %</b> — the volume break, <b>flat by bracket</b>. The total count picks ONE percentage and every add-on market on the quote is priced at it: twelve markets is 15% off all twelve, not nine at 10% and three at 15%. Read high to low, first match wins. The percentage comes off <b>partner cost</b>, and the client figure is derived from that cost through the margin, so realised margin holds as markets accumulate.</div>`+
+      `<div class="tierhelp"><b>Add-On Market %</b> — off the tier price, per add-on market. Flat by bracket: the count picks one rate for the whole quote.</div>`+
       tierRows(c.addon_volume_discount_tiers,'cf_addond','From','add-on markets → Add-On Market % is','% off')+
       cfgRow('Default markup (%)','cf_markup',c.default_markup_pct)+
       cfgRow('Nationwide extras multiplier','cf_nwx',c.nationwide_service_extras,'1 = volume + visibility apply at national scope (they are what separate national clients); 0 mutes both'),
@@ -5709,7 +5708,7 @@ $('cfgApply').addEventListener('click', async()=>{
     zero_ranking_tiers:readTierRows('cf_zr'),
     vol_free_below:v('cf_volfree'),
     volume_brackets:readVolBrackets(),
-    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'), addon_market_ratio:v('cf_addon'),
+    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'),
     default_markup_pct:v('cf_markup'),
     service_min_volume:v('cf_svcmin'),
     service_upgrade_ratio:v('cf_svcratio'),
@@ -7099,7 +7098,17 @@ function step1Grid(kw){
       const hn=x=>Number(x||0).toLocaleString();
       auto.push(`\u{1F331} <b>${sr.headroom.length} slot${sr.headroom.length===1?'':'s'} held for terms they don't rank for yet</b> — ${sr.headroom.map(([t,v])=>escapeHtml(t)+' ('+hn(v)+'/mo)').join(' \u00b7 ')}${(sr.headroom_displaced||[]).length?`, in place of ${sr.headroom_displaced.map(([t])=>escapeHtml(t)).join(' \u00b7 ')}`:''}.${sr.headroom_basis?` <span class="nf">${escapeHtml(sr.headroom_basis)}.</span>`:''}${sr.headroom_seen?tipOf('Wanted '+sr.headroom_seen.want+' slot(s). Found '+sr.headroom_seen.fresh+' already in the grid, out of '+sr.headroom_seen.own+' known ranked terms, with '+sr.headroom_seen.pool+' candidates below the cut.'):''}${tipOf('Ranking the grid purely by measured demand hands every slot to the terms a client with existing SEO already owns &mdash; those are the ones with volume attached &mdash; so the proposal ends up arguing for a campaign to win what is already won.<br><br>These slots are reserved for the highest-demand terms the client is NOT ranking for, taken from the ones the demand ranking cut. They are the campaign&rsquo;s actual upside.<br><br>A reservation, not a quota: nothing is invented to fill it, and if every candidate is already ranked the grid is unchanged. Set <code>grid_headroom_slots</code> to 0 in pricing config to turn it off.')}`);
     }
-    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by measured demand</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(([t,v])=>escapeHtml(t)+' ('+n(v)+'/mo)').join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${cut.length?'':'</div>'}`);
+    // WHICH NUMBER ORDERED IT. The ranking used to measure the BARE phrase in
+    // the client's cities while the grid quoted the geo-qualified one — 2,420/mo
+    // against 340/mo for the same service, about 7x apart — so a term could take
+    // a slot on demand that the quoted string would never deliver. The ordering
+    // now runs on the quoted form; the figure shown is still the local demand,
+    // because that is what the volume component prices. Print both when they
+    // disagree, or the panel looks like it is contradicting itself.
+    const _geo = !!sr.geo_measured;
+    const _v = ([t,v,g]) => escapeHtml(t)+' ('+n(v)+'/mo'
+      + ((_geo && g) ? ' \u00b7 '+n(g)+' quoted' : '') + ')';
+    (cut.length?auto:notes).push(`${cut.length?'':'<div style="margin-top:4px" class="nf">'}\u{1F331} <b>${sr.order.length} focus terms ranked by ${_geo?'demand for the term as quoted':'measured demand'}</b> \u2014 the top ${kept.length} fill the grid.${cut.length?` <span style="color:#8a5a10">Not quoted: ${cut.slice(0,8).map(_v).join(' \u00b7 ')}${cut.length>8?` and ${cut.length-8} more`:''}.</span>`:''}${sr.order_basis?tipOf('Ordered on: '+escapeHtml(sr.order_basis)+'.<br><br>Two numbers describe every term and they are not the same. LOCAL DEMAND is the bare phrase measured in the client&rsquo;s cities &mdash; &ldquo;ski shop&rdquo; in Wayne, 2,420/mo &mdash; and it is what the volume component of the price is built from. QUOTED DEMAND is the string that actually reaches the proposal table &mdash; &ldquo;ski shop wayne nj&rdquo;, 340/mo. They run about 7x apart.<br><br>Slots are decided on the quoted figure, because that is the term being sold. Where the qualified form does not measure at all &mdash; common in small markets &mdash; local demand breaks the tie, so nothing is lost on a thin list. The price is unchanged either way.'+(sr.geo_error?'<br><br>The quoted-form lookup failed this run: '+escapeHtml(sr.geo_error):'')):''}${cut.length?'':'</div>'}`);
   }
 
   // The control lives by the switch it overrides and is driven by the LIST, not

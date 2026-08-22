@@ -4998,6 +4998,57 @@ def fold_seed_duplicates(seeds, markets=None, state=""):
     return kept, folded
 
 
+def geo_qualified_volume(terms, markets, state):
+    """Volume for the terms AS THEY WILL BE QUOTED — "ski shop wayne nj", not
+    "ski shop".
+
+    THE RANKING AND THE GRID WERE MEASURING DIFFERENT STRINGS. Seeds are ordered
+    by fetch_local_volume, which sends the BARE phrase with location_name set to
+    the city: "how many people in Wayne search *ski shop*" — 2,420/mo, a real
+    number and a fair measure of local demand. But the row that reaches the
+    proposal is "ski shop wayne nj", which draws 340/mo. Roughly 7x apart, and
+    consistently so, which means the slot order was set by numbers that do not
+    describe the terms being sold. A term with strong bare local demand and no
+    geo-qualified search took a slot and delivered very little.
+
+    National on purpose: the geography is IN the string, so a Wayne-localised
+    lookup would be asking how many people in Wayne search for a phrase that
+    already says Wayne. One call for the whole candidate list.
+
+    Returns ({term_lower: volume}, error) — {} when there is nothing to ask.
+    """
+    ts = [clean_kw(str(t).lower()).strip() for t in (terms or [])]
+    ts = [t for t in ts if t]
+    mk = [m for m in (markets or []) if m and str(m).strip()]
+    if not ts or not mk:
+        return {}, ""
+    forms = geo_form_candidates(mk[0], state)
+    sfx = forms[0] if forms else ""
+    if not sfx:
+        return {}, ""
+    probe, back = [], {}
+    for t in ts:
+        kw = clean_kw(f"{t} {sfx}")
+        if kw:
+            probe.append(kw)
+            back[kw] = t
+    probe = dfs_kw_list(probe)
+    if not probe:
+        return {}, ""
+    out = {}
+    try:
+        data = dfs_post("/keywords_data/google_ads/search_volume/live",
+                        [{"keywords": probe[:700], "location_name": "United States",
+                          "language_code": "en"}], timeout=25)
+        for it in (data["tasks"][0]["result"] or []):
+            k = str(it.get("keyword", "")).lower()
+            if k in back:
+                out[back[k]] = int(it.get("search_volume") or 0)
+    except Exception as e:                            # noqa: BLE001
+        return {}, str(e)[:140]
+    return out, ""
+
+
 def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     """Fold near-duplicate seeds, rank the survivors by measured demand, and
     say which ones fit the grid.
@@ -5032,6 +5083,23 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     vol = lambda t: int(vols.get(t, 0) or 0)     # noqa: E731
     measured = any(vol(t) for t in clean)
 
+    # ---- ORDER on the quoted form, PRICE on local demand -------------------
+    # Two jobs, two numbers, and they were sharing one. `vol` (bare, measured in
+    # the client's cities) is the addressable demand the campaign captures and
+    # is what total_volume and the volume component are built from — untouched.
+    # `gvol` is the volume of the string that actually reaches the proposal, and
+    # that is what decides which terms are worth a slot.
+    #
+    # gvol LEADS, vol BREAKS TIES. Small markets return 0/mo for most qualified
+    # phrases; ordering on gvol alone would flatten those lists into entry order
+    # and lose the signal the tool does have. Where the qualified form is
+    # measurable it decides, and where it is not the old ordering stands.
+    gvols, gerr = ({}, "")
+    if not national:
+        gvols, gerr = geo_qualified_volume(clean, markets, state)
+    gvol = lambda t: int(gvols.get(t, 0) or 0)   # noqa: E731
+    geo_measured = any(gvol(t) for t in clean)
+
     # Set aside anything that is not a service for this client. Done here, not
     # after the cut, because the whole point is that these must not take a slot.
     demoted = []
@@ -5061,7 +5129,8 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     # Brendan's own list carries two apartment terms among eighteen homes.
     # (2026-08-13)
     adj = lambda t: 1 if (kinds.get(t) or {}).get("kind") == "adjacent" else 0
-    ranked = sorted(clean, key=lambda t: (adj(t), ntok(t) < 2, -vol(t), order[t]))
+    ranked = sorted(clean, key=lambda t: (adj(t), ntok(t) < 2,
+                                          -gvol(t), -vol(t), order[t]))
     groups = []                                   # [{"keep":t, "fold":[t,...], "key":set}]
     for t in ranked:
         # A seed made entirely of shape words ("services", "near me") keys to the
@@ -5084,7 +5153,10 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
     kept_terms = survivors[:limit]
     dropped_terms = survivors[limit:]
     keptset = set(kept_terms)
-    row = lambda t: {"term": t, "volume": vol(t)}  # noqa: E731
+    # Both numbers on every row: the panel has to be able to show WHY a term
+    # outranked one with a bigger headline figure.
+    row = lambda t: {"term": t, "volume": vol(t),        # noqa: E731
+                     "geo_volume": gvol(t)}
     return {
         "kept": [row(t) for t in kept_terms],
         "dropped": [row(t) for t in dropped_terms],
@@ -5098,6 +5170,16 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
         "adjacent": [t for t in clean if adj(t)],
         "limit": limit, "total": len(clean) + len(demoted), "measured": measured,
         "basis": "US national" if national or not markets else "targeted cities",
+        # Which number actually did the ordering, said out loud. A probe that
+        # came back empty leaves the old bare ordering in place, and that has to
+        # be visible rather than looking like the new behaviour.
+        "order_basis": ("national demand — no market to qualify with" if national
+                        else "geo-qualified volume, ties broken on local demand"
+                        if geo_measured
+                        else "local demand — the qualified forms did not measure"),
+        "geo_measured": geo_measured,
+        "geo_ordered": int(sum(1 for t in clean if gvol(t))),
+        "geo_error": gerr or "",
         "error": err or "",
     }
 
@@ -7520,7 +7602,17 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     seed_ranking = {
                         "basis": _sr.get("basis", ""),
                         "adjacent": _sr.get("adjacent") or [],
-                        "order": [[r["term"], r["volume"]] for r in _sr["kept"]],
+                        # [term, local demand, demand for the QUOTED form]. The
+                        # third figure is what did the ordering; the second is
+                        # what prices the volume component. They disagree by
+                        # about 7x and the panel has to be able to show why a
+                        # term outranked one with a bigger headline number.
+                        "order": [[r["term"], r["volume"], r.get("geo_volume", 0)]
+                                  for r in _sr["kept"]],
+                        "order_basis": _sr.get("order_basis", ""),
+                        "geo_measured": bool(_sr.get("geo_measured")),
+                        "geo_ordered": int(_sr.get("geo_ordered") or 0),
+                        "geo_error": _sr.get("geo_error", ""),
                         "folded": _sr.get("folded") or [],
                         "was": list(seeds),
                     }
@@ -10009,12 +10101,25 @@ PROPOSAL = {
 
     # The per-option keyword counts Brendan quotes. Boilerplate in his documents
     # — the same three lines regardless of the grid — so they stay boilerplate.
+    #
+    # Three variants exist across the nine proposals and no rule separates them:
+    # not list size, not vertical, not date. This is the one in six of the nine
+    # (Waytek, PA Center, Nob Hill, Keller, Visit Central PA, Red Shoes), chosen
+    # 2026-08-22 over Media Venue's "1-2 / 2-3 / 3-4" and the Rockingham/NASSCO
+    # variant that widens competitive to 4-6 and 6-8.
+    #
+    # NOT derived from the grid, and it cannot be: Rockingham's table carries 40
+    # ultra-competitive terms against an Advanced option promising 3-4, and Red
+    # Shoes has 3 competitive terms against an Advanced option promising 8-12.
+    # These lines say how many terms the campaign WORKS, not how many the table
+    # lists — deriving them would print numbers Brendan never writes and would
+    # make Red Shoes' Advanced smaller than its Base.
     "option_scope": {
-        "base": ["1-2 ultra-competitive keywords", "3-5 competitive keywords",
+        "base": ["1 ultra-competitive keyword", "3-5 competitive keywords",
                  "10-15 long tail keywords"],
-        "intermediate": ["2-3 ultra-competitive keywords", "5-8 competitive keywords",
+        "intermediate": ["2 ultra-competitive keywords", "5-8 competitive keywords",
                          "12-18 long tail keywords"],
-        "advanced": ["3-4 ultra-competitive keywords", "8-12 competitive keywords",
+        "advanced": ["3 ultra-competitive keywords", "8-12 competitive keywords",
                      "15-20 long tail keywords"],
     },
     # Each is a list of paragraphs; the last one runs into the targeting list,
