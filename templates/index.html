@@ -455,13 +455,11 @@
     <select id="strategy_sel" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:14px 'Barlow',sans-serif;background:#FCFCFB;color:var(--ink);min-width:240px">
       <option value="Core SEO" selected>Core SEO</option>
       <option value="Core SEO + AI Search">Core SEO + AI Search</option>
-      <option value="Core SEO + Performance Based">Core SEO + Performance Based</option>
       <option value="Website Audit">Website Audit</option>
     </select>
     <div id="strategies" class="hidden">
       <label class="strat"><input type="radio" name="strategy" value="Core SEO" checked> Core SEO</label>
       <label class="strat"><input type="radio" name="strategy" value="Core SEO + AI Search"> Core SEO + AI Search</label>
-      <label class="strat"><input type="radio" name="strategy" value="Core SEO + Performance Based"> Core SEO + Performance Based</label>
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
@@ -5378,6 +5376,7 @@ async function downloadProposal(){
         // builds the table off the twenty-term grid alone and the whole
         // measured extra pool is silently dropped.
         strategy:((ST.inputs||{}).strategy)||'',
+        perf_on:(ST.perfOn===undefined? null : !!ST.perfOn),
         cpc:ST.cpc||{}, perf_extra:ST.perfExtra||[],
         perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
         state:((ST.inputs||{}).state)||'',
@@ -5908,6 +5907,7 @@ function snapshotQuote(){
     // a latch left set is how one client's terms reach another's document.
     perfExtra: ST.perfExtra||[],
     perfOverride: ST.perfOverride||{},
+    perfOn: (ST.perfOn===undefined? null : !!ST.perfOn),
     addonOverride: ST.addonOverride||'',
     addonOn: !!ST.addonOn,
     addonPicked: (ST.inputs&&ST.inputs.addon_picked)||[],
@@ -5968,6 +5968,9 @@ function restoreQuote(p){
   ST.geoOverride=p.geoOverride||'';
   ST.perfExtra=p.perfExtra||[];
   ST.perfOverride=p.perfOverride||{};
+  // null/absent = follow the gate on this quote's own numbers, which is what a
+  // quote saved before any of this existed should do.
+  ST.perfOn=(p.perfOn===true||p.perfOn===false)? p.perfOn : undefined;
   ST.addonOverride=p.addonOverride||'';
   // A quote saved before the toggle existed has no flag; infer it from the count
   // so an existing add-on quote reopens with its fields showing.
@@ -6005,6 +6008,7 @@ function restoreQuote(p){
   ST._unrankedTried=[];
   ST._ownedCache=null;
   ST._crossAuto=false;
+  ST._perfAuto=false;
   // Rehydrate the most recent report so its Apply buttons work on a reloaded
   // quote — the point of saving it is being able to act on it later.
   if(ST.reports.length){ window._report=ST.reports[ST.reports.length-1]; }
@@ -7960,10 +7964,11 @@ function placeNoun(n, plural){
 // not qualify" — only one of those is about the client.
 async function refreshPerf(){
   const box=$('perfBox'); if(!box) return;
-  // ALWAYS ASKED, NOT ONLY WHEN SELECTED. Whether a client qualifies is a fact
-  // about their rankings, and it is worth knowing BEFORE the strategy is
-  // picked — it is an option most clients do not get offered.
-  const on=/performance/i.test((ST.inputs&&ST.inputs.strategy)||'');
+  // NOT A STRATEGY THE PARTNER PICKS. Pay for performance never arrives on an
+  // order — it is something we add when the client turns out to qualify — so
+  // it is not on the Strategy control at all. The tool decides on Brendan's
+  // rule, arms itself, and the operator can switch it back off.
+  // ST.perfOn: true/false set by hand, undefined = follow the gate.
   if(!(ST.table||[]).length){ box.innerHTML=''; return; }
   let r=null;
   try{
@@ -7977,24 +7982,23 @@ async function refreshPerf(){
   }catch(e){ box.innerHTML=''; return; }
   const e=r.eligibility||{};
   const money=v=>'$'+Number(v||0).toLocaleString();
-  // Off-strategy: say nothing unless they QUALIFY, in which case say it loudly
-  // and offer the switch. A client who does not qualify is the normal case and
-  // does not need a line on the panel.
-  if(!on){
-    if(!e.eligible || !r.meets_minimum){ box.innerHTML=''; return; }
-    box.innerHTML=`<div class="calc" style="background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6">
-      \u2713 <b>This client qualifies for pay-for-performance.</b>
-      <span class="nf">${e.within} of ${e.measured} measured terms already rank inside the first
-      ${Math.round(e.depth/10)} pages (${e.share}%), worth <b>${money(r.total_page1)}/mo</b> at page one
-      against a ${money(r.minimum)} minimum.</span>
-      <button type="button" id="perfSwitch" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:6px">Add it to this quote</button>
-      ${tipOf('Brendan only offers pay for performance where the keywords are ALREADY ranking in the first five pages &mdash; from scratch the first billable ranking is 6-12+ months out. Most clients do not clear it, so when one does it is worth knowing before the proposal is written.<br><br>Adding it keeps the three monthly options exactly as they are and appends the performance section.')}</div>`;
-    const b=$('perfSwitch');
-    if(b) b.onclick=()=>{
-      const sel=document.getElementById('strategy_sel');
-      if(sel){ sel.value='Core SEO + Performance Based';
-               sel.dispatchEvent(new Event('change',{bubbles:true})); }
-    };
+  // ARMS ITSELF. The whole point is that we add this when it is warranted, and
+  // a decision that needs a button is a decision that does not get made.
+  if(e.eligible && ST.perfOn===undefined) ST.perfOn=true;
+  const on = ST.perfOn===true;
+  // ORDER MATTERS. An explicit veto is an operator decision and outranks the
+  // numbers; an unfinished rank check is actionable (retry it) and has to be
+  // said whatever the partial share looks like; a client who simply does not
+  // qualify is the normal case and gets silence, because saying so on every
+  // quote is noise about an option that was never on the table.
+  if(ST.perfOn===false){
+    box.innerHTML=`<div class="calc" style="background:#f5f6f7;border-color:var(--line)">
+      <b>Pay for performance — off for this quote.</b>
+      <span class="nf">This client qualifies (${e.share}% of measured terms inside the first
+      ${Math.round(e.depth/10)} pages).</span>
+      <button type="button" id="perfOnBtn" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:6px">Put it back on</button></div>`;
+    const ob=$('perfOnBtn');
+    if(ob) ob.onclick=()=>{ ST.perfOn=true; try{scheduleAutoSave();}catch(_e){} refreshPerf(); };
     return;
   }
   if(!e.enough){
@@ -8004,6 +8008,8 @@ async function refreshPerf(){
     return;
   }
   if(!e.eligible){
+    // Settled and does not qualify: nothing to act on, nothing to say.
+    if(!on){ box.innerHTML=''; return; }
     box.innerHTML=`<div class="calc" style="background:#fdecea;border-color:#e0a3a0">
       \u26a0 <b>Not a pay-for-performance client.</b>
       <span class="nf">${escapeHtml(e.reason||'')}. Only ${e.share}% are inside the first
@@ -8014,6 +8020,14 @@ async function refreshPerf(){
   const short = !r.meets_minimum;
   const wireMore = ()=>{ const m=$('perfMore');
     if(m) m.onclick=()=>{ m.disabled=true; measurePerfExtra(r.candidates||[]); }; };
+  // FILLS ITSELF, ONCE PER QUOTE. Twenty terms is the priced grid; Brendan's
+  // table is fifty. Leaving the difference behind a button means the table
+  // ships at twenty and the value reads low — which is the state this arrived
+  // in. The latch is per quote so a re-price does not buy the calls twice.
+  if(!ST._perfAuto && (r.candidates||[]).length){
+    ST._perfAuto = true;
+    setTimeout(()=>{ measurePerfExtra(r.candidates||[]); }, 300);
+  }
   box.innerHTML=`<div class="calc" style="background:${short?'var(--warn-bg)':'var(--ok-bg,#eaf6ee)'};border-color:${short?'#e0c08a':'#a8ceb6'}">
     ${short?'\u26a0':'\u2713'} <b>Pay for performance — ${short?'below the minimum':'eligible'}.</b>
     <span class="nf">${e.within} of ${e.measured} measured terms rank inside the first
@@ -8024,12 +8038,15 @@ async function refreshPerf(){
       Minimum to initiate ${money(r.minimum)}.</div>
     ${short?`<div class="nf" style="margin-top:4px" ><b>${money(r.minimum-r.total_page1)} short.</b>
       The section is left out until the list carries enough value.</div>`:''}
-    <div class="nf" style="margin-top:5px">${r.in_table} term${r.in_table===1?'':'s'} in the table${(r.candidates||[]).length?` — <b>${r.candidates.length} more</b> could join it, up to ${r.table_target}. <button type="button" id="perfMore" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Measure ${r.candidates.length} more</button> <span style="font-size:11.5px">one rank check each · the priced grid and the ${money((ST.pricing&&ST.pricing.client_tiers||{}).base||0)} campaign do not change</span>`:''}</div>
+    <div class="nf" style="margin-top:5px">${r.in_table} of ${r.table_target} terms in the table${(r.candidates||[]).length?` — <span id="perfAutoNote">measuring <b>${r.candidates.length} more</b>, one rank check each</span>. <button type="button" id="perfMore" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Measure now</button>`:` — the priced grid and the ${money((ST.pricing&&ST.pricing.client_tiers||{}).base||0)} campaign are unchanged by any of this`}</div>
     ${(r.backfill&&r.backfill.asked)?`<div class="nf" style="margin-top:4px">${r.backfill.filled} of ${r.backfill.asked} term${r.backfill.asked===1?'':'s'} the competition step never priced had a bid looked up for this table.${r.backfill.error?' <span style="color:#8a5a10">'+escapeHtml(r.backfill.error)+'</span>':''}</div>`:''}
     ${r.no_bids?`<div class="nf" style="margin-top:4px">${r.no_bids} term${r.no_bids===1?'':'s'} still had no bid anywhere and sit at the
       ${money(80)} floor — those rows are conservative.</div>`:''}
+    <div style="margin-top:6px"><button type="button" id="perfOffBtn" class="btn2" style="padding:2px 10px;font-size:11.5px">Leave it off this quote</button></div>
     ${tipOf('Cost Page 1 is derived from each term&rsquo;s own measured top-of-page bid &mdash; the bid is what the market pays for one click, which is the same thing this column prices. Calibrated on Ooten Law: his median Page-1 is $280 against a measured median bid of $132.<br><br>Top 5 / Top 3 / #1 run 1.6x / 2.4x / 3.6x of page one, compressed above $600 where his own table compresses. His four most expensive rows look hand-set; expect to override those.')}</div>`;
   wireMore();
+  const off=$('perfOffBtn');
+  if(off) off.onclick=()=>{ ST.perfOn=false; try{scheduleAutoSave();}catch(_e){} refreshPerf(); };
 }
 
 // A MENU, NOT A WORK COMMITMENT. Brendan's Ooten performance table is fifty
@@ -8046,10 +8063,13 @@ async function measurePerfExtra(terms){
   const mk=(ST.inputs&&ST.inputs.geo_values)||[];
   const primary=(typeof primaryMarket==='function'? (primaryMarket()||'') : (mk[0]||''));
   const done=[];
+  const note=$('perfAutoNote');
   try{
     for(let i=0;i<terms.length;i+=5){
       const batch=terms.slice(i,i+5);
-      if(btn) btn.textContent='Measuring '+(i+batch.length)+' of '+terms.length+'…';
+      const msg='measuring '+(i+batch.length)+' of '+terms.length+'\u2026';
+      if(btn) btn.textContent=msg;
+      if(note) note.textContent=msg;
       let got=null;
       try{
         got=await postJSON('/api/rankings',{

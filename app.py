@@ -16630,7 +16630,12 @@ def build_proposal_docx(d):
     # inside the first five pages; from scratch the first rankings are 6-12+
     # months out and there is nothing to bill against. The section is absent
     # rather than shown empty, and the operator sees the reason in step 4.
-    if str(d.get("strategy") or "").lower().find("performance") >= 0:
+    # OURS TO ADD, NOT THE PARTNER'S TO REQUEST. Pay for performance never
+    # arrives on an order, so it is not read off the strategy field at all: the
+    # gate decides and the operator can veto. perf_on False means off whatever
+    # the numbers say; True or absent both mean "follow the gate", so a quote
+    # saved before any of this existed behaves like a new one.
+    if d.get("perf_on") is not False:
         elig = perf_eligibility(d.get("table") or [])
         prows = _perf_rows(d) if elig.get("eligible") else []
         total = sum(r["page1"] for r in prows)
