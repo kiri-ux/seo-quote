@@ -989,11 +989,20 @@ def perf_eligibility(rows):
     """
     depth = int(CFG.get("perf_page_depth", 50) or 50)
     measured, within, unmeasured = 0, 0, 0
+    # QUEUED IS NOT FAILED. A row still in Google's queue fills in by itself;
+    # a row that errored needs Retry pressed. Step 3 has always drawn that
+    # distinction and this told the operator to "Retry those 1" about a row
+    # with no Retry to press. (2026-08-22)
+    queued, failed = 0, 0
     for r in (rows or []):
         if not isinstance(r, dict):
             continue
         if r.get("error") or r.get("queued") or r.get("expired"):
             unmeasured += 1
+            if r.get("queued"):
+                queued += 1
+            else:
+                failed += 1
             continue
         pos = r.get("pos", r.get("position"))
         if isinstance(pos, bool):
@@ -1025,15 +1034,28 @@ def perf_eligibility(rows):
     if unmeasured and total:
         worst, best = within / total, (within + unmeasured) / total
         if worst < min_share <= best:
+            if queued and not failed:
+                what = (f"{queued} row{'' if queued == 1 else 's'} still in "
+                        f"Google's queue — {'it fills' if queued == 1 else 'they fill'} "
+                        f"in without you, and this settles itself when "
+                        f"{'it lands' if queued == 1 else 'they land'}")
+            elif failed and not queued:
+                what = (f"{failed} lookup{'' if failed == 1 else 's'} failed — "
+                        f"retry {'it' if failed == 1 else 'them'} and this "
+                        f"decides itself")
+            else:
+                what = (f"{queued} still queued and {failed} failed — the queued "
+                        f"{'one fills' if queued == 1 else 'ones fill'} in on "
+                        f"{'its' if queued == 1 else 'their'} own, the failed "
+                        f"{'one needs' if failed == 1 else 'ones need'} a retry")
             return {"eligible": False, "measured": measured, "within": within,
                     "share": round(share * 100), "depth": depth,
                     "min_share": round(min_share * 100), "enough": False,
-                    "unmeasured": unmeasured,
+                    "unmeasured": unmeasured, "queued": queued, "failed": failed,
                     "reason": f"too close to call — {within} of {total} terms are "
-                              f"inside the first {depth // 10} pages and "
-                              f"{unmeasured} never answered, which is enough to "
-                              f"settle it either way. Retry those {unmeasured} "
-                              f"and this decides itself"}
+                              f"inside the first {depth // 10} pages, and "
+                              f"{'that last one is' if unmeasured == 1 else f'those {unmeasured} are'} "
+                              f"enough to settle it either way. {what}"}
     return {"eligible": ok, "measured": measured, "within": within,
             "share": round(share * 100), "depth": depth, "enough": True,
             "min_share": round(min_share * 100), "unmeasured": unmeasured,
