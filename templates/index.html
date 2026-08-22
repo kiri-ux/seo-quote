@@ -455,11 +455,13 @@
     <select id="strategy_sel" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:14px 'Barlow',sans-serif;background:#FCFCFB;color:var(--ink);min-width:240px">
       <option value="Core SEO" selected>Core SEO</option>
       <option value="Core SEO + AI Search">Core SEO + AI Search</option>
+      <option value="Core SEO + Performance Based">Core SEO + Performance Based</option>
       <option value="Website Audit">Website Audit</option>
     </select>
     <div id="strategies" class="hidden">
       <label class="strat"><input type="radio" name="strategy" value="Core SEO" checked> Core SEO</label>
       <label class="strat"><input type="radio" name="strategy" value="Core SEO + AI Search"> Core SEO + AI Search</label>
+      <label class="strat"><input type="radio" name="strategy" value="Core SEO + Performance Based"> Core SEO + Performance Based</label>
       <label class="strat"><input type="radio" name="strategy" value="Website Audit"> Website Audit</label>
     </div>
 
@@ -4397,6 +4399,7 @@ function renderStep4(p){
     </div>
     <div id="addonCost" style="margin-top:8px"></div>
     <div id="addonSuggest" style="margin-top:10px"></div>
+    <div id="perfBox" style="margin-top:10px"></div>
     </div>
     </div>
     <details style="margin-top:18px"><summary style="cursor:pointer;user-select:none;display:list-item"><span class="sec" style="display:inline;margin:0">Keyword table</span> <span class="nf" style="font-size:12px">— ${exp.length} terms, click to open</span><button id="csvbtn" type="button" style="float:right;margin:-3px 0 0;background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer">⬇ CSV</button></summary>
@@ -4506,6 +4509,7 @@ function renderStep4(p){
                    manualAddon:!!p.manual_addon,
                    discountBasis:p.addon_discount_basis||''};
   try{ wireAddonField(); }catch(e){}
+  try{ refreshPerf(); }catch(e){}
   try{ refreshAddonSuggestion(); }catch(e){}
   try{ jumpToPriceIfHashed(); }catch(e){}
   scheduleAutoSave();
@@ -6363,6 +6367,7 @@ function closeSaved(){ $('savedPanel').style.display='none'; $('savedBackdrop').
 const STRAT_TAG = {
   'Core SEO + AI Search': ['+ AI SEARCH', 'var(--warn-bg)', 'var(--warn)'],
   'Core SEO':             ['CORE SEO',    'var(--info-bg)', 'var(--velocity)'],
+  'Core SEO + Performance Based': ['+ PAY FOR PERFORMANCE', 'var(--ok-bg,#eaf6ee)', '#1a7f4b'],
   'Website Audit':        ['AUDIT',       '#EDEFF2',        'var(--muted)'],
 };
 function strategyTag(strategy){
@@ -7924,6 +7929,54 @@ function placeNoun(n, plural){
   if(co===src.length) return many?'counties':'county';
   if(co>0) return many?'locations':'location';
   return many?'cities':'city';
+}
+
+// PAY FOR PERFORMANCE IS A GATE. Brendan only offers it where the terms are
+// already inside the first five pages; from scratch the first rankings are
+// 6-12+ months out and there is nothing to bill against. The operator has to
+// see the verdict and the reason BEFORE building a document, and "we have not
+// measured enough of it yet" has to read differently from "this client does
+// not qualify" — only one of those is about the client.
+async function refreshPerf(){
+  const box=$('perfBox'); if(!box) return;
+  const on=/performance/i.test((ST.inputs&&ST.inputs.strategy)||'');
+  if(!on){ box.innerHTML=''; return; }
+  let r=null;
+  try{
+    r=await postJSON('/api/perf_quote',{
+      table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
+      perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{}});
+  }catch(e){ box.innerHTML=''; return; }
+  const e=r.eligibility||{};
+  const money=v=>'$'+Number(v||0).toLocaleString();
+  if(!e.enough){
+    box.innerHTML=`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">
+      \u26a0 <b>Pay for performance — not judged yet.</b>
+      <span class="nf">${escapeHtml(e.reason||'')}. This is about the rank check, not about the client.</span></div>`;
+    return;
+  }
+  if(!e.eligible){
+    box.innerHTML=`<div class="calc" style="background:#fdecea;border-color:#e0a3a0">
+      \u26a0 <b>Not a pay-for-performance client.</b>
+      <span class="nf">${escapeHtml(e.reason||'')}. Only ${e.share}% are inside the first
+      ${Math.round(e.depth/10)} pages against a ${e.min_share}% threshold, so the section is
+      left out of the proposal.</span>${tipOf('Brendan only offers pay for performance where the keywords are ALREADY ranking in the first five pages. Starting from scratch the time to the first billable ranking is 6-12+ months, so there is nothing to bill against for most of the first year and the model does not work for either side.<br><br>The three monthly options are unaffected — this only decides whether the performance section appears.')}</div>`;
+    return;
+  }
+  const short = !r.meets_minimum;
+  box.innerHTML=`<div class="calc" style="background:${short?'var(--warn-bg)':'var(--ok-bg,#eaf6ee)'};border-color:${short?'#e0c08a':'#a8ceb6'}">
+    ${short?'\u26a0':'\u2713'} <b>Pay for performance — ${short?'below the minimum':'eligible'}.</b>
+    <span class="nf">${e.within} of ${e.measured} measured terms rank inside the first
+    ${Math.round(e.depth/10)} pages (${e.share}%).</span>
+    <div class="nf" style="margin-top:5px">Potential ranking value —
+      <b>${money(r.total_page1)}/mo</b> at page one, ${money(r.total_top5)} at top 5,
+      ${money(r.total_top3)} at top 3, ${money(r.total_one)} at #1.
+      Minimum to initiate ${money(r.minimum)}.</div>
+    ${short?`<div class="nf" style="margin-top:4px" ><b>${money(r.minimum-r.total_page1)} short.</b>
+      The section is left out until the list carries enough value.</div>`:''}
+    ${r.no_bids?`<div class="nf" style="margin-top:4px">${r.no_bids} term${r.no_bids===1?'':'s'} had no bid data and fell to the
+      ${money(80)} floor — those rows are conservative.</div>`:''}
+    ${tipOf('Cost Page 1 is derived from each term&rsquo;s own measured top-of-page bid &mdash; the bid is what the market pays for one click, which is the same thing this column prices. Calibrated on Ooten Law: his median Page-1 is $280 against a measured median bid of $132.<br><br>Top 5 / Top 3 / #1 run 1.6x / 2.4x / 3.6x of page one, compressed above $600 where his own table compresses. His four most expensive rows look hand-set; expect to override those.')}</div>`;
 }
 
 async function refreshAddonSuggestion(){

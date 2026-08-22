@@ -597,6 +597,36 @@ CFG = {
     # rate on a single quote.
     "addon_market_ratio": 1.0,                     # RETIRED — ignored by stage4_price
     "addon_market_ratio_tiers": {},                # RETIRED — ignored by stage4_price
+    # ---- PERFORMANCE-BASED SEO (pay per ranking term) ---------------------
+    # Brendan, 2026-08-22: "For SEO we only offer pay for performance if their
+    # keywords are already ranking in the first 5 pages of results. If they're
+    # starting from scratch / not ranking we generally don't offer it, because
+    # the time frame to results can be 6-12+ months."
+    #
+    # So this is a GATE, not a strategy the operator can simply select: the
+    # client has to already be within reach. Ooten Law clears it at 70% of
+    # terms inside the top 50 and is the calibration for everything below.
+    "perf_page_depth": 50,               # "the first 5 pages"
+    "perf_eligible_min_share": 0.5,      # of the terms actually MEASURED
+    "perf_min_measured": 5,              # below this the share means nothing
+    "perf_min_monthly_value": 10000,     # BE: minimum potential ranking value
+    # Cost Page 1 per term, from the term's own measured top-of-page bid. The
+    # bid is what the market pays for one click, which is the same thing this
+    # column prices. Fitted on Ooten: his median Page-1 is $280 against a
+    # measured median bid of $132 — 2.12x. Floor from his cheapest row ($80).
+    "perf_page1_mult": 2.1,
+    "perf_page1_floor": 80,
+    "perf_page1_round": 5,
+    # Top 5 / Top 3 / #1 as multiples of Page 1. Two bands: his cheap rows run
+    # a clean 1.6 / 2.4 / 3.6 (measured 1.56-1.62, 2.25-2.44, 3.38-3.69) and his
+    # four most expensive are compressed. The #1 column in that top band is
+    # irregular (2.10, 1.99, 2.20, 2.66) and looks hand-set, so 2.2 is the
+    # middle of it rather than a fit — expect to override those rows.
+    "perf_ladder": [1.6, 2.4, 3.6],
+    "perf_ladder_high": [1.47, 1.83, 2.2],
+    "perf_high_knee": 600,               # Page-1 cost at which the high band starts
+    "perf_initial_term_months": 12,
+    "perf_tail_months": 6,
     # ADD-ON MARKET % — the volume break, FLAT BY BRACKET, not graduated.
     # Twelve markets is 15% off all twelve, not nine at 10% and three at 15%.
     # One rate per quote, because that is the number the client argues about;
@@ -917,6 +947,88 @@ CFG = {
 
 def r50(x):
     return int(round(x / 50.0) * 50)
+
+
+def perf_eligibility(rows):
+    """Is this client a candidate for pay-for-performance at all?
+
+    Brendan only offers it where the terms are ALREADY within the first five
+    pages — a client starting from scratch is 6-12+ months from any of it
+    ranking, so there is nothing to bill against and the model does not work.
+
+    Reads the rank table, counts only rows that were actually measured, and
+    returns the numbers rather than a verdict alone: "not eligible" and "we
+    could not measure enough of it" are different answers and only one of them
+    is about the client.
+    """
+    depth = int(CFG.get("perf_page_depth", 50) or 50)
+    measured, within = 0, 0
+    for r in (rows or []):
+        if not isinstance(r, dict):
+            continue
+        if r.get("error") or r.get("queued") or r.get("expired"):
+            continue
+        pos = r.get("pos", r.get("position"))
+        if isinstance(pos, bool):
+            continue
+        if isinstance(pos, int):
+            measured += 1
+            if 1 <= pos <= depth:
+                within += 1
+        elif str(pos).strip().lower() in ("not found", "not ranking"):
+            measured += 1
+    share = (within / measured) if measured else 0.0
+    min_n = int(CFG.get("perf_min_measured", 5) or 5)
+    min_share = float(CFG.get("perf_eligible_min_share", 0.5) or 0.5)
+    if measured < min_n:
+        return {"eligible": False, "measured": measured, "within": within,
+                "share": round(share * 100), "depth": depth,
+                "min_share": round(min_share * 100), "enough": False,
+                "reason": f"only {measured} terms have been measured — "
+                          f"the rank check has to land before this can be judged"}
+    ok = share >= min_share
+    return {"eligible": ok, "measured": measured, "within": within,
+            "share": round(share * 100), "depth": depth, "enough": True,
+            "min_share": round(min_share * 100),
+            "reason": (f"{within} of {measured} measured terms already rank "
+                       f"inside the first {depth // 10} pages"
+                       if ok else
+                       f"only {within} of {measured} measured terms rank inside "
+                       f"the first {depth // 10} pages — this client is starting "
+                       f"close enough to scratch that the first rankings are "
+                       f"6-12+ months out")}
+
+
+def perf_term_price(bid):
+    """Cost Page 1 / Top 5 / Top 3 / #1 for one term, from its measured bid."""
+    try:
+        b = float(bid or 0)
+    except (TypeError, ValueError):
+        b = 0.0
+    step = int(CFG.get("perf_page1_round", 5) or 5)
+    p1 = max(int(CFG.get("perf_page1_floor", 80) or 0),
+             int(round(b * float(CFG.get("perf_page1_mult", 2.1)) / step) * step))
+    ladder = (CFG.get("perf_ladder_high") if p1 >= int(CFG.get("perf_high_knee", 600))
+              else CFG.get("perf_ladder")) or [1.6, 2.4, 3.6]
+    t5, t3, one = (int(round(p1 * float(x) / step) * step) for x in ladder[:3])
+    return {"page1": p1, "top5": t5, "top3": t3, "one": one}
+
+
+def perf_tier_label(pos):
+    """The 'Current Achieved Tier' column — what they are billed at today."""
+    if isinstance(pos, int):
+        if pos <= 0:
+            return "Not ranking"
+        if pos == 1:
+            return "#1"
+        if pos <= 3:
+            return "Top 3"
+        if pos <= 5:
+            return "Top 5"
+        if pos <= 10:
+            return "Page 1"
+        return "Not Page 1"
+    return "Not ranking"
 
 
 def addon_discount_pct(n):
@@ -10426,6 +10538,34 @@ PROPOSAL = {
         "such, we have included several reference projects and case studies "
         "below as a showcase of our work.",
     ],
+    # ---- performance-based, Brendan verbatim (Ooten Law, 2026-08-20) -------
+    "perf_heading": "Performance Based SEO",
+    "perf_intro": [
+        "A performance-based SEO campaign is very similar to the above SEO "
+        "campaign options and is only available to select clients.  In a "
+        "performance-based campaign, we will engage in the same work, however "
+        "there are no fees charged until you rank for a term. Once you rank for "
+        "a term, depending on the position on page 1, there is a monthly fee "
+        "associated with that term ranking which is paid per month as long as "
+        "the term ranks.  Should you want to cancel work for a specific term, "
+        "you would continue to pay for that term ranking for a period of "
+        "{tail} months post-cancellation as long as the term continues to rank.  "
+        "In the event within that {tail} month period the term stops ranking, you "
+        "would then stop paying when the term stops ranking.  The initial term "
+        "for the campaign is {term} months which then auto-converts to a month "
+        "to month thereafter with the {tail} month tail for any ranking terms.",
+        "Below is a sample set of potential keywords including the term, your "
+        "current Google ranking for a specific term as well as the cost "
+        "associated with each keyword once it ranks on page 1 of results on "
+        "Google as determined by our proprietary rank tracker data.  You do not "
+        "pay for a keyword until it ranks.  We do require a minimum of {min} in "
+        "potential term ranking value to initiate a performance-based SEO "
+        "campaign.",
+    ],
+    "perf_columns": ["Keyword", "Practice Area", "Competition Tier",
+                     "Google Current Organic Ranking", "Cost Page 1",
+                     "Cost Top 5", "Cost Top 3", "Cost #1",
+                     "Current Achieved Tier"],
     "case_projects_label": "SEO Projects:",
     "case_studies": [
         "All Year Cooling – 5+ year SEO client ranking #1 for “Miami "
@@ -12842,6 +12982,30 @@ def api_price():
                     "margin_pct_of_gross": p["margin_pct_of_gross"],
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
+@app.route("/api/perf_quote", methods=["POST"])
+@_json_error_guard
+def api_perf_quote():
+    """Pay-for-performance: is this client eligible, and what would it bill?"""
+    d = request.get_json(force=True) or {}
+    elig = perf_eligibility(d.get("table") or [])
+    rows = _perf_rows(d) if elig.get("eligible") else []
+    total = sum(r["page1"] for r in rows)
+    floor = int(CFG.get("perf_min_monthly_value", 10000) or 0)
+    return jsonify({
+        "eligibility": elig,
+        "rows": rows,
+        "total_page1": total,
+        "total_top5": sum(r["top5"] for r in rows),
+        "total_top3": sum(r["top3"] for r in rows),
+        "total_one": sum(r["one"] for r in rows),
+        "minimum": floor,
+        "meets_minimum": bool(rows) and total >= floor,
+        "no_bids": len([r for r in rows if r.get("bid") in (None, 0)]),
+        "term_months": int(CFG.get("perf_initial_term_months", 12)),
+        "tail_months": int(CFG.get("perf_tail_months", 6)),
+    })
+
+
 @app.route("/api/config", methods=["GET"])
 @_json_error_guard
 def api_config_get():
@@ -12870,6 +13034,11 @@ def api_config_get():
         "geo_pct_tiers": CFG.get("geo_pct_tiers", []),
         "geo_pct_default": CFG.get("geo_pct_default", 60),
         "addon_volume_discount_tiers": CFG.get("addon_volume_discount_tiers", []),
+        "perf_page_depth": CFG.get("perf_page_depth", 50),
+        "perf_eligible_min_share": CFG.get("perf_eligible_min_share", 0.5),
+        "perf_min_monthly_value": CFG.get("perf_min_monthly_value", 10000),
+        "perf_page1_mult": CFG.get("perf_page1_mult", 2.1),
+        "perf_page1_floor": CFG.get("perf_page1_floor", 80),
         "geo_bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
         "min_term_months": CFG.get("min_term_months", 6),
         "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
@@ -15810,6 +15979,53 @@ def _proposal_rows(d):
     return rows
 
 
+def _perf_rows(d):
+    """The pay-for-performance table: every quoted term with its four prices.
+
+    Same rows as the keyword table — an unmeasured term still does not go in a
+    client document — plus the term's own measured top-of-page bid, which is
+    what the Page-1 cost is derived from. Sorted by Cost Page 1 descending,
+    which is how Brendan's reads: the terms worth the most money first.
+
+    An operator override for a term wins over the derived figure. His four most
+    expensive rows look hand-set and the tool cannot reproduce a hand.
+    """
+    cpc = {re.sub(r"\s+", " ", str(k or "").strip().lower()): v
+           for k, v in (d.get("cpc") or {}).items()}
+    over = {re.sub(r"\s+", " ", str(k or "").strip().lower()): v
+            for k, v in (d.get("perf_override") or {}).items()}
+    area = d.get("practice_area") or {}
+    rows = []
+    for r in _proposal_rows(d):
+        key = re.sub(r"\s+", " ", r["kw"].strip().lower())
+        bid = cpc.get(key)
+        price = perf_term_price(bid)
+        try:
+            man = float(over.get(key) or 0)
+        except (TypeError, ValueError):
+            man = 0.0
+        if man > 0:
+            price = perf_term_price(man / float(CFG.get("perf_page1_mult", 2.1) or 2.1))
+            price["page1"] = int(round(man))
+        pos = None
+        try:
+            pos = int(r["rank"])
+        except (TypeError, ValueError):
+            pos = None
+        rows.append({
+            "kw": r["kw"],
+            "area": str(area.get(key) or "").strip(),
+            "tier": r["tier"],
+            "rank": r["rank"],
+            "bid": (round(float(bid), 2) if bid not in (None, "") else None),
+            "manual": man > 0,
+            "achieved": perf_tier_label(pos if pos is not None else 0),
+            **price,
+        })
+    rows.sort(key=lambda x: (-x["page1"], x["kw"]))
+    return rows
+
+
 def _vibe_adjust(n, d):
     """Brendan's adjustment, applied to a client figure on the way out.
 
@@ -16252,6 +16468,43 @@ def build_proposal_docx(d):
                  f"{_p_money(tot.get('base'))} per month, intermediate "
                  f"{_p_money(tot.get('intermediate'))}, advanced "
                  f"{_p_money(tot.get('advanced'))}.", True)
+
+    # ---- performance-based SEO, when the client qualifies -------------------
+    # A GATE, NOT A CHOICE. Brendan only offers this where the terms are already
+    # inside the first five pages; from scratch the first rankings are 6-12+
+    # months out and there is nothing to bill against. The section is absent
+    # rather than shown empty, and the operator sees the reason in step 4.
+    if str(d.get("strategy") or "").lower().find("performance") >= 0:
+        elig = perf_eligibility(d.get("table") or [])
+        prows = _perf_rows(d) if elig.get("eligible") else []
+        total = sum(r["page1"] for r in prows)
+        floor = int(CFG.get("perf_min_monthly_value", 10000) or 0)
+        if prows and total >= floor:
+            doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+            head(P["perf_heading"])
+            _fmt = {"tail": int(CFG.get("perf_tail_months", 6)),
+                    "term": int(CFG.get("perf_initial_term_months", 12)),
+                    "min": _p_money(floor)}
+            for para in P["perf_intro"]:
+                body(para.format(**_fmt))
+            cols = P["perf_columns"]
+            tb = doc.add_table(rows=1, cols=len(cols))
+            tb.style = "Light Grid Accent 1"
+            for i, label in enumerate(cols):
+                tb.rows[0].cells[i].text = ""
+                rr = tb.rows[0].cells[i].paragraphs[0].add_run(label)
+                rr.bold = True
+                rr.font.size = Pt(8)
+            for r in prows:
+                c = tb.add_row().cells
+                vals = [r["kw"], r["area"], r["tier"], r["rank"],
+                        _p_money(r["page1"]), _p_money(r["top5"]),
+                        _p_money(r["top3"]), _p_money(r["one"]), r["achieved"]]
+                for i, v in enumerate(vals):
+                    c[i].text = ""
+                    rr = c[i].paragraphs[0].add_run(str(v))
+                    rr.font.size = Pt(8)
+            doc.add_paragraph()
 
     # ---- case studies -----------------------------------------------------
     head(P["case_heading"])
