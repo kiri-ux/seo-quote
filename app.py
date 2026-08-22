@@ -1083,6 +1083,79 @@ def perf_candidates(d, want=None):
     return out
 
 
+def perf_area(term, topics):
+    """The practice area / service line a term belongs to.
+
+    Brendan fills this column by hand — Personal Injury against Criminal
+    Defense, 25 each on Ooten. The tool already works the same split out at
+    build time: topic_clusters() groups the operator's seeds into the things
+    the client actually sells, which for a law firm IS the practice areas.
+    Reuse it rather than asking anyone to type it fifty times.
+
+    Matched on stems, so "wrongful death attorney knoxville tn" finds the
+    personal-injury topic through "injury" only if the label carries it — where
+    the label does not overlap the term at all the cell stays empty rather than
+    guessing, because a wrong practice area in a client document is worse than
+    a blank one. (2026-08-22)
+    """
+    if not topics:
+        return ""
+    stems = _topic_tokens(term)
+    # A WORD IN EVERY TOPIC DECIDES NOTHING. "lawyer" and "attorney" are role
+    # words a law firm's whole list carries, so they overlap both practice areas
+    # and whichever sorted first would have won. Drop the shared vocabulary and
+    # score on what actually separates the topics. General, not a legal
+    # special case: the same is true of "repair" across a trade's service
+    # lines. (2026-08-22)
+    _vocab = []
+    for t in (topics or []):
+        if not isinstance(t, dict):
+            continue
+        v = set()
+        for m in (t.get("terms") or []):
+            v |= _topic_tokens(str(m or ""))
+        v |= _topic_tokens(str(t.get("label") or ""))
+        _vocab.append(v)
+    _shared = set()
+    for i, a in enumerate(_vocab):
+        for b in _vocab[i + 1:]:
+            _shared |= (a & b)
+    scores = []
+    for t in (topics or []):
+        if not isinstance(t, dict):
+            continue
+        lab = str(t.get("label") or "").strip()
+        if not lab:
+            continue
+        # MEMBERSHIP FIRST. The topic carries the seeds that built it, so a term
+        # made from one of them is that topic — no guessing.
+        members = [str(m or "").strip().lower() for m in (t.get("terms") or [])]
+        low = " " + re.sub(r"\s+", " ", term.strip().lower()) + " "
+        if any(m and (" " + m + " ") in low for m in members):
+            return " ".join(w if w.isupper() else w.capitalize() for w in lab.split())
+        # Otherwise the topic's whole vocabulary, which is far wider than its
+        # label: the personal-injury topic carries "dog bite" and "slip and
+        # fall" even though its label carries neither.
+        toks = set()
+        for m in members:
+            toks |= _topic_tokens(m)
+        toks |= _topic_tokens(lab)
+        n = len((stems & toks) - _shared)
+        scores.append((n, lab))
+    scores.sort(reverse=True)
+    best, best_n = (scores[0][1], scores[0][0]) if scores else ("", 0)
+    # A TIE IS NOT AN ANSWER. "lawyer knoxville tn" overlaps both topics on the
+    # one word they share, and whichever sorted first would have been printed as
+    # this term's practice area. A blank cell is honest; a coin flip in a client
+    # document is not.
+    if len(scores) > 1 and scores[0][0] == scores[1][0]:
+        return ""
+    if not best or not best_n:
+        return ""
+    # Title Case for a client document: the labels come back lower case.
+    return " ".join(w if w.isupper() else w.capitalize() for w in best.split())
+
+
 def perf_term_price(bid):
     """Cost Page 1 / Top 5 / Top 3 / #1 for one term, from its measured bid."""
     try:
@@ -9058,6 +9131,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "topic_source": topic_source,
             "topics": [{"label": t["label"], "seeds": t["size"],
                         "share": round(t["size"] / max(len(seeds), 1) * 100),
+                        # THE MEMBER TERMS, not just the count. The performance
+                        # table's Practice Area column is this same split —
+                        # Personal Injury against Criminal Defense — and
+                        # matching a keyword to a topic LABEL by shared words
+                        # catches 2 of 13 real terms, because "dog bite lawyer"
+                        # does not contain "personal injury". Membership is
+                        # exact and the build already knows it. (2026-08-22)
+                        "terms": list(t.get("seeds") or []),
                         "services": len([x for x in services
                                          if service_topic(x.get("service", ""),
                                                           topics) == t["label"]])}
@@ -16151,7 +16232,15 @@ def _perf_merge_extra(d):
     twenty terms the options describe; these are terms the client could be
     billed for if they rank, which is a different promise.
     """
-    extra = [x for x in (d.get("perf_extra") or []) if isinstance(x, dict) and x.get("kw")]
+    extra, _seen_x = [], set()
+    for x in (d.get("perf_extra") or []):
+        if not isinstance(x, dict) or not x.get("kw"):
+            continue
+        _k = re.sub(r"\s+", " ", str(x["kw"]).strip().lower())
+        if _k in _seen_x:
+            continue                      # measured twice — auto run, then by hand
+        _seen_x.add(_k)
+        extra.append(x)
     if not extra:
         return d
     kw = {k: list(v or []) for k, v in (d.get("kw") or {}).items()
@@ -16193,7 +16282,8 @@ def _perf_rows(d):
     over = {re.sub(r"\s+", " ", str(k or "").strip().lower()): v
             for k, v in (d.get("perf_override") or {}).items()}
     area = d.get("practice_area") or {}
-    rows = []
+    topics = ((d.get("kw") or {}).get("topics") or [])
+    rows, seen_kw = [], set()
     for r in _proposal_rows(_perf_merge_extra(d)):
         key = re.sub(r"\s+", " ", r["kw"].strip().lower())
         bid = cpc.get(key)
@@ -16210,9 +16300,17 @@ def _perf_rows(d):
             pos = int(r["rank"])
         except (TypeError, ValueError):
             pos = None
+        # ONE ROW PER TERM. A term the grid cut and the extra pool measured can
+        # arrive from both sides in different tiers, and the document printed
+        # "car accident lawyer knoxville tn" twice. (2026-08-22)
+        if key in seen_kw:
+            continue
+        seen_kw.add(key)
         rows.append({
             "kw": r["kw"],
-            "area": str(area.get(key) or "").strip(),
+            # An operator override wins; otherwise the build's own topics.
+            "area": (str(area.get(key) or "").strip()
+                     or perf_area(r["kw"], topics)),
             "tier": r["tier"],
             "rank": r["rank"],
             "bid": (round(float(bid), 2) if bid not in (None, "") else None),
