@@ -988,11 +988,12 @@ def perf_eligibility(rows):
     is about the client.
     """
     depth = int(CFG.get("perf_page_depth", 50) or 50)
-    measured, within = 0, 0
+    measured, within, unmeasured = 0, 0, 0
     for r in (rows or []):
         if not isinstance(r, dict):
             continue
         if r.get("error") or r.get("queued") or r.get("expired"):
+            unmeasured += 1
             continue
         pos = r.get("pos", r.get("position"))
         if isinstance(pos, bool):
@@ -1010,12 +1011,32 @@ def perf_eligibility(rows):
         return {"eligible": False, "measured": measured, "within": within,
                 "share": round(share * 100), "depth": depth,
                 "min_share": round(min_share * 100), "enough": False,
+                "unmeasured": unmeasured,
                 "reason": f"only {measured} terms have been measured — "
                           f"the rank check has to land before this can be judged"}
     ok = share >= min_share
+    # A FEW TIMEOUTS MUST NOT DECIDE THIS. Ooten came back eligible at 65% on
+    # one run and "not a pay-for-performance client" at 47% on the next — same
+    # client, same list, three lookups that happened to time out. With
+    # seventeen rows measured against a 50% line, one term either way settles
+    # it. So ask whether the rows that did NOT answer could still change the
+    # verdict, and if they could, do not give one. (2026-08-22)
+    total = measured + unmeasured
+    if unmeasured and total:
+        worst, best = within / total, (within + unmeasured) / total
+        if worst < min_share <= best:
+            return {"eligible": False, "measured": measured, "within": within,
+                    "share": round(share * 100), "depth": depth,
+                    "min_share": round(min_share * 100), "enough": False,
+                    "unmeasured": unmeasured,
+                    "reason": f"too close to call — {within} of {total} terms are "
+                              f"inside the first {depth // 10} pages and "
+                              f"{unmeasured} never answered, which is enough to "
+                              f"settle it either way. Retry those {unmeasured} "
+                              f"and this decides itself"}
     return {"eligible": ok, "measured": measured, "within": within,
             "share": round(share * 100), "depth": depth, "enough": True,
-            "min_share": round(min_share * 100),
+            "min_share": round(min_share * 100), "unmeasured": unmeasured,
             "reason": (f"{within} of {measured} measured terms already rank "
                        f"inside the first {depth // 10} pages"
                        if ok else
