@@ -2277,6 +2277,12 @@ document.getElementById('pastseo_detail').addEventListener('change',()=>{
       document.getElementById('strategies').addEventListener('change', ()=>{
         const on=radios().find(r=>r.checked);
         if(on && ssel.value!==on.value) ssel.value=on.value;
+        // CHANGING THE STRATEGY IS NOT A REBUILD. Pay-for-performance turned on
+        // and nothing happened until the quote was re-priced, because the panel
+        // was only drawn by renderStep4. The eligibility is a property of the
+        // rank table, which has not moved. (2026-08-22)
+        if(on && ST.inputs) ST.inputs.strategy = on.value;
+        try{ refreshPerf(); }catch(e){}
       });
       window.reflectStrategy=function(){
         const on=radios().find(r=>r.checked);
@@ -4399,9 +4405,9 @@ function renderStep4(p){
     </div>
     <div id="addonCost" style="margin-top:8px"></div>
     <div id="addonSuggest" style="margin-top:10px"></div>
-    <div id="perfBox" style="margin-top:10px"></div>
     </div>
     </div>
+    <div id="perfBox" style="margin-top:12px"></div>
     <details style="margin-top:18px"><summary style="cursor:pointer;user-select:none;display:list-item"><span class="sec" style="display:inline;margin:0">Keyword table</span> <span class="nf" style="font-size:12px">— ${exp.length} terms, click to open</span><button id="csvbtn" type="button" style="float:right;margin:-3px 0 0;background:var(--atlas);color:#fff;border:none;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer">⬇ CSV</button></summary>
     <table style="font-size:12.5px;margin-top:6px">
       <thead><tr><th>Keyword</th><th>Rank</th><th>Competitiveness</th><th>Est. CPC</th></tr></thead>
@@ -7939,8 +7945,11 @@ function placeNoun(n, plural){
 // not qualify" — only one of those is about the client.
 async function refreshPerf(){
   const box=$('perfBox'); if(!box) return;
+  // ALWAYS ASKED, NOT ONLY WHEN SELECTED. Whether a client qualifies is a fact
+  // about their rankings, and it is worth knowing BEFORE the strategy is
+  // picked — it is an option most clients do not get offered.
   const on=/performance/i.test((ST.inputs&&ST.inputs.strategy)||'');
-  if(!on){ box.innerHTML=''; return; }
+  if(!(ST.table||[]).length){ box.innerHTML=''; return; }
   let r=null;
   try{
     r=await postJSON('/api/perf_quote',{
@@ -7949,6 +7958,26 @@ async function refreshPerf(){
   }catch(e){ box.innerHTML=''; return; }
   const e=r.eligibility||{};
   const money=v=>'$'+Number(v||0).toLocaleString();
+  // Off-strategy: say nothing unless they QUALIFY, in which case say it loudly
+  // and offer the switch. A client who does not qualify is the normal case and
+  // does not need a line on the panel.
+  if(!on){
+    if(!e.eligible || !r.meets_minimum){ box.innerHTML=''; return; }
+    box.innerHTML=`<div class="calc" style="background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6">
+      \u2713 <b>This client qualifies for pay-for-performance.</b>
+      <span class="nf">${e.within} of ${e.measured} measured terms already rank inside the first
+      ${Math.round(e.depth/10)} pages (${e.share}%), worth <b>${money(r.total_page1)}/mo</b> at page one
+      against a ${money(r.minimum)} minimum.</span>
+      <button type="button" id="perfSwitch" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:6px">Add it to this quote</button>
+      ${tipOf('Brendan only offers pay for performance where the keywords are ALREADY ranking in the first five pages &mdash; from scratch the first billable ranking is 6-12+ months out. Most clients do not clear it, so when one does it is worth knowing before the proposal is written.<br><br>Adding it keeps the three monthly options exactly as they are and appends the performance section.')}</div>`;
+    const b=$('perfSwitch');
+    if(b) b.onclick=()=>{
+      const sel=document.getElementById('strategy_sel');
+      if(sel){ sel.value='Core SEO + Performance Based';
+               sel.dispatchEvent(new Event('change',{bubbles:true})); }
+    };
+    return;
+  }
   if(!e.enough){
     box.innerHTML=`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">
       \u26a0 <b>Pay for performance — not judged yet.</b>
