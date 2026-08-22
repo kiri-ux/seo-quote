@@ -2735,6 +2735,14 @@ function renderStep1(){
 }
 
 // ---------- STEP 2 ----------
+// THE EXPLAINER IS FOR THE FIRST FEW RUNS, NOT EVERY RUN. Each step carried a
+// permanent paragraph about what it measures, so the panel opened on prose and
+// the numbers sat below it. Same words, one click away. (2026-08-22)
+function whyBox(label, html){
+  return `<details class="why" style="padding:0;background:none;border:none">
+    <summary style="cursor:pointer;user-select:none;font-size:11.5px;color:var(--muted)">${label}</summary>
+    <div style="margin-top:5px">${html}</div></details>`;
+}
 function step2Html(m){
   // KD was fetched, computed, and then rendered as an empty string whenever it
   // SUCCEEDED — so the only time you saw anything was when it failed. It comes
@@ -2820,7 +2828,7 @@ function step2Html(m){
     : '';
   return `
       <h4 class="sec">Step 2 · Competition</h4>
-      <div class="why">Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand).</div>
+      ${whyBox('What this measures', `Measures how hard this market is to win. The <b>competitive adder</b> is driven by Google's top-of-page bid data (advertiser demand).`)}
       ${marketWarn}
       ${bidLine}
       <div class="calc">${m.adder_basis==='cpc'
@@ -2925,7 +2933,7 @@ function step3Html(){
   return `
       <h4 class="sec">Step 3 · Rankings</h4>
       ${ctx}
-      <div class="why">Checks where the client's site currently ranks (top 100 — proposal depth: a rank of 27 is a foothold worth showing, not "Not Found") for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks anywhere in the top 100, the client is genuinely starting from scratch.</div>
+      ${whyBox('What this measures', `Checks where the client's site currently ranks (top 100 — proposal depth: a rank of 27 is a foothold worth showing, not "Not Found") for each keyword in their market. Two outputs: the proposal's ranking table, and the zero-ranking flag — if almost nothing ranks anywhere in the top 100, the client is genuinely starting from scratch.`)}
       <div class="calc">zero-ranking
         <span class="flag ${ST.rankUnmeasured?'off':(ST.zero?'on':'off')}">${ST.rankUnmeasured?'PENDING':(ST.zero?'YES':'NO')}</span>
         — ${ST.rankUnmeasured?'nothing measured yet, so no ranking adjustment is applied to the price':`${ST.ranked}/${checked} found in top 100 (${frac}%)${(()=>{
@@ -7495,19 +7503,36 @@ function step1Grid(kw){
       ? `<div style="margin-top:3px"><span style="color:#8a5a10">⚠ No volume data — ${escapeHtml(kw.volume_error)}. The volume part of pricing will be $0. <b>Re-run step 1</b> before quoting — a timeout here is usually transient.</span></div>`
       : `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:4px">⚠ <b>Every term returned zero local volume</b> — volume contributes <b>$0</b>, so the price rests on the geo band alone. Try <b>Price on national demand</b>.${tipOf('The lookup worked, so re-running will not help. Nobody searches these phrases with a city attached, which usually means the client sells nationally and the city grid is the wrong frame. Either switch the basis and rebuild, or confirm the local framing is deliberate.')}</div>`)}${(kw.volume_source==='labs')?`<div style="margin-top:3px" class="nf">\u{1F4CA} Google Ads volume was unavailable, so these figures came from the <b>DataForSEO Labs</b> keyword database instead. Country-level, which is the same basis a national quote uses.</div>`:''}`;
     const st='background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px';
-    box = notes.length
-      ? `<details style="${st}"><summary style="cursor:pointer;user-select:none">${head} <span class="nf">— click for ${notes.length} build note${notes.length===1?'':'s'}</span>${tail}</summary>${notes.join('')}</details>`
+    // ONE EXPANDER, NOT TWO BANDS AND A BOX. "Decided from the measurements"
+    // and the build notes were both permanently open above the keyword columns,
+    // so the thing the operator came to look at — the terms — started below a
+    // screenful of prose about how they were chosen. Warnings stay out here,
+    // because a warning nobody opens is a warning nobody reads. (2026-08-22)
+    const inner = (auto.length
+        ? `<div style="font-weight:700;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:#3d6b3d;margin:2px 0 3px">Decided from the measurements</div>`
+          + auto.map(a=>`<div style="margin-top:3px">${a}</div>`).join('')
+          + (notes.length?`<div style="height:9px"></div>`:'')
+        : '') + notes.join('');
+    const n = auto.length + notes.length;
+    box = n
+      ? `<details style="${st}"><summary style="cursor:pointer;user-select:none">${head} <span class="nf">— click for ${n} build note${n===1?'':'s'}</span>${tail}</summary>${inner}</details>`
       : `<div style="${st}">${head}${tail}</div>`;
   }
-  // One band, so a build reads as "here is what I decided" rather than as four
-  // separate things that might be problems.
-  const autoBox = auto.length
-    ? `<div style="margin:0 0 8px;padding:8px 11px;background:#eef6ee;border:1px solid #bcd9bc;border-radius:8px;font-size:12.5px;color:#2c4a2c">
-        <div style="font-weight:700;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:#3d6b3d;margin-bottom:3px">Decided from the measurements</div>
-        ${auto.map(a=>`<div style="margin-top:3px">${a}</div>`).join('')}
-      </div>`
-    : '';
-  return warn.join('') + autoBox + box;
+  // A GUARD THAT DID NOT USED TO MATTER. The measurements band rendered on its
+  // own; folding it into `box` put it behind `if(kw.grid && kw.services)`, so a
+  // list without that shape lost every decision line silently. Fall back to a
+  // plain expander rather than to nothing. (2026-08-22)
+  if(!box && (auto.length + notes.length)){
+    const st2='background:#f4f1fa;border:1px solid #d9cfe8;color:#4a3a6b;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px';
+    const n2=auto.length+notes.length;
+    const inner2=(auto.length
+        ? `<div style="font-weight:700;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:#3d6b3d;margin:2px 0 3px">Decided from the measurements</div>`
+          + auto.map(a=>`<div style="margin-top:3px">${a}</div>`).join('')
+          + (notes.length?`<div style="height:9px"></div>`:'')
+        : '') + notes.join('');
+    box=`<details style="${st2}"><summary style="cursor:pointer;user-select:none">Build notes <span class="nf">— ${n2} note${n2===1?'':'s'}</span></summary>${inner2}</details>`;
+  }
+  return warn.join('') + box;
 }
 
 // gridWarnings()/warnBadge() removed 2026-08-11 — step1Grid() now renders

@@ -1083,6 +1083,25 @@ def perf_candidates(d, want=None):
     return out
 
 
+def perf_topics(d):
+    """Topics WITH their member terms, for the Practice Area column.
+
+    Only the payload's own topics. A quote saved before those carried their
+    members has labels and nothing else, and the column comes out blank until
+    step 1 is rebuilt — which the panel says out loud.
+
+    I tried rebuilding membership here with topic_clusters(), which is
+    deterministic and needs no API call. It is the wrong tool: it groups by
+    token overlap, so Ooten's list split into "personal injury" and "accident"
+    rather than the two practice areas, and "sex crime attorney" landed under
+    Personal Injury. The AI names and groups these at build time and nothing
+    cheap reproduces it. A blank column is recoverable; a confidently wrong
+    practice area in a client document is not. (2026-08-22)
+    """
+    kw = d.get("kw") or {}
+    return [t for t in (kw.get("topics") or []) if isinstance(t, dict)]
+
+
 def perf_area(term, topics):
     """The practice area / service line a term belongs to.
 
@@ -13241,6 +13260,10 @@ def api_perf_quote():
         "meets_minimum": bool(rows) and total >= floor,
         "no_bids": len([r for r in rows if r.get("bid") in (None, 0)]),
         "backfill": backfill,
+        # The column is blank on quotes built before topics carried their
+        # members. Say so rather than leaving an empty column unexplained.
+        "areas_known": bool([t for t in perf_topics(d) if t.get("terms")]),
+        "no_area": len([r for r in rows if not r.get("area")]),
         "candidates": perf_candidates(d),
         "table_target": int(CFG.get("perf_table_terms", 50) or 50),
         "in_table": len(rows),
@@ -16282,7 +16305,7 @@ def _perf_rows(d):
     over = {re.sub(r"\s+", " ", str(k or "").strip().lower()): v
             for k, v in (d.get("perf_override") or {}).items()}
     area = d.get("practice_area") or {}
-    topics = ((d.get("kw") or {}).get("topics") or [])
+    topics = perf_topics(d)
     rows, seen_kw = [], set()
     for r in _proposal_rows(_perf_merge_extra(d)):
         key = re.sub(r"\s+", " ", r["kw"].strip().lower())
