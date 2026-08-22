@@ -5664,7 +5664,7 @@ async function loadConfig(){
       cfgRow('Step ratio (fallback)','cf_step',c.step_ratio,'0.38 = 38% — only used when flat step is blank')+
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
-      `<div class="tierhelp"><b>Add-On Market %</b> — off the tier price, per add-on market. Flat by bracket: the count picks one rate for the whole quote.</div>`+
+      `<div class="tierhelp"><b>Add-On Market %</b> — a volume discount for covering more markets on the same site. Each add-on market is the tier price less this rate, and the total count sets one rate for all of them.</div>`+
       tierRows(c.addon_volume_discount_tiers,'cf_addond','From','add-on markets → Add-On Market % is','% off')+
       cfgRow('Default markup (%)','cf_markup',c.default_markup_pct)+
       cfgRow('Nationwide extras multiplier','cf_nwx',c.nationwide_service_extras,'1 = volume + visibility apply at national scope (they are what separate national clients); 0 mutes both'),
@@ -6523,9 +6523,8 @@ function renderAddonCost(){
     : `<div style="margin-bottom:7px;padding:6px 9px;background:var(--info-bg);border-radius:5px;font-size:12.5px">
          <b>Add-On Market %</b> &mdash;
          <b style="font-size:15px;color:var(--atlas)">${(R.pct||0)}% off</b>
-         <span class="nf">every one of the ${n} add-on market${n===1?'':'s'} &mdash;
-         the count falls in the <b>${br?addonBracketLabel(br):'\u2014'}</b> bracket.
-         One rate for the whole quote, not a different rate per market.</span>
+         <span class="nf">on all ${n} add-on market${n===1?'':'s'}
+         (${br?addonBracketLabel(br):'\u2014'}).</span>
          <div class="nf" style="margin-top:4px">${(R.schedule||[]).map(b=>
            `<span style="margin-right:10px${(br&&b.min_markets===br.min_markets)
               ?';font-weight:700;color:var(--atlas)':''}">`
@@ -6536,12 +6535,12 @@ function renderAddonCost(){
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Primary market${R.ai?' (SEO + AI Search)':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.primary[k])}</td>`).join('')}</tr>
     ${R.ai?`<tr class="nf"><td style="padding:2px 10px 2px 0">of which Core SEO</td>${K.map(k=>`<td style="text-align:right">${money(R.seo[k])}</td>`).join('')}</tr>`:''}
     ${(R.pct&&R.listEach)?`<tr class="nf"><td style="padding:2px 10px 2px 0">Each add-on at list</td>${K.map(k=>`<td style="text-align:right;text-decoration:line-through;opacity:.75">${money(R.listEach[k])}</td>`).join('')}</tr>`:''}
-    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' <span class="nf" style="font-size:11px">(priced off Core SEO, not the combined price)</span>':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}<span class="nf" style="font-size:10.5px"> &middot; ${Math.round(R.each[k]/(R.seo[k]||1)*100)}% of the tier</span></td>`).join('')}</tr>
+    <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">Each add-on${R.ai?' <span class="nf" style="font-size:11px">(priced off Core SEO, not the combined price)</span>':''}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k])}</td>`).join('')}</tr>
     ${(R.pct&&R.listEach)?`<tr><td style="padding:2px 10px 2px 0;color:var(--ok,#1a7f4b);font-weight:600">Saved per add-on</td>${K.map(k=>`<td style="text-align:right;color:var(--ok,#1a7f4b);font-weight:600">&minus;${money(R.listEach[k]-R.each[k])}</td>`).join('')}</tr>`:''}
     <tr><td style="padding:2px 10px 2px 0;color:var(--muted)">${n} add-on${n===1?'':'s'}</td>${K.map(k=>`<td style="text-align:right">${money(R.each[k]*n)}</td>`).join('')}</tr>
     <tr style="font-weight:700;color:var(--atlas)"><td style="padding:4px 10px 2px 0;border-top:1px solid var(--line)">Client total</td>${K.map(k=>`<td style="text-align:right;border-top:1px solid var(--line)">${money(R.primary[k]+R.each[k]*n)}</td>`).join('')}</tr>
   </table>
-  <div class="nf" style="font-size:11.5px;margin-top:3px">Partner hard cost per add-on — ${money(R.hard.base)} / ${money(R.hard.intermediate)} / ${money(R.hard.advanced)}${(R.pct&&R.listHard)?` <span style="opacity:.8">(list ${money(R.listHard.base)} / ${money(R.listHard.intermediate)} / ${money(R.listHard.advanced)}, less the ${R.pct}%)</span>`:''}.${R.pct?' The Add-On Market % comes off <b>cost</b>, and the client figure is derived from that cost through the margin — which is why the realised margin below does not sag as markets are added.':''}</div>
+  <div class="nf" style="font-size:11.5px;margin-top:3px">Partner hard cost per add-on — ${money(R.hard.base)} / ${money(R.hard.intermediate)} / ${money(R.hard.advanced)}${(R.pct&&R.listHard)?` <span style="opacity:.8">(list ${money(R.listHard.base)} / ${money(R.listHard.intermediate)} / ${money(R.listHard.advanced)}, less the ${R.pct}%)</span>`:''}.</div>
   ${(nxt && nxtTotal && nxtTotal<nowTotal)?`<div class="calc" style="background:var(--warn-bg);border-color:#e0c08a;margin-top:6px;font-size:12px">
     ⚠ <b>${nxt.min_markets} markets would cost LESS than ${n}.</b>
     At ${nxt.min_markets} the whole quote reprices at ${nxt.pct}% —
@@ -6552,7 +6551,7 @@ function renderAddonCost(){
   ${(!R.ai && R.hardPrimary)?`<div class="nf" style="font-size:11.5px;margin-top:3px">Realised margin — ${K.map((k,i)=>{
       const tot=R.primary[k]+R.each[k]*n, hc=(R.hardPrimary[k]||0)+(R.hard[k]||0)*n;
       return `${L[i]} <b>${tot?((tot-hc)/tot*100).toFixed(1):'0.0'}%</b>`;
-    }).join(' · ')}. Every add-on is priced from its own partner cost through the margin, so this never falls below target however many markets are added.</div>`:''}
+    }).join(' · ')}.</div>`:''}
   ${R.ai?`<div class="nf" style="font-size:11.5px;margin-top:3px">AI Search is not included in add-on pricing — the assumption is that AI Search works at brand level rather than per market. <b>Unconfirmed.</b></div>`:''}`;
 }
 
