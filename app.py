@@ -625,6 +625,20 @@ CFG = {
     "perf_ladder": [1.6, 2.4, 3.6],
     "perf_ladder_high": [1.47, 1.83, 2.2],
     "perf_high_knee": 600,               # Page-1 cost at which the high band starts
+    # HOW MANY TERMS THE PERFORMANCE TABLE CARRIES. Brendan's Ooten table is
+    # FIFTY, and it is the same fifty as his SEO keyword table — he does not
+    # build a separate list. Ours is capped at 20 by grid_max_services, which is
+    # his floor rather than his norm (his proposals run 20 to 99; Ooten is 50
+    # because it is two full practice areas).
+    #
+    # The priced grid stays at 20: it is what the campaign commits to WORKING,
+    # it is what the option scope lines describe, and every calibrated price in
+    # bench.py was built on it. The performance table is a different question —
+    # a menu of terms you could be paid for, with no work commitment per term,
+    # which is why Brendan calls it "a sample set of potential keywords" — so it
+    # draws from a wider pool. Terms past the grid still need a measured rank
+    # before they can appear in a client document. (2026-08-22)
+    "perf_table_terms": 50,
     "perf_initial_term_months": 12,
     "perf_tail_months": 6,
     # ADD-ON MARKET % — the volume break, FLAT BY BRACKET, not graduated.
@@ -1021,6 +1035,40 @@ def grid_suffix(keywords):
         else:
             break
     return " ".join(tail)
+
+
+def perf_candidates(d, want=None):
+    """Terms that could join the performance table but are not in the grid.
+
+    Drawn from what the demand ranking cut — already measured for volume, not
+    yet rank-checked — and qualified with the grid's own suffix so they read
+    like every other row. Returns the terms only; nothing enters the table
+    until a rank has actually been measured for it.
+    """
+    want = int(want or CFG.get("perf_table_terms", 50) or 50)
+    rows = _proposal_rows(d)
+    have = {re.sub(r"\s+", " ", r["kw"].strip().lower()) for r in rows}
+    short = max(0, want - len(rows))
+    if not short:
+        return []
+    sfx = grid_suffix([r["kw"] for r in rows])
+    sr = ((d.get("kw") or {}).get("seed_ranking") or {})
+    out = []
+    for item in (sr.get("order") or []):
+        if not isinstance(item, (list, tuple)) or not item:
+            continue
+        bare = str(item[0] or "").strip().lower()
+        if not bare:
+            continue
+        kw = clean_kw(f"{bare} {sfx}".strip())
+        k = re.sub(r"\s+", " ", kw.lower())
+        if not kw or k in have:
+            continue
+        have.add(k)
+        out.append(kw)
+        if len(out) >= short:
+            break
+    return out
 
 
 def perf_term_price(bid):
@@ -13011,7 +13059,11 @@ def api_price():
 def api_perf_quote():
     """Pay-for-performance: is this client eligible, and what would it bill?"""
     d = request.get_json(force=True) or {}
+    # Eligibility is judged on the GRID, not on terms added for this table —
+    # the gate is about the client's existing position, and padding the list
+    # with terms chosen for their bid would move it.
     elig = perf_eligibility(d.get("table") or [])
+    d = _perf_merge_extra(d)
     # EVERY QUOTED TERM NEEDS A BID, NOT JUST THE HEAD TERMS. Step 2 scores the
     # head terms only — that is all the competitive adder needs — so on Ooten
     # eleven of twenty rows reached this table with no bid and fell to the $80
@@ -13068,6 +13120,9 @@ def api_perf_quote():
         "meets_minimum": bool(rows) and total >= floor,
         "no_bids": len([r for r in rows if r.get("bid") in (None, 0)]),
         "backfill": backfill,
+        "candidates": perf_candidates(d),
+        "table_target": int(CFG.get("perf_table_terms", 50) or 50),
+        "in_table": len(rows),
         "term_months": int(CFG.get("perf_initial_term_months", 12)),
         "tail_months": int(CFG.get("perf_tail_months", 6)),
     })
@@ -16046,6 +16101,40 @@ def _proposal_rows(d):
     return rows
 
 
+def _perf_merge_extra(d):
+    """Fold operator-measured extra terms into the shapes _proposal_rows reads.
+
+    They join the performance table ONLY — not the priced grid, not the SEO
+    keyword table, and not total_volume. The campaign still commits to the
+    twenty terms the options describe; these are terms the client could be
+    billed for if they rank, which is a different promise.
+    """
+    extra = [x for x in (d.get("perf_extra") or []) if isinstance(x, dict) and x.get("kw")]
+    if not extra:
+        return d
+    kw = {k: list(v or []) for k, v in (d.get("kw") or {}).items()
+          if k in ("ultra", "competitive", "long_tail")}
+    kw.setdefault("long_tail", [])
+    table = list(d.get("table") or [])
+    seen = {re.sub(r"\s+", " ", str(r.get("kw") or "").strip().lower()) for r in table}
+    for x in extra:
+        # AN UNMEASURED TERM DOES NOT GO IN A CLIENT DOCUMENT. A row with no
+        # position reads as "Not Found" downstream — a positive claim that the
+        # client does not rank for a term nobody checked. Same rule the keyword
+        # table follows, and these terms arrive one rank check at a time, so a
+        # half-finished batch is the normal case rather than the odd one.
+        pos = x.get("pos")
+        if not isinstance(pos, int) and str(pos).strip().lower() not in ("not found",):
+            continue
+        k = re.sub(r"\s+", " ", str(x["kw"]).strip().lower())
+        kw.setdefault(x.get("tier") or "long_tail", []).append(
+            {"kw": x["kw"], "vol": int(x.get("vol") or 0)})
+        if k not in seen:
+            table.append({"kw": x["kw"], "pos": pos})
+            seen.add(k)
+    return dict(d, kw=kw, table=table)
+
+
 def _perf_rows(d):
     """The pay-for-performance table: every quoted term with its four prices.
 
@@ -16063,7 +16152,7 @@ def _perf_rows(d):
             for k, v in (d.get("perf_override") or {}).items()}
     area = d.get("practice_area") or {}
     rows = []
-    for r in _proposal_rows(d):
+    for r in _proposal_rows(_perf_merge_extra(d)):
         key = re.sub(r"\s+", " ", r["kw"].strip().lower())
         bid = cpc.get(key)
         price = perf_term_price(bid)

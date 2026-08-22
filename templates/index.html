@@ -5374,6 +5374,14 @@ async function downloadProposal(){
         geo_values:((ST.inputs||{}).geo_values)||[],
         kw:ST.kw||{}, table:ST.table||[], signals:ST.signals||null,
         pricing:ST.pricing||{}, vibe:ST.vibe||null,
+        // The performance section reads these; without them the document
+        // builds the table off the twenty-term grid alone and the whole
+        // measured extra pool is silently dropped.
+        strategy:((ST.inputs||{}).strategy)||'',
+        cpc:ST.cpc||{}, perf_extra:ST.perfExtra||[],
+        perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
+        state:((ST.inputs||{}).state)||'',
+        inputs:{geo_values:((ST.inputs||{}).geo_values)||[]},
         // Same adoption as the view: a capture already on the Build tab goes in
         // the document rather than being reported as missing.
         serp:(ST.serp&&ST.serp.img)?ST.serp:adoptSerpFromDom()})});
@@ -5895,6 +5903,11 @@ function snapshotQuote(){
     pricingUnits: 'partner',
     baseReason: ST.baseReason||'',
     geoOverride: ST.geoOverride||'',
+    // Measured terms that ride in the performance table only. Saved with the
+    // quote because they cost a rank check each, and RESET on restore below —
+    // a latch left set is how one client's terms reach another's document.
+    perfExtra: ST.perfExtra||[],
+    perfOverride: ST.perfOverride||{},
     addonOverride: ST.addonOverride||'',
     addonOn: !!ST.addonOn,
     addonPicked: (ST.inputs&&ST.inputs.addon_picked)||[],
@@ -5953,6 +5966,8 @@ function restoreQuote(p){
   ST.pricingUnits=p.pricingUnits||'';
   ST.baseReason=p.baseReason||'';
   ST.geoOverride=p.geoOverride||'';
+  ST.perfExtra=p.perfExtra||[];
+  ST.perfOverride=p.perfOverride||{};
   ST.addonOverride=p.addonOverride||'';
   // A quote saved before the toggle existed has no flag; infer it from the count
   // so an existing add-on quote reopens with its fields showing.
@@ -7955,6 +7970,7 @@ async function refreshPerf(){
     r=await postJSON('/api/perf_quote',{
       table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
       perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
+      perf_extra:ST.perfExtra||[],
       inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
       state:(ST.inputs&&ST.inputs.state)||'',
       national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
@@ -7996,6 +8012,8 @@ async function refreshPerf(){
     return;
   }
   const short = !r.meets_minimum;
+  const wireMore = ()=>{ const m=$('perfMore');
+    if(m) m.onclick=()=>{ m.disabled=true; measurePerfExtra(r.candidates||[]); }; };
   box.innerHTML=`<div class="calc" style="background:${short?'var(--warn-bg)':'var(--ok-bg,#eaf6ee)'};border-color:${short?'#e0c08a':'#a8ceb6'}">
     ${short?'\u26a0':'\u2713'} <b>Pay for performance — ${short?'below the minimum':'eligible'}.</b>
     <span class="nf">${e.within} of ${e.measured} measured terms rank inside the first
@@ -8006,10 +8024,58 @@ async function refreshPerf(){
       Minimum to initiate ${money(r.minimum)}.</div>
     ${short?`<div class="nf" style="margin-top:4px" ><b>${money(r.minimum-r.total_page1)} short.</b>
       The section is left out until the list carries enough value.</div>`:''}
+    <div class="nf" style="margin-top:5px">${r.in_table} term${r.in_table===1?'':'s'} in the table${(r.candidates||[]).length?` — <b>${r.candidates.length} more</b> could join it, up to ${r.table_target}. <button type="button" id="perfMore" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Measure ${r.candidates.length} more</button> <span style="font-size:11.5px">one rank check each · the priced grid and the ${money((ST.pricing&&ST.pricing.client_tiers||{}).base||0)} campaign do not change</span>`:''}</div>
     ${(r.backfill&&r.backfill.asked)?`<div class="nf" style="margin-top:4px">${r.backfill.filled} of ${r.backfill.asked} term${r.backfill.asked===1?'':'s'} the competition step never priced had a bid looked up for this table.${r.backfill.error?' <span style="color:#8a5a10">'+escapeHtml(r.backfill.error)+'</span>':''}</div>`:''}
     ${r.no_bids?`<div class="nf" style="margin-top:4px">${r.no_bids} term${r.no_bids===1?'':'s'} still had no bid anywhere and sit at the
       ${money(80)} floor — those rows are conservative.</div>`:''}
     ${tipOf('Cost Page 1 is derived from each term&rsquo;s own measured top-of-page bid &mdash; the bid is what the market pays for one click, which is the same thing this column prices. Calibrated on Ooten Law: his median Page-1 is $280 against a measured median bid of $132.<br><br>Top 5 / Top 3 / #1 run 1.6x / 2.4x / 3.6x of page one, compressed above $600 where his own table compresses. His four most expensive rows look hand-set; expect to override those.')}</div>`;
+  wireMore();
+}
+
+// A MENU, NOT A WORK COMMITMENT. Brendan's Ooten performance table is fifty
+// terms — the same fifty as his SEO table — where our priced grid is twenty.
+// Twenty is his FLOOR (his proposals run 20 to 99), and the two lists answer
+// different questions: the grid is what the campaign commits to working and is
+// what every calibrated price was built on, while this is a set of terms the
+// client could be billed for if they rank. So the extra terms are measured for
+// this table alone and never touch the grid or the price. (2026-08-22)
+async function measurePerfExtra(terms){
+  const btn=$('perfMore');
+  if(!terms || !terms.length) return;
+  const sfx=gridSuffix();
+  const mk=(ST.inputs&&ST.inputs.geo_values)||[];
+  const primary=(typeof primaryMarket==='function'? (primaryMarket()||'') : (mk[0]||''));
+  const done=[];
+  try{
+    for(let i=0;i<terms.length;i+=5){
+      const batch=terms.slice(i,i+5);
+      if(btn) btn.textContent='Measuring '+(i+batch.length)+' of '+terms.length+'…';
+      let got=null;
+      try{
+        got=await postJSON('/api/rankings',{
+          primary_market:primary, industry:(ST.inputs&&ST.inputs.industry)||'',
+          geo_scope:(ST.inputs&&ST.inputs.geo_scope)||'', national_demand:false,
+          goal:(ST.inputs&&ST.inputs.goal)||'',
+          batch: batch.map(k=>({kw:k, city:primary})),
+          domain:(ST.inputs&&ST.inputs.domain)||'', geo_values:mk,
+          state:(ST.inputs&&ST.inputs.state)||'', brand:(ST.inputs&&ST.inputs.brand)||''});
+      }catch(e){ continue; }
+      ((got&&(got.results||got.rows))||[]).forEach(x=>{
+        // AN UNMEASURED TERM DOES NOT GO IN A CLIENT DOCUMENT — the same rule
+        // the keyword table follows. An errored lookup is dropped, not printed.
+        if(x.error || x.queued) return;
+        const bare=String(x.kw||'').replace(new RegExp('\\s*'+sfx+'$','i'),'').trim();
+        done.push({kw:x.kw, pos:x.pos, tier:'long_tail',
+                   vol:(((ST.kw&&ST.kw.seed_ranking&&ST.kw.seed_ranking.order)||[])
+                        .find(o=>String(o[0]).toLowerCase()===bare.toLowerCase())||[])[1]||0});
+      });
+    }
+  }finally{
+    ST.perfExtra=(ST.perfExtra||[]).concat(done);
+    if(btn){ btn.disabled=false; btn.textContent='Measure more'; }
+  }
+  try{ scheduleAutoSave(); }catch(e){}
+  await refreshPerf();
 }
 
 async function refreshAddonSuggestion(){
