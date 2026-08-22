@@ -6879,6 +6879,15 @@ function step1Grid(kw){
   const cs=kw.city_selection;
   const svcCount=((kw.services||[]).length)||0;
 
+  // THE PRIMARY MARKET SETS THE GRID SUFFIX, THE RANK-CHECK LOCATION AND THE
+  // PRICE. When every entered market reads zero the order that produced it is
+  // sort order wearing a measurement's clothes — Ooten Law was priced on
+  // Blount County for a firm in Knoxville, and nothing on screen said the
+  // choice had not been measured. (2026-08-22)
+  if(cs && cs.nothing_measured && ((cs.kept||[]).length>1)){
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No entered market carried measurable demand</b> \u2014 so <b>${escapeHtml(String(((cs.kept||[])[0]||[])[0]||''))}</b> was picked by sort order, not by measurement. It sets the keyword suffix, where rankings are checked and the price.${tipOf('The market ranking probes each market with the client&rsquo;s own service terms. Every one came back at zero, which usually means the markets are named in a way nobody searches &mdash; counties are the common case &mdash; or the vertical is genuinely thin there.<br><br>Worth checking the primary market is the one this client actually operates in before pricing. Entering the main city alongside the county gives the probe something to measure.')}</div>`);
+  }
+
   // ---------- always visible: warnings and anything with a button ----------
 
   // WHERE THE TERM BUDGET WENT. A 32-term list buys either service breadth or

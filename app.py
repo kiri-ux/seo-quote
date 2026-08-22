@@ -446,6 +446,19 @@ CFG = {
         # QUESTION for Brendan: RZ doesn't distinguish carriers from two-agent
         # local agencies; confirm whether small agencies carry the same +$800.
         "insurance -":       {"anchor_add": 395, "note": "Carrier premium — Rockingham re-calibration 2026-07-20 at the CURRENT piecewise CPC adder (which already carries ~$1,000 of insurance click value at a $120 median; the original +$800 was fit against the old +$350-capped adder and double-counted). Contiguous NoVA 9-city scope; lands 5,450/6,750/8,050 vs his 5,450/6,750/7,950. Open: do small agencies carry it too?"},
+        # Legal (Ooten Law, 2026-08-22 — one datapoint, provisional). The tool
+        # had NO legal rule at all, which is how a personal-injury firm priced
+        # at the $2,950 client floor. Fitted the same way insurance was: on top
+        # of the piecewise CPC adder, which already carries most of the click
+        # value in this vertical. At a $150-160 median top-of-page bid the adder
+        # runs $1,250-1,300 and +$700 lands his 5,950/7,250/8,450 within $50 a
+        # tier. Note it converges on the same +$700 as the big-org cards rather
+        # than needing a number of its own.
+        #
+        # Matches the RZ "Legal - *" family. Volume stays $0 here: fifty legal
+        # terms in one metro total a few thousand a month, well under the
+        # 10,000/mo first bracket, so the adder and this card carry the quote.
+        "legal -":           {"anchor_add": 700, "note": "Legal family — Ooten Law calibration 2026-08-22, ONE datapoint. Fitted over the CPC adder (personal injury runs $150+ median bid). Open: does a low-CPC practice area — estate planning, family law — carry the same card?"},
         "hospital":          {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card ($3,950/$5,450/$6,950 shape) — Serene Health calibration via RZ “Health Services - Hospital”."},
         "telehealth":        {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
         "behavioral health": {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
@@ -802,7 +815,10 @@ CFG = {
     # budget is better spent on service breadth — see choose_grid_axis.
     # How many of the lead services also get a "<service> near me" term. Measured
     # like any other; only forms clearing near_me_min_volume are added.
-    "near_me_terms": 3,
+    # Four, not three — Brendan's Ooten list carries four "near me" terms out of
+    # fifty (car accident lawyer, personal injury lawyer, dui lawyer, criminal
+    # defense lawyer near me), all on the lead services. (2026-08-22)
+    "near_me_terms": 4,
     "near_me_probe_cap": 12,
     # Monthly searches a proposed extra service must clear to be offered.
     "expand_min_volume": 20,
@@ -5969,14 +5985,38 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # probe and 20/mo twice in the grid, and the axis recommendation rests on
         # that score. parse_market already returns the state here; use it.
         # (2026-08-11)
-        def _ckey(c):
+        # SCORE A COUNTY ON ITS PRINCIPAL CITY. "personal injury lawyer knox
+        # county tn" measures nothing, and so does every other county, so the
+        # market ranking collapsed to a tie and the primary market fell out of
+        # sort order — Ooten Law was priced on Blount County (Maryville) when
+        # the firm is in Knoxville, and the whole quote followed that choice.
+        # The county is what the operator entered and what coverage means; the
+        # city is what carries the demand that ranks it. (2026-08-22)
+        # BOTH NAMINGS, AND THE BEST ONE COUNTS. The invariant this probe was
+        # built to protect is that a market is SCORED on the same string the
+        # grid will be BUILT from — score "junk removal sevierville" and quote
+        # "junk removal sevierville tn" and the axis recommendation rests on a
+        # number for a different keyword (2026-08-11). A county has two honest
+        # namings and the grid picks between them later on measured volume, so
+        # scoring only one would break that invariant whichever one was chosen.
+        # Ask for both and take the better: it is the same question the grid
+        # form probe asks, off the same data, so the two cannot disagree.
+        def _ckeys(c):
             cty, st = parse_market(c, state)
             ab = STATE_ABBREV.get((st or "").strip().lower(), "") or (
                 abbr if not st else "")
-            return clean_kw(cty or c).lower(), (f" {ab}" if ab else "")
-        _ck = {c: _ckey(c) for c in cities}
-        key = lambda t, c: clean_kw(f"{t} {_ck[c][0]}{_ck[c][1]}")
-        probe = [key(t, c) for c in cities for t in terms][:700]
+            sfx = f" {ab}" if ab else ""
+            names = [clean_kw(cty or c).lower()]
+            for seat in county_cities(c, state, limit=1):
+                if seat and seat not in names:
+                    names.append(seat)
+            return [(n, sfx) for n in names]
+        _ck = {c: _ckeys(c) for c in cities}
+        keys = lambda t, c: [clean_kw(f"{t} {n}{sf}") for n, sf in _ck[c]]
+        key = lambda t, c: keys(t, c)[0]
+        # The best naming of the market is its score for that term.
+        kvol = lambda vmap, t, c: max((vmap.get(k, 0) or 0) for k in keys(t, c))
+        probe = [k for c in cities for t in terms for k in keys(t, c)][:700]
         payload = [{"keywords": dfs_kw_list(probe),
                     "location_name": loc_string(cities, state),
                     "language_code": "en"}]
@@ -5986,13 +6026,13 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
                for it in items}
         # Show the form actually sent, suffix included — the label read
         # "junk removal <city>" while the probe carried the state.
-        _lbl_sfx = (_ck[cities[0]][1] if cities else sfx) or sfx
+        _lbl_sfx = (_ck[cities[0]][0][1] if cities else sfx) or sfx
         exp["probe"] = " / ".join(f"{t} <city>{_lbl_sfx}" for t in terms)
         exp["method"] = "client term"
-        scored = {c: sum(vol.get(key(t, c), 0) for t in terms) for c in cities}
+        scored = {c: sum(kvol(vol, t, c) for t in terms) for c in cities}
         # The same lookup that ranks the cities also reveals which of them
         # Google Ads treats as one place — no extra call.
-        vectors = {c: [vol.get(key(t, c), 0) for t in terms] for c in cities}
+        vectors = {c: [kvol(vol, t, c) for t in terms] for c in cities}
         exp["metro_groups"] = [g for g in group_by_metro(vectors, min_terms=len(terms))
                                if len(g) > 1]
         term = terms[0]
@@ -6000,21 +6040,21 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # noise — fall back to the population proxy rather than picking cities
         # by accident of ordering.
         if term != "insurance" and not any(scored.values()):
-            probe2 = [key("insurance", c) for c in cities][:700]
+            probe2 = [k for c in cities for k in keys("insurance", c)][:700]
             data2 = dfs_post("/keywords_data/google_ads/search_volume/live",
                              [{"keywords": dfs_kw_list(probe2),
                                "location_name": loc_string(cities, state),
                                "language_code": "en"}])
             v2 = {(it.get("keyword") or "").lower(): (it.get("search_volume") or 0)
                   for it in ((data2.get("tasks") or [{}])[0].get("result") or [])}
-            scored = {c: v2.get(key("insurance", c), 0) for c in cities}
+            scored = {c: kvol(v2, "insurance", c) for c in cities}
             # Regroup on the proxy too. Woodstock's seeds were niche enough to
             # return nothing anywhere, so the vectors were all zeros and no two
             # cities could be matched — the grouping went silent exactly when
             # the fallback fired, which is the case it is most needed in
             # (2026-07-28). The proxy resolves to the same Google Ads location
             # as any other term, so it groups just as well.
-            vectors = {c: [v2.get(key("insurance", c), 0)] for c in cities}
+            vectors = {c: [kvol(v2, "insurance", c)] for c in cities}
             exp["metro_groups"] = [g for g in group_by_metro(vectors, min_terms=1)
                                    if len(g) > 1]
             exp["probe"] = f"insurance <city>{sfx}"
@@ -6050,6 +6090,13 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # county tn" is not a phrase anyone types, and a county only earns a grid
         # slot when no town of its market is available to stand for it.
         cty_rank = lambda c: 1 if county_key(c, state) else 0
+        # NOTHING MEASURED IS NOT A RANKING. When every market scores zero the
+        # order below is sort order wearing a measurement's clothes, and the
+        # primary market it hands back sets the grid suffix, the rank-check
+        # location and the price. Say so rather than letting it read as a
+        # finding. The client's own name or domain breaks the tie first, which
+        # is what home_rank is for. (2026-08-22)
+        exp["nothing_measured"] = not any(scored.values())
         ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), cty_rank(c),
                                                home_rank(c), c.lower()))
         if under_cap:
@@ -6371,6 +6418,54 @@ _CITY_ALIASES = {
 }
 
 
+_COUNTY_SEATS = None
+
+
+def _county_seats():
+    """county+state -> the cities in it, most ZIPs first.
+
+    Built once from the bundled ZIP dataset. ZIP count is a proxy for size and
+    it is a good one where it matters: Knox County TN is 31 ZIPs of Knoxville
+    against 1 for the next town, San Diego County 81 against 8. Where no city
+    dominates — Roane County TN is four towns with one ZIP each — the list is
+    still returned and measured volume decides, which is the point.
+    """
+    global _COUNTY_SEATS
+    if _COUNTY_SEATS is not None:
+        return _COUNTY_SEATS
+    idx = {}
+    try:
+        import zipcodes
+        acc = {}
+        for r in zipcodes.list_all():
+            if r.get("country") != "US":
+                continue
+            cty = (r.get("county") or "").strip().lower()
+            st_ = (r.get("state") or "").strip().upper()
+            city = (r.get("city") or "").strip().lower()
+            if cty and st_ and city:
+                acc.setdefault((cty, st_), {}).setdefault(city, 0)
+                acc[(cty, st_)][city] += 1
+        for k, cities in acc.items():
+            idx[k] = [c for c, _n in sorted(cities.items(), key=lambda kv: (-kv[1], kv[0]))]
+    except Exception:                                     # noqa: BLE001
+        idx = {}
+    _COUNTY_SEATS = idx
+    return idx
+
+
+def county_cities(market, state, limit=2):
+    """The principal cities of a county market, or [] if it is not a county."""
+    city, st = parse_market(market, state)
+    c = re.sub(r"\s+", " ", (city or "").strip().lower())
+    if not c.endswith(" county"):
+        return []
+    ab = (STATE_ABBREV.get((st or "").strip().lower(), "") or "").upper()
+    if not ab:
+        return []
+    return (_county_seats().get((c, ab)) or [])[:max(1, int(limit))]
+
+
 def geo_form_candidates(market, state):
     """The ways a searcher might write this market, most formal first.
 
@@ -6403,6 +6498,22 @@ def geo_form_candidates(market, state):
         add(c[: -len(" city")].strip())
         if ab:
             add(f"{c[: -len(' city')].strip()} {ab}")
+    # A COUNTY IS NOT HOW PEOPLE SEARCH, USUALLY. Ooten Law was entered as
+    # thirteen East Tennessee counties and the grid quoted "personal injury
+    # lawyer blount county tn" at 30/mo. Brendan's own list for the same client
+    # is 42 of 50 terms on "knoxville tn" and 2 on "knox county" — the county
+    # form is real, it is just long tail. County-qualified terms also carry
+    # almost no advertisers, so the median bid read $25 against a vertical that
+    # runs $80-200, and the competitive adder collapsed with it. (2026-08-22)
+    #
+    # Not a rewrite: the county stays a candidate and the principal cities join
+    # it, so the volume probe picks between them the way it already picks
+    # between "new york city ny" and "nyc". Where the county genuinely is the
+    # phrase — "bucks county roofing" — it wins on its own numbers.
+    for seat in county_cities(market, state):
+        if ab:
+            add(f"{seat} {ab}")
+        add(seat)
     return forms
 
 
