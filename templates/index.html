@@ -7954,7 +7954,10 @@ async function refreshPerf(){
   try{
     r=await postJSON('/api/perf_quote',{
       table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
-      perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{}});
+      perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
+      inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
+      state:(ST.inputs&&ST.inputs.state)||'',
+      national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
   }catch(e){ box.innerHTML=''; return; }
   const e=r.eligibility||{};
   const money=v=>'$'+Number(v||0).toLocaleString();
@@ -8003,7 +8006,8 @@ async function refreshPerf(){
       Minimum to initiate ${money(r.minimum)}.</div>
     ${short?`<div class="nf" style="margin-top:4px" ><b>${money(r.minimum-r.total_page1)} short.</b>
       The section is left out until the list carries enough value.</div>`:''}
-    ${r.no_bids?`<div class="nf" style="margin-top:4px">${r.no_bids} term${r.no_bids===1?'':'s'} had no bid data and fell to the
+    ${(r.backfill&&r.backfill.asked)?`<div class="nf" style="margin-top:4px">${r.backfill.filled} of ${r.backfill.asked} term${r.backfill.asked===1?'':'s'} the competition step never priced had a bid looked up for this table.${r.backfill.error?' <span style="color:#8a5a10">'+escapeHtml(r.backfill.error)+'</span>':''}</div>`:''}
+    ${r.no_bids?`<div class="nf" style="margin-top:4px">${r.no_bids} term${r.no_bids===1?'':'s'} still had no bid anywhere and sit at the
       ${money(80)} floor — those rows are conservative.</div>`:''}
     ${tipOf('Cost Page 1 is derived from each term&rsquo;s own measured top-of-page bid &mdash; the bid is what the market pays for one click, which is the same thing this column prices. Calibrated on Ooten Law: his median Page-1 is $280 against a measured median bid of $132.<br><br>Top 5 / Top 3 / #1 run 1.6x / 2.4x / 3.6x of page one, compressed above $600 where his own table compresses. His four most expensive rows look hand-set; expect to override those.')}</div>`;
 }

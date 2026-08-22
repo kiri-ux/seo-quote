@@ -999,6 +999,30 @@ def perf_eligibility(rows):
                        f"6-12+ months out")}
 
 
+def grid_suffix(keywords):
+    """The market suffix every grid row shares, recovered from the rows.
+
+    _strip_markets removes the ENTERED market, and since the grid started
+    choosing its own wording those two can differ: Ooten was entered as "Knox
+    County, TN" and quoted on "knoxville tn", so nothing matched and the bare
+    form never came out — which is why eleven rows had no bid to price on. The
+    grid is the authority on its own suffix; same trick gridSuffix() uses in
+    the panel. (2026-08-22)
+    """
+    parts = [str(k or "").strip().split() for k in (keywords or []) if str(k or "").strip()]
+    parts = [p for p in parts if p]
+    if len(parts) < 2:
+        return ""
+    tail, shortest = [], min(len(p) for p in parts)
+    for i in range(1, shortest):
+        w = parts[0][-i]
+        if all(p[-i] == w for p in parts):
+            tail.insert(0, w)
+        else:
+            break
+    return " ".join(tail)
+
+
 def perf_term_price(bid):
     """Cost Page 1 / Top 5 / Top 3 / #1 for one term, from its measured bid."""
     try:
@@ -12988,6 +13012,48 @@ def api_perf_quote():
     """Pay-for-performance: is this client eligible, and what would it bill?"""
     d = request.get_json(force=True) or {}
     elig = perf_eligibility(d.get("table") or [])
+    # EVERY QUOTED TERM NEEDS A BID, NOT JUST THE HEAD TERMS. Step 2 scores the
+    # head terms only — that is all the competitive adder needs — so on Ooten
+    # eleven of twenty rows reached this table with no bid and fell to the $80
+    # floor, and the potential value read $2,080 against Brendan's $25,540. The
+    # floor is the right answer for a term nobody will quote a bid on; it is the
+    # wrong answer for a term nobody ASKED about. One Labs call covers up to a
+    # thousand keywords and returns the bid beside the volume. (2026-08-22)
+    backfill = {"asked": 0, "filled": 0, "error": ""}
+    cpc = dict(d.get("cpc") or {})
+    if elig.get("eligible"):
+        _nk = lambda v: re.sub(r"\s+", " ", str(v or "").strip().lower())
+        have = {_nk(k) for k, v in cpc.items() if v}
+        _prows = _proposal_rows(d)
+        _sfx = _nk(grid_suffix([r["kw"] for r in _prows]))
+        want, bare_of = [], {}
+        for r in _prows:
+            k = _nk(r["kw"])
+            if k in have:
+                continue
+            # The grid's own suffix first; the entered market only as a fallback,
+            # because the two can name the same place differently.
+            b = k[: -len(_sfx)].strip() if (_sfx and k.endswith(_sfx)) else ""
+            if not b:
+                b = _nk(_strip_markets(r["kw"],
+                                       (d.get("inputs") or {}).get("geo_values")
+                                       or d.get("markets") or [], d.get("state") or ""))
+            bare_of[k] = b or k
+            if (b or k) not in want:
+                want.append(b or k)
+        backfill["asked"] = len(want)
+        if want:
+            got, err = fetch_bids_via_labs(
+                want, (d.get("inputs") or {}).get("geo_values") or d.get("markets") or [],
+                d.get("state") or "", bool(d.get("national_demand")))
+            backfill["error"] = err or ""
+            for k, b in bare_of.items():
+                hit = (got or {}).get(b) or {}
+                v = hit.get("bid") or hit.get("cpc") or 0
+                if v:
+                    cpc[k] = v
+                    backfill["filled"] += 1
+        d = dict(d, cpc=cpc)
     rows = _perf_rows(d) if elig.get("eligible") else []
     total = sum(r["page1"] for r in rows)
     floor = int(CFG.get("perf_min_monthly_value", 10000) or 0)
@@ -13001,6 +13067,7 @@ def api_perf_quote():
         "minimum": floor,
         "meets_minimum": bool(rows) and total >= floor,
         "no_bids": len([r for r in rows if r.get("bid") in (None, 0)]),
+        "backfill": backfill,
         "term_months": int(CFG.get("perf_initial_term_months", 12)),
         "tail_months": int(CFG.get("perf_tail_months", 6)),
     })
