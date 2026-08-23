@@ -458,7 +458,20 @@ CFG = {
         # Matches the RZ "Legal - *" family. Volume stays $0 here: fifty legal
         # terms in one metro total a few thousand a month, well under the
         # 10,000/mo first bracket, so the adder and this card carry the quote.
-        "legal -":           {"anchor_add": 700, "note": "Legal family — Ooten Law calibration 2026-08-22, ONE datapoint. Fitted over the CPC adder (personal injury runs $150+ median bid). Open: does a low-CPC practice area — estate planning, family law — carry the same card?"},
+        #
+        # (2026-08-23 DECISION, Kiri) The open question was whether a low-CPC
+        # practice area - estate planning, family law - should carry the same
+        # card as personal injury, since the substring picks up all nine RZ
+        # "Legal - *" values automatically. Answer: yes, one card for all legal.
+        # The reasoning that makes it safe is that the two components move
+        # independently. The CPC adder is measured per client and already
+        # separates a $150 personal-injury click from an $8 estate-planning
+        # click; an estate-planning quote comes out roughly $1,000 under a PI
+        # quote on the adder alone. The card is the flat premium for the
+        # vertical - the sales cycle, the compliance copy, the review posture -
+        # and that part does not vary by practice area. So no per-area split,
+        # and no second calibration needed before a legal quote goes out.
+        "legal -":           {"anchor_add": 700, "note": "Legal family — Ooten Law calibration 2026-08-22. Fitted over the CPC adder on a personal-injury firm. DECIDED 2026-08-23 (Kiri): the card is the legal family, not the practice area — all nine RZ \u201cLegal - *\u201d values carry the same +$700. A cheap-click practice area gets a smaller CPC adder, so the quote still falls; the card does not."},
         "hospital":          {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card ($3,950/$5,450/$6,950 shape) — Serene Health calibration via RZ “Health Services - Hospital”."},
         "telehealth":        {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
         "behavioral health": {"anchor_add": 700, "step_mode": "ratio", "extras_off": True, "note": "Big-org card — non-RZ vocabulary key, kept for free-text matches."},
