@@ -16880,8 +16880,20 @@ def build_proposal_docx(d, _notes=None):
         # removed itself with nothing on screen to say so. The panel's rows were
         # server-computed moments earlier; use them, and only recompute when
         # they are absent. (2026-08-22)
-        prows = [r for r in (d.get("perf_rows") or [])
+        prows = [dict(r) for r in (d.get("perf_rows") or [])
                  if isinstance(r, dict) and r.get("kw") and r.get("page1")]
+        # THE ROWS ARE TRUSTED FOR PRICES, NOT FOR EVERYTHING. Sending the
+        # panel's rows is what stops a second live lookup deciding whether the
+        # section exists — but they are also SAVED with the quote and restored,
+        # so a row computed by an older build carried its empty Practice Area
+        # into every document built since. Six of them. The column is cheap and
+        # deterministic, so re-derive it here on every build and let the money
+        # be the only thing the panel gets to pin. (2026-08-23)
+        if prows:
+            _tp = perf_topics(d)
+            for _r in prows:
+                if not str(_r.get("area") or "").strip():
+                    _r["area"] = perf_area(_r.get("kw") or "", _tp)
         if not prows and elig.get("eligible"):
             _pd, _ = _perf_fill_bids(d, True)
             prows = _perf_rows(_pd)
