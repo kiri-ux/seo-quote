@@ -5435,6 +5435,8 @@ async function renderProposalPerf(){
       table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
       perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
       perf_extra:ST.perfExtra||[],
+      brand:(ST.inputs&&ST.inputs.brand)||'',
+      business_desc:(ST.inputs&&ST.inputs.business_desc)||'',
       inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
       state:(ST.inputs&&ST.inputs.state)||'',
       national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
@@ -8108,6 +8110,8 @@ async function refreshPerf(){
       table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
       perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
       perf_extra:ST.perfExtra||[],
+      brand:(ST.inputs&&ST.inputs.brand)||'',
+      business_desc:(ST.inputs&&ST.inputs.business_desc)||'',
       inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
       state:(ST.inputs&&ST.inputs.state)||'',
       national_demand:!!(ST.inputs&&ST.inputs.national_demand)});
@@ -8173,6 +8177,7 @@ async function refreshPerf(){
       The section is left out until the list carries enough value.</div>`:''}
     <div class="nf" style="margin-top:5px">${r.in_table} of ${r.table_target} terms in the table${(r.candidates||[]).length?` — <span id="perfAutoNote">measuring <b>${r.candidates.length} more</b>, one rank check each</span>. <button type="button" id="perfMore" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Measure now</button>`:` — the priced grid and the ${money((ST.pricing&&ST.pricing.client_tiers||{}).base||0)} campaign are unchanged by any of this`}</div>
     ${(r.backfill&&r.backfill.asked)?`<div class="nf" style="margin-top:4px">${r.backfill.filled} of ${r.backfill.asked} term${r.backfill.asked===1?'':'s'} the competition step never priced had a bid looked up for this table.${r.backfill.error?' <span style="color:#8a5a10">'+escapeHtml(r.backfill.error)+'</span>':''}</div>`:''}
+    ${r.no_area?`<div class="nf" style="margin-top:4px">⚠ <b>Practice Area is blank on ${r.no_area} of ${r.rows.length} rows.</b> ${r.areas_known?'The build could not place those terms in one service line — a blank beats a guess.':'This quote predates the column and its topics carry no member terms; the fallback could not run either. <b>Rebuild step 1</b> to fill it.'}</div>`:''}
     ${r.no_bids?`<div class="nf" style="margin-top:4px">${r.no_bids} term${r.no_bids===1?'':'s'} still had no bid anywhere and sit at the
       ${money(80)} floor — those rows are conservative.</div>`:''}
     <div style="margin-top:6px"><button type="button" id="perfOffBtn" class="btn2" style="padding:2px 10px;font-size:11.5px">Leave it off this quote</button></div>

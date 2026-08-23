@@ -15,7 +15,7 @@ Local run:
     DFS_LOGIN=... DFS_PASSWORD=... python app.py
     -> http://localhost:5000
 """
-import os, json, base64, statistics, time, re, threading, io
+import os, json, base64, statistics, time, re, threading, io, hashlib
 import html
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
@@ -1126,23 +1126,51 @@ def perf_candidates(d, want=None):
     return out
 
 
+_PERF_TOPIC_CACHE = {}
+
+
 def perf_topics(d):
     """Topics WITH their member terms, for the Practice Area column.
 
-    Only the payload's own topics. A quote saved before those carried their
-    members has labels and nothing else, and the column comes out blank until
-    step 1 is rebuilt — which the panel says out loud.
+    A quote saved before the topics payload carried its members has labels and
+    nothing else, and the column comes out blank — which is where Ooten sat for
+    four builds. Rebuilding step 1 fixes it, but a quote that has already been
+    priced should not have to be rebuilt to fill a column.
 
-    I tried rebuilding membership here with topic_clusters(), which is
-    deterministic and needs no API call. It is the wrong tool: it groups by
-    token overlap, so Ooten's list split into "personal injury" and "accident"
-    rather than the two practice areas, and "sex crime attorney" landed under
-    Personal Injury. The AI names and groups these at build time and nothing
-    cheap reproduces it. A blank column is recoverable; a confidently wrong
-    practice area in a client document is not. (2026-08-22)
+    So fall back to claude_topics(), which is the SAME call the build uses and
+    which assigns every term to a topic as part of its answer. One call, the
+    answer the build would have given.
+
+    NOT topic_clusters(): it is deterministic and free, and I tried it first.
+    It groups by token overlap, so Ooten's list came back as "personal injury"
+    and "accident" rather than the two practice areas and put "sex crime
+    attorney" under Personal Injury. Wrong is worse than blank here.
+    (2026-08-22)
     """
     kw = d.get("kw") or {}
-    return [t for t in (kw.get("topics") or []) if isinstance(t, dict)]
+    topics = [t for t in (kw.get("topics") or []) if isinstance(t, dict)]
+    if any(t.get("terms") for t in topics):
+        return topics
+    seeds = list(((kw.get("seed_ranking") or {}).get("was")) or [])
+    if not seeds:
+        return topics
+    # refreshPerf() runs on every step-3 render, so without this the fallback
+    # would buy an AI call each time the rank table repainted.
+    ck = hashlib.sha1(("|".join(sorted(str(x).lower() for x in seeds))
+                       ).encode()).hexdigest()
+    if ck in _PERF_TOPIC_CACHE:
+        return _PERF_TOPIC_CACHE[ck] or topics
+    try:
+        rebuilt = claude_topics(seeds, d.get("business_desc") or "",
+                                d.get("brand") or "")
+    except Exception:                                     # noqa: BLE001
+        return topics
+    out = [{"label": str(t.get("label") or "").strip(),
+            "terms": list(t.get("seeds") or [])}
+           for t in (rebuilt or []) if t.get("seeds")]
+    out = [t for t in out if t["label"]]
+    _PERF_TOPIC_CACHE[ck] = out
+    return out or topics
 
 
 def perf_area(term, topics):
