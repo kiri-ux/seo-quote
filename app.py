@@ -1105,6 +1105,58 @@ def grid_suffix(keywords):
     return " ".join(tail)
 
 
+def suffix_market(keywords, state=""):
+    """The grid's own suffix expressed as a MARKET, or "".
+
+    THE ROWS ARE THE AUTHORITY ON WHERE THIS QUOTE IS MEASURED. The grid picks
+    its own wording now, so a client entered as "Whatcom County, WA" is quoted
+    on "... bellingham wa" -- and every SERP was still requested for Whatcom
+    County, because the market list is what the operator typed. Google then
+    answered a county-wide result page for a Bellingham phrase, and the
+    zero-ranking uplift keyed off it. The grid form and the rank location have
+    to be the same place. (2026-08-24)
+
+    Read off the rows that carry a state abbreviation, so the near-me terms --
+    which have no suffix at all -- cannot collapse the common tail to nothing.
+    """
+    abbrs = set(STATE_ABBREV.values())
+    geo = [str(k or "").strip() for k in (keywords or []) if str(k or "").strip()]
+    # "near me" ENDS IN MAINE. Same trap as the market list, which is why
+    # is_non_place_geo exists: ME is a real abbreviation, so a proximity row
+    # passes the suffix test and then shares no tail with anything, collapsing
+    # the common suffix to nothing. Strip the proximity rows first -- they are
+    # deliberately place-less and have no business naming the SERP location.
+    geo = [k for k in geo if not _PROXIMITY_RE.search(" " + k.lower())]
+    geo = [k for k in geo if k.split() and k.split()[-1].lower() in abbrs]
+    if len(geo) < 2:
+        return ""
+    sfx = grid_suffix(geo)
+    toks = sfx.split()
+    if len(toks) < 2 or toks[-1].lower() not in abbrs:
+        return ""
+    city = " ".join(toks[:-1]).strip()
+    if not city:
+        return ""
+    return f"{city.title()}, {toks[-1].upper()}"
+
+
+def rank_markets(keywords, markets, state, national=False):
+    """`markets` reordered so the grid's own suffix leads, when it names one.
+
+    Only ever PREPENDS -- the entered markets keep their order behind it, so
+    the per-keyword lookups that match on a market name are unaffected.
+    """
+    if national:
+        return markets
+    m = suffix_market(keywords, state)
+    if not m:
+        return markets
+    bare = parse_market(m, state)[0].strip().lower()
+    rest = [x for x in (markets or [])
+            if parse_market(x, state)[0].strip().lower() != bare]
+    return [m] + rest
+
+
 def perf_candidates(d, want=None):
     """Terms that could join the performance table but are not in the grid.
 
@@ -12032,6 +12084,7 @@ def api_rankings_submit():
     markets = usable_markets(d.get("geo_values") or [])
     state   = derive_state(markets, (d.get("state") or "").strip())
     markets = measure_first(markets, state, d.get("primary_market"))
+    markets = rank_markets(kws, markets, state)
     top_n   = CFG["zero_ranking_top_n"]
     depth   = max(top_n, 10)
     nat, _r = resolve_national_demand(d.get("industry") or "",
@@ -12436,6 +12489,10 @@ def api_rank_location():
     markets = usable_markets(d.get("geo_values") or [])
     state = derive_state(markets, (d.get("state") or "").strip())
     markets = measure_first(markets, state, d.get("primary_market"))
+    # The panel must name the place the ROWS were measured in, not the place the
+    # operator typed -- otherwise "Measured in Whatcom County" sits above a table
+    # of Bellingham keywords and the two read as a contradiction, which they are.
+    markets = rank_markets(d.get("keywords") or [], markets, state)
     nat, reason = resolve_national_demand(d.get("industry") or "",
                                           d.get("geo_scope") or d.get("band") or "",
                                           bool(d.get("national_demand")),
@@ -12962,6 +13019,8 @@ def api_rankings():
     brand   = (d.get("brand") or "").strip()
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
     markets = measure_first(markets, state, d.get("primary_market"))
+    markets = rank_markets([(x.get("kw") if isinstance(x, dict) else x)
+                            for x in (batch or [])], markets, state)
     top_n = CFG["zero_ranking_top_n"]
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",

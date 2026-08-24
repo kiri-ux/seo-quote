@@ -4030,6 +4030,10 @@ async function ensureRankLoc(){
     const rl=await postJSON('/api/rank_location',{
       geo_values:ST.inputs.geo_values||[], state:ST.inputs.state||'',
       primary_market:(typeof primaryMarket==='function'?primaryMarket():''),
+      // The rows name the place. The grid picks its own wording, so a client
+      // entered as "Whatcom County, WA" is quoted on "... bellingham wa" — and
+      // this panel was printing the county over a table of Bellingham rows.
+      keywords:((ST.kw&&ST.kw.all)||[]).map(r=>String(r.kw||'').trim()).filter(Boolean),
       industry:ST.inputs.industry||'', geo_scope:ST.inputs.geo_scope||'',
       national_demand:!!ST.inputs.national_demand, goal:ST.inputs.goal||''});
     // Re-render through finishStep3 so the Retry / Price-it handlers rebind;
