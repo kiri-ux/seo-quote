@@ -6446,6 +6446,31 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
                                    if len(g) > 1]
             exp["probe"] = f"insurance <city>{sfx}"
             exp["method"] = "population proxy"
+            _vmap, _vterms = v2, ["insurance"]
+        else:
+            _vmap, _vterms = vol, terms
+        # WHICH NAMING WON, not just how much the winner scored.
+        # kvol() takes the max across a county's two namings and throws the
+        # answer away -- yet that answer is exactly what the grid suffix needs,
+        # and it is the only LOCALLY measured comparison of the two. The
+        # national wording probe in pick_geo_forms asks the same question of
+        # geo-qualified phrases, which mostly return nothing at country level:
+        # "water damage restoration bellingham wa" and "... whatcom county wa"
+        # both score 0, the probe reports "no data", and the default wins --
+        # and the default is the string the operator typed, which is the
+        # county. That is how a Bellingham restoration company was quoted on
+        # "whatcom county wa" on a build that already knew better. Recorded
+        # here, used there, no extra call. (2026-08-24)
+        exp["market_forms"] = {}
+        for _c in cities:
+            _best, _bv = None, 0
+            for _n, _sf in _ck[_c]:
+                _tot = sum((_vmap.get(clean_kw(f"{_t} {_n}{_sf}"), 0) or 0)
+                           for _t in _vterms)
+                if _tot > _bv:
+                    _best, _bv = f"{_n}{_sf}".strip(), _tot
+            if _best:
+                exp["market_forms"][_c] = _best
         # Ties broken by name so the same input always gives the same cities.
         # Ties are common in small markets — DataForSEO floors thin terms at
         # 10/mo, so seven towns can score identically and an alphabetical
@@ -6910,10 +6935,24 @@ def geo_form_candidates(market, state):
     # it, so the volume probe picks between them the way it already picks
     # between "new york city ny" and "nyc". Where the county genuinely is the
     # phrase — "bucks county roofing" — it wins on its own numbers.
-    for seat in county_cities(market, state):
+    seats = county_cities(market, state)
+    for seat in seats:
         if ab:
             add(f"{seat} {ab}")
         add(seat)
+    # AND THE PRINCIPAL CITY LEADS. forms[0] is the DEFAULT -- what
+    # pick_geo_forms keeps when the wording probe reads nothing, which for
+    # geo-qualified phrases at national level is most of the time. Leaving the
+    # county there meant the tie always fell to the string the operator typed,
+    # so the whole conversion only ever fired when the city won outright. The
+    # prior is the other way round: a county is long tail and starves the CPC
+    # adder, so where nothing separates them the city is the better guess. The
+    # county keeps its place in the list and still wins on its own numbers.
+    # (2026-08-24)
+    if seats:
+        lead = clean_kw(f"{seats[0]} {ab}".strip() if ab else seats[0])
+        if lead in forms:
+            forms = [lead] + [f for f in forms if f != lead]
     return forms
 
 
@@ -8535,6 +8574,21 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                                            probe_terms)
             except Exception:
                 geo_forms, geo_form_report = {}, []
+            # A market the wording probe could not read falls back to the FIRST
+            # candidate, which is the string the operator typed. For a county
+            # that is the wrong default -- see market_forms above. The city
+            # ranking measured both namings locally, so use its answer here
+            # rather than the typed one.
+            _mf = (city_pick or {}).get("market_forms") or {}
+            for _m in grid_cities:
+                if _m not in geo_forms and _mf.get(_m):
+                    geo_forms[_m] = _mf[_m]
+                    geo_form_report.append(
+                        {"market": _m, "status": "from city ranking",
+                         "kept": _mf[_m],
+                         "detail": "the wording probe read nothing at national "
+                                   "level, so the form is the one that measured "
+                                   "when the markets were ranked"})
         g = build_grid(services, grid_cities, state, prepicked=True,
                        geo_forms=geo_forms)
         full = g["ultra"] + g["competitive"] + g["long_tail"]
