@@ -524,6 +524,25 @@ CFG = {
     # someone has like ZERO visibility sometimes we do 12 because it takes
     # that long to get results." Same trigger as the top geo_pct rung.
     "min_term_months": 6,
+    # A SITE BEING REBUILT IS NOT THE SITE BEING PRICED. Three of the tool's
+    # inputs -- the rank check, the on-page score and the domain authority --
+    # are measured on the CURRENT site. When the client is relaunching, those
+    # describe something that is going away, and a client who ranks today would
+    # be DISCOUNTED for equity they are about to throw out.
+    #
+    # Deliberately NOT a price card. The zero-ranking uplift already is the
+    # "you own nothing yet" component, and stacking a second premium on it is
+    # how the insurance card ended up double-counting the CPC adder (+$800, cut
+    # to +$395). A new domain routes through that existing lever instead: read
+    # as 100% not ranking, which takes the top uplift band, the full volume add
+    # and -- because 100 clears zero_visibility_pct_not_ranking -- the 12-month
+    # term, all without a new constant.
+    #
+    # A SAME-DOMAIN rebuild is a different claim. Redirects carry the rankings
+    # and the authority, so the measurement still describes the campaign; only
+    # the on-page score is stale. It does not touch the price. (2026-08-24)
+    "rebuild_new_domain_pct_not_ranking": 100,
+    "rebuild_vetoes_performance": True,
     "min_term_months_zero_visibility": 12,
     "zero_visibility_pct_not_ranking": 90,    # >= this % not ranking = "nothing ranks"
     # Legacy MPG card, kept for reference / geo_pricing_mode="card" only.
@@ -988,7 +1007,7 @@ def r50(x):
     return int(round(x / 50.0) * 50)
 
 
-def perf_eligibility(rows):
+def perf_eligibility(rows, site_rebuild=""):
     """Is this client a candidate for pay-for-performance at all?
 
     Brendan only offers it where the terms are ALREADY within the first five
@@ -1001,6 +1020,26 @@ def perf_eligibility(rows):
     is about the client.
     """
     depth = int(CFG.get("perf_page_depth", 50) or 50)
+    # A REBUILD ANSWERS THIS BEFORE THE RANK TABLE DOES. Brendan: "if they're
+    # starting from scratch / not ranking we generally don't offer pay for
+    # performance SEO because the time frame to results can be 6-12+ months."
+    # The gate cannot see it on its own -- it reads positions on the OUTGOING
+    # site, so a client whose current site ranks well comes back eligible for a
+    # deal billed against rankings that are about to move. True on a same-domain
+    # rebuild too: redirects hold most positions, but "most" is not the basis
+    # for a per-ranking contract. (2026-08-24)
+    _rb = str(site_rebuild or "").strip().lower()
+    if _rb in ("new", "same") and CFG.get("rebuild_vetoes_performance", True):
+        return {"eligible": False, "measured": 0, "within": 0, "share": 0,
+                "depth": depth, "min_share": round(float(
+                    CFG.get("perf_eligible_min_share", 0.5) or 0.5) * 100),
+                "enough": True, "unmeasured": 0, "site_rebuild": _rb,
+                "reason": ("this client is moving to a NEW DOMAIN, so there are "
+                           "no rankings to bill against and the first ones are "
+                           "6-12+ months out" if _rb == "new" else
+                           "this client's site is being rebuilt, so today's "
+                           "positions describe a site that is going away — not a "
+                           "basis for a contract billed per ranking")}
     measured, within, unmeasured = 0, 0, 0
     # QUEUED IS NOT FAILED. A row still in Google's queue fills in by itself;
     # a row that errored needs Retry pressed. Step 3 has always drawn that
@@ -10210,9 +10249,20 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
                  national_demand=False, geo_override=None, addon_override=None,
-                 goal="", pageone_rank=None):
+                 goal="", pageone_rank=None, site_rebuild=""):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
+    # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
+    # on rebuild_new_domain_pct_not_ranking. Only a NEW DOMAIN moves the number
+    # -- a same-domain rebuild keeps its rankings through redirects, so its
+    # measurement still describes the campaign.
+    rebuild = str(site_rebuild or "").strip().lower()
+    rebuild_applied = False
+    if rebuild == "new":
+        _rp = CFG.get("rebuild_new_domain_pct_not_ranking", 100)
+        if _rp is not None:
+            rebuild_applied = pct_not_ranking != float(_rp)
+            pct_not_ranking = float(_rp)
     # RETAIL IS CANONICAL (2026-08-05). The anchors and every hard-dollar extra
     # in CFG were back-solved from Brendan's QUOTED tier prices as
     # client / 1.35, so they are a calibration basis, not a real cost. The
@@ -10585,6 +10635,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "volume_captured": vol_captured,
             "volume_opportunity": round(vol_opportunity, 3),
             "min_term_months": min_term, "zero_visibility": zero_visibility,
+            # What the rebuild flag did, so the panel can say it rather than the
+            # operator wondering why a client with rankings priced as if it had
+            # none. rebuild_applied is False when the measurement already
+            # agreed -- the flag is then a label, not a change.
+            "site_rebuild": rebuild,
+            "rebuild_applied": rebuild_applied,
             "extras_multiplier": _mult,
             "manual_geo": bool(ai and ai.get("manual_geo")),
             "manual_addon": manual_addon,
@@ -13413,8 +13469,11 @@ def api_price():
                      national_demand=bool(d.get("national_demand")),
                      geo_override=d.get("geo_override"),
                      addon_override=d.get("addon_override"),
-                     goal=(d.get("goal") or ""))
+                     goal=(d.get("goal") or ""),
+                     site_rebuild=(d.get("site_rebuild") or ""))
     return jsonify({"anchor": p["anchor"], "adder": adder,
+                    "site_rebuild": p.get("site_rebuild", ""),
+                    "rebuild_applied": p.get("rebuild_applied", False),
                     "national_demand": p.get("national_demand", False),
                     "national_demand_reason": p.get("national_demand_reason", ""),
                     "min_term_months": p.get("min_term_months"),
@@ -13513,7 +13572,8 @@ def api_perf_quote():
     # Eligibility is judged on the GRID, not on terms added for this table —
     # the gate is about the client's existing position, and padding the list
     # with terms chosen for their bid would move it.
-    elig = perf_eligibility(d.get("table") or [])
+    elig = perf_eligibility(d.get("table") or [],
+                            site_rebuild=(d.get("site_rebuild") or ""))
     d = _perf_merge_extra(d)
     # EVERY QUOTED TERM NEEDS A BID, NOT JUST THE HEAD TERMS. Step 2 scores the
     # head terms only — that is all the competitive adder needs — so on Ooten
@@ -17078,7 +17138,8 @@ def build_proposal_docx(d, _notes=None):
     _notes = _notes if isinstance(_notes, dict) else {}
     perf_omitted = "not requested"
     if d.get("perf_on") is not False:
-        elig = perf_eligibility(d.get("table") or [])
+        elig = perf_eligibility(d.get("table") or [],
+                            site_rebuild=(d.get("site_rebuild") or ""))
         # WHAT THE PANEL SHOWED IS WHAT THE DOCUMENT CARRIES. The table used to
         # be recomputed here, which meant a SECOND live bid lookup deciding a
         # client document: if that one answered differently — or not at all —

@@ -399,6 +399,21 @@
     <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
     <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
 
+    <!-- THE SITE BEING MEASURED IS NOT ALWAYS THE SITE BEING PRICED. The rank
+         check, the on-page score and the domain authority all describe the
+         CURRENT site. When the client is relaunching, a good current ranking is
+         equity they are about to throw away, and discounting for it is exactly
+         backwards. No price card — a new domain reads as 100% not ranking and
+         goes through the zero-ranking uplift, the volume add and the 12-month
+         term that already exist. (2026-08-24) -->
+    <label>Site being rebuilt / relaunched</label>
+    <div class="help">Changes what the measurements mean, not the formula. A new domain is priced as no visibility; a rebuild on the same domain keeps its rankings through redirects and does not move the price. Either way pay-for-performance is off — there is nothing stable to bill a ranking against.</div>
+    <select id="site_rebuild" style="width:280px">
+      <option value="">No — the current site stays</option>
+      <option value="same">Rebuilt on the same domain</option>
+      <option value="new">Moving to a NEW domain</option>
+    </select>
+
     <!-- REFERENCE ONLY, like Current spend above it. A budget is the single most
          useful number for judging whether the ladder is plausible, and the single
          most dangerous one to let into a formula: anchoring on it would quote
@@ -2332,6 +2347,9 @@ function collectInputs(){
     keywords: stores.kw, brand: $('brand').value,
     business_desc: $('business_desc').value,
     geo_scope: scope, geo_values: stores.geo, state: $('state').value,
+    // '' | 'same' | 'new' — see the field's own comment. Saved with the quote,
+    // because a rebuild is a fact about the client, not about this session.
+    site_rebuild: ($('site_rebuild') ? $('site_rebuild').value : ''),
     // The field renders inside Step 4, which doesn't exist until a price has
     // been produced — so on the first pass read the remembered value rather
     // than a missing element.
@@ -4344,6 +4362,8 @@ function renderStep4(p){
   const h=ai?ai.hard_total:(p.hard_true_tiers||p.hard_tiers), c=ai?ai.client_total:p.client_tiers;
   panel('p4',`
     <h4 class="sec">Step 4 · Price</h4>
+    ${p.site_rebuild==='new'?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Priced as a new domain</b> — this client is moving to a site with no history, so the rank check on the current domain does not describe the campaign${p.rebuild_applied?` and was not used`:``}. Visibility reads as <b>100% not ranking</b>, which takes the top zero-ranking uplift, the full volume add and the ${p.min_term_months||12}-month term. There is no separate new-site charge: those three already price "they own nothing yet", and a fourth would be charging twice for it.${tipOf('The rank check, the on-page score and the domain authority are all measured on the CURRENT site. A client ranking well today would otherwise be DISCOUNTED for equity they are about to throw away.')}</div>`:''}
+    ${p.site_rebuild==='same'?`<div class="calc" style="background:#eef4fb;border-color:#c9dcf0">\u2139 <b>Site being rebuilt on the same domain</b> — the price is unchanged. Redirects carry the rankings and the domain authority, so the measurements still describe the campaign; only the on-page score (measured on the outgoing build) is stale. Pay-for-performance is off either way.${tipOf('A new DOMAIN is the case that moves the price — pick that option instead if the client is changing address.')}</div>`:''}
     ${ST.rankUnmeasured?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No ranking adjustment in this price</b> — every rank lookup is still in Google's queue or failed, so nothing has been measured. The zero-ranking component is <b>0%</b> rather than a guess in either direction: an empty table reads as "0% ranked" (largest uplift) or "0% not ranking" (well-ranked discount) depending on which way you square it, and neither is a fact. <b>Re-price once the rows land.</b></div>`:''}
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
     <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost ÷ (1 − margin) — the markup is the agency's share of gross, not a mark-on. Adjust it below to see the client price update.</div>
@@ -4582,7 +4602,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -4595,7 +4615,7 @@ function renderStep4(p){
     if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -4899,7 +4919,7 @@ async function runStep4(){
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   ST.rankUnmeasured = ((ST.total||0) > 0 && checkedOk === 0);
   try{
-    const p=await postJSON('/api/price',{pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder,
       zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
@@ -5439,6 +5459,7 @@ async function renderProposalPerf(){
       table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
       perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
       perf_extra:ST.perfExtra||[],
+      site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'',
       brand:(ST.inputs&&ST.inputs.brand)||'',
       business_desc:(ST.inputs&&ST.inputs.business_desc)||'',
       inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
@@ -6246,6 +6267,7 @@ function reflectInputs(inp){
   if($('pastseo_detail')) $('pastseo_detail').value = inp.past_seo_detail||'';
   if($('business_desc')) $('business_desc').value = inp.business_desc||'';
   if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
+  if($('site_rebuild'))  $('site_rebuild').value = inp.site_rebuild||'';
   stores.industry = (inp.industries && inp.industries.slice())
     || ((inp.industry||'').split(' | ').map(x=>x.trim()).filter(Boolean));
   if(PILL_RENDER.industry) PILL_RENDER.industry();
@@ -8116,6 +8138,7 @@ async function refreshPerf(){
       table:ST.table||[], kw:ST.kw||{}, cpc:ST.cpc||{},
       perf_override:ST.perfOverride||{}, practice_area:ST.practiceArea||{},
       perf_extra:ST.perfExtra||[],
+      site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'',
       brand:(ST.inputs&&ST.inputs.brand)||'',
       business_desc:(ST.inputs&&ST.inputs.business_desc)||'',
       inputs:{geo_values:((ST.inputs&&ST.inputs.geo_values)||[])},
