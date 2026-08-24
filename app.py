@@ -1757,9 +1757,24 @@ def measure_first(markets, state="", primary=""):
     # list often leads with counties simply because that is the order someone
     # types a service area. Junk Bee Gone's first ten entries were counties, so
     # rankings were measured county-wide. (2026-08-10)
+    # A MEASURED PRIMARY OUTRANKS THIS HEURISTIC. The rule below is a guess
+    # about which of several typed markets to measure in; `primary` is the
+    # market Step 1 actually measured the most demand in, and a guess must not
+    # overturn a measurement. Whatcom County was the one market of five carrying
+    # demand, so the grid crossed it and the panel named it -- and then this
+    # pushed it to the back for being a county, which handed the rank check to
+    # Camano Island, eighty miles south in another county. Every row then asked
+    # "does this company rank for a WHATCOM COUNTY phrase, as seen from Camano
+    # Island". The grid and the rank check have to measure the same place.
+    # (2026-08-24)
+    _pinned = (mk[0] if (mk and (primary or "").strip()
+                         and mk[0].strip().lower() == (primary or "").strip().lower())
+               else None)
     if any(county_key(m, state) for m in mk) and any(not county_key(m, state) for m in mk):
         mk = ([m for m in mk if not county_key(m, state)]
               + [m for m in mk if county_key(m, state)])
+        if _pinned:
+            mk = [_pinned] + [m for m in mk if m is not _pinned]
     hs = home_state(mk, state)
     if not hs:
         return mk
@@ -6832,7 +6847,20 @@ def county_cities(market, state, limit=2):
     c = re.sub(r"\s+", " ", (city or "").strip().lower())
     if not c.endswith(" county"):
         return []
-    ab = (STATE_ABBREV.get((st or "").strip().lower(), "") or "").upper()
+    # THE STATE ARRIVES IN BOTH SHAPES AND ONLY ONE OF THEM WORKED.
+    # parse_market() expands a state written INSIDE the market string
+    # ("Whatcom County, WA" -> "Washington"), but a state typed in the separate
+    # Geo field is passed through as the operator wrote it, which is almost
+    # always the two-letter form. STATE_ABBREV is name -> abbreviation, so
+    # .get("wa") missed, ab came back empty, and this returned [] -- for EVERY
+    # county on EVERY quote whose state field held an abbreviation. The
+    # conversion built for Ooten was therefore dead in the common case, which is
+    # how a Bellingham restoration company was quoted on "water damage
+    # restoration whatcom county wa" at 30/mo. (2026-08-24)
+    _st = (st or "").strip()
+    ab = (STATE_ABBREV.get(_st.lower(), "") or "").upper()
+    if not ab and len(_st) == 2 and _st.lower() in set(STATE_ABBREV.values()):
+        ab = _st.upper()
     if not ab:
         return []
     return (_county_seats().get((c, ab)) or [])[:max(1, int(limit))]
@@ -8603,10 +8631,32 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             full = g["ultra"] + g["competitive"] + g["long_tail"]
         # Add the near-me forms that earned their place, into the same tier as the
         # service they came from.
-        near_added = []
-        if near_forms and not vol_err:
+        def _attach_near_me():
+            """(Re)attach the near-me rows to the grid, returning what stuck.
+
+            THIS RUNS AGAIN AFTER EVERY REBUILD, and that is the whole point.
+            build_grid() regenerates the grid from services x cities, so a row
+            that is not a crossed service does not survive it -- and every
+            near-me term is exactly that. Two passes below rebuild: the
+            service-swap pass and the tier-reconciliation pass. Whatcom County
+            (2026-08-24) hit the first one: the panel reported "3 near me terms
+            added -- water damage restoration near me (210/mo) ..." and the
+            keyword list held none of them, because three services were dropped
+            against measured demand and the rebuild that followed wiped the
+            rows. The note was reading `near_added`, which is a record of what
+            was appended, not of what is still there.
+
+            Idempotent by construction: the tier lookup and the duplicate check
+            are both read fresh from the CURRENT grid, and the returned list
+            replaces the old one rather than extending it. Re-running it after a
+            drop is also the correct behaviour on its own terms -- a service
+            that just lost its slot should lose its near-me term with it.
+            """
+            added = []
+            if not near_forms or vol_err:
+                return added
             _nfloor = int(CFG.get("near_me_min_volume", 30))
-            _tier_of = {s["service"]: s["tier"] for s in services}
+            _tier_of = {x["service"]: x["tier"] for x in services}
             # Highest measured demand wins the slots, not list order.
             _ranked = sorted(
                 ((clean_kw(f"{nm} near me"), nm) for nm in svc_names),
@@ -8624,7 +8674,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                        "origin": "added", "service": nm, "city": ""}
                 g[t].append(row)
                 full.append(row)
-                near_added.append((f, v))
+                added.append((f, v))
+            return added
+
+        near_added = _attach_near_me()
 
         # ---- IS THE LOCAL FRAME RIGHT? ---------------------------------------
         # "Should this be nationwide" was left to the operator's judgement, and
@@ -8839,6 +8892,16 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             for r in rows:
                 svc_l = (r.get("service") or "").lower()
                 city_l = (r.get("city") or "").lower()
+                # A row with NO CITY was measured as itself, not as a
+                # service crossed with a place -- the near-me terms are the only
+                # ones shaped like this. Looking one up as ("", service) misses,
+                # and the miss branch below writes volume 0 / vol_scope
+                # "unknown" over a figure that was read from the API. That is
+                # how "water damage restoration near me (210/mo)" would have
+                # reached the proposal carrying no data even on a build where it
+                # survived the rebuilds. (2026-08-24)
+                if not city_l:
+                    continue
                 # This city's own volume for the SERVICE. Not the volume of the
                 # geo-modified phrase — local phrases mostly report zero — and
                 # not the cross-city total, which would print the same number
@@ -8894,6 +8957,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     # below looks services up in it, so a stale map would make
                     # every swapped-in service read as unmeasured.
                     service_volume = {x: vols.get(x.lower(), 0) for x in svc_names}
+                    near_added = _attach_near_me()
             except Exception:
                 app.logger.exception("swap_low_volume_services failed")
                 service_swaps = []
@@ -9008,6 +9072,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     full = g["ultra"] + g["competitive"] + g["long_tail"]
                     # Same assignment as the first pass — by service AND city.
                     _apply_volumes(full)
+                    near_added = _attach_near_me()
         except Exception:
             app.logger.exception("tier reconciliation failed")
             tier_moves = []
@@ -13159,6 +13224,21 @@ def api_markets():
         # when to stop: 51 seeds for 20 slots is 31 terms nobody will ever quote.
         # (2026-08-13)
         "service_slots": services_needed(len(mk)),
+        # THE CEILING, WHICH IS THE ONLY SAFE NUMBER TO CAP EXPAND ON.
+        # service_slots above is computed on the markets ENTERED. The build
+        # computes the same thing on the markets that SURVIVE the demand check,
+        # and markets can only be dropped there, never added -- so the entered
+        # count gives the FEWEST slots the grid can end up with, not the most.
+        # Whatcom County: five markets entered -> 7 slots -> Expand skipped as
+        # "full" against a typed list of 20; four of the five markets then
+        # carried no demand, the grid crossed one city, and the same function
+        # returned 20 slots. Filters removed six terms after that and nothing
+        # refilled them, so a client with plenty of services was quoted on 14.
+        # services_needed() only ever goes UP as cities are dropped, so capping
+        # Expand here costs nothing: enforce_seed_services() trims to the real
+        # slot count afterwards, and expanded terms sit at the end of the list,
+        # which is the end it trims from. (2026-08-24)
+        "expand_slots": int(CFG.get("grid_max_services", 20)),
     })
 
 

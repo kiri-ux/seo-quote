@@ -2500,7 +2500,7 @@ $('step1').addEventListener('click', async()=>{
     try{ scheduleAutoSave(); }catch(e){}
   }
   const _held=(stores.kw||[]).filter(v=>_prev.has(String(v).toLowerCase()));
-  const _room=Math.max(0,(ST.serviceSlots||20)-(stores.kw||[]).length);
+  const _room=Math.max(0,(ST.expandSlots||ST.serviceSlots||20)-(stores.kw||[]).length);
   // ONE SHOT, FROM THE PANEL. "Runs once per list" is right, and the only way
   // back out of it was to delete the expanded terms — destructive, and nobody
   // would guess it. PEO Brokers needed exactly this: the list had lost its
@@ -2517,7 +2517,7 @@ $('step1').addEventListener('click', async()=>{
   if(_auto && _auto.checked && _skipExpand){
     ST.autoExpanded=[]; ST.autoRegions=[];
     ST.autoNote={skipped:_skipExpand, held:_held.length, pulled:_pulled,
-                 slots:ST.serviceSlots||20};
+                 slots:ST.expandSlots||ST.serviceSlots||20};
   }else if(_auto && _auto.checked){
     $('step1').disabled=true; $('step1').textContent='Expanding your terms…';
     panel('p1','<p style="color:var(--muted)">Reading their site, the industry, and what they already rank for…</p>');
@@ -6875,6 +6875,8 @@ async function refreshMarketSummary(){
     if(seq !== _mktSeq) return;              // superseded while in flight
     // How many services this many markets buys — Expand caps itself on it.
     if(r.service_slots) ST.serviceSlots=Number(r.service_slots);
+    // Expand caps on the CEILING, not on this estimate — see expand_slots.
+    if(r.expand_slots) ST.expandSlots=Number(r.expand_slots);
     const parts = (r.groups||[]).map(g=>{
       const a = escapeHtml(String(g.anchor).split(',')[0]);
       return g.size > 1
