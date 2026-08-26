@@ -543,6 +543,11 @@ CFG = {
     # the on-page score is stale. It does not touch the price. (2026-08-24)
     "rebuild_new_domain_pct_not_ranking": 100,
     "rebuild_vetoes_performance": True,
+    # "up" (default) or "nearest". Governs the figures a CLIENT reads — the tier
+    # ladder, the AI Search line and the add-on market rate. Partner cost and
+    # the tier step keep round-to-nearest: they describe the shape of the quote
+    # rather than the number on it. (2026-08-26)
+    "client_round_mode": "up",
     "min_term_months_zero_visibility": 12,
     "zero_visibility_pct_not_ranking": 90,    # >= this % not ranking = "nothing ranks"
     # Legacy MPG card, kept for reference / geo_pricing_mode="card" only.
@@ -1005,6 +1010,25 @@ CFG = {
 
 def r50(x):
     return int(round(x / 50.0) * 50)
+
+
+def r50up(x):
+    """Round UP to the next $50 — the CLIENT-FACING convention (2026-08-26).
+
+    Everything used to round to NEAREST, which rounds DOWN half the time: a
+    59% AI Search share of a $3,900 core computes $2,301 and was quoted at
+    $2,300. Kiri: a client price never rounds down. The partner side and the
+    tier STEP are untouched — those are internal shape, not the number on the
+    proposal — so only the figures a client reads move, and only ever by less
+    than $50.
+
+    Switchable at /config: client_round_mode "up" (default) or "nearest",
+    because it moves every quote and a calibration run may want the old basis.
+    """
+    import math
+    if str(CFG.get("client_round_mode", "up")).strip().lower() == "nearest":
+        return int(round(round(x, 6) / 50.0) * 50)
+    return int(math.ceil(round(x, 6) / 50.0) * 50)
 
 
 def perf_eligibility(rows, site_rebuild=""):
@@ -10307,7 +10331,9 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         return r50n(basis * cal_to_hard)
 
     def retail_of(cost):
-        return r50(cost / (1.0 - mg))
+        # CLIENT-FACING — rounds up. Also what the add-on market rate goes
+        # through, so the two conventions cannot drift apart.
+        return r50up(cost / (1.0 - mg))
 
     # Resolve the industry rule FIRST — national demand has to be known before
     # the anchor is picked, because it routes to the national anchor.
@@ -10444,7 +10470,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         client_base = floor
         floored = True
         cstep = (retail_of(cost_of(step)) if CFG.get("tier_step_flat")
-                 else r50(client_base * CFG["step_ratio"]))
+                 else r50up(client_base * CFG["step_ratio"]))
         client = {"base": client_base,
                   "intermediate": client_base + cstep,
                   "advanced": client_base + 2*cstep}
@@ -10496,9 +10522,9 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                   "bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
                   "min_term_months": min_term,
                   "zero_visibility": zero_visibility,
-                  "client_list": {k: r50(v * p_list) for k, v in client.items()},
+                  "client_list": {k: r50up(v * p_list) for k, v in client.items()},
                   "hard_add":    {k: r50(v * p_net)  for k, v in hard.items()},
-                  "client_add":  {k: r50(v * p_net)  for k, v in client.items()}}
+                  "client_add":  {k: r50up(v * p_net) for k, v in client.items()}}
         # GEO can be overridden independently of SEO. The percentage model is
         # a good default and a bad straitjacket: a client may have agreed a GEO
         # number that has nothing to do with their SEO price — a flat retainer,
@@ -10513,7 +10539,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         if geo_base and geo_base > 0:
             ratio = {k: (hard[k] / hard["base"] if hard["base"] else 1.0) for k in hard}
             ai["hard_add"] = {k: r50(geo_base * ratio[k]) for k in hard}
-            ai["client_add"] = {k: r50(ai["hard_add"][k] * m) for k in hard}
+            ai["client_add"] = {k: r50up(ai["hard_add"][k] * m) for k in hard}
             ai["client_list"] = dict(ai["client_add"])
             ai["manual_geo"] = True
             ai["geo_pct_basis"] = "manual override"

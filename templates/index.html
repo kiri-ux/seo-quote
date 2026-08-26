@@ -396,8 +396,8 @@
     <input type="text" id="brand" placeholder="VersAbility">
 
     <label>Website needing SEO<span class="req">*</span><span class="pl" title="adtini supplies this from the product line — you don't type it">pulled from product line</span></label>
-    <div class="help">Client website + any additional sites needing SEO. Type and press comma/Enter.</div>
-    <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com, second-site.com"></div>
+    <div class="help">The client's website. ONE site — the rank check, the site read, the ranked-keywords lookup and the authority score are all one-domain questions. Typing a second replaces the first.</div>
+    <div class="pillbox" data-for="sites"><input type="text" id="sites_in" placeholder="example.com"></div>
 
     <!-- THE SITE BEING MEASURED IS NOT ALWAYS THE SITE BEING PRICED. The rank
          check, the on-page score and the domain authority all describe the
@@ -1278,6 +1278,13 @@ function wirePills(key, inputId){
   // re-render. (2026-08-13)
   let _showAll=false;
   function render(){
+    // ONE WEBSITE (2026-08-24 \u2014 adtini rule). Everything downstream already
+    // reads stores.sites[0] as THE domain: the rank check, the site read, the
+    // ranked-keywords lookup and the authority score. A second site sat in the
+    // box looking like an input and was measured by none of them. Trimmed HERE
+    // rather than only on entry so every path is covered \u2014 a restored quote,
+    // a report import, a paste \u2014 not just typing.
+    if(key==='sites' && stores.sites.length>1) stores.sites.splice(0, stores.sites.length-1);
     box.querySelectorAll('.pill, .pillmore').forEach(p=>p.remove());
     const all=stores[key], fold=(all.length>PILL_FOLD+3 && !_showAll);
     const shown=fold?all.slice(0,PILL_FOLD):all;
@@ -1349,6 +1356,10 @@ function wirePills(key, inputId){
     // "bbq grill store <cityname>" is a report template, not a search term.
     // Strip it here so a pasted or restored list can't seed a phantom topic.
     if(key==='kw'){ parts=parts.map(x=>stripPlaceholders(x)).filter(Boolean); }
+    // The site box holds one. A second typed site is the operator CHANGING it,
+    // not adding to it \u2014 appending would leave the old domain quietly driving
+    // every measurement while the new one sat beside it.
+    if(key==='sites' && parts.length) stores.sites.length=0;
     parts.forEach(p=>{if(!stores[key].includes(p))stores[key].push(p);});
     input.value=''; render();
   }
@@ -5129,7 +5140,13 @@ function gapVerdict(g, brand){
 function vibePct(){ const v=(ST.vibe||{}).pct; return (typeof v==='number' && v)?v:0; }
 function vibeAdjust(n){
   const pc=vibePct(); if(!pc || n===null || n===undefined || n==='') return n;
-  return Math.round((Number(n)*(1+pc/100))/50)*50;
+  // UP, not nearest — a client price never rounds down (2026-08-26). Matches
+  // r50up() on the server; the two have to agree or the vibe-adjusted ladder
+  // would land $50 under the same figure computed there.
+  // FLOAT NOISE IS NOT A DOLLAR. 3000 * 1.1 is 3300.0000000000005 in JS, and
+  // a bare ceil turns that into $3,350 — a whole rounding step invented out
+  // of binary representation. Same guard as round(x, 6) on the server.
+  return Math.ceil(Number((Number(n)*(1+pc/100)).toFixed(6))/50)*50;
 }
 function vibeTiers(t){
   const out={}; ['base','intermediate','advanced'].forEach(k=>{ out[k]=vibeAdjust((t||{})[k]); });
@@ -5184,8 +5201,11 @@ function previewVibe(pct){
   const p=ST.pricing||{};
   const t=p.client_tiers||{}, ai=p.ai_search||null;
   const live=Number(pct)||0, saved=vibePct();
+  // Same rule as vibeAdjust — UP. This is the live preview of the very same
+  // number, so rounding it differently would move the ladder as the slider
+  // settled.
   const adj=n=>(!live||n===null||n===undefined||n==='')?n
-            :Math.round((Number(n)*(1+live/100))/50)*50;
+            :Math.ceil(Number((Number(n)*(1+live/100)).toFixed(6))/50)*50;
   ['base','intermediate','advanced'].forEach(k=>{
     const seo=adj(t[k]);
     const aiAdd=ai?adj((ai.client_add||{})[k]):null;
