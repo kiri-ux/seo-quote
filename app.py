@@ -10660,14 +10660,19 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # so nobody has to work out which of our internal keys maps to which of
     # their terms. Two of these exist ONLY because deriving them on the other
     # side goes wrong:
-    #   * Partner Hard Cost is NOT here on purpose. It is a $50 figure and does
-    #     not round-trip — 86 of 182 tier values come back $50 out. The IO
-    #     derives it from Package $ and Margin % instead (ticket RULE 2.d.ii).
+    #   * Partner Hard Cost IS here (2026-08-27), because Billing charges the
+    #     partner off it and must not invent it. It is NOT the round-trip
+    #     source: the IO still derives client price from Package $ and Margin %
+    #     (ticket RULE 2.d.ii), because a $50-rounded cost run back through the
+    #     margin comes out $50 wrong on 86 of 182 tier values. Sent as the
+    #     figure to BILL, not the figure to price from. `margin_dollars` closes the
+    #     gap between the two so nothing has to be reverse-engineered.
     #   * Partner Add-On Market Cost IS here, because the reverse applies:
     #     Add-On Market Price / (1 - Margin %) misses by $7.50-$17.50 a market,
     #     the partner figure having rounded to $10 and the sell figure to $50
     #     (ticket RULE 2.d.v).
     _ai_add = (ai or {}).get("client_add") or {k: 0 for k in client}
+    _ai_hard = (ai or {}).get("hard_add") or {k: 0 for k in client}
     handoff = {
         "package": {k: client[k] + _ai_add.get(k, 0) for k in client},
         "core_seo_price": dict(client),
@@ -10680,6 +10685,21 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         "addon_market_discount_pct": _ad_pct,
         "addon_markets": _n_addon,
         "min_term_months": min_term,
+        # ---- PARTNER COST — WHAT BILLING CHARGES THE PARTNER ---------------
+        # Core + AI, per tier, the same $50 figures the Partner card shows.
+        "partner_hard_cost": {k: hard_cost[k] + _ai_hard.get(k, 0) for k in hard_cost},
+        "partner_core_seo_cost": dict(hard_cost),
+        "partner_ai_search_cost": {k: _ai_hard.get(k, 0) for k in hard_cost},
+        # PACKAGE - PARTNER HARD COST, STATED RATHER THAN DERIVED.
+        # Package x (1 - Margin %) does NOT return Partner Hard Cost and is not
+        # meant to: the client figure rounds UP to $50 and each partner figure
+        # rounds to the NEAREST $50, so the two drift by up to ~$75 a tier. That
+        # drift is margin, and it is Vici's. Sending the dollars closes the
+        # books without anyone reverse-engineering the rounding:
+        #     Package $  -  Partner Hard Cost  =  Margin $
+        "margin_dollars": {k: (client[k] + _ai_add.get(k, 0))
+                              - (hard_cost[k] + _ai_hard.get(k, 0))
+                           for k in client},
     }
     # ---- THE PRICE THE FORMULA WOULD HAVE GIVEN --------------------------
     # An override REPLACES a component, so the quote it produces is partly the
@@ -16668,6 +16688,90 @@ def _proposal_rows(d):
             return (1, -x["vol"])
     rows.sort(key=_key)
     return rows
+
+
+def handoff_meta(d):
+    """THE NON-PRICING HALF OF WHAT THE IO PULLS.
+
+    stage4_price only ever sees pricing inputs, so its handoff block can only
+    carry money. The proposal needs the rest of the quote — the terms, where the
+    client ranks for them today, who is holding those positions, and the markets
+    the campaign covers — and adtini was re-typing all of it off a PDF.
+
+    Reads the SAME accessors the document does (_proposal_rows, d["signals"]),
+    so the IO and the .docx can never describe different keywords. Nothing here
+    is recomputed: a saved quote hands back exactly what was sent to the client.
+    """
+    d = d or {}
+    sig = d.get("signals") or {}
+    rows = _proposal_rows(d)
+    ranked = [r for r in rows if str(r.get("rank", "")).isdigit()]
+    markets = usable_markets(d.get("geo_values") or d.get("markets") or [])
+    inputs = d.get("inputs") or {}
+    serp = d.get("serp") or {}
+
+    return {
+        # ---- who ----------------------------------------------------------
+        "brand": str(inputs.get("brand") or d.get("brand") or "").strip(),
+        "website": (list(d.get("sites") or inputs.get("sites") or [""]) or [""])[0],
+        "industry": str(inputs.get("industry") or d.get("industry") or "").strip(),
+        # ---- where --------------------------------------------------------
+        "primary_market": markets[0] if markets else "",
+        "addon_market_names": markets[1:],
+        "state": str(d.get("state") or "").strip(),
+        "national_demand": bool(d.get("national_demand")),
+        # ---- the terms ----------------------------------------------------
+        # kw / rank / tier / vol, in the document's own order. "Not Found" is a
+        # measured miss; an UNMEASURED term is not in this list at all.
+        "keywords": rows,
+        "keyword_count": len(rows),
+        "keywords_ranked_top_100": len(ranked),
+        "total_monthly_volume": sum(int(r.get("vol") or 0) for r in rows),
+        "pct_not_ranking": d.get("pct_not_ranking"),
+        # ---- the SERP -----------------------------------------------------
+        "rivals": [{"domain": r.get("domain"), "authority": r.get("rank"),
+                    "appearances": r.get("appearances")}
+                   for r in (sig.get("rivals") or [])],
+        "median_rival_authority": (sig.get("pageone_rank")
+                                   or sig.get("median_rival_rank")),
+        "top_rival_authority": sig.get("top_rival_rank"),
+        "client_authority": (sig.get("client_rank")
+                             if sig.get("client_measured") else None),
+        "serp_screenshot_keyword": serp.get("kw") or "",
+        "serp_screenshot_captured": bool(serp.get("img")),
+        # ---- site condition -----------------------------------------------
+        "site_health_score": (sig.get("health") or {}).get("score"),
+        "site_health_issues": list((sig.get("health") or {}).get("failed") or []),
+    }
+
+
+@app.route("/api/handoff", methods=["POST"])
+@_json_error_guard
+def api_handoff():
+    """EVERYTHING THE IO PULLS, IN ONE CALL.
+
+    Pricing comes from the quote as it was saved rather than being re-priced —
+    re-running stage4_price against today's config would quietly reprice a quote
+    the client has already seen.
+    """
+    d = request.get_json(force=True) or {}
+    return jsonify({"pricing": (d.get("pricing") or {}).get("handoff") or {},
+                    "proposal": handoff_meta(d)})
+
+
+@app.route("/api/quotes/<int:qid>/handoff", methods=["GET"])
+@_json_error_guard
+def api_quote_handoff(qid):
+    """The same block for a SAVED quote, so adtini can pull by id."""
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled."}), 400
+    q = storage.load_quote(qid)
+    if not q:
+        return jsonify({"error": "Not found."}), 404
+    d = q.get("payload") or q.get("data") or q
+    return jsonify({"quote_id": qid,
+                    "pricing": (d.get("pricing") or {}).get("handoff") or {},
+                    "proposal": handoff_meta(d)})
 
 
 def _perf_merge_extra(d):

@@ -5225,13 +5225,73 @@ function handoffChart(){
       ${one('Add-On Market Discount %', (h.addon_market_discount_pct||0)+'%',
             `${h.addon_markets||0} market${(h.addon_markets===1)?'':'s'}`)}
       ${one('Minimum term', (h.min_term_months||0)+' months','contracted dates must span it')}
+      ${tri({label:'Partner Hard Cost', v:h.partner_hard_cost,
+             note:'Core + AI \u2014 what Billing charges the partner. Not the figure the IO prices from'})}
+      ${tri({label:'Partner Core SEO Cost', v:h.partner_core_seo_cost}, true)}
+      ${tri({label:'Partner AI Search Cost', v:h.partner_ai_search_cost}, true)}
+      ${tri({label:'Margin $', v:h.margin_dollars,
+             note:'Package $ \u2212 Partner Hard Cost \u2014 stated, not derived'})}
     </table></div>
-    <div class="nf" style="font-size:11.5px;margin-top:5px">Partner Hard Cost is deliberately
-      NOT sent — it is a $50 figure and does not round-trip (86 of 182 tier values come back
-      $50 out). The IO derives it as <b>Package $ × (1 − Margin %)</b>, unrounded.${tipOf(
-      'The reverse is true one row up: Partner Add-On Market Cost IS sent, because dividing '
+    <div class="nf" style="font-size:11.5px;margin-top:5px">Partner Hard Cost is what Billing
+      charges the partner. It is <b>not</b> what the IO prices from — a $50 cost run back
+      through the margin lands $50 out on 86 of 182 tier values, so client price still comes
+      from <b>Package $</b> and <b>Margin %</b>.${tipOf(
+      'Same reason Partner Add-On Market Cost is sent rather than derived: dividing '
       + 'Add-On Market Price by (1 − Margin %) misses by $7.50–$17.50 a market — the partner '
-      + 'figure rounds to $10 and the sell figure rounds up to $50.')}</div>`;
+      + 'figure rounds to $10 and the sell figure rounds up to $50. '
+      + 'Same reason Margin $ is a row rather than a sum: Package $ × (1 − Margin %) does not '
+      + 'return Partner Hard Cost, because the client figure rounds UP to $50 and each partner '
+      + 'figure rounds to the NEAREST $50 — up to ~$75 a tier apart, and that gap is margin.')}</div>
+    ${handoffProposal()}`;
+}
+
+function handoffProposal(){
+  // THE NON-PRICING HALF. Counts come from the SAME places proposalKeywords()
+  // and proposalSignals() read — ST.kw.all, ST.totalVol, ST.signals — so this
+  // table can never disagree with the proposal printed above it. The server
+  // sends the row-level detail; the panel only shows what is going.
+  const kw=ST.kw||{}, s=ST.signals||{}, inp=ST.inputs||{};
+  const byKw={}; (ST.table||[]).forEach(r=>{ byKw[String(r.kw||'').toLowerCase()]=r; });
+  let ranked=0, total=0;
+  ['ultra','competitive','long_tail'].forEach(t=>{
+    (kw[t]||[]).forEach(r=>{
+      total+=Number(r.vol||0);
+      if(typeof (byKw[String(r.kw||'').toLowerCase()]||{}).pos==='number') ranked++;
+    });
+  });
+  const kwN=(kw.all||[]).length;
+  const vol=(ST.totalVol!=null && ST.totalVol)?Number(ST.totalVol):total;
+  const mk=((inp.geo_values)||[]).filter(Boolean);
+  const riv=(s.rivals||[]);
+  const n=v=>(v===null||v===undefined||v==='')?'\u2014':Number(v).toLocaleString();
+  const t=v=>(v===null||v===undefined||v==='')?'\u2014':escapeHtml(String(v));
+  const r=(label,val,note)=>`<tr><td><b>${label}</b></td>`
+    +`<td style="text-align:right;font-variant-numeric:tabular-nums">${val}</td>`
+    +`<td class="nf">${note||''}</td></tr>`;
+  return `<div class="pph" style="margin-top:14px">Sent to the IO \u2014 the proposal fields</div>
+    <div class="ppwrap"><table>
+      <tr><th>Field</th><th style="text-align:right">Value</th><th>Notes</th></tr>
+      ${r('Brand', t(inp.brand), 'client name as it prints')}
+      ${r('Website', t(((ST.stores||{}).sites||[])[0]), 'one site per quote')}
+      ${r('Primary market', t(mk[0]), 'the campaign market')}
+      ${r('Add-on markets', mk.length>1?t(mk.slice(1).join(', ')):'\u2014',
+          `${Math.max(0,mk.length-1)} named`)}
+      ${r('Keywords', n(kwN), 'each row carries term, rank today, tier and volume')}
+      ${r('Ranking top 100', n(ranked), kwN?`of ${kwN} terms`:'')}
+      ${r('Total monthly demand', n(vol), 'live search-volume lookup \u2014 the figure the price was built on')}
+      ${r('Page-one incumbents', n(riv.length), riv.slice(0,4).map(x=>escapeHtml(x.domain||'')).join(', '))}
+      ${r('Median incumbent authority', n(s.pageone_rank||s.median_rival_rank), '0\u20131000, logarithmic')}
+      ${r('Client authority', s.client_measured?n(s.client_rank):'not measured',
+          s.client_measured?'':'the rank check has not run')}
+      ${r('SERP screenshot', ((ST.serp||{}).img)?('captured \u00b7 '+t((ST.serp||{}).kw)):'\u2014',
+          'goes into the proposal as captured')}
+      ${r('Site condition', ((s.health||{}).score!=null)?(n(s.health.score)+'/100'):'\u2014',
+          ((s.health||{}).failed||[]).slice(0,4).map(escapeHtml).join(', '))}
+    </table></div>
+    <div class="nf" style="font-size:11.5px;margin-top:5px">Both blocks in one call:
+      <b>GET /api/quotes/&lt;id&gt;/handoff</b> \u2192 <code>{pricing, proposal}</code>.
+      A saved quote returns what was sent to the client rather than a re-price against
+      today's config, and <code>proposal.keywords</code> carries the full rows.</div>`;
 }
 
 function proposalSignals(){
