@@ -10278,7 +10278,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
                  national_demand=False, geo_override=None, addon_override=None,
-                 goal="", pageone_rank=None, site_rebuild=""):
+                 goal="", pageone_rank=None, site_rebuild="",
+                 _formula_pass=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
@@ -10680,8 +10681,39 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         "addon_markets": _n_addon,
         "min_term_months": min_term,
     }
+    # ---- THE PRICE THE FORMULA WOULD HAVE GIVEN --------------------------
+    # An override REPLACES a component, so the quote it produces is partly the
+    # operator's. Calibration pairs "what the formula said" against "what was
+    # actually sent" — and it was reading the overridden figure as the formula
+    # side, which meant it compared a human's number against itself and learnt
+    # nothing from any overridden quote. Vibe check used to keep the formula
+    # figure underneath and the overrides did not; with Vibe check gone
+    # (2026-08-27) that discipline has to live here. Pure arithmetic, no API
+    # calls, and only computed when something was actually overridden.
+    _formula = None
+    if not _formula_pass and any(x not in (None, "") for x in
+                                 (base_override, geo_override, addon_override)):
+        try:
+            _fp = stage4_price(band, adder, zero_ranking, addon_markets, markup_pct,
+                               pct_not_ranking=pct_not_ranking,
+                               total_volume=total_volume, base_override=None,
+                               ecommerce=ecommerce, industry=industry,
+                               ai_search=ai_search, national_demand=national_demand,
+                               geo_override=None, addon_override=None, goal=goal,
+                               pageone_rank=pageone_rank, site_rebuild=site_rebuild,
+                               _formula_pass=True)
+            _formula = {"client_tiers": _fp["client_tiers"],
+                        "ai_search": ({"client_add": _fp["ai_search"]["client_add"],
+                                       "client_total": _fp["ai_search"]["client_total"]}
+                                      if _fp.get("ai_search") else None),
+                        "client_addon_per_market": _fp.get("client_addon_per_market"),
+                        "combined_monthly": _fp.get("combined_monthly")}
+        except Exception:                                   # noqa: BLE001
+            app.logger.exception("formula-price pass failed")
+            _formula = None
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
             "handoff": handoff,
+            "formula": _formula,
             "hard_true_tiers": hard_true,
             "margin_pct_of_gross": round(mg * 100, 2),
             "agency_profit_tiers": {k: client[k] - hard_true[k] for k in client},
@@ -14783,7 +14815,13 @@ def calibration_rows(payloads):
         # The tier cards show the COMBINED price on a Core SEO + AI Search quote,
         # which is what the operator typed the actual against.
         ai = pricing.get("ai_search") or {}
-        formula = ai.get("client_total") or pricing.get("client_tiers") or {}
+        # AN OVERRIDDEN QUOTE IS NOT A FORMULA PRICE. stage4_price carries the
+        # un-overridden figure alongside; prefer it, or calibration compares an
+        # operator's own number against itself. (2026-08-27)
+        _f = pricing.get("formula") or {}
+        _fai = _f.get("ai_search") or {}
+        formula = (_fai.get("client_total") or _f.get("client_tiers")
+                   or ai.get("client_total") or pricing.get("client_tiers") or {})
         pairs = {t: (formula.get(t), actual.get(t)) for t in _TIERS}
         if not any(a and f for f, a in pairs.values()):
             continue
@@ -14811,11 +14849,6 @@ def calibration_rows(payloads):
             # list against the price sent in July, and if the list changed in
             # between that is a fact about the tool, not about the price.
             "formula_was": p.get("formulaWas") or None,
-            # EVERY VIBE NOTE IS A LABELLED EXAMPLE of why a real price differed
-            # from a computed one — which is the evidence this whole panel has
-            # been short of. Carried onto the row so the reasons can be read
-            # together rather than one quote at a time.
-            "vibe": p.get("vibe") or None,
             "median_rival_rank": ((p.get("signals") or {}).get("pageone_rank")
                                   if (p.get("signals") or {}).get("pageone_rank")
                                   is not None
@@ -16735,23 +16768,6 @@ def _perf_rows(d):
     return rows
 
 
-def _vibe_adjust(n, d):
-    """Brendan's adjustment, applied to a client figure on the way out.
-
-    THE NOTE NEVER REACHES THE DOCUMENT. The reason is internal — "existing
-    client, three referrals last year" is exactly the sort of thing that must
-    not be in a file that gets forwarded. The adjusted PRICE goes in; the
-    judgement behind it stays in the tool. (2026-08-18)
-    """
-    try:
-        pc = float(((d.get("vibe") or {}) or {}).get("pct") or 0)
-    except (TypeError, ValueError):
-        pc = 0.0
-    if not pc or n in (None, ""):
-        return n
-    return int(round(float(n) * (1 + pc / 100.0) / 50.0) * 50)
-
-
 # Openers that mark a sentence as an advert rather than a description.
 _DESC_CTA = re.compile(
     r"\b(shop|buy|order|call|visit|browse|save|get)\s+(today|now|online|us|here)\b"
@@ -17124,8 +17140,7 @@ def build_proposal_docx(d, _notes=None):
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
     head(P["options_heading"])
     body(P["options_lead"])
-    tiers = {k: _vibe_adjust(v, d) for k, v in
-             ((d.get("pricing") or {}).get("client_tiers") or {}).items()}
+    tiers = dict(((d.get("pricing") or {}).get("client_tiers") or {}))
     term = int((d.get("pricing") or {}).get("min_term_months") or 6)
     for i, key in enumerate(("base", "intermediate", "advanced"), start=1):
         label = {"base": "Base", "intermediate": "Intermediate",
@@ -17144,8 +17159,7 @@ def build_proposal_docx(d, _notes=None):
     # SEO options above — which is how Brendan writes it and how the tool
     # computes it. Absent entirely on a Core SEO quote rather than showing zeros.
     ai = (d.get("pricing") or {}).get("ai_search") or {}
-    ai_add = {k: _vibe_adjust(v, d)
-              for k, v in (ai.get("client_add") or {}).items()}
+    ai_add = dict(ai.get("client_add") or {})
     if any(ai_add.get(k) for k in ("base", "intermediate", "advanced")):
         head(P["geo_heading"])
         for para in P["geo_intro"]:
@@ -17170,8 +17184,7 @@ def build_proposal_docx(d, _notes=None):
                        f"This option would be a monthly cost of "
                        f"{_p_money(ai_add.get(key))} with a month-to-month "
                        f"commitment and 12 month minimum term.")
-        tot = {k: _vibe_adjust(v, d)
-               for k, v in (ai.get("client_total") or {}).items()}
+        tot = dict(ai.get("client_total") or {})
         if tot.get("base"):
             body(f"Combined with the SEO campaign above, a base engagement is "
                  f"{_p_money(tot.get('base'))} per month, intermediate "

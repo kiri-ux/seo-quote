@@ -123,15 +123,7 @@
      (2026-08-19) */
   .pill.rept{background:#fff8e8;border:1px solid #e3c98d;color:#6b5320}
   .pill.rept .rpmark{color:#b8860b;font-size:10.5px;margin-right:-2px}
-  /* Two big steppers, not two small buttons. This is a judgement call being
-     made on purpose, and the control should feel like one. (2026-08-19) */
-  .vibeStep{width:46px;height:46px;border-radius:50%;border:2px solid var(--atlas);
-    background:#fff;color:var(--atlas);font-size:26px;font-weight:700;line-height:1;
-    cursor:pointer;font-family:inherit;display:flex;align-items:center;
-    justify-content:center;padding:0;transition:background .12s,color .12s,transform .08s}
-  .vibeStep:hover{background:var(--atlas);color:#fff}
-  .vibeStep:active{transform:scale(.93)}
-  .vibeStep:focus-visible{outline:2px solid var(--velocity);outline-offset:2px}
+  
   .acwrap{position:relative}
   .acdrop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#fff;
     border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 22px rgba(0,45,88,.16);
@@ -4645,14 +4637,22 @@ function renderStep4(p){
   if($('base_reason')) $('base_reason').addEventListener('input', e=>{ ST.baseReason=e.target.value; });
   $('base_apply').onclick=()=>{
     const val=($('base_override').value||'').trim();
+    const geo=($('geo_override')?$('geo_override').value:'').trim();
+    const add=($('addon_override')?$('addon_override').value:'').trim();
     const why=($('base_reason').value||'').trim();
     const msg=$('base_ovr_msg');
+    const num=v=>v!=='' && !isNaN(parseFloat(v));
+    // ANY ONE OF THE THREE IS AN OVERRIDE. Core SEO used to be mandatory, so
+    // moving only the AI Search line meant re-typing a Core figure that had not
+    // changed just to get the form to submit. Each of the three is independent;
+    // the reason covers whichever were set. (2026-08-27)
     const bad=[];
-    if(!val || isNaN(parseFloat(val))) bad.push('a partner hard cost');
+    if(!num(val) && !num(geo) && !num(add))
+      bad.push('at least one partner figure');
     if(why.length<8) bad.push('a reason (a few words is fine)');
     if(bad.length){
       if(msg){ msg.style.color='var(--bad)'; msg.textContent='Enter '+bad.join(' and ')+' before applying.'; }
-      (!val||isNaN(parseFloat(val))?$('base_override'):$('base_reason')).focus();
+      ((!num(val)&&!num(geo)&&!num(add))?$('base_override'):$('base_reason')).focus();
       return;
     }
     if(msg){ msg.style.color='var(--muted)'; msg.textContent=''; }
@@ -5083,22 +5083,6 @@ function toJpeg(dataUrl, q){
 
 function ppMoney(v){ return (v===null||v===undefined||v==='')?'—':'$'+Number(v).toLocaleString(); }
 
-// ---- VIBE CHECK -----------------------------------------------------------
-// The formula is calibrated on twelve proposals and it is wrong on some of them
-// for reasons no measurement in this tool can see — a client who will clearly
-// pay more, a relationship worth protecting, a market Brendan knows first-hand.
-// This is where that judgement goes, on the record.
-//
-// IT NEVER TOUCHES ST.pricing. The calibration panel compares the Actual price
-// against the FORMULA price stored on the quote, so baking an adjustment into
-// the formula output would quietly rewrite the baseline — the exact damage a
-// rebuild did to MPG Gummies this morning. The adjustment is a layer applied at
-// render and at export; the formula's own answer stays underneath it, which is
-// what makes the two comparable at all.
-//
-// THE NOTE IS REQUIRED, and it is the point. Every one of these is a labelled
-// example of why a real price differed from a computed one — which is the
-// evidence the whole calibration effort has been short of. (2026-08-18)
 // MIRRORS gap_effort() / PROPOSAL["gap_bands"] in app.py — keep the two in step;
 // proposal_test.py asserts they agree. The bands are the published 0-100 ones,
 // and the 0-1000 authority score is divided by ten to compare.
@@ -5134,125 +5118,6 @@ function gapVerdict(g, brand){
   for(const [ceiling,label,line] of GAP_VERDICTS){ if(pts<=ceiling) return {label:label, line:line}; }
   const last=GAP_VERDICTS[GAP_VERDICTS.length-1];
   return {label:last[1], line:last[2]};
-}
-
-function vibePct(){ const v=(ST.vibe||{}).pct; return (typeof v==='number' && v)?v:0; }
-function vibeAdjust(n){
-  const pc=vibePct(); if(!pc || n===null || n===undefined || n==='') return n;
-  // UP, not nearest — a client price never rounds down (2026-08-26). Matches
-  // r50up() on the server; the two have to agree or the vibe-adjusted ladder
-  // would land $50 under the same figure computed there.
-  // FLOAT NOISE IS NOT A DOLLAR. 3000 * 1.1 is 3300.0000000000005 in JS, and
-  // a bare ceil turns that into $3,350 — a whole rounding step invented out
-  // of binary representation. Same guard as round(x, 6) on the server.
-  return Math.ceil(Number((Number(n)*(1+pc/100)).toFixed(6))/50)*50;
-}
-function vibeTiers(t){
-  const out={}; ['base','intermediate','advanced'].forEach(k=>{ out[k]=vibeAdjust((t||{})[k]); });
-  return out;
-}
-function vibeBlock(){
-  const v=ST.vibe||{}, p=ST.pricing||{};
-  const t=p.client_tiers||{}, ai=p.ai_search||null;
-  const before=(ai&&(ai.client_total||{}).base)||t.base;
-  const after=vibeAdjust(before);
-  const on=!!vibePct();
-  // THE INSTRUCTION IS NOT NEWS AFTER THE FIRST READ. It sat as a full line of
-  // body copy above the control on every render, pushing the dial down the
-  // card; on hover it is there for whoever needs it and out of the way of
-  // whoever does not. (2026-08-19)
-  return `<div class="pph">Vibe check ${tipOf('Move the quote off the formula where you know something it doesn\'t. The reason is required and is saved with the quote.<br><br>The formula\'s own figure is kept underneath, so calibration still measures the formula rather than the judgement.')}</div>
-  <div style="border:1px solid ${on?'var(--atlas)':'var(--line)'};border-radius:12px;padding:14px 16px;background:${on?'#eef4fb':'#fff'}">
-    <div style="display:flex;gap:18px;align-items:center;justify-content:center;margin:6px 0 12px">
-      <button type="button" class="vibeStep" data-step="-5" title="Down 5%" aria-label="Down 5%">&minus;</button>
-      <div style="text-align:center;min-width:120px">
-        <div id="vibeDial" style="font-family:'Barlow Condensed',sans-serif;font-size:40px;font-weight:800;line-height:1;color:${on?'var(--atlas)':'var(--muted)'}">${(v.pct>0?'+':'')+(v.pct||0)}%</div>
-        <div class="nf" style="font-size:11px">off the formula</div>
-      </div>
-      <button type="button" class="vibeStep" data-step="5" title="Up 5%">+</button>
-      <input id="vibePct" type="hidden" value="${v.pct||0}">
-      ${on?`<button type="button" id="vibeClear" class="btn2" style="padding:4px 11px;font-size:12px;margin-left:6px">Reset</button>`:''}
-    </div>
-    <div id="vibePreviewNote" class="nf hidden" style="text-align:center;margin:-4px 0 9px;font-size:12px"></div>
-    <textarea id="vibeNote" rows="2" placeholder="Why — required. e.g. “Existing client, three referrals last year, hold at the old rate.”" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:inherit">${escapeHtml(v.note||'')}</textarea>
-    <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">
-      <button type="button" id="vibeApply" class="btn2" style="padding:5px 13px;font-size:12.5px;font-weight:600">Apply</button>
-      <span id="vibeMsg" class="nf"></span>
-    </div>
-    ${on?`<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:13px">
-      Formula said <b>${ppMoney(before)}</b> · quoting <b style="color:var(--atlas)">${ppMoney(after)}</b>
-      <span class="nf">(${v.pct>0?'+':''}${v.pct}%${v.at?' · '+escapeHtml(v.at):''})</span>
-      ${v.note?`<div class="nf" style="margin-top:4px">“${escapeHtml(v.note)}”</div>`:''}
-      <div class="nf" style="margin-top:5px">The formula's own figure is kept underneath this, so calibration still measures the formula rather than the judgement.</div>
-    </div>`:''}
-  </div>`;
-}
-// THE PRICE MOVES WITH THE DIAL, ON SCREEN. The steppers moved a percentage and
-// the three figures above them did not budge until Apply, so the one question
-// the control exists to answer — what does +10% actually make this quote — took
-// a commit to see. This previews it.
-//
-// PREVIEW, NOT APPLY. ST.vibe is still only written by Apply, and Apply still
-// demands a reason, so nothing is saved and no quote changes from a stray
-// click. The cards say so while a preview is showing. (2026-08-19)
-function previewVibe(pct){
-  const host=$('ppTiers'); if(!host) return;
-  const p=ST.pricing||{};
-  const t=p.client_tiers||{}, ai=p.ai_search||null;
-  const live=Number(pct)||0, saved=vibePct();
-  // Same rule as vibeAdjust — UP. This is the live preview of the very same
-  // number, so rounding it differently would move the ladder as the slider
-  // settled.
-  const adj=n=>(!live||n===null||n===undefined||n==='')?n
-            :Math.ceil(Number((Number(n)*(1+live/100)).toFixed(6))/50)*50;
-  ['base','intermediate','advanced'].forEach(k=>{
-    const seo=adj(t[k]);
-    const aiAdd=ai?adj((ai.client_add||{})[k]):null;
-    const total=ai?adj((ai.client_total||{})[k]):seo;
-    const a=host.querySelector(`[data-tier="${k}"]`);
-    if(a) a.textContent=ppMoney(total);
-    const so=host.querySelector(`[data-seo="${k}"]`);
-    if(so) so.textContent=ppMoney(seo);
-    const ao=host.querySelector(`[data-ai="${k}"]`);
-    if(ao) ao.textContent=ppMoney(aiAdd);
-  });
-  const note=$('vibePreviewNote');
-  if(note){
-    const pending = live!==saved;
-    note.classList.toggle('hidden', !pending);
-    if(pending) note.innerHTML='Showing <b>'+(live>0?'+':'')+live+'%</b> above &mdash; '
-      +'not saved to the quote until you write a reason and hit Apply.';
-  }
-}
-
-function wireVibe(){
-  const set=pc=>{
-    const note=($('vibeNote')||{}).value||'';
-    const msg=$('vibeMsg');
-    if(pc && !note.trim()){
-      if(msg) msg.innerHTML='<span class="err">A reason is required — it is what makes this a decision rather than a nudge.</span>';
-      const n=$('vibeNote'); if(n) n.focus();
-      return;
-    }
-    ST.vibe = pc ? {pct:pc, note:note.trim(), at:new Date().toISOString().slice(0,10)} : null;
-    try{ scheduleAutoSave(); }catch(e){}
-    renderProposal();
-  };
-  // The dial moves on every click; the price only moves on Apply, so a stray
-  // click cannot change a quote without a reason attached to it.
-  document.querySelectorAll('.vibeStep').forEach(b=>{
-    b.onclick=()=>{
-      const el=$('vibePct'); if(!el) return;
-      const next=Math.max(-50, Math.min(50, (Number(el.value)||0)+Number(b.getAttribute('data-step'))));
-      el.value=next;
-      const d=$('vibeDial');
-      if(d){ d.textContent=(next>0?'+':'')+next+'%'; d.style.color=next?'var(--atlas)':'var(--muted)'; }
-      previewVibe(next);
-    };
-  });
-  previewVibe(Number(($('vibePct')||{}).value||0));
-  const ap=$('vibeApply'); if(ap) ap.onclick=()=>set(Number(($('vibePct')||{}).value||0));
-  const cl=$('vibeClear'); if(cl) cl.onclick=()=>{ const n=$('vibeNote'); if(n) n.value=''; set(0); };
 }
 
 function pricingChart(){
@@ -5319,9 +5184,7 @@ function pricingChart(){
               ? ' · <b>Add-On Market %</b> not applied — manual rate'
               : '')));
   const grand=((ai&&(ai.client_total||{}).base)||t.base)+(nAdd&&addPer?addPer*nAdd:0);
-  const pc=vibePct();
-  if(pc) sum('Vibe check', (pc>0?'+':'')+pc+'%', escapeHtml((ST.vibe||{}).note||'operator judgement'));
-  rows.push(`<tr class="sum" style="border-top-width:3px"><td style="font-size:14px"><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums;font-size:14px"><b>${ppMoney(vibeAdjust(grand))}</b></td><td class="nf">what the client pays</td></tr>`);
+  rows.push(`<tr class="sum" style="border-top-width:3px"><td style="font-size:14px"><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums;font-size:14px"><b>${ppMoney(grand)}</b></td><td class="nf">what the client pays</td></tr>`);
   return `<div class="pph">How this price was built</div><div class="ppwrap"><table>
     <tr><th>Component</th><th style="text-align:right">Amount</th><th>Measured from</th></tr>
     ${rows.join('')}</table></div>` + handoffChart();
@@ -5475,9 +5338,8 @@ function renderProposal(){
   const host=$('proposalView'); if(!host) return;
   const p=ST.pricing||{};
   if(!p.client_tiers){ host.innerHTML='<div class="nf">Price the quote first — the proposal is built from it.</div>'; return; }
-  const t=vibeTiers(p.client_tiers), ai=(p.ai_search||{}).client_total
-        ? vibeTiers((p.ai_search||{}).client_total) : null;
-  const aiAdd=(p.ai_search||{}).client_add ? vibeTiers((p.ai_search||{}).client_add) : null;
+  const t=p.client_tiers, ai=(p.ai_search||{}).client_total || null;
+  const aiAdd=(p.ai_search||{}).client_add || null;
   const shown=ai||t;
   const brand=((ST.inputs||{}).brand)||'This client';
   const term=p.min_term_months||6;
@@ -5499,14 +5361,12 @@ function renderProposal(){
     </div>
     ${pricingChart()}
     <div id="ppPerf"></div>
-    ${vibeBlock()}
-    ${proposalSignals()}
+        ${proposalSignals()}
     ${proposalSerp()}
     ${proposalKeywords()}
     <div id="ppMsg" class="nf" style="margin-top:10px"></div>`;
   const b=$('ppDownload'); if(b) b.onclick=downloadProposal;
-  try{ wireVibe(); }catch(e){}
-  try{ renderProposalPerf(); }catch(e){}
+    try{ renderProposalPerf(); }catch(e){}
 }
 
 // THE PROPOSAL VIEW IS WHERE THE PRICE IS READ BACK, and pay-for-performance
@@ -5568,7 +5428,7 @@ async function downloadProposal(){
         business_desc:((ST.inputs||{}).business_desc)||'',
         geo_values:((ST.inputs||{}).geo_values)||[],
         kw:ST.kw||{}, table:ST.table||[], signals:ST.signals||null,
-        pricing:ST.pricing||{}, vibe:ST.vibe||null,
+        pricing:ST.pricing||{},
         // The performance section reads these; without them the document
         // builds the table off the twenty-term grid alone and the whole
         // measured extra pool is silently dropped.
@@ -6129,9 +5989,6 @@ function snapshotQuote(){
     // What the formula said BEFORE this quote was last rebuilt, so the
     // calibration panel can tell a formula change from a keyword-list change.
     formulaWas: ST.formulaWas||null,
-    // Brendan's judgement and his reason for it — a layer over the formula,
-    // never folded into it. See vibeAdjust().
-    vibe: ST.vibe||null,
     serp: ST.serp||null
   };
 }
@@ -6196,7 +6053,6 @@ function restoreQuote(p){
   // client. Every per-client measurement resets here, then rehydrates from the
   // quote's own snapshot if it has one. (2026-08-18)
   ST.formulaWas=p.formulaWas||null;
-  ST.vibe=p.vibe||null;
   ST.serp=p.serp||null;
   ST.signals=p.signals||null;
   ST.rivals=p.rivals||{};
@@ -6243,7 +6099,7 @@ function restoreQuote(p){
   // THE RIGHT PANEL IS A RENDER, NOT A BINDING. Every step above repaints the
   // build view, but the proposal view is drawn once by showView() and then left
   // alone — so loading a second quote while the Proposal tab was open left the
-  // PREVIOUS client's name, prices, page one and vibe note sitting beside the
+  // PREVIOUS client's name, prices and page one sitting beside the
   // new client's inputs. Nothing about that reads as stale; it reads as this
   // client's quote, and it is the kind of mistake that leaves the building.
   // (2026-08-19)
