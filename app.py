@@ -10685,16 +10685,21 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         "addon_market_discount_pct": _ad_pct,
         "addon_markets": _n_addon,
         # ---- THE PROPOSAL CHANGES THE MARKET COUNT, SO IT NEEDS EVERY RATE --
-        # The proposal deck lets the client move the market count with an
-        # up/down, which moves the bracket. Recomputing the rate there is what
-        # the ticket asked for and it does not work: taking the undiscounted
-        # client figure and applying 10/15/20% lands $50 out on 512 of 1260 tier
-        # values, because our chain discounts the PARTNER cost, rounds it to
-        # $10, and only then rounds the client figure UP to $50 — two roundings
-        # in a different order. Every bracket is priced here by the same code
-        # that priced the quote, so the deck looks its bracket up instead.
+        # Add-On Market Discount % above is ONE number: the bracket THIS quote
+        # landed in. That is all the IO needs, because the IO shows the quote.
+        # The proposal deck is different — it lets the client move the market
+        # count with an up/down, and moving it changes the bracket. So the deck
+        # needs the rates for brackets the quote is not in.
+        #
+        # And it needs them as DOLLARS, not as a percentage to apply. Taking the
+        # undiscounted client figure and knocking 10/15/20% off it lands $50 out
+        # on 512 of 1260 tier values: our chain discounts the PARTNER cost,
+        # rounds that to $10, and only then rounds the client figure UP to $50 —
+        # two roundings in a different order from the deck's one. Every bracket
+        # is priced here by the code that priced the quote, so the deck looks
+        # its bracket up instead of computing one.
         "addon_market_list_price": dict(client_addon_list),
-        "addon_market_schedule": [
+        "addon_market_price_by_bracket": [
             {"min_markets": b["min_markets"], "discount_pct": b["pct"],
              "client": dict(b["client"]), "partner": dict(b["hard"])}
             for b in addon_schedule],
@@ -16705,57 +16710,46 @@ def _proposal_rows(d):
 
 
 def handoff_meta(d):
-    """THE NON-PRICING HALF OF WHAT THE IO PULLS.
+    """THE NON-PRICING HALF OF WHAT THE IO PULLS — AND IT IS SHORT ON PURPOSE.
 
-    stage4_price only ever sees pricing inputs, so its handoff block can only
-    carry money. The proposal needs the rest of the quote — the terms, where the
-    client ranks for them today, who is holding those positions, and the markets
-    the campaign covers — and adtini was re-typing all of it off a PDF.
+    Two fields. Everything else adtini already has or does not render.
 
-    Reads the SAME accessors the document does (_proposal_rows, d["signals"]),
-    so the IO and the .docx can never describe different keywords. Nothing here
-    is recomputed: a saved quote hands back exactly what was sent to the client.
+    The first cut of this block sent brand, website, industry, market names,
+    page-one incumbents, authority scores and site condition. Kiri struck all of
+    it (2026-08-27) and was right on both counts:
+
+      * Brand, website, industry and the markets come FROM adtini — order
+        details, the product card, client details. Sending them back is a round
+        trip that can only introduce disagreement.
+      * Incumbents, authority and site condition are ours and are genuinely
+        interesting, but no slide in the proposal deck draws them. A field
+        nobody renders is a field that goes stale without anyone noticing.
+
+    THE ONE THING TO WATCH. The market NAME can drift: a client entered as
+    "Whatcom County, WA" is quoted on "bellingham wa", so a slide printing the
+    entered market beside our keywords will disagree with them. If that shows up,
+    the fix is one field here, not a lookup on their side.
+
+    Reads the same accessor the .docx reads (_proposal_rows), so the deck and the
+    document can never describe different keywords. Nothing is recomputed: a
+    saved quote hands back exactly what was sent to the client.
     """
     d = d or {}
-    sig = d.get("signals") or {}
-    rows = _proposal_rows(d)
-    ranked = [r for r in rows if str(r.get("rank", "")).isdigit()]
-    markets = usable_markets(d.get("geo_values") or d.get("markets") or [])
-    inputs = d.get("inputs") or {}
     serp = d.get("serp") or {}
 
     return {
-        # ---- who ----------------------------------------------------------
-        "brand": str(inputs.get("brand") or d.get("brand") or "").strip(),
-        "website": (list(d.get("sites") or inputs.get("sites") or [""]) or [""])[0],
-        "industry": str(inputs.get("industry") or d.get("industry") or "").strip(),
-        # ---- where --------------------------------------------------------
-        "primary_market": markets[0] if markets else "",
-        "addon_market_names": markets[1:],
-        "state": str(d.get("state") or "").strip(),
-        "national_demand": bool(d.get("national_demand")),
         # ---- the terms ----------------------------------------------------
-        # kw / rank / tier / vol, in the document's own order. "Not Found" is a
-        # measured miss; an UNMEASURED term is not in this list at all.
-        "keywords": rows,
-        "keyword_count": len(rows),
-        "keywords_ranked_top_100": len(ranked),
-        "total_monthly_volume": sum(int(r.get("vol") or 0) for r in rows),
-        "pct_not_ranking": d.get("pct_not_ranking"),
+        # THREE COLUMNS, NAMED THE WAY THE SLIDE NAMES THEM: term / google rank
+        # / competitiveness. Per-row volume is deliberately NOT sent — the slide
+        # does not show it. Counts are not sent either: the deck has the rows and
+        # can count them, and a stored count is a second thing to keep in step.
+        # "Not Found" is a MEASURED miss. An unmeasured term is not in the list —
+        # a failed or still-queued lookup is not a ranking claim.
+        "keywords": [{"term": r["kw"], "google_rank": r["rank"],
+                      "competitiveness": r["tier"]} for r in _proposal_rows(d)],
         # ---- the SERP -----------------------------------------------------
-        "rivals": [{"domain": r.get("domain"), "authority": r.get("rank"),
-                    "appearances": r.get("appearances")}
-                   for r in (sig.get("rivals") or [])],
-        "median_rival_authority": (sig.get("pageone_rank")
-                                   or sig.get("median_rival_rank")),
-        "top_rival_authority": sig.get("top_rival_rank"),
-        "client_authority": (sig.get("client_rank")
-                             if sig.get("client_measured") else None),
         "serp_screenshot_keyword": serp.get("kw") or "",
         "serp_screenshot_captured": bool(serp.get("img")),
-        # ---- site condition -----------------------------------------------
-        "site_health_score": (sig.get("health") or {}).get("score"),
-        "site_health_issues": list((sig.get("health") or {}).get("failed") or []),
     }
 
 
