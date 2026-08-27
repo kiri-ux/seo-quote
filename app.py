@@ -10698,12 +10698,21 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # two roundings in a different order from the deck's one. Every bracket
         # is priced here by the code that priced the quote, so the deck looks
         # its bracket up instead of computing one.
-        "addon_market_list_price": dict(client_addon_list),
+        #
+        # THE UNDISCOUNTED LIST PRICE IS NOT SENT (2026-08-27, Kiri). It was,
+        # while the deck was going to show a subtotal and then discount it. The
+        # deck reads its bracket rate straight off this table and multiplies by
+        # the count, so it never sees a pre-discount figure.
         "addon_market_price_by_bracket": [
             {"min_markets": b["min_markets"], "discount_pct": b["pct"],
              "client": dict(b["client"]), "partner": dict(b["hard"])}
             for b in addon_schedule],
-        "min_term_months": min_term,
+        # MINIMUM TERM IS NOT HERE (2026-08-27, Kiri). The line item already
+        # refuses a submission under six months, so sending it would be us
+        # telling adtini a rule adtini enforces. It stays a pricing constant
+        # (CFG.min_term_months), is shown on the quote and on the panel, and is
+        # returned by /api/price at the top level — it is just not part of the
+        # handoff contract.
         # ---- PARTNER COST — WHAT BILLING CHARGES THE PARTNER ---------------
         # Core + AI, per tier, the same $50 figures the Partner card shows.
         "partner_hard_cost": {k: hard_cost[k] + _ai_hard.get(k, 0) for k in hard_cost},

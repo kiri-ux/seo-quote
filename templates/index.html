@@ -5224,7 +5224,6 @@ function handoffChart(){
       ${one('Margin %', (h.margin_pct||0)+'%','the IO derives Partner Hard Cost from this')}
       ${one('Add-On Market Discount %', (h.addon_market_discount_pct||0)+'%',
             `${h.addon_markets||0} market${(h.addon_markets===1)?'':'s'}`)}
-      ${one('Minimum term', (h.min_term_months||0)+' months','contracted dates must span it')}
       ${tri({label:'Partner Hard Cost', v:h.partner_hard_cost,
              note:'Core + AI \u2014 what Billing charges the partner. Not the figure the IO prices from'})}
       ${tri({label:'Partner Core SEO Cost', v:h.partner_core_seo_cost}, true)}
