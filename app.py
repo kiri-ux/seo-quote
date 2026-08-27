@@ -10684,6 +10684,20 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         "partner_addon_market_cost": dict(hard_addon),
         "addon_market_discount_pct": _ad_pct,
         "addon_markets": _n_addon,
+        # ---- THE PROPOSAL CHANGES THE MARKET COUNT, SO IT NEEDS EVERY RATE --
+        # The proposal deck lets the client move the market count with an
+        # up/down, which moves the bracket. Recomputing the rate there is what
+        # the ticket asked for and it does not work: taking the undiscounted
+        # client figure and applying 10/15/20% lands $50 out on 512 of 1260 tier
+        # values, because our chain discounts the PARTNER cost, rounds it to
+        # $10, and only then rounds the client figure UP to $50 — two roundings
+        # in a different order. Every bracket is priced here by the same code
+        # that priced the quote, so the deck looks its bracket up instead.
+        "addon_market_list_price": dict(client_addon_list),
+        "addon_market_schedule": [
+            {"min_markets": b["min_markets"], "discount_pct": b["pct"],
+             "client": dict(b["client"]), "partner": dict(b["hard"])}
+            for b in addon_schedule],
         "min_term_months": min_term,
         # ---- PARTNER COST — WHAT BILLING CHARGES THE PARTNER ---------------
         # Core + AI, per tier, the same $50 figures the Partner card shows.
