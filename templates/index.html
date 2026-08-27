@@ -5324,7 +5324,51 @@ function pricingChart(){
   rows.push(`<tr class="sum" style="border-top-width:3px"><td style="font-size:14px"><b>Base monthly investment</b></td><td style="text-align:right;font-variant-numeric:tabular-nums;font-size:14px"><b>${ppMoney(vibeAdjust(grand))}</b></td><td class="nf">what the client pays</td></tr>`);
   return `<div class="pph">How this price was built</div><div class="ppwrap"><table>
     <tr><th>Component</th><th style="text-align:right">Amount</th><th>Measured from</th></tr>
-    ${rows.join('')}</table></div>`;
+    ${rows.join('')}</table></div>` + handoffChart();
+}
+
+// EVERY FIELD THE IO PULLS FROM THIS QUOTE, IN ONE PLACE.
+// The SEO+ product card and the billing engine both read from here, and each
+// field below was argued over once: two of them exist only because deriving
+// them on the other side is wrong by $50 or by $7.50 a market. Printed with
+// the quote so a planner can eyeball what was sent and a developer never has to
+// guess which of our internal keys maps to which of their terms. Internal —
+// this is the on-screen proposal view, not the .docx. (2026-08-27)
+function handoffChart(){
+  const h=(ST.pricing||{}).handoff; if(!h) return '';
+  const T=['base','intermediate','advanced'];
+  const m=v=>(v===null||v===undefined)?'—':'$'+Number(v).toLocaleString();
+  const tri=(o,ind)=>`<tr><td style="padding-left:${ind?18:0}px">${ind?'':'<b>'}${o.label}${ind?'':'</b>'}</td>`
+    + T.map(k=>`<td style="text-align:right;font-variant-numeric:tabular-nums">${m((o.v||{})[k])}</td>`).join('')
+    + `<td class="nf">${o.note||''}</td></tr>`;
+  const one=(label,val,note)=>`<tr><td><b>${label}</b></td>`
+    + `<td colspan="3" style="text-align:right;font-variant-numeric:tabular-nums">${val}</td>`
+    + `<td class="nf">${note||''}</td></tr>`;
+  const eff=h.ai_search_pct_effective||{};
+  const effTxt=T.map(k=>eff[k]).filter(v=>v!==undefined&&v!==null);
+  return `<div class="pph" style="margin-top:16px">Sent to the IO — what adtini pulls from this quote</div>
+    <div class="ppwrap"><table>
+      <tr><th>Field</th><th style="text-align:right">Base</th><th style="text-align:right">Intermediate</th>
+          <th style="text-align:right">Advanced</th><th>Notes</th></tr>
+      ${tri({label:'Package $', v:h.package, note:'what the IO shows'})}
+      ${tri({label:'Core SEO Price', v:h.core_seo_price}, true)}
+      ${tri({label:'AI Search Price', v:h.ai_search_price}, true)}
+      ${tri({label:'Add-On Market Price', v:h.addon_market_price, note:'per market'})}
+      ${tri({label:'Partner Add-On Market Cost', v:h.partner_addon_market_cost,
+             note:'per market · never divide the row above back out'})}
+      ${one('AI Search %', (h.ai_search_pct||0)+'%',
+            effTxt.length?`tier rate · charged ${effTxt.join(' / ')}%`:'')}
+      ${one('Margin %', (h.margin_pct||0)+'%','the IO derives Partner Hard Cost from this')}
+      ${one('Add-On Market Discount %', (h.addon_market_discount_pct||0)+'%',
+            `${h.addon_markets||0} market${(h.addon_markets===1)?'':'s'}`)}
+      ${one('Minimum term', (h.min_term_months||0)+' months','contracted dates must span it')}
+    </table></div>
+    <div class="nf" style="font-size:11.5px;margin-top:5px">Partner Hard Cost is deliberately
+      NOT sent — it is a $50 figure and does not round-trip (86 of 182 tier values come back
+      $50 out). The IO derives it as <b>Package $ × (1 − Margin %)</b>, unrounded.${tipOf(
+      'The reverse is true one row up: Partner Add-On Market Cost IS sent, because dividing '
+      + 'Add-On Market Price by (1 − Margin %) misses by $7.50–$17.50 a market — the partner '
+      + 'figure rounds to $10 and the sell figure rounds up to $50.')}</div>`;
 }
 
 function proposalSignals(){

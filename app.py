@@ -10654,7 +10654,34 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # every term is already a $50 multiple, so the sum is too.
     combined = {k: client[k] + client_addon[k] * _n_addon for k in client}
     combined_hard = {k: hard_cost[k] + hard_addon[k] * _n_addon for k in hard_cost}
+    # ---- WHAT THE IO PULLS FROM THIS QUOTE -------------------------------
+    # One block, named the way the SEO+ ticket and the Billing PRD name things,
+    # so nobody has to work out which of our internal keys maps to which of
+    # their terms. Two of these exist ONLY because deriving them on the other
+    # side goes wrong:
+    #   * Partner Hard Cost is NOT here on purpose. It is a $50 figure and does
+    #     not round-trip — 86 of 182 tier values come back $50 out. The IO
+    #     derives it from Package $ and Margin % instead (ticket RULE 2.d.ii).
+    #   * Partner Add-On Market Cost IS here, because the reverse applies:
+    #     Add-On Market Price / (1 - Margin %) misses by $7.50-$17.50 a market,
+    #     the partner figure having rounded to $10 and the sell figure to $50
+    #     (ticket RULE 2.d.v).
+    _ai_add = (ai or {}).get("client_add") or {k: 0 for k in client}
+    handoff = {
+        "package": {k: client[k] + _ai_add.get(k, 0) for k in client},
+        "core_seo_price": dict(client),
+        "ai_search_price": {k: _ai_add.get(k, 0) for k in client},
+        "ai_search_pct": (ai or {}).get("geo_pct") or 0,
+        "ai_search_pct_effective": (ai or {}).get("geo_pct_effective") or {},
+        "margin_pct": markup_pct,
+        "addon_market_price": dict(client_addon),
+        "partner_addon_market_cost": dict(hard_addon),
+        "addon_market_discount_pct": _ad_pct,
+        "addon_markets": _n_addon,
+        "min_term_months": min_term,
+    }
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "handoff": handoff,
             "hard_true_tiers": hard_true,
             "margin_pct_of_gross": round(mg * 100, 2),
             "agency_profit_tiers": {k: client[k] - hard_true[k] for k in client},
@@ -13544,6 +13571,7 @@ def api_price():
                     "client_addon_list_per_market": p["client_addon_list_per_market"],
                     "addon_savings_per_market": p["addon_savings_per_market"],
                     "margin_pct_of_gross": p["margin_pct_of_gross"],
+                    "handoff": p.get("handoff", {}),
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
 def _perf_fill_bids(d, eligible=True):
