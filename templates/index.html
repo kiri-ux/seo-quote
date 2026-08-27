@@ -4381,7 +4381,7 @@ function renderStep4(p){
 
     <details class="demorail" style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:10px;padding:10px 13px;margin:10px 0">
       <summary style="cursor:pointer;user-select:none;font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px">Demo only — internal costs${ai?', SEO vs AI Search split and calibration':' and calibration'} &#9656; click to expand</summary>
-      <div style="margin-top:9px;font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px">Partner hard cost${ai?' — Core SEO + AI Search combined':''}</div>
+      <div style="margin-top:9px;font-size:11px;font-weight:700;color:var(--demo);text-transform:uppercase;letter-spacing:.5px">Partner hard cost — what we pay${ai?', Core SEO + AI Search combined':''}</div>
     <div class="tiers">
       <div class="tier"><div class="name">Base</div><div class="price" style="color:var(--muted)">${moneyExact(h.base)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.base)}</b><br>AI Search <b>${money(ai.hard_add.base)}</b></div>`:''}</div>
       <div class="tier"><div class="name">Intermediate</div><div class="price" style="color:var(--muted)">${moneyExact(h.intermediate)}</div><div class="mo">/month</div>${ai?`<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)">SEO <b>${money(p.hard_tiers.intermediate)}</b><br>AI Search <b>${money(ai.hard_add.intermediate)}</b></div>`:''}</div>
@@ -5303,7 +5303,7 @@ function pricingChart(){
   if(mult!=null && mult!==1) row('Extras multiplier', '× '+mult, 'industry card or nationwide scope');
   if(p.floored) row('Minimum', ppMoney(p.client_floor), 'computed below the floor — the floor is the price');
   row('Margin', mk+'%', 'agency share of gross · everything above is partner cost');
-  sum('Core SEO', ppMoney(t.base), 'monthly, base tier');
+  sum('Core SEO', ppMoney(t.base), 'client price, monthly, base tier');
   // BOTH RATES ARE NAMED. Two percentages set two components of this price and
   // neither had a label, so "57%" and "15%" could only be told apart by which
   // row they sat on.
