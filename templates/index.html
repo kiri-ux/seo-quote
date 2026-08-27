@@ -4391,12 +4391,11 @@ function renderStep4(p){
 
     ${p.ai_search?`
       <b style="color:var(--atlas)">Internal breakdown — SEO vs AI Search</b>
-      <span class="nf">${p.ai_search.mode==='card'?'(AI Search at the bundled rate card; the client sees one product price — the cards above)':`(<b>AI Search %</b> — <b style="color:var(--atlas)">${p.ai_search.geo_pct}%</b> of Core SEO${p.ai_search.geo_pct_basis?`, ${p.ai_search.geo_pct_basis}`:''})`}</span><br>
+      <span class="nf">${p.ai_search.mode==='card'?'(AI Search at the bundled rate card; the client sees one product price — the cards above)':`(<b>AI Search %</b> — <b style="color:var(--atlas)">${aiPctShown(p.ai_search)}%</b> of Core SEO${aiPctNote(p.ai_search)})`}</span><br>
       <table style="font-size:12.5px;border-collapse:collapse;margin-top:6px">
         <tr><td style="padding:2px 12px 2px 0"></td><td style="padding:2px 12px;text-align:right"><b>Base</b></td><td style="padding:2px 12px;text-align:right"><b>Intermediate</b></td><td style="padding:2px 12px;text-align:right"><b>Advanced</b></td></tr>
         <tr><td style="padding:2px 12px 2px 0">Core SEO component</td><td style="text-align:right">${money(p.client_tiers.base)}</td><td style="text-align:right">${money(p.client_tiers.intermediate)}</td><td style="text-align:right">${money(p.client_tiers.advanced)}</td></tr>
-        ${(p.ai_search.client_list && p.ai_search.bundle_discount_pct)?`<tr class="nf"><td style="padding:2px 12px 2px 0">AI Search on its own</td>${['base','intermediate','advanced'].map(k=>`<td style="text-align:right">${money(p.ai_search.client_list[k])}</td>`).join('')}</tr>`:''}
-        <tr><td style="padding:2px 12px 2px 0">AI Search component${p.ai_search.bundle_discount_pct?` <span class="nf" style="font-size:10.5px">(sold with SEO, ${p.ai_search.bundle_discount_pct}% off)</span>`:''}</td>${['base','intermediate','advanced'].map(k=>{
+        <tr><td style="padding:2px 12px 2px 0">AI Search component</td>${['base','intermediate','advanced'].map(k=>{
           const add=p.ai_search.client_add[k];
           return `<td style="text-align:right">+${money(add)}</td>`;
         }).join('')}</tr>
@@ -4449,7 +4448,7 @@ function renderStep4(p){
           <label style="margin:0;font-size:12px">AI Search partner hard cost</label>
           <input type="text" id="geo_override" value="${(p.ai_search.manual_geo&&p.ai_search.hard_add)?p.ai_search.hard_add.base:''}" placeholder="optional"
             style="width:100px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px">
-          <span class="nf" style="font-size:12px">leave blank to keep the <b>AI Search %</b> of ${p.ai_search.geo_pct||''}%. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
+          <span class="nf" style="font-size:12px">leave blank to keep the <b>AI Search %</b> of ${aiPctShown(p.ai_search)||''}%. Sets the base; the upper tiers keep the same shape as the SEO ladder.</span>
         </div>`:''}
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px">
           <label style="margin:0;font-size:12px">Add-on market partner hard cost</label>
@@ -5310,7 +5309,7 @@ function pricingChart(){
   // row they sat on.
   if(ai && (ai.client_add||{}).base)
     sum('AI Search (GEO)', '+ '+ppMoney(ai.client_add.base),
-        `${ai.uplift_pct!=null?'<b>AI Search %</b> '+ai.uplift_pct+'% of Core SEO':''}`);
+        `${ai.uplift_pct!=null?'<b>AI Search %</b> '+aiPctShown(ai)+'% of Core SEO':''}`);
   if(nAdd && addPer)
     sum('Add-on markets', '+ '+ppMoney(addPer*nAdd),
         `${nAdd} separately-activated campaign${nAdd===1?'':'s'} × ${ppMoney(addPer)}`
@@ -5849,7 +5848,6 @@ async function loadConfig(){
       `<div class="tierhelp">AI Search is quoted as a <b>percentage of the client's own Core SEO price</b>, not a fixed rate card. AI Search runs 30–50% below Core SEO on average, climbing toward parity when the client has little existing visibility. The tiers below map visibility to that percentage and are the whole of AI Search pricing — read high to low, first match wins.</div>`+
       tierRows(c.geo_pct_tiers,'cf_geot','If at least','% of terms aren\u2019t ranking → AI Search is','% of Core SEO')+
       cfgRow('Default AI Search %','cf_geodef',c.geo_pct_default,'used when there is no ranking data yet')+
-      cfgRow('Bundle discount (%)','cf_geodisc',c.geo_bundle_discount_pct,'retired — its 5% is folded into the tiers above. Leave at 0 unless a separate discount comes back')+
       cfgRow('Minimum term (months)','cf_term',c.min_term_months,'standard for both strategies')+
       cfgRow('Minimum term — no visibility','cf_termzv',c.min_term_months_zero_visibility,'used when almost nothing ranks; results take longer')+
       cfgRow('\u201cNo visibility\u201d threshold (%)','cf_zvpct',c.zero_visibility_pct_not_ranking,'% not ranking that counts as no visibility'),
@@ -5894,7 +5892,6 @@ $('cfgApply').addEventListener('click', async()=>{
     geo_pct_tiers:readTierRows('cf_geot'),
     addon_volume_discount_tiers:readTierRows('cf_addond'),
     geo_pct_default:v('cf_geodef'),
-    geo_bundle_discount_pct:v('cf_geodisc'),
     min_term_months:v('cf_term'),
     min_term_months_zero_visibility:v('cf_termzv'),
     zero_visibility_pct_not_ranking:v('cf_zvpct'),
@@ -6650,6 +6647,37 @@ function primaryMarket(){
 // WHICH BRACKET IS THIS QUOTE IN. Flat by bracket: the total count picks one
 // Add-On Market %, and every add-on market on the quote is priced at it.
 // Returns the server-priced row so the browser never rounds anything itself.
+// THE PERCENTAGE HAS TO BE TRUE OF THE DOLLARS NEXT TO IT.
+// geo_pct is the RULE — the tier rate the quote was built from. It is not what
+// the printed figures divide out to: every tier rounds UP independently, so 59%
+// of a $3,950 core is $2,330.50 and is quoted at $2,350, which is 59.5%. The
+// panel used to print the rule beside the dollars, and on a manual GEO override
+// it printed a rule the dollars had never been near. Show what was charged; say
+// what the rule was underneath. (2026-08-27)
+function aiPctShown(ai){
+  if(!ai) return '';
+  // Effective first, then the rule, then uplift_pct — a quote SAVED before this
+  // change carries neither of the first two, and falling through to blank would
+  // erase the percentage from every restored quote in the file.
+  const ok=v=>v!==null && v!==undefined && v!=='';
+  const eff=(ai.geo_pct_effective||{}).base;
+  if(ok(eff)) return eff;
+  if(ok(ai.geo_pct)) return ai.geo_pct;
+  return ok(ai.uplift_pct) ? ai.uplift_pct : '';
+}
+// The clause after it: the basis, plus the tier rate whenever rounding has moved
+// the effective number off it. Silent when the two agree.
+function aiPctNote(ai){
+  if(!ai) return '';
+  const bits=[];
+  if(ai.geo_pct_basis) bits.push(escapeHtml(String(ai.geo_pct_basis)));
+  const eff=(ai.geo_pct_effective||{}).base;
+  const rule=(ai.geo_pct!==null && ai.geo_pct!==undefined) ? ai.geo_pct : ai.uplift_pct;
+  if(eff!==null && eff!==undefined && rule!==null && rule!==undefined
+     && Number(eff)!==Number(rule))
+    bits.push(`tier rate ${rule}%, ${Number(eff)>Number(ai.geo_pct)?'up':'down'} on rounding`);
+  return bits.length?', '+bits.join(' \u00b7 '):'';
+}
 function addonBracket(n){
   const R=ST.addonRates||{}, sched=R.schedule||[];
   let hit=null;
@@ -7171,7 +7199,7 @@ function step1Grid(kw){
   // filters, which is a shortfall of INPUT, not a fault to hide. (2026-08-12)
   const slots=Number(kw.service_slots||0);
   if(slots && svcCount && svcCount < slots*0.75){
-    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>The grid had room for ${slots} services and filled ${svcCount}</b> — so this quote carries ${(kw.all||[]).length} keyword${(kw.all||[]).length===1?'':'s'} where the same client would normally get around ${slots}${((kw.dropped_ungrounded||[]).length||(kw.grounding_stood_down))?`, and ${(kw.dropped_ungrounded||[]).length||'some'} of the AI's suggestions were filtered out`:''}. Add more <b>Product / Vertical Focus</b> terms — the ✦ Suggest services panel measures them for you — and rebuild.${tipOf('The grid is services &times; cities and the service count scales to the number of cities, so a one-city client has the most slots to fill and needs the most seeds. Nothing here is broken: the list is as long as the input allowed. A short list also prices lower, because both the volume total and the tier mix are computed from the terms that exist.')}</div>`);
+    warn.push(`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">⚠ <b>The grid had room for ${slots} services and filled ${svcCount}</b> — so this quote carries ${(kw.all||[]).length} keyword${(kw.all||[]).length===1?'':'s'} where the same client would normally get around ${slots}${((kw.dropped_ungrounded||[]).length||(kw.grounding_stood_down))?`, and ${(kw.dropped_ungrounded||[]).length||'some'} of the AI's suggestions were filtered out`:''}. Add more <b>Product / Vertical Focus</b> terms and rebuild — <b>Expand</b> measures candidates for you, and <b>Expand again on this build</b> re-runs it on a list it has already been over.${tipOf('The grid is services &times; cities and the service count scales to the number of cities, so a one-city client has the most slots to fill and needs the most seeds. Nothing here is broken: the list is as long as the input allowed. A short list also prices lower, because both the volume total and the tier mix are computed from the terms that exist.')}</div>`);
   }
   // "N focus terms left out" warning removed 2026-08-13 on request.
   const _ar=(typeof ST!=='undefined' && ST.autoRegions)||[];

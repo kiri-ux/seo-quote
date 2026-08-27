@@ -508,18 +508,15 @@ CFG = {
         [0,  48],   # 60%+ rank (established)  -> the established-client floor
     ],
     "geo_pct_default": 57,                    # used when no ranking data exists
-    # Bundle discount off the GEO line when sold with Core SEO.
-    # Provenance: MPG's proposal (2026-06-10) listed the intermediate GEO at
-    # "$4,050, discounted from $4,250 in conjunction with the SEO campaign" =
-    # 4.7%, and the pricing authority confirmed (2026-07-25) it applies to all
-    # three tiers rather than just the one the proposal showed it on.
-    # It is doing real work in the fit: against MPG's actual GEO ladder,
-    #   5% -> 2,950 / 4,050 / 5,150   avg error 0.6%
-    #   0% -> 3,100 / 4,250 / 5,400   avg error 4.3%
-    # so it should only be zeroed on a decision that the practice has changed,
-    # not on the assumption that the number is stale. Set to 0 and the list
-    # row and the "sold with SEO" note disappear from the quote entirely.
-    "geo_bundle_discount_pct": 0,             # RETIRED — folded into geo_pct_tiers
+    # (The GEO bundle discount is GONE, 2026-08-27. It was a real 5% off the AI
+    # Search line when sold with Core SEO — MPG, 2026-06-10, "$4,050, discounted
+    # from $4,250 in conjunction with the SEO campaign". On 2026-07-28 the 5%
+    # was folded INTO geo_pct_tiers above: every rate there is its old value
+    # x 0.95, which left the quoted numbers identical. The constant stayed
+    # behind at 0 and editable, which meant anyone could re-apply a discount
+    # that was already in the rates. Removed outright rather than left as a
+    # trap. If a separate discount ever comes back, un-fold geo_pct_tiers in
+    # the same edit — divide each rate by 0.95.)
     # Minimum term. Brendan: "we usually do 6 months for both, however where
     # someone has like ZERO visibility sometimes we do 12 because it takes
     # that long to get results." Same trigger as the top geo_pct rung.
@@ -10512,19 +10509,15 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                         geo_pct = float(val)
                         geo_basis = f"{pct_not_ranking:.0f}% of head terms not ranking"
                         break
-            disc = float(CFG.get("geo_bundle_discount_pct", 5)) / 100.0
             p_list = geo_pct / 100.0
-            p_net  = p_list * (1.0 - disc)
             ai = {"mode": "pct",
                   "uplift_pct": geo_pct,
                   "geo_pct": geo_pct,
                   "geo_pct_basis": geo_basis,
-                  "bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
                   "min_term_months": min_term,
                   "zero_visibility": zero_visibility,
-                  "client_list": {k: r50up(v * p_list) for k, v in client.items()},
-                  "hard_add":    {k: r50(v * p_net)  for k, v in hard.items()},
-                  "client_add":  {k: r50up(v * p_net) for k, v in client.items()}}
+                  "hard_add":   {k: r50(v * p_list)   for k, v in hard.items()},
+                  "client_add": {k: r50up(v * p_list) for k, v in client.items()}}
         # GEO can be overridden independently of SEO. The percentage model is
         # a good default and a bad straitjacket: a client may have agreed a GEO
         # number that has nothing to do with their SEO price — a flat retainer,
@@ -10547,8 +10540,18 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                              if client.get("base") else None)
         ai["hard_total"]   = {k: hard[k] + ai["hard_add"][k] for k in hard}
         ai["client_total"] = {k: client[k] + ai["client_add"][k] for k in client}
-        ai["bundle_savings"] = {k: ai["client_list"][k] - ai["client_add"][k]
-                                for k in client} if "client_list" in ai else {}
+        # THE PERCENTAGE THAT IS TRUE OF THE DOLLARS BESIDE IT.
+        # geo_pct is the RULE — the tier rate the quote was built from. It is
+        # not what the printed figures divide out to, because each tier rounds
+        # UP independently: 59% of a $3,950 core is $2,330.50 and is quoted at
+        # $2,350, which is 59.5%. The panel printed the rule next to the
+        # dollars and the two did not reconcile. It is worse on a manual GEO
+        # override, where the dollars have nothing to do with the rule at all.
+        # So carry both: geo_pct for what the rule says, geo_pct_effective for
+        # what was actually charged. (2026-08-27)
+        ai["geo_pct_effective"] = {
+            k: (round(ai["client_add"][k] / client[k] * 100, 1) if client.get(k) else None)
+            for k in client}
 
     # AN ADD-ON MARKET IS A FULL CAMPAIGN IN ANOTHER CITY. There is no scope
     # fraction any more (see the RETIRED note on addon_market_ratio): the list
@@ -13670,7 +13673,6 @@ def api_config_get():
         "perf_page1_floor": CFG.get("perf_page1_floor", 80),
         "serp_frame_offset": CFG.get("serp_frame_offset", 0.40),
         "serp_head_px": CFG.get("serp_head_px", 190),
-        "geo_bundle_discount_pct": CFG.get("geo_bundle_discount_pct", 5),
         "min_term_months": CFG.get("min_term_months", 6),
         "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
         "zero_visibility_pct_not_ranking": CFG.get("zero_visibility_pct_not_ranking", 90),
@@ -13822,7 +13824,6 @@ def api_config_set():
                             ("pin_head_terms", int),
                             ("pin_min_volume", int),
                             ("geo_pct_default", float),
-                            ("geo_bundle_discount_pct", float),
                             ("min_term_months", int),
                             ("min_term_months_zero_visibility", int),
                             ("zero_visibility_pct_not_ranking", float),
