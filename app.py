@@ -550,7 +550,11 @@ CFG = {
     # Legacy MPG card, kept for reference / geo_pricing_mode="card" only.
     "geo_card": {"base": 2950, "intermediate": 4050, "advanced": 5250},
     "geo_card_list": {"base": 2950, "intermediate": 4250, "advanced": 5250},
-    "geo_min_term_months": 12,                # legacy card mode only
+    # (AI Search no longer carries a minimum term of its own, 2026-08-27. It was
+    # 12 months against Core SEO's 6, on the reasoning that GEO takes longer to
+    # show. Both now run on the quote's single min_term_months — 6, or 12 when
+    # >=90% of terms are not ranking — so adding AI Search to a quote can no
+    # longer double the commitment on its own.)
     "ai_search_uplift_pct": 75,               # legacy flat-pct mode only
     "ecom_anchor_add": 0,                     # RETIRED 2026-07-25 (Brendan): ecommerce carries no anchor add
     # CALIBRATED ON BE'S SIX FLOOR-BOUND PROPOSALS (2026-08-13). 700 produced a
@@ -10493,7 +10497,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             card = CFG.get("geo_card", {})
             card_list = CFG.get("geo_card_list", card)
             ai = {"mode": "card",
-                  "min_term_months": CFG.get("geo_min_term_months", 12),
+                  "min_term_months": min_term,
                   "client_add":  {k: int(card.get(k, 0)) for k in client},
                   "client_list": {k: int(card_list.get(k, 0)) for k in client},
                   "hard_add":    {k: r50(int(card.get(k, 0)) / m) for k in client}}
@@ -13689,7 +13693,6 @@ def api_config_get():
         "pin_head_terms": CFG.get("pin_head_terms", 3),
         "pin_min_volume": CFG.get("pin_min_volume", 300),
         "geo_card": CFG.get("geo_card", {}),
-        "geo_min_term_months": CFG.get("geo_min_term_months", 12),
         "cpc_adder_free_below": CFG.get("cpc_adder_free_below", 5.0),
         "zero_ranking_bonus": CFG["zero_ranking_bonus"],
         "zero_ranking_top_n": CFG["zero_ranking_top_n"],
