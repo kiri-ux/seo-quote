@@ -4376,7 +4376,7 @@ function renderStep4(p){
     ${p.site_rebuild==='new'?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>Priced as a new domain</b> — this client is moving to a site with no history, so the rank check on the current domain does not describe the campaign${p.rebuild_applied?` and was not used`:``}. Visibility reads as <b>100% not ranking</b>, which takes the top zero-ranking uplift, the full volume add and the ${p.min_term_months||12}-month term. There is no separate new-site charge: those three already price "they own nothing yet", and a fourth would be charging twice for it.${tipOf('The rank check, the on-page score and the domain authority are all measured on the CURRENT site. A client ranking well today would otherwise be DISCOUNTED for equity they are about to throw away.')}</div>`:''}
     ${p.site_rebuild==='same'?`<div class="calc" style="background:#eef4fb;border-color:#c9dcf0">\u2139 <b>Site being rebuilt on the same domain</b> — the price is unchanged. Redirects carry the rankings and the domain authority, so the measurements still describe the campaign; only the on-page score (measured on the outgoing build) is stale. Pay-for-performance is off either way.${tipOf('A new DOMAIN is the case that moves the price — pick that option instead if the client is changing address.')}</div>`:''}
     ${ST.rankUnmeasured?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No ranking adjustment in this price</b> — every rank lookup is still in Google's queue or failed, so nothing has been measured. The zero-ranking component is <b>0%</b> rather than a guess in either direction: an empty table reads as "0% ranked" (largest uplift) or "0% not ranking" (well-ranked discount) depending on which way you square it, and neither is a fact. <b>Re-price once the rows land.</b></div>`:''}
-    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term${(ai&&ai.zero_visibility)?' — extended because almost nothing currently ranks':''})</span>`:''}</div>`:''}
+    ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term)</span>`:''}</div>`:''}
     <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost ÷ (1 − margin) — the markup is the agency's share of gross, not a mark-on. Adjust it below to see the client price update.</div>
 
     <details class="demorail" style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:10px;padding:10px 13px;margin:10px 0">
@@ -5849,8 +5849,7 @@ async function loadConfig(){
       tierRows(c.geo_pct_tiers,'cf_geot','If at least','% of terms aren\u2019t ranking → AI Search is','% of Core SEO')+
       cfgRow('Default AI Search %','cf_geodef',c.geo_pct_default,'used when there is no ranking data yet')+
       cfgRow('Minimum term (months)','cf_term',c.min_term_months,'standard for both strategies')+
-      cfgRow('Minimum term — no visibility','cf_termzv',c.min_term_months_zero_visibility,'used when almost nothing ranks; results take longer')+
-      cfgRow('\u201cNo visibility\u201d threshold (%)','cf_zvpct',c.zero_visibility_pct_not_ranking,'% not ranking that counts as no visibility'),
+      
       'thin','AI SEARCH %% CEILING BACK-SOLVED FROM MPG — CONFIRM ON A SECOND CLIENT') +
 
     cfgGroup('Keyword list consistency',
@@ -5893,8 +5892,8 @@ $('cfgApply').addEventListener('click', async()=>{
     addon_volume_discount_tiers:readTierRows('cf_addond'),
     geo_pct_default:v('cf_geodef'),
     min_term_months:v('cf_term'),
-    min_term_months_zero_visibility:v('cf_termzv'),
-    zero_visibility_pct_not_ranking:v('cf_zvpct'),
+   
+   
     pin_head_terms:v('cf_pinn'),
     pin_min_volume:v('cf_pinvol'),
   };

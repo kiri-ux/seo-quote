@@ -532,8 +532,9 @@ CFG = {
     # how the insurance card ended up double-counting the CPC adder (+$800, cut
     # to +$395). A new domain routes through that existing lever instead: read
     # as 100% not ranking, which takes the top uplift band, the full volume add
-    # and -- because 100 clears zero_visibility_pct_not_ranking -- the 12-month
-    # term, all without a new constant.
+    # term. (The 12-month "no visibility" term this used to pick up was removed
+    # 2026-08-27 — the term is now a judgement call, so a new domain moves the
+    # uplift and the volume add and nothing else.)
     #
     # A SAME-DOMAIN rebuild is a different claim. Redirects carry the rankings
     # and the authority, so the measurement still describes the campaign; only
@@ -545,8 +546,11 @@ CFG = {
     # the tier step keep round-to-nearest: they describe the shape of the quote
     # rather than the number on it. (2026-08-26)
     "client_round_mode": "up",
-    "min_term_months_zero_visibility": 12,
-    "zero_visibility_pct_not_ranking": 90,    # >= this % not ranking = "nothing ranks"
+    # (The 12-month "no visibility" term is GONE, 2026-08-27. A quote where
+    # almost nothing ranks used to be committed for 12 months instead of 6, on
+    # the reasoning that results take longer. It is a judgement call per client
+    # rather than a rule the tool should enforce, so every quote now carries the
+    # one minimum term and the operator sets the dates.)
     # Legacy MPG card, kept for reference / geo_pricing_mode="card" only.
     "geo_card": {"base": 2950, "intermediate": 4050, "advanced": 5250},
     "geo_card_list": {"base": 2950, "intermediate": 4250, "advanced": 5250},
@@ -10482,10 +10486,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         client = {k: retail_of(v) for k, v in hard_cost.items()}
 
     # ---- minimum term (applies to the whole quote, not just GEO) ----
-    zv_thresh = CFG.get("zero_visibility_pct_not_ranking", 90)
-    zero_visibility = (pct_not_ranking is not None and pct_not_ranking >= zv_thresh)
-    min_term = (CFG.get("min_term_months_zero_visibility", 12) if zero_visibility
-                else CFG.get("min_term_months", 6))
+    min_term = CFG.get("min_term_months", 6)
 
     # ---- Core SEO + AI Search: GEO as a % of the client's own Core SEO ----
     # Brendan: GEO averages 30-50% below SEO, rising toward parity when the
@@ -10519,7 +10520,6 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                   "geo_pct": geo_pct,
                   "geo_pct_basis": geo_basis,
                   "min_term_months": min_term,
-                  "zero_visibility": zero_visibility,
                   "hard_add":   {k: r50(v * p_list)   for k, v in hard.items()},
                   "client_add": {k: r50up(v * p_list) for k, v in client.items()}}
         # GEO can be overridden independently of SEO. The percentage model is
@@ -10667,7 +10667,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "national_demand": nat_demand, "national_demand_reason": nat_reason,
             "volume_captured": vol_captured,
             "volume_opportunity": round(vol_opportunity, 3),
-            "min_term_months": min_term, "zero_visibility": zero_visibility,
+            "min_term_months": min_term,
             # What the rebuild flag did, so the panel can say it rather than the
             # operator wondering why a client with rankings priced as if it had
             # none. rebuild_applied is False when the measurement already
@@ -13510,7 +13510,6 @@ def api_price():
                     "national_demand": p.get("national_demand", False),
                     "national_demand_reason": p.get("national_demand_reason", ""),
                     "min_term_months": p.get("min_term_months"),
-                    "zero_visibility": p.get("zero_visibility", False),
                     "extras_multiplier": p.get("extras_multiplier", 1.0),
                     "manual_geo": p.get("manual_geo", False),
                     "manual_addon": p.get("manual_addon", False),
@@ -13678,8 +13677,6 @@ def api_config_get():
         "serp_frame_offset": CFG.get("serp_frame_offset", 0.40),
         "serp_head_px": CFG.get("serp_head_px", 190),
         "min_term_months": CFG.get("min_term_months", 6),
-        "min_term_months_zero_visibility": CFG.get("min_term_months_zero_visibility", 12),
-        "zero_visibility_pct_not_ranking": CFG.get("zero_visibility_pct_not_ranking", 90),
         "nationwide_service_extras": CFG.get("nationwide_service_extras", 1.0),
         "vol_add_ramp": CFG.get("vol_add_ramp", [40, 60]),
         # Shown so a model change is visible rather than silent: an unpinned
@@ -13828,8 +13825,6 @@ def api_config_set():
                             ("pin_min_volume", int),
                             ("geo_pct_default", float),
                             ("min_term_months", int),
-                            ("min_term_months_zero_visibility", int),
-                            ("zero_visibility_pct_not_ranking", float),
                             ("nationwide_service_extras", float)]:
             if key in d and d[key] not in (None, ""):
                 CFG[key] = caster(d[key])
