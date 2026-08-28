@@ -501,6 +501,7 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
                   "Search Manipulation, and Branded Search Append.",
                   f"Includes up to {inc} negative phrase removals across "
                   "auto-suggest and related searches."],
+        "hard_total": hard,
         "internal": {"rows": _mrows(hard, "/mo") + [
             {"label": f"\u26a0 {inc}-phrase inclusion",
              "value": "internal assumption \u2014 Sage actual covered 2; "
@@ -540,6 +541,7 @@ def price_search_bundle_maintenance(volume, margin_pct=None, hard_override=None)
                   "never billed together.",
                   "Recommended to lock in results and keep negative content "
                   "from returning."],
+        "hard_total": hard,
         "internal": {"rows": _mrows(hard, "/mo") + [
             {"label": "\u26a0 Maintenance reduction",
              "value": f"currently {int(pct*1000)/10}% of active (Visions "
@@ -725,6 +727,7 @@ def price_geo(phase="setup", margin_pct=None, hard_override=None):
                       "Priced off the standard GEO card ($4,950 setup / $9,950 "
                       "scale) \u2014 reputational application unconfirmed.",
                       "Recommend setup phase 1\u20132 quarters, then scale."],
+            "hard_total": hard,
             "internal": {"rows": _mrows(hard, "/mo")}}
 
 
@@ -806,8 +809,58 @@ def price_shield(locations=1, margin_pct=None, hard_override=None):
         "timeline": "Ongoing",
         "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_override else [])
                + list(cfg["included"]),
+        "hard_total": hard_total,
         "internal": {"rows": _mrows(hard_total, "/mo")},
     }
+
+
+MONTHLY_KINDS = ("monthly", "monthly_maint")
+
+
+def apply_monthly_override(lines, target_hard, margin_pct=None):
+    """ONE OVERRIDE FOR THE WHOLE MONTHLY (2026-08-28, Kiri).
+
+    There used to be three: Search Protection, Reputational AI Search and the
+    Brand Shield each had their own box. The IO does not itemise them — the
+    product form carries a single Monthly Budget for ORM — so three boxes asked
+    the planner to split a number nobody downstream ever sees split.
+
+    `target_hard` is the total PARTNER cost per month for the whole quote. The
+    split across the lines keeps the formula's own proportions, so an overridden
+    quote still reads as the same campaign rather than a lump sum: a quote whose
+    formula put 70% of the monthly on Search Protection still does after the
+    override.
+
+    Maintenance is deliberately included in the proportioning even though it
+    never bills alongside the active line — it is a monthly the client is being
+    quoted, and leaving it on the formula rate while everything around it moved
+    is how a quote ends up with a maintenance phase costing more than the
+    campaign it maintains.
+    """
+    try:
+        target = float(target_hard or 0)
+    except (TypeError, ValueError):
+        return lines
+    if target <= 0:
+        return lines
+    monthly = [ln for ln in lines if ln.get("kind") in MONTHLY_KINDS]
+    formula = sum(float(ln.get("hard_total") or 0) for ln in monthly)
+    if not monthly or formula <= 0:
+        return lines
+    mg = (ART_CAL_MARGIN if margin_pct is None
+          else min(0.95, max(0.0, float(margin_pct))))
+    ratio = target / formula
+    for ln in monthly:
+        hard = float(ln["hard_total"]) * ratio
+        ln["hard_total"] = hard
+        ln["total"] = r50(hard / (1 - mg))
+        ln["internal"] = {"rows": _mrows(hard, "/mo")}
+        note = ("\u2699 Manual hard-cost override active \u2014 monthly set to "
+                "$%s/mo partner across every recurring line, split on the "
+                "formula's own proportions." % format(int(round(target)), ","))
+        ln["notes"] = [note] + [n for n in (ln.get("notes") or [])
+                                if "Manual hard-cost override" not in n]
+    return lines
 
 
 def build_rep_quote(payload):
@@ -844,8 +897,7 @@ def build_rep_quote(payload):
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
-            sp_line = price_search_bundle(vol, payload.get("margin_pct"),
-                                          hard_override=ov.get("search_hard"))
+            sp_line = price_search_bundle(vol, payload.get("margin_pct"))
             if campaign == "bundle":
                 # Reactive + Proactive: the Brand Shield (phase 2) IS the
                 # post-result hold — quoting a separate maintenance phase
@@ -857,8 +909,8 @@ def build_rep_quote(payload):
                 phase1.append(sp_line)
             else:
                 phase1.append(sp_line)
-                phase1.append(price_search_bundle_maintenance(vol, payload.get("margin_pct"),
-                                                              hard_override=ov.get("search_hard")))
+                phase1.append(price_search_bundle_maintenance(
+                    vol, payload.get("margin_pct")))
             sp = REP_CFG["search_protection"]
             if vol > sp["review_above_volume"]:
                 warnings.append(
@@ -867,14 +919,21 @@ def build_rep_quote(payload):
                     "confirm out-search capacity before quoting.")
         ge = payload.get("geo") or {}
         if ge.get("enabled"):
-            phase1.append(price_geo(ge.get("phase") or "setup", payload.get("margin_pct"),
-                                    hard_override=ov.get("geo_hard")))
+            phase1.append(price_geo(ge.get("phase") or "setup",
+                                    payload.get("margin_pct")))
 
 
     if campaign in ("proactive", "bundle"):
         sh = payload.get("shield") or {}
-        phase2.append(price_shield(sh.get("locations", 1), payload.get("margin_pct"),
-                                   hard_override=ov.get("shield_hard")))
+        phase2.append(price_shield(sh.get("locations", 1),
+                                   payload.get("margin_pct")))
+
+    # ONE MONTHLY OVERRIDE, APPLIED ACROSS BOTH PHASES. It has to run after
+    # every monthly line exists — the target is the total, and the total is
+    # not knowable while the lines are still being built.
+    if ov.get("monthly_hard"):
+        apply_monthly_override(phase1 + phase2, ov["monthly_hard"],
+                               payload.get("margin_pct"))
 
     # bundle discount on recurring lines when both phases present
     if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:

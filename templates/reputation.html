@@ -389,11 +389,9 @@
           <div><label style="font-size:12px">Review removal — hard $/review</label><input type="number" id="ovReview" placeholder="formula" min="0"></div>
           <div><label style="font-size:12px">Standard site removal — hard $/page</label><input type="number" id="ovArtStd" placeholder="formula" min="0"></div>
           <div><label style="font-size:12px">Premium site removal — hard $/page</label><input type="number" id="ovArtPrem" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Search Protection — hard $/mo (active)</label><input type="number" id="ovSearch" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Reputational AI Search — hard $/mo</label><input type="number" id="ovGeo" placeholder="formula" min="0"></div>
-          <div><label style="font-size:12px">Brand Shield — hard $/mo base</label><input type="number" id="ovShield" placeholder="formula" min="0"></div>
+          <div><label style="font-size:12px">Monthly cost — hard $/mo (all recurring)</label><input type="number" id="ovMonthly" placeholder="formula" min="0"></div>
         </div>
-        <p class="help" style="margin:8px 0 0">Search Protection maintenance keeps its % ratio off the overridden active rate. Shield per-extra-location stays on the config value. <button type="button" id="ovClear" style="background:#fff;color:var(--bad);border:1px solid var(--bad-line);padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
+        <p class="help" style="margin:8px 0 0">Monthly cost sets the total across every recurring line — Search Protection, its maintenance phase, Reputational AI Search and the Brand Shield — and the split between them keeps the formula's own proportions. The IO carries one Monthly Budget for ORM, so there is one figure here. <button type="button" id="ovClear" style="background:#fff;color:var(--bad);border:1px solid var(--bad-line);padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
         </details>
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
@@ -466,8 +464,8 @@ async function buildQuote(){
     geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
     shield: {locations:+$('nLocations').value||1},
     overrides: {review_hard:+$('ovReview').value||0, art_std_hard:+$('ovArtStd').value||0,
-                art_prem_hard:+$('ovArtPrem').value||0, search_hard:+$('ovSearch').value||0,
-                geo_hard:+$('ovGeo').value||0, shield_hard:+$('ovShield').value||0},
+                art_prem_hard:+$('ovArtPrem').value||0,
+                monthly_hard:+$('ovMonthly').value||0},
   };
   try{
     const r = await fetch('/api/rep_quote', {method:'POST',
@@ -483,7 +481,7 @@ $('go').onclick = buildQuote;
 // Manual hard-cost overrides re-price the quote live (debounced) once a
 // quote has been built — no separate save/apply step needed.
 let ovDebounce = null;
-['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>{
+['ovReview','ovArtStd','ovArtPrem','ovMonthly'].forEach(id=>{
   const el = $(id); if(!el) return;
   el.addEventListener('input', ()=>{
     if(!lastQuote) return;
@@ -493,7 +491,7 @@ let ovDebounce = null;
 });
 
 $('ovClear').onclick = ()=>{
-  ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>$(id).value='');
+  ['ovReview','ovArtStd','ovArtPrem','ovMonthly'].forEach(id=>$(id).value='');
   if(lastQuote){ clearTimeout(ovDebounce); buildQuote(); }
 };
 
@@ -1189,7 +1187,7 @@ function renderReco(){
     }
   });
   syncVisibility();
-  const ovIds = ['ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'];
+  const ovIds = ['ovReview','ovArtStd','ovArtPrem','ovMonthly'];
   if(ovIds.some(id=>+($(id)&&$(id).value||0))) $('ovPanel').open = true;
 }
 // Both facts, always stated. Only the failing half used to be shown — a row
@@ -1616,7 +1614,7 @@ async function savingStatus(){
 
 function collectForm(){
   const f = {};
-  ['brand','domain','terms','nReviews','clientMargin','nArtStd','nArtPrem','volume','nLocations','geoPhase','ovReview','ovArtStd','ovArtPrem','ovSearch','ovGeo','ovShield'].forEach(id=>{
+  ['brand','domain','terms','nReviews','clientMargin','nArtStd','nArtPrem','volume','nLocations','geoPhase','ovReview','ovArtStd','ovArtPrem','ovMonthly'].forEach(id=>{
     const el = $(id); if(el) f[id] = el.value;
   });
   ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{ f[id] = $(id).checked; });
