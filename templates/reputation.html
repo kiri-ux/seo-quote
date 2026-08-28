@@ -344,10 +344,6 @@
             <button class="btn2" id="pullVol" type="button" style="margin-top:8px">Pull from DataForSEO</button>
           </details>
           <p class="help" id="negPhraseNote">Includes up to 3 negative phrase removals (count unconfirmed).</p>
-          <details class="demorail" style="margin:8px 0 2px">
-            <summary>Demo only — search protection price formula ▸ click to expand</summary>
-            <div class="help" id="spFormula" style="margin:8px 0 4px"></div>
-          </details>
         </div>
 
         <div class="toggle-row"><label class="switch"><input type="checkbox" id="useGeo"><span class="slider"></span></label><span class="lbl">Reputational AI Search<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Shapes what AI Overviews and chatbots say about the brand by building AI-crawlable positive content and citations.</span></span></span><span class="pillnote">estimated $ — pending review</span></div>
@@ -366,10 +362,6 @@
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO brand shield &amp; asset building · 24/7 brand monitoring &amp; threat detection — one monthly bundle.</p>
-        <details class="demorail" style="margin:2px 0">
-          <summary>Demo only — brand shield price formula ▸ click to expand</summary>
-          <div class="help" id="shieldFormula" style="margin:8px 0 4px"></div>
-        </details>
         <label># of locations</label>
         <input type="number" id="nLocations" min="1" value="1">
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
@@ -560,22 +552,13 @@ function render(d, payload){
       h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
     }
     const per = (l.kind==='monthly'||l.kind==='monthly_maint') ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
-    let intlBody = '';
-    if(l.internal && l.internal.rows){
-      intlBody = l.internal.rows.map(r => typeof r === 'string'
-        ? '<div class="intlrow"><span>'+r+'</span></div>'
-        : '<div class="intlrow"'+(r.tbd?' style="color:#b3261e;font-weight:600"':'')+'><span>'+r.label+(r.tbd?' · '+(typeof r.tbd==='string'?r.tbd:'TBD — confirm'):'')+'</span><span>'+r.value+'</span></div>').join('');
-    } else if(l.internal && l.internal.text){
-      intlBody = '<div class="intlrow"><span>'+l.internal.text+'</span></div>';
-    } else if(l.internal){
-      intlBody = '<div class="intlrow"><span>Partner hard cost</span><span>'
-               + money(Math.round(l.internal.hard_total))
-               + ' ($'+l.internal.hard_per.toLocaleString()+'/rev)</span></div>';
-    }
-    const internal = intlBody
-      ? '<details class="demorail intlrail"><summary>Demo only — internal cost ▸ click to expand</summary>'
-        + '<div class="intlbody">'+intlBody+'</div></details>'
-      : '';
+    // THE PER-LINE INTERNAL-COST RAIL IS GONE (2026-08-28, Kiri). It hung a
+    // "Demo only — internal cost" expander under every line while the quote
+    // was being calibrated. Partner cost now has one home: the Sent to the IO
+    // table under the quote. Two places to read the same number is how they
+    // end up disagreeing. line.internal is still returned by the server —
+    // nothing downstream lost a field, only this rail stopped drawing it.
+    const internal = '';
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
        + '</td><td>'+phaseTimeline(l, isBundle)+'</td><td class="amt">'
@@ -788,7 +771,8 @@ function repHandoffTable(d){
    + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
    + '<tr><th style="text-align:left">Product form field</th>'
    + '<th style="text-align:right">Value</th><th style="text-align:left">Notes</th></tr>'
-   + r('Strategy', esc(h.strategy), 'the campaign this quote was built as')
+   + r('Strategy', esc((h.strategy||[]).join(', ')),
+       'the form\u2019s multiselect values \u2014 a bundle sends both')
    + r('Review Removals', yn(h.review_removals), 'the toggle IS the presence of the line')
    + r('# of Reviews', (h.reviews_count||0).toLocaleString(), '1 and 2 star from the review pull')
    + r('Price per Review Removal', money(h.price_per_review_removal), 'client rate \u00b7 the total is a pay-on-success maximum')
@@ -800,7 +784,9 @@ function repHandoffTable(d){
    + r('Monthly Budget', money(h.monthly_budget), 'client \u00b7 EXCLUDES the maintenance phase, which replaces the active rate rather than adding to it')
    + r('Margin %', Math.round((h.margin_pct||0)*1000)/10+'%', 'margin of gross')
    + r('Partner Monthly Cost', money(h.partner_monthly_cost), 'what Billing charges the partner')
-   + r('Partner Hard Cost per Review', money(h.partner_hard_cost_per_review), '')
+   + r('Partner Hard Cost per Review', money(h.partner_hard_cost_per_review), 'per removed review')
+   + r('Partner Hard Cost per Standard Site', money(h.partner_hard_cost_per_standard_site), 'per page')
+   + r('Partner Hard Cost per Premium Site', money(h.partner_hard_cost_per_premium_site), 'per page')
    + '</table>'
    + '<p class="help" style="margin-top:5px">Sent, not derived \u2014 every client figure rounds UP '
    + '(review removals to $5, everything else to $50), so dividing one back through the margin does not '

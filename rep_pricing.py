@@ -776,26 +776,13 @@ def price_pr(premium=0, secondary=0, releases=0):
     return lines
 
 
-# Goldstone Yelp actuals: $790/stuck Yelp review (2021, pay on success);
-# Google $105/review min 5/mo (2021). Dated — confirm with Brendan.
-REVIEW_GEN = {"yelp": {"per": 790, "label": "Yelp (stuck reviews)", "min": 1},
-              "google": {"per": 105, "label": "Google", "min": 5}}
-
-def price_review_gen(platform="google", count=0):
-    n = max(0, int(count or 0))
-    if n == 0:
-        return None
-    c = REVIEW_GEN.get(platform) or REVIEW_GEN["google"]
-    n = max(n, c["min"])
-    return {"service": "Review Generation",
-            "detail": f"{c['label']} \u00b7 {n} reviews @ ${c['per']:,}/review"
-                      + (f" (min {c['min']}/mo)" if c["min"] > 1 else ""),
-            "qty": n, "unit": c["per"], "kind": "per_asset", "total": c["per"] * n,
-            "timeline": "4\u20136 months (Yelp) / monthly batches (Google)",
-            "notes": ["Pay on successful posting (Goldstone actuals, 2020\u201321 "
-                      "\u2014 dated, confirm current rates).",
-                      "Yelp alternative when reviews can't stick: page deindexing "
-                      "from Google, \u2248$10,000 one-time."]}
+# REVIEW GENERATION IS NOT OFFERED (2026-08-28, Kiri). A per-review rate for
+# getting reviews POSTED (Yelp $790/stuck review, Google $105/review min 5/mo,
+# Goldstone 2020-21 actuals) lived here as price_review_gen. It was never wired
+# to a call site, so nothing changes by removing it — but leaving a paid-review
+# pricer in the module invites someone to wire it up later. Removed with the
+# Brand Shield's "Automated Review Generation & Sentiment Routing" component:
+# the tool does not price putting reviews up, only taking them down.
 
 
 # Kim Anami actuals (2021): $4,950 + $6,250 per video — midpoint $5,600
@@ -986,6 +973,22 @@ def build_rep_quote(payload):
     def _find(pred):
         return next((l for l in lines if pred(l)), None)
 
+    def _hard_per(ln):
+        """The per-unit partner cost off a removal line's internal rows.
+
+        price_articles reports its hard cost as a formatted string in the
+        internal grid rather than a number, so it is recovered from the client
+        unit and the margin the line was built at — the one place in either
+        tool where a partner figure is derived rather than carried. It is exact
+        because BOTH sides of that division are exact: the client unit is the
+        stored figure and the margin is the one the quote used.
+        """
+        if not ln or not ln.get("unit"):
+            return 0
+        mg = (float(payload.get("margin_pct")) if payload.get("margin_pct")
+              is not None else ART_CAL_MARGIN)
+        return round(float(ln["unit"]) * (1 - mg), 2)
+
     rev = _find(lambda l: l["service"].startswith("Negative Review Removals"))
     std = _find(lambda l: "Website/Article Removals" in l["service"]
                 and "Premium" not in l["service"])
@@ -1016,7 +1019,19 @@ def build_rep_quote(payload):
         "partner_monthly_cost": sum(float(l.get("hard_total") or 0)
                                     for l in monthly_lines),
         "partner_hard_cost_per_review": ((rev or {}).get("internal") or {}).get("hard_per") or 0,
-        "strategy": campaign,
+        # PER-PAGE PARTNER COST, BOTH CHANNELS. Sent for the same reason the
+        # per-review one is: the client figure rounds UP to $50 a page, so
+        # dividing it back through the margin does not return the cost, and
+        # Billing charges the partner off the cost.
+        "partner_hard_cost_per_standard_site": _hard_per(std),
+        "partner_hard_cost_per_premium_site": _hard_per(prm),
+        # THE FORM'S STRATEGY FIELD IS A MULTISELECT OF Reactive / Proactive.
+        # It used to get our internal campaign name, and "bundle" is not one of
+        # its values — it would have landed as an unmatched option or an empty
+        # multiselect. A bundle IS both, so send both.
+        "strategy": ({"reactive": ["Reactive"], "proactive": ["Proactive"],
+                      "bundle": ["Reactive", "Proactive"]}
+                     .get(campaign) or [campaign.title()]),
     }
 
     return {"campaign": campaign, "lines": lines, "totals": totals,
