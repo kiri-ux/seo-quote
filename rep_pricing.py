@@ -30,6 +30,19 @@ def r50(x):
     return int(math.ceil(round(x, 6) / 50.0) * 50)
 
 
+def r5(x):
+    """Round up to the next $5 — the REVIEW convention (2026-08-28, Kiri).
+
+    A review removal is a few hundred dollars where a site removal is several
+    thousand, so a $50 step is a visible jump on the small line and invisible on
+    the big one. Same direction as everything else — always UP, never under the
+    stated margin — just a finer step. The published bracket rates are exact $50
+    multiples ($900, $850, $800, $750, $700, $650) and so are unaffected.
+    """
+    import math
+    return int(math.ceil(round(x, 6) / 5.0) * 5)
+
+
 REP_CFG = {
     # ------------------------------------------------------- review removals
     # Vici rate card (July 2026 chart) replaces the Partner A/B client pricing.
@@ -232,15 +245,19 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         if hard_per is None:
             hard_per = cfg["brackets"][-1]["hard"]
             over_chart = True
-    # ONE MARKUP RULE FOR EVERY LINE (2026-08-28, Kiri). This used to round to
-    # the nearest $5, and NEAREST meant it could round DOWN: $612.50 hard at
-    # 35% is $942.31 and the quote showed $940, so the realised margin was
-    # 34.8% against a stated 35%. It was the only figure in either tool that
-    # could land under its own margin. Every published bracket rate is already
-    # an exact $50 multiple at the default margin ($900, $850, $800, $750,
-    # $700, $650), so the rate card is unchanged — this only moves overrides
-    # and off-default margins, and it moves them the right way.
-    gross_per = r50(hard_per / (1.0 - m))
+    # ALWAYS UP, AT A $5 STEP (2026-08-28, Kiri). This used to round to the
+    # NEAREST $5, and nearest meant it could round DOWN: $612.50 hard at 35%
+    # is $942.31 and the quote showed $940, a realised margin of 34.8% against
+    # a stated 35%. It was the only figure in either tool that could land under
+    # its own margin.
+    #
+    # The DIRECTION is now shared with every other line; the STEP is not. A
+    # review removal is a few hundred dollars where a site removal is several
+    # thousand, so $50 is a visible jump here and invisible there. The six
+    # published bracket rates are exact $50 multiples at the default margin,
+    # so the rate card is untouched either way — this only moves overrides and
+    # off-default margins.
+    gross_per = r5(hard_per / (1.0 - m))
     total = int(round(gross_per * n))
     hard_total = round(hard_per * n, 2)
     int_per = next((c["cost"] for c in cfg.get("internal_cost", [])
@@ -963,6 +980,45 @@ def build_rep_quote(payload):
         "monthly":   sum(l["total"] for l in lines if l["kind"] == "monthly"),
         "per_asset": sum(l["total"] for l in lines if l["kind"] == "per_asset"),
     }
+    # ---- WHAT THE IO PULLS FROM THIS QUOTE -------------------------------
+    # Named the way the ORM product form names its fields, so nobody has to map
+    # our line labels onto theirs. Same idea as the SEO tool's handoff block.
+    def _find(pred):
+        return next((l for l in lines if pred(l)), None)
+
+    rev = _find(lambda l: l["service"].startswith("Negative Review Removals"))
+    std = _find(lambda l: "Website/Article Removals" in l["service"]
+                and "Premium" not in l["service"])
+    prm = _find(lambda l: "Website/Article Removals" in l["service"]
+                and "Premium" in l["service"])
+
+    # MAINTENANCE IS NOT IN THE MONTHLY BUDGET. It REPLACES the active Search
+    # Protection rate once results land — the two are never billed together —
+    # so summing every recurring line would bill the same protective work twice.
+    # It is kind "monthly_maint" precisely so this sum can leave it out.
+    monthly_lines = [l for l in lines if l["kind"] == "monthly"]
+
+    handoff = {
+        "review_removals": bool(rev),
+        "reviews_count": (rev or {}).get("qty") or 0,
+        "price_per_review_removal": (rev or {}).get("unit") or 0,
+        "site_article_removals": bool(std or prm),
+        "standard_sites": (std or {}).get("qty") or 0,
+        "premium_sites": (prm or {}).get("qty") or 0,
+        "price_per_standard_site_removal": (std or {}).get("unit") or 0,
+        "price_per_premium_site_removal": (prm or {}).get("unit") or 0,
+        "monthly_budget": sum(l["total"] for l in monthly_lines),
+        "margin_pct": (payload.get("margin_pct") if payload.get("margin_pct")
+                       is not None else ART_CAL_MARGIN),
+        # What Billing charges the partner. Sent rather than derived: every
+        # component rounds UP on the client side, so dividing the client figure
+        # back through the margin does not return it.
+        "partner_monthly_cost": sum(float(l.get("hard_total") or 0)
+                                    for l in monthly_lines),
+        "partner_hard_cost_per_review": ((rev or {}).get("internal") or {}).get("hard_per") or 0,
+        "strategy": campaign,
+    }
+
     return {"campaign": campaign, "lines": lines, "totals": totals,
-            "warnings": warnings,
+            "warnings": warnings, "handoff": handoff,
             "bundle_meta": REP_CFG["bundle"] if campaign == "bundle" else None}

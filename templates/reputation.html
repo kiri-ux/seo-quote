@@ -591,6 +591,7 @@ function render(d, payload){
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
   }
+  h += repHandoffTable(d);
   h += renderSaveBox();
   $('out').innerHTML = h;
   wireSaveBox();
@@ -769,6 +770,43 @@ function reco(toggle, label, reason, sets){
   if(!(window._reco||[]).some(r=>r.toggle===toggle))
     window._reco.push({toggle, label, reason, sets: sets||{}});
 }
+function repHandoffTable(d){
+  // SENT TO THE IO. The SEO tool has had this table since the handoff block
+  // shipped; the rep tool did not, so nobody could see what was leaving the
+  // quote. Reads d.handoff straight off the server — the panel computes
+  // nothing, or it would be a second implementation of the same rule.
+  const h = d.handoff; if(!h) return '';
+  const money = v => (v===null||v===undefined) ? '\u2014'
+                   : '$'+Number(v).toLocaleString(undefined,{maximumFractionDigits:2});
+  const yn = v => v ? 'yes' : 'no';
+  const esc = v => String(v==null?'':v).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const r = (label, val, note) =>
+      '<tr><td><b>'+label+'</b></td>'
+    + '<td style="text-align:right;font-variant-numeric:tabular-nums">'+val+'</td>'
+    + '<td style="color:var(--muted);font-size:12px">'+(note||'')+'</td></tr>';
+  return '<h3 style="margin:18px 0 6px;font-size:14px">Sent to the IO \u2014 what adtini pulls from this quote</h3>'
+   + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+   + '<tr><th style="text-align:left">Product form field</th>'
+   + '<th style="text-align:right">Value</th><th style="text-align:left">Notes</th></tr>'
+   + r('Strategy', esc(h.strategy), 'the campaign this quote was built as')
+   + r('Review Removals', yn(h.review_removals), 'the toggle IS the presence of the line')
+   + r('# of Reviews', (h.reviews_count||0).toLocaleString(), '1 and 2 star from the review pull')
+   + r('Price per Review Removal', money(h.price_per_review_removal), 'client rate \u00b7 the total is a pay-on-success maximum')
+   + r('Site/Article Removals', yn(h.site_article_removals), 'true when either removal line exists')
+   + r('# of Standard Sites', (h.standard_sites||0).toLocaleString(), '')
+   + r('# of Premium Sites', (h.premium_sites||0).toLocaleString(), 'news and high-authority \u2014 its own rate')
+   + r('Price per Standard Site Removal', money(h.price_per_standard_site_removal), 'client rate, per page')
+   + r('Price per Premium Site Removal', money(h.price_per_premium_site_removal), 'client rate, per page')
+   + r('Monthly Budget', money(h.monthly_budget), 'client \u00b7 EXCLUDES the maintenance phase, which replaces the active rate rather than adding to it')
+   + r('Margin %', Math.round((h.margin_pct||0)*1000)/10+'%', 'margin of gross')
+   + r('Partner Monthly Cost', money(h.partner_monthly_cost), 'what Billing charges the partner')
+   + r('Partner Hard Cost per Review', money(h.partner_hard_cost_per_review), '')
+   + '</table>'
+   + '<p class="help" style="margin-top:5px">Sent, not derived \u2014 every client figure rounds UP '
+   + '(review removals to $5, everything else to $50), so dividing one back through the margin does not '
+   + 'return the partner cost.</p>';
+}
+
 function renderTerms(d){
   const tb = document.getElementById('termsBlock') || $('scanOut');
   if(d.error){ tb.innerHTML = '<div class="err">'+d.error+'</div>'; return; }
