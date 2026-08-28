@@ -1092,8 +1092,15 @@ function renderAutocomplete(ac){
   let h = '';
   Object.keys(ac).forEach(k=>{
     const a = ac[k]; if(!a || a.error) return;
+    // WHICH PROBE ANSWERED. A term that came back empty is retried with a
+    // trailing space (next-word) then a trimmed prefix. A suggestion found
+    // that way is a weaker signal than one Google returned for the term as
+    // typed, so the panel says so rather than presenting the two alike.
+    const via = a.via ? ' <span class="third">(via '+a.via+' probe)</span>' : '';
     if(a.negative && a.negative.length)
-      h += '<div class="warn">Auto-suggest for "'+k+'" flags: <b>'+a.negative.join('</b> · <b>')+'</b></div>';
+      h += '<div class="warn">Auto-suggest for "'+k+'" flags: <b>'+a.negative.join('</b> · <b>')+'</b>'+via+'</div>';
+    else if(a.via)
+      h += '<div class="help">Auto-suggest for "'+k+'" answered only on the '+a.via+' probe \u2014 nothing flagged.</div>';
   });
   if(h) h = '<div class="scanhdr">Auto-Suggest</div>' + h;
   box.innerHTML = h + renderFacsimiles(ac);
