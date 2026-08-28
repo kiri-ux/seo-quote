@@ -232,7 +232,15 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         if hard_per is None:
             hard_per = cfg["brackets"][-1]["hard"]
             over_chart = True
-    gross_per = round(hard_per / (1.0 - m) / 5.0) * 5
+    # ONE MARKUP RULE FOR EVERY LINE (2026-08-28, Kiri). This used to round to
+    # the nearest $5, and NEAREST meant it could round DOWN: $612.50 hard at
+    # 35% is $942.31 and the quote showed $940, so the realised margin was
+    # 34.8% against a stated 35%. It was the only figure in either tool that
+    # could land under its own margin. Every published bracket rate is already
+    # an exact $50 multiple at the default margin ($900, $850, $800, $750,
+    # $700, $650), so the rate card is unchanged — this only moves overrides
+    # and off-default margins, and it moves them the right way.
+    gross_per = r50(hard_per / (1.0 - m))
     total = int(round(gross_per * n))
     hard_total = round(hard_per * n, 2)
     int_per = next((c["cost"] for c in cfg.get("internal_cost", [])
