@@ -182,8 +182,12 @@ REP_CFG = {
     # nearest $50 separately. At 35%: $3,500 base + $700/extra location.
     "shield": {
         "monthly_hard": 2250,             # partner hard cost, base (1 location)
+        # AUTOMATED REVIEW GENERATION & SENTIMENT ROUTING IS NOT OFFERED
+        # (2026-08-28, Kiri). It was the third component of this bundle:
+        # CRM-driven outreach that pushed happy customers to public profiles
+        # and routed unhappy ones to a private form. Not a strategy we sell.
+        # The monthly is UNCHANGED — it was never priced per component.
         "included": ["SEO Brand Shield & Asset Building",
-                     "Automated Review Generation & Sentiment Routing",
                      "24/7 Brand Monitoring & Threat Detection"],
         "included_locations": 1,
         "per_extra_location_hard": 450,   # partner hard cost per extra location

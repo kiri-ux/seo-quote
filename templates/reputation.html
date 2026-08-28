@@ -365,12 +365,12 @@
       <div class="card hidden" id="secProactive">
         <h2><span id="proNum">3</span> · Proactive</h2>
         <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
-        <p class="help">SEO brand shield &amp; asset building · automated review generation with sentiment routing · 24/7 brand monitoring — one monthly bundle.</p>
+        <p class="help">SEO brand shield &amp; asset building · 24/7 brand monitoring &amp; threat detection — one monthly bundle.</p>
         <details class="demorail" style="margin:2px 0">
           <summary>Demo only — brand shield price formula ▸ click to expand</summary>
           <div class="help" id="shieldFormula" style="margin:8px 0 4px"></div>
         </details>
-        <label># of locations (review generation)</label>
+        <label># of locations</label>
         <input type="number" id="nLocations" min="1" value="1">
         <p class="help" id="nLocationsHelp" style="margin:4px 0 0">Auto-fills from the checked locations in the brand scan — edit to override (manual edits stop the auto-fill).</p>
       </div>
@@ -687,7 +687,7 @@ function updateShieldFormula(){
   box.innerHTML =
       fmRow('Base', money(baseHard)+'/mo', 'confirmed, 1 location')
     + fmRow('Locations', '+'+money(locHard)+'/mo \u00d7 '+(n-1)+' extra = <b>'+money(hardTotal)+'/mo</b>',
-            'review generation per location')
+            'profiles monitored and assets built, per location')
     + fmRow('Internal ('+Math.round(ipct*100)+'%)', money(hardTotal*ipct)+'/mo',
             'Vici delivery cost')
     + fmRow('Client @ '+Math.round(m*100)+'%', 'each component \u00f7 '+(1-m).toFixed(2)+' \u2192 '+money(baseClient)+' base + '+money(locClient)+'/extra = <b>'+money(client)+'/mo</b> at '+n+' location'+(n===1?'':'s'),

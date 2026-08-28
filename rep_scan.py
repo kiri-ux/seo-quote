@@ -164,10 +164,11 @@ ROUTES = [
 def route_tactic(domain, owned=False, forum=False, rating=None):
     if owned:
         return "owned \u2014 boost"
-    # Sentiment gate: a third-party result showing a strong rating is an
-    # asset working in the client's favor \u2014 suppressing it would bury
-    # the brand's own good reviews. Leave it (and let it help push down
-    # the actual negatives).
+    # A third-party result showing a strong rating is an asset working in the
+    # client's favour — suppressing it would bury the brand's own good
+    # reviews. Leave it, and let it help push the actual negatives down.
+    # (This is routing inside the SCAN. It is not the retired "sentiment
+    # routing" product, which drove outreach to customers and is not offered.)
     if rating is not None and rating >= 4.0:
         return "positive \u2014 leave"
     d = (domain or "").lower()
