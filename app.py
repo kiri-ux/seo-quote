@@ -8971,13 +8971,27 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 # shape of a market finding, and acting on it would have moved
                 # the client onto the national anchor. The local side has to
                 # have been READ before its zero means anything. (2026-08-20)
-                if vol_err or _ne:
+                # ONE MARKET FAILING IS NOT A FAILED READ (2026-09-02, Kiri).
+                # vol_err is a NOTES string, not an error: "no city-level volume
+                # for Mt. Union, PA — used broader-location volume" sets it, and
+                # so does every other advisory fetch_local_volume attaches. Any
+                # non-empty value used to abandon the whole comparison, so a
+                # five-market build with four good markets reported "demand could
+                # not be measured" and offered nothing.
+                #
+                # The Ski Barn lesson still holds and is what the loc_tot test
+                # keeps: a rate limit zeroes every term, and a zero we could not
+                # read must never be read as zero demand. But a figure we DID
+                # read is a measurement whatever else the notes say.
+                _unread = bool(vol_err or _ne) and loc_tot == 0
+                if _unread:
                     frame["verdict"] = "unmeasured"
                     frame["reason"] = (
                         f"The city-attached volumes could not be read "
-                        f"({str(vol_err)[:90]}), so there is nothing to compare "
-                        f"the national figure against. This is not a finding "
-                        f"about the market — rebuild once the lookup succeeds.")
+                        f"({str(vol_err or _ne)[:90]}), so there is nothing to "
+                        f"compare the national figure against. This is not a "
+                        f"finding about the market — rebuild once the lookup "
+                        f"succeeds.")
                 elif nat_tot >= min_nat and loc_tot == 0:
                     frame["verdict"] = "national"
                     frame["reason"] = (
@@ -8985,12 +8999,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                         f"and {loc_tot}/mo with a city attached. Nobody searches "
                         "them with a place, so the city grid is measuring "
                         "something that isn't there.")
-                elif not _ne and not vol_err and loc_tot > 0:
+                # The LOCAL side only needs to have read SOMETHING — a market
+                # that fell back does not invalidate the four that answered. The
+                # NATIONAL side still has to be clean, because this sentence
+                # quotes its figure and a throttled national read would put a
+                # wrong number in front of the planner.
+                elif loc_tot > 0 and not _ne:
                     frame["verdict"] = "local"
                     frame["reason"] = (
                         f"City-attached terms carry {loc_tot:,}/mo against "
                         f"{nat_tot:,}/mo nationally — people do search these with "
-                        "a place, so the local frame is measuring real demand.")
+                        "a place, so the local frame is measuring real demand."
+                        + (" Read on the markets that answered; the rest are "
+                           "excluded from the total." if (vol_err or _ne) else ""))
                 elif not _ne and not vol_err and nat_tot == 0:
                     frame["verdict"] = "no_demand"
                     frame["reason"] = (
