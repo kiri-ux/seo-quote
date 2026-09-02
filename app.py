@@ -613,14 +613,11 @@ CFG = {
     # dropped back for the proposal list.
     "addon_min_measured_share": 0.7,
     "addon_covered_share": 0.6,     # rank in this share of measured markets = one footprint
-    # Add-ons are priced off the CORE SEO ladder only — no AI Search component.
-    # This is an assumption, not a calibration: TN Water & Air is the only
-    # proposal with add-on markets and predates AI Search, while MPG is the
-    # only AI Search proposal and has no add-ons. The reasoning is that AI
-    # Search work is brand-level — Brendan's GEO tiers are defined by premium
-    # content placements, which lift the whole brand rather than a suburb — but
-    # it is worth a lot: at Woodstock's 7 add-ons it is ~$5,600/mo on base
-    # alone. Confirm before treating it as settled.
+    # An add-on market is the WHOLE package — Core SEO and AI Search — less the
+    # Add-On Market %. Confirmed with Brendan 2026-08-29; it had been Core only,
+    # on an assumption nothing could be measured against (TN Water & Air is the
+    # only proposal with add-on markets and predates AI Search; MPG is the only
+    # AI Search proposal and has no add-ons).
     # RETIRED (2026-08-21). An add-on market was priced at a FRACTION of the
     # tier — 0.42 base/intermediate, 0.48 advanced, confirmed against TN Water
     # & Air — on the reasoning that one extra city is a smaller piece of work
@@ -1015,6 +1012,28 @@ CFG = {
 
 def r50(x):
     return int(round(x / 50.0) * 50)
+
+
+def r5up(x):
+    """Round UP to the next $5 — the ADD-ON MARKET step.
+
+    A client is told "10% off" and will check it. $50 is 1.7% of a $3,000 rate,
+    so it can only ever land within about a point of the advertised number; $5
+    lands on it.
+    """
+    import math
+    return int(math.ceil(round(x, 6) / 5.0) * 5)
+
+
+def r10dn(x):
+    """Round DOWN to $10 — for a COST derived from a client price.
+
+    Down, because a lower cost can only push the realised margin at or above
+    the stated one. Rounding to nearest here puts it under target on 40% of
+    cases, which is the one direction a margin must never move.
+    """
+    import math
+    return int(math.floor(round(x, 6) / 10.0) * 10)
 
 
 def r50up(x):
@@ -10582,24 +10601,47 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # FLOORED quote the cost was restated from the floored retail, and the trip
     # back out loses $50 to rounding, so a $2,950 campaign would have shown a
     # $2,900 list price for the same thing.
-    client_addon_list = dict(client)
-    # ADD-ON MARKET % — flat by bracket, applied to partner cost so the client
-    # price falls out of the margin the way every other price here does.
+    # AN ADD-ON MARKET IS THE WHOLE PACKAGE, CORE + AI (2026-08-29, Brendan).
+    # It was the Core SEO tier alone, which was flagged in the config as an
+    # assumption rather than a calibration — no proposal in the set has both
+    # add-on markets and AI Search, so there was nothing to measure against.
+    # Confirmed: the Add-On Market % is a discount off the TOTAL package price,
+    # so an extra market carries the AI Search line too.
+    _pkg_for_addon = {k: client[k] + ((ai or {}).get("client_add") or {}).get(k, 0)
+                      for k in client}
+    client_addon_list = dict(_pkg_for_addon)
+    # ADD-ON MARKET % — THE ONE DISCOUNT A CLIENT CAN CHECK (2026-08-29, Kiri).
     #
-    # The DISCOUNTED cost is rounded to $10, not $50. At $50 the brackets
-    # collapsed into each other: an $800 list cost is $720 at 10% off and $680
-    # at 15%, and both snap to $700 — so crossing from nine markets to ten
-    # displayed "15%" and changed the price by nothing. The $50 grid belongs to
-    # the numbers a client reads; this one is an internal cost, and the client
-    # figure derived from it still lands on $50 through retail_of.
+    # This runs on the CLIENT price, not the partner cost, and it is the only
+    # place in either tool that does. Everywhere else the partner figure is the
+    # canonical one and retail falls out of the margin. Here the client is told
+    # a percentage — "10% off per extra market" — and will put it in a
+    # calculator. If our number does not come back at 10%, that is a
+    # conversation on a live deal.
+    #
+    # The STEP is $5, not $50. $50 on a ~$3,000 rate is 1.7%, so a discount
+    # computed either side of the margin wobbles up to +/-0.85 points: $2,950
+    # less 10% is $2,655, and rounding that up to $50 shows $2,700, which the
+    # client reads as 8.47%. At $5 the same case lands on $2,655 exactly.
+    # Measured over 1,260 anchor x bracket x tier cases, $50 misses the
+    # advertised rate by 0.43 points on average and $5 by 0.01.
+    #
+    # The partner cost then comes back DOWN from that price, floored to $10.
+    # Floored, not nearest: nearest puts the realised margin under the stated
+    # one on 502 of those 1,260 cases, and flooring the cost can only ever
+    # leave the margin at or above target (measured 35.00%-35.32% at a stated
+    # 35%). $10 rather than $50 because at $50 the brackets collapse into each
+    # other — an $800 list cost is $720 at 10% off and $680 at 15%, and both
+    # snap to $700, so crossing from nine markets to ten would display a new
+    # rate and change no money.
     _ad_pct = addon_discount_pct(_n_addon)
     _ad_basis = ("%d add-on markets" % _n_addon) if _ad_pct else (
         "no add-on markets" if not _n_addon else "below the first bracket")
     if _ad_pct:
-        hard_addon   = {k: int(round(round(hard_addon_list[k]
-                                          * (1.0 - _ad_pct / 100.0), 6) / 10.0) * 10)
-                        for k in hard_addon_list}
-        client_addon = {k: retail_of(hard_addon[k]) for k in hard_addon}
+        client_addon = {k: r5up(client_addon_list[k] * (1.0 - _ad_pct / 100.0))
+                        for k in client_addon_list}
+        hard_addon   = {k: r10dn(client_addon[k] * (1.0 - mg))
+                        for k in client_addon}
     else:
         # NO DISCOUNT MEANS NO DISCOUNT. Sending the list cost back out through
         # retail_of loses $50 to rounding on a floored quote, so a 0% bracket
@@ -10612,10 +10654,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # $25 remainder would show one price on screen and quote another. The panel
     # looks its bracket up in this table instead of computing anything.
     def _bracket(pct):
-        h = {k: int(round(round(hard_addon_list[k] * (1.0 - pct / 100.0), 6)
-                          / 10.0) * 10) for k in hard_addon_list}
-        return {"min_markets": None, "pct": pct, "hard": h,
-                "client": {k: retail_of(h[k]) for k in h}}
+        # SAME CHAIN AS THE QUOTED BRACKET, or the stepper would show one rate
+        # and the quote would charge another.
+        c = {k: r5up(client_addon_list[k] * (1.0 - pct / 100.0))
+             for k in client_addon_list}
+        return {"min_markets": None, "pct": pct,
+                "hard": {k: r10dn(c[k] * (1.0 - mg)) for k in c},
+                "client": c}
 
     addon_schedule = []
     for _lo, _pct in (CFG.get("addon_volume_discount_tiers") or []):
