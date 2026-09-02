@@ -5114,7 +5114,7 @@ def _name_tokens(text):
     return out
 
 
-def is_brand_term(term, brand):
+def is_brand_term(term, brand, vocab=None):
     """Is this the client's OWN name?
 
     PEO Brokers' focus list came back holding "peo insurance brokers network" —
@@ -5128,6 +5128,27 @@ def is_brand_term(term, brand):
     if len(bt) < 2:
         return False
     tt = _name_tokens(term)
+
+    # A SHORTER FORM OF THEIR OWN NAME IS STILL THEIR OWN NAME. Everything below
+    # asks whether every BRAND token is in the term, which catches the name plus
+    # a service ("cisney o'donnell pool repair") and misses the name minus one:
+    # Cisney & O'Donnell Pools was proposed "cisney and o donnell", their own
+    # company, because "pool" was absent from the term.
+    #
+    # ONLY DISTINCTIVE TOKENS COUNT. A brand built out of a place and a service
+    # — Denver Dental Group — would otherwise swallow "denver dental", which is
+    # the single best term they could buy. A token that is also one of the
+    # client's own service words is not evidence of the business's NAME, so it
+    # does not count toward the two needed to fire this. "cisney" and "donnell"
+    # are nobody's service; "denver" and "dental" are.
+    # AND IT NEEDS THE VOCAB TO BE SAFE. With no service list there is nothing
+    # separating a shortened name from the bare service — "peo broker" is both
+    # a contraction of PEO Insurance Brokers Network and the thing they sell.
+    # A caller that cannot say which does not get this test.
+    if vocab and tt and tt <= bt:
+        _v = {t for w in vocab for t in _name_tokens(w)}
+        if len([t for t in tt if t not in _v]) >= 2:
+            return True
 
     # PREFIX, NOT EQUALITY. The stemmer is crude by design — it strips a short
     # list of suffixes — so "dental" reduces to `dent` and "dentistry" reduces to
@@ -5232,7 +5253,10 @@ def drop_suggested_nonservices(seeds, suggested, kinds, brand,
             why = k.get("why") or "something they publish about, not something they sell"
         elif raw.split() and raw.split()[-1] in _CORP_SUFFIX:
             why = "a company name"
-        elif is_brand_term(t, brand):
+        # SEEDS AS VOCAB, same as the ranked-keywords panel. Without them
+        # "peo broker" reads as a shortened form of PEO Insurance Brokers
+        # Network rather than as the service that company sells.
+        elif is_brand_term(t, brand, vocab=seeds or []):
             why = "their own name — they already rank for it"
         if why:
             dropped.append({"term": t, "why": why})
@@ -15844,11 +15868,15 @@ def api_ranked_keywords():
     # THEIR OWN NAME IS NOT A KEYWORD TO WIN. Amare ranks #4 for "amare santa fe"
     # — there is no work to sell there, and seeding it would add its volume to a
     # total the price is computed from. (2026-08-13)
-    _bw = {w for w in re.split(r"[^a-z0-9]+", (d.get("brand") or "").lower())
-           if len(w) > 2 and w not in _GROUNDING_STOP}
+    # ONE BRAND MATCHER, NOT TWO. This used a local word-set test that required
+    # every token of the term to be a brand word, so any filler broke it:
+    # "cisney and o donnell" survived because "and" is not part of the brand and
+    # "o" is one character. is_brand_term strips shape words, stems, and matches
+    # on prefixes, and is the same test the build itself uses.
+    _brand_in = (d.get("brand") or "")
     def _is_brand(term):
-        toks = [t for t in re.split(r"[^a-z0-9]+", term) if t]
-        return bool(toks) and bool(_bw) and all(t in _bw for t in toks)
+        return bool(_brand_in) and is_brand_term(term, _brand_in,
+                                                 vocab=d.get("seeds") or [])
     fresh = [r for r in rows if r["bare"] not in have and not _is_brand(r["bare"])]
     brandy = [r["bare"] for r in rows if _is_brand(r["bare"])]
     # NINE OVERLAY VARIANTS, ALL OF THEM REAL POSITIONS. This is the source the
