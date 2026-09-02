@@ -2631,12 +2631,17 @@ def canonical_city_name(city, st=""):
     cands = []
     if c.endswith(" city") and len(c.split()) > 1:
         cands.append(c[: -len(" city")].strip())
+    # Google Ads carries "Mount Union", not "Mt. Union". Ahead of the alias map
+    # because the full spelling is a better thing to offer Google than a
+    # nickname, and named explicitly so the answer does not depend on which city
+    # the nearest-point scan reaches first.
+    cands.extend(city_name_variants(c))
     for a in _CITY_ALIASES.get(c, []):
         if " " in a or len(a) > 3:          # skip 2-3 letter shorthand
             cands.append(a)
 
     out = ""
-    abbr = (STATE_ABBREV.get((st or "").strip().lower(), "") or "").upper()
+    abbr = _state_abbr(st)
     idx = _zip_index()
     for cand in cands:
         if cand and cand != c and (not abbr or (cand, abbr) in idx):
@@ -2702,6 +2707,7 @@ def fetch_local_volume(terms, markets, state, national=False):
 
     resolved_codes = {}
     renamed = {}
+    alt_tried = {}
 
     def one(city):
         # loc_string parses "City, ST" itself; each city localizes to its own state
@@ -2763,7 +2769,10 @@ def fetch_local_volume(terms, markets, state, national=False):
                         # NOT a broader-area fallback and it counts in the total.
                         return _rows, loc
                     except Exception:
-                        pass
+                        # THE SPELLING WAS ALREADY TRIED. Recorded so the panel
+                        # does not tell someone to retype a market under a name
+                        # this call has just been refused on.
+                        alt_tried[city] = alt
                 broader = (f"{city_st},United States" if city_st
                            else (f"{state},United States" if state else "United States"))
                 _rows, _code = call(broader)
@@ -2892,6 +2901,7 @@ def fetch_local_volume(terms, markets, state, national=False):
     # Markets Google accepted only under a different name. Worth showing: the
     # figure is genuinely the city's, and the operator may want the pill to match.
     per_city["__renamed__"] = dict(renamed)
+    per_city["__alt_tried__"] = dict(alt_tried)
     return totals, per_city, ("; ".join(notes) or None)
 
 
@@ -5762,6 +5772,49 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
 _ZIP_INDEX = None
 
 
+# "Mt. Union" and "Mount Union" are the same town and only one of them is in the
+# ZIP data, so the market failed to place: it counted as a market of its own,
+# contributed no volume of its own, and the panel had no spelling to offer
+# instead. St., Ft. and Pt. carry the same risk on much larger cities —
+# St. Louis, St. Petersburg, Ft. Lauderdale. (2026-09-02)
+_CITY_ABBREV = {"mt": "mount", "mt.": "mount", "st": "saint", "st.": "saint",
+                "ft": "fort", "ft.": "fort", "pt": "point", "pt.": "point"}
+_CITY_ABBREV_FULL = {"mount": "mt.", "saint": "st.", "fort": "ft.",
+                     "point": "pt."}
+
+
+def _state_abbr(x):
+    """'PA', 'Pennsylvania' or '' -> 'PA'. A state already given as its
+    abbreviation used to fall through the full-name map and read as no state at
+    all, which turned an exact lookup into a national one."""
+    x = (x or "").strip().lower()
+    if len(x) == 2:
+        return x.upper()
+    return (STATE_ABBREV.get(x) or "").upper()
+
+
+def city_name_variants(name):
+    """Other spellings of the SAME city name, or [].
+
+    Leading word only: "Mount Union" and "Mt. Union" are one place, while a
+    "Point" or "Saint" in the middle of a name is part of it.
+    """
+    c = (name or "").strip().lower()
+    parts = c.split()
+    if len(parts) < 2:
+        return []
+    head, rest = parts[0], " ".join(parts[1:])
+    out = []
+    full = _CITY_ABBREV.get(head)
+    if full:
+        out.append(f"{full} {rest}")
+    short = _CITY_ABBREV_FULL.get(head)
+    if short:
+        out.append(f"{short} {rest}")
+        out.append(f"{short.rstrip('.')} {rest}")
+    return [v for v in out if v and v != c]
+
+
 def _zip_index():
     """city+state -> mean lat/long, built once from the bundled ZIP dataset."""
     global _ZIP_INDEX
@@ -5789,6 +5842,11 @@ def _zip_index():
             # the host ZIP's coordinates, which is where they actually are.
             for alt in (r.get("acceptable_cities") or []):
                 acc.setdefault((str(alt).lower(), st_), []).append((la, lo))
+            # The same name spelled the other way. Indexed at the same
+            # coordinates, so a market entered as "Mt. Union, PA" places.
+            for nm in [str(r.get("city", ""))] + list(r.get("acceptable_cities") or []):
+                for v in city_name_variants(nm):
+                    acc.setdefault((v, st_), []).append((la, lo))
 
         def _med(xs):
             xs = sorted(xs)
@@ -6049,10 +6107,10 @@ def city_coords(market, state=""):
         e = _county_indexes()[0].get(ck) or {}
         if e.get("coords"):
             return e["coords"]
-    abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "")
+    abbr = _state_abbr(st or state)
     idx = _zip_index()
     if abbr:
-        hit = idx.get((city, abbr.upper()))
+        hit = idx.get((city, abbr))
         if hit:
             return hit
     # No usable state: accept a unique national match, never a guess between
@@ -7419,11 +7477,20 @@ def suggest_market_name(market, state=""):
 
     Returns "City, ST" or "" when nothing better than the input can be found.
     """
+    city, st = parse_market(market, state)
+    have = (city or "").strip().lower()
+    abbr = _state_abbr(st or state)
+    idx = _zip_index()
+    # THE SAME NAME SPELLED THE OTHER WAY IS THE SAME PLACE, no distance test
+    # needed. A small town is one ZIP, and its centroid sits far enough from the
+    # median of the town's ZIPs that the 2-mile gate below rejects its own name:
+    # Mount Union reads 3.2 miles from Mt. Union.
+    for v in city_name_variants(have):
+        if abbr and (v, abbr) in idx:
+            return f"{v.title()}, {abbr}"
     coords = city_coords(market, state)
     if not coords:
         return ""
-    city, st = parse_market(market, state)
-    have = (city or "").strip().lower()
     try:
         import zipcodes
         rows = zipcodes.list_all()
@@ -9458,7 +9525,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                for k, v in ((per_city or {}).get("__renamed__") or {}).items()],
             "market_volume_gaps": [
                 {"market": m,
-                 "suggestion": suggest_market_name(m, state)}
+                 # A name the lookup has already been refused on is not advice.
+                 "suggestion": ("" if m in ((per_city or {}).get("__alt_tried__") or {})
+                                else suggest_market_name(m, state)),
+                 "also_tried": ((per_city or {}).get("__alt_tried__") or {}).get(m, "")}
                 for m in ((per_city or {}).get("__fallback_markets__") or [])],
             "site_locations": site_locations,
             "service_areas": service_areas,

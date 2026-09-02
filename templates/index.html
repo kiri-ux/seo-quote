@@ -625,7 +625,11 @@
          payloads and every saved quote read this one field — a quote saved with a
          hand-written description still sends it, and the build still prefers it
          over anything it would infer. -->
-    <textarea id="business_desc" class="hidden" rows="2"></textarea>
+    <div id="bizdescRow" class="hidden">
+      <label>Business description<span class="pl" title="the build reads this off their site — fill it in only to overrule what it concluded">read from their site</span></label>
+      <div class="help">What they are, and what they are NOT. Everything the AI proposes is measured against this vocabulary, so a term the client never uses about themselves reads as a competitor's word. Filled in here it overrules what the build read.</div>
+      <textarea id="business_desc" rows="3"></textarea>
+    </div>
 
     <!-- SEARCH-PHRASE GEOS field removed 2026-08-13 — runAllSuggestions() calls
          /api/suggest_regions with the build and adds every region carrying real
@@ -2703,7 +2707,7 @@ function renderStep1(){
   panel('p1', refineErr + `
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
-    ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred — fill Business description to override)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
+    ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred)</span> <button type="button" id="editBizDesc" class="btn2" style="padding:2px 9px;font-size:11.5px" data-desc="${escapeHtml(String(kw.business_desc||''))}">Write your own</button><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
       ${removedAcronymHtml()}
     ${step1Grid(kw)}
@@ -3152,6 +3156,13 @@ function unrankedProbeMax(){
   const v=(_liveCfg||{}).unranked_probe_max;
   return (v===undefined || v===null || v==='') ? UNRANKED_PROBE_DEFAULT : Number(v);
 }
+// A SECOND RUN MUST NOT START WHILE ONE IS IN FLIGHT. Step 3 re-renders #p3
+// while the probe is out — the amber box is rebuilt with a fresh, ENABLED
+// button, the running probe's own button reference is a node that is no longer
+// on the page, and a click at that moment bought a second full round of SERP
+// calls whose result landed next to the first one's stale "Checking 1-3 of 4"
+// label. Same latch runStep3 has used since the beginning. (2026-09-02, Kiri)
+let UNRANKED_RUNNING = false;
 function renderUnrankedGap(){
   // Kick the config read off; the defaults cover this pass and the live value
   // is in hand for the probe. Never blocks the panel on a fetch.
@@ -3170,11 +3181,17 @@ function renderUnrankedGap(){
   const n=document.createElement('div');
   n.id='unrankedGap'; n.className='calc';
   n.style.cssText='background:#fdf1d8;border-color:#e8c98a;margin-top:10px';
+  // TWO DIFFERENT QUESTIONS, SO BOTH OF THEM SAY WHICH. This box is about the
+  // terms IN THE GRID; the probe underneath it goes looking OUTSIDE the grid.
+  // Neither said so, so a find below read as a flat contradiction of the claim
+  // above it. (2026-09-02, Kiri)
   n.innerHTML='\u26a0 <b>They rank for '+(have?'all but '+have+' of':'every one of')
-    +' the quoted terms.</b> A proposal needs something to argue for, and there '
-    +(have===1?'is 1 term':'are '+have+' terms')+' here they are missing from.'
+    +' the quoted terms.</b> A proposal needs something to argue for, and '
+    +(have===0 ? 'no term in the grid is a gap.'
+               : (have===1?'1 term in the grid is':have+' terms in the grid are')
+                 +' all there is.')
     +(cands.length
-      ? ' <button type="button" id="findUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Find '+min+' they don\'t rank for</button>'
+      ? ' <button type="button" id="findUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Find '+min+' outside the grid</button>'
         +' <span class="nf" style="font-size:11.5px">checks up to '
         +Math.min(cands.length, unrankedProbeMax())
         +' of the terms the grid cut \u2014 a few SERP calls</span>'
@@ -3183,6 +3200,14 @@ function renderUnrankedGap(){
   host.appendChild(n);
   const b=document.getElementById('findUnranked');
   if(b) b.onclick=()=>findUnranked();
+  if(b && UNRANKED_RUNNING){ b.disabled=true; b.textContent='Checking\u2026'; }
+  // A re-render wipes the answer but not the question, so the prompt was left
+  // standing over something already answered. Put the finding back.
+  if(ST._unrankedResult){
+    const _r=ST._unrankedResult;
+    try{ renderUnrankedFound(_r.found||[], _r.checked||0, _r.measured, _r.how||{}); }
+    catch(e){}
+  }
   // AUTOMATIC WHEN THERE IS NOTHING AT ALL. Zero misses is not a close call —
   // the proposal has no argument in it and somebody has to go looking. One shot
   // per quote, so a re-price does not buy a second round of SERP calls, and the
@@ -3228,6 +3253,12 @@ async function ownedTerms(){
 }
 
 async function findUnranked(auto){
+  if(UNRANKED_RUNNING) return;
+  UNRANKED_RUNNING = true;
+  try{ await _findUnranked(auto); }
+  finally{ UNRANKED_RUNNING = false; }
+}
+async function _findUnranked(auto){
   try{ await liveCfg(); }catch(e){}
   const btn=$('findUnranked');
   const min=minUnranked();
@@ -3594,6 +3625,13 @@ function renderCrossMarket(rows, sent, notYetChecked, reasons){
 
 function renderUnrankedFound(found, checked, measured, how){
   if(!$('p3')) return;
+  // Kept on ST so a panel re-render can replay it. Only the counts off the
+  // sieve, not the sieve itself — a thousand-term set does not belong in a
+  // saved quote.
+  ST._unrankedResult={found:found||[], checked:checked, measured:measured,
+                      how:{sieve:(how&&how.sieve)?{n:how.sieve.n}:null,
+                           sieved:(how||{}).sieved||0,
+                           allOwned:!!(how||{}).allOwned}};
   const old=document.getElementById('unrankedFound'); if(old) old.remove();
   const n=document.createElement('div');
   n.id='unrankedFound'; n.className='calc';
@@ -3633,7 +3671,7 @@ function renderUnrankedFound(found, checked, measured, how){
   }else{
     n.style.cssText='background:var(--ok-bg,#eaf6ee);border-color:#a8ceb6;margin-top:8px';
     n.innerHTML='\u2713 <b>'+found.length+' term'+(found.length===1?'':'s')
-      +' they do not rank for</b> \u2014 '
+      +' outside the grid they do not rank for</b> \u2014 '
       +found.map(f=>escapeHtml(f.kw)+' <span class="nf">('+Number(f.vol||0).toLocaleString()+'/mo bare)</span>').join(' \u00b7 ')
       +' <button type="button" id="addUnranked" class="btn2" style="padding:3px 11px;font-size:12px;margin-left:4px">Add to the grid</button>'
       +' <span class="nf" style="font-size:11.5px">adds them as Long Tail and re-prices</span>'+_cost;
@@ -6115,6 +6153,7 @@ function restoreQuote(p){
   // leak that let one client's page one price another. (2026-08-20)
   ST._unrankedAuto=false;
   ST._unrankedTried=[];
+  ST._unrankedResult=null;
   ST._ownedCache=null;
   ST._crossAuto=false;
   ST._perfAuto=false;
@@ -6233,6 +6272,13 @@ function reflectInputs(inp){
   }
   if($('pastseo_detail')) $('pastseo_detail').value = inp.past_seo_detail||'';
   if($('business_desc')) $('business_desc').value = inp.business_desc||'';
+  // A description someone wrote by hand is the one thing on this form the build
+  // will not re-derive, so it is shown rather than left folded away in a hidden
+  // field where the next planner cannot see what is steering the list.
+  if((inp.business_desc||'').trim()){
+    const _br=document.getElementById('bizdescRow');
+    if(_br) _br.classList.remove('hidden');
+  }
   if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
   if($('site_rebuild'))  $('site_rebuild').value = inp.site_rebuild||'';
   stores.industry = (inp.industries && inp.industries.slice())
@@ -6455,6 +6501,27 @@ async function doSave(mode){
 }
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// BUSINESS DESCRIPTION IS STILL AN INPUT, it just is not one anybody types
+// first. The panel reporting what the build concluded said to "fill Business
+// description to override" — a field that came off the form in August — so the
+// only instruction on screen pointed at nothing. The button opens the field,
+// seeded with what the build read, and the next build prefers what is in it.
+// Delegated, because the panel it lives on is re-rendered on every build.
+document.addEventListener('click', function(e){
+  const t=(e.target && e.target.closest) ? e.target.closest('#editBizDesc') : null;
+  if(!t) return;
+  const row=document.getElementById('bizdescRow'),
+        ta=document.getElementById('business_desc'),
+        det=document.getElementById('orderPanel');
+  if(!row || !ta) return;
+  if(det) det.open=true;
+  row.classList.remove('hidden');
+  if(!ta.value.trim()) ta.value=t.getAttribute('data-desc')||'';
+  try{ refreshOrderPanel(); }catch(_e){}
+  try{ ta.scrollIntoView({behavior:'smooth', block:'center'}); }catch(_e){}
+  setTimeout(()=>{ try{ ta.focus(); }catch(_e){} }, 250);
+});
 
 // ---- Geo validation: catch a misspelled city BEFORE it costs a run ----
 $('checkGeo').onclick=async()=>{
@@ -7339,7 +7406,7 @@ function step1Grid(kw){
   // on the hover. (2026-08-11)
   if(kw.blocked_pins&&kw.blocked_pins.length) notes.push(`<div style="margin-top:4px" class="nf">\u26d4 <b>${kw.blocked_pins.length} high-volume term${kw.blocked_pins.length>1?'s':''} left out</b>${tipOf(kw.blocked_pins.map(b=>escapeHtml(b[0])+' &mdash; &ldquo;'+escapeHtml(b[1])+'&rdquo; is not used by this client').join('<br>')+"<br><br>High volume alone does not make a term the client's. The idea pool is ranked by national volume, so it fills with adjacent products and other companies' terms. If one genuinely is a service, add it to Product / Vertical Focus and rebuild &mdash; your own seeds are never blocked.")}</div>`);
 
-  if(kw.market_volume_gaps&&kw.market_volume_gaps.length) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;font-size:12.5px">⚠ <b>${kw.market_volume_gaps.length} of ${(kw.grid_cities||[]).length||kw.market_volume_gaps.length} market${kw.market_volume_gaps.length===1?'':'s'} contributed no volume</b><div class="nf" style="margin-top:3px">${kw.market_volume_gaps.map(g=>`<div>${escapeHtml(g.market)}${g.suggestion?` — Google calls this <b>${escapeHtml(g.suggestion)}</b>; use that spelling in Geographic targeting areas and rebuild to price it`:` — Google has no targetable location for this name`}</div>`).join('')}</div><div class="nf" style="margin-top:4px">These markets still appear in the grid and still get rank-checked — they just add nothing to the volume component, so the quote is priced on the remaining markets only.</div></div>`);
+  if(kw.market_volume_gaps&&kw.market_volume_gaps.length) warn.push(`<div style="margin-top:6px;padding:8px 11px;background:#fdf1d8;border:1px solid #e8c98a;border-radius:7px;font-size:12.5px">⚠ <b>${kw.market_volume_gaps.length} of ${(kw.grid_cities||[]).length||kw.market_volume_gaps.length} market${((kw.grid_cities||[]).length||kw.market_volume_gaps.length)===1?'':'s'} contributed no volume</b><div class="nf" style="margin-top:3px">${kw.market_volume_gaps.map(g=>`<div>${escapeHtml(g.market)}${g.suggestion?` — Google calls this <b>${escapeHtml(g.suggestion)}</b>; use that spelling in Geographic targeting areas and rebuild to price it`:(g.also_tried?` — Google has no targetable location for this town; <b>${escapeHtml(String(g.also_tried))}</b> was tried too`:` — Google has no targetable location for this name`)}</div>`).join('')}</div><div class="nf" style="margin-top:4px">These markets still appear in the grid and still get rank-checked — they just add nothing to the volume component, so the quote is priced on the remaining markets only.</div></div>`);
 
   // ---------- folded: how this list was built ----------
   // Re-tiering note removed 2026-08-13 — the tier columns already show the result.
