@@ -10594,7 +10594,6 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # below target - verified across all 1,650 anchor x ratio x count cases.
     _n_addon = max(0, int(addon_markets or 0))
     # LIST — one add-on market before the volume break.
-    hard_addon_list   = {k: r50n(hard_cost[k]) for k in hard_cost}
     # THE LIST PRICE OF AN ADD-ON MARKET IS THE TIER PRICE, exactly as shown on
     # the cards — that is what "a full campaign in another city" means. Taken
     # from `client` rather than re-derived through retail_of(hard_cost): on a
@@ -10610,6 +10609,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     _pkg_for_addon = {k: client[k] + ((ai or {}).get("client_add") or {}).get(k, 0)
                       for k in client}
     client_addon_list = dict(_pkg_for_addon)
+    # The LIST partner cost is derived from the LIST client price by the same
+    # rule the discounted pair uses. It used to be the Core SEO partner cost,
+    # which stopped matching the moment the client side moved to the whole
+    # package — the pair reported a 58.7% margin on a 35% quote.
+    hard_addon_list   = {k: r10dn(_pkg_for_addon[k] * (1.0 - mg))
+                         for k in _pkg_for_addon}
     # ADD-ON MARKET % — THE ONE DISCOUNT A CLIENT CAN CHECK (2026-08-29, Kiri).
     #
     # This runs on the CLIENT price, not the partner cost, and it is the only
@@ -10647,7 +10652,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # retail_of loses $50 to rounding on a floored quote, so a 0% bracket
         # charged $2,900 against a $2,950 list — a phantom saving the operator
         # could not explain and nobody had asked for.
-        hard_addon, client_addon = dict(hard_cost), dict(client_addon_list)
+        hard_addon, client_addon = dict(hard_addon_list), dict(client_addon_list)
     # EVERY BRACKET, PRICED BY THE SERVER. The stepper moves the count without a
     # round-trip, and reimplementing r50/retail_of in the browser would put two
     # rounding rules in play — JS rounds .5 up, Python rounds it to even, so a
