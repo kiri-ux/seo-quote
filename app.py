@@ -874,6 +874,15 @@ CFG = {
         "page one: regional or institutional (200-399)": 0,
         "page one: national platforms (400+)": 0,
     },
+    # NO DEMAND IS A DIFFERENT STATE FROM LOW DEMAND. Under this monthly total
+    # the list did not measure at all, and the price that comes out is the
+    # anchor plus the competition adder with every demand signal at zero. Well
+    # below vol_free_below (10,000), which is the point where volume stops
+    # ADDING — this is the point where there is nothing to read. (2026-09-04)
+    "price_no_demand_below": 500,
+    # Reading the COMPETITORS' positions instead of the client's.
+    "competitor_seed_limit": 200,      # ranked terms pulled per competitor
+    "competitor_seed_max_domains": 10, # competitors read in one pass
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
@@ -10966,6 +10975,29 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "pageone_measured": pageone_band is not None,
             "ai_search": ai,
             "floored": floored, "client_floor": floor, "manual_base": manual_base,
+            # WHAT THE PRICE IS MADE OF, and whether anything made it.
+            #
+            # Drainify priced at the bare nationwide anchor plus a $50 adder:
+            # every term came back with no volume, so the volume add was $0, and
+            # 81% of them already ranked, so there was no zero-ranking uplift
+            # either. Step 1 said the list had no demand in it; step 4 printed a
+            # confident $2,950 three sections lower with nothing beside it. The
+            # warning has to travel with the number. (2026-09-04, Kiri)
+            "price_basis": {
+                "anchor": int(anchor),
+                "competitive_adder": int(adder or 0),
+                "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
+                "pageone_anchor_add": int(pageone_add or 0),
+                "volume_add": int(vol_add or 0),
+                "zero_ranking_uplift_pct": zr_uplift,
+                "total_volume": total_volume,
+                "manual_base": manual_base,
+            },
+            # The list could not be measured at all — not merely below the level
+            # where volume starts adding money.
+            "no_demand": bool(total_volume is not None and not manual_base
+                              and total_volume
+                              < int(CFG.get("price_no_demand_below", 500))),
             "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
@@ -13805,6 +13837,8 @@ def api_price():
                     "pageone_measured": p.get("pageone_measured", False),
                     "floored": p.get("floored", False),
                     "client_floor": p.get("client_floor"),
+                    "price_basis": p.get("price_basis", {}),
+                    "no_demand": p.get("no_demand", False),
                     "hard_tiers": p["hard_tiers"], "client_tiers": p["client_tiers"],
                     "hard_addon_per_market": p["hard_addon_per_market"],
                     "client_addon_per_market": p["client_addon_per_market"],
@@ -16000,6 +16034,143 @@ def api_ranked_keywords():
                                            if r["bare"] in have]),
                     "top20": sum(1 for r in rows
                                  if (r["position"] or 999) <= 20)})
+
+
+@app.route("/api/competitor_seeds", methods=["POST"])
+@_json_error_guard
+def api_competitor_seeds():
+    """Seeds read off the COMPETITORS’ positions rather than the client’s.
+
+    Every other seed source starts from the client: their site, their focus
+    terms, their own rankings. That works when the client already sells into
+    the market being quoted. It fails completely when they do not.
+
+    Drainify is a UK company entering the US. The tool read their UK site and
+    built a US grid out of UK trade language — "drain survey", "CCTV drain
+    survey", "drainage inspection" — and all eighteen terms came back with no
+    US volume. The US market calls the same work sewer inspection, pipeline
+    inspection and PACP coding, and not one of those words appears anywhere on
+    the client’s site. No amount of expanding the client’s own vocabulary
+    reaches a word the client does not use.
+
+    Their competitors use it on every page, and they rank for it. So this asks
+    them instead: the same ranked_keywords read the tool already runs on the
+    client, pointed at a list of competitor domains and pooled.
+
+    WHAT MATTERS IS THE OVERLAP, not the volume. A term five of nine
+    competitors rank for is the category’s core vocabulary, and that is worth
+    more than a bigger number one of them happens to hold alone — so the
+    ordering is by how many competitors share a term, and volume breaks the
+    tie.
+
+    Preview only. Nothing is added to the build: the planner accepts chips, and
+    what they accept enters as their OWN seed, which is what exempts it from
+    the competitor-name filter that would otherwise cut a rival’s product name
+    straight back out. (2026-09-04, Kiri)
+    """
+    d = request.get_json(force=True) or {}
+    doms, bad = [], []
+    for raw in (d.get("competitors") or []):
+        dom = re.sub(r"^https?://", "", str(raw or "").strip()).strip("/")
+        dom = re.sub(r"^www\.", "", dom).split("/")[0].split("?")[0].strip().lower()
+        if not dom or "." not in dom or " " in dom:
+            if str(raw or "").strip():
+                bad.append(str(raw).strip()[:60])
+            continue
+        if dom not in doms:
+            doms.append(dom)
+    if not doms:
+        return jsonify({"error": "Add at least one competitor website.",
+                        "unreadable": bad}), 400
+    doms = doms[:int(CFG.get("competitor_seed_max_domains", 10))]
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    limit = int(d.get("limit") or CFG.get("competitor_seed_limit", 200))
+
+    pool, errs, read = {}, [], []
+
+    def _one(dm):
+        return dm, fetch_ranked_keywords(dm, markets, state, limit)
+
+    with ThreadPoolExecutor(max_workers=min(len(doms), 6)) as ex:
+        for fut in [ex.submit(_one, dm) for dm in doms]:
+            try:
+                dm, rows = fut.result()
+            except Exception as e:                        # noqa: BLE001
+                errs.append(str(e)[:120])
+                continue
+            read.append(dm)
+            for r in rows:
+                bare = (r.get("bare") or r.get("term") or "").strip()
+                if not bare:
+                    continue
+                e = pool.setdefault(bare, {"term": bare, "volume": 0,
+                                           "on": [], "position": None})
+                e["volume"] = max(e["volume"], int(r.get("volume") or 0))
+                if dm not in e["on"]:
+                    e["on"].append(dm)
+                pos = r.get("position")
+                if pos and (e["position"] is None or pos < e["position"]):
+                    e["position"] = int(pos)
+    if not read:
+        return jsonify({"error": "None of the competitor sites could be read."
+                                 + (" " + errs[0] if errs else ""),
+                        "errors": errs}), 502
+
+    # THE CLIENT’S OWN NAME IS NOT A KEYWORD, and neither is anything already
+    # on the list. Same two tests the client-side panel applies.
+    have = {seed_norm(x, markets, state) for x in (d.get("seeds") or []) if x}
+    _brand_in = (d.get("brand") or "")
+
+    def _is_brand(term):
+        return bool(_brand_in) and is_brand_term(term, _brand_in,
+                                                 vocab=d.get("seeds") or [])
+
+    # A COMPETITOR’S OWN NAME IS A DIFFERENT CASE. "pipelogix login" is their
+    # navigation and there is nothing to win; "pipelogix alternative" is the
+    # comparison term every B2B SaaS campaign is built on. Both are flagged, not
+    # dropped, and the panel separates them — deciding which is which is a
+    # judgement about the campaign, not something to guess here.
+    vendor_words = {re.split(r"\.", dm)[0] for dm in read}
+    vendor_words |= {w for dm in read for w in re.split(r"[.\-]", dm)
+                     if len(w) > 4 and w not in ("co", "com", "net", "org", "www")}
+
+    def _vendor(term):
+        toks = set(re.findall(r"[a-z0-9]+", term.lower()))
+        return sorted(toks & vendor_words)
+
+    rows = []
+    for e in pool.values():
+        if e["term"] in have or _is_brand(e["term"]):
+            continue
+        e = dict(e)
+        e["competitors"] = len(e["on"])
+        e["vendor_terms"] = _vendor(e["term"])
+        rows.append(e)
+
+    # Nine wordings of one service is not nine services — the same cap the
+    # client-side panel uses, and the planner’s own seeds are exempt from it.
+    _kept, _famdrop = cap_service_family([r["term"] for r in rows],
+                                         seeds=(d.get("seeds") or []),
+                                         markets=markets, state=state)
+    _keepset = set(_kept)
+    rows = [r for r in rows if r["term"] in _keepset]
+
+    # Shared vocabulary first, then demand. A term only one competitor holds is
+    # that competitor’s angle; a term five hold is the category.
+    rows.sort(key=lambda r: (-r["competitors"], -r["volume"], r["position"] or 999))
+    shared = [r for r in rows if r["competitors"] > 1]
+    return jsonify({
+        "keywords": rows[:60],
+        "domains_read": read,
+        "domains_failed": [dm for dm in doms if dm not in read],
+        "unreadable": bad,
+        "errors": errs,
+        "total": len(pool),
+        "shared": len(shared),
+        "already_seeded": len([1 for t in pool if t in have]),
+        "family_capped": [{"term": t, "on": w} for t, w in _famdrop],
+    })
 
 
 @app.route("/api/describe_client", methods=["POST"])

@@ -612,6 +612,19 @@
     <div id="expandSvcOut" style="margin-top:6px"></div>
     <div id="rankedKwOut" style="margin-top:6px"></div>
 
+    <!-- SEEDS FROM SOMEBODY ELSE'S SITE. Every other source on this form starts
+         from the client, which is only useful when the client already sells into
+         the market being quoted. A UK company entering the US has none of the US
+         vocabulary anywhere on its own site, so expanding its own words can never
+         reach it. Its competitors use those words on every page. (2026-09-04) -->
+    <label>Competitor websites<span class="pl" title="optional — one per line or comma separated">optional</span></label>
+    <div class="help">Reads what each one already ranks for and offers the terms they share. Use it when the client is new to this market and their own site is written for a different one.</div>
+    <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+      <textarea id="comp_in" rows="2" style="flex:1;min-width:250px" placeholder="ariesindustries.com, pipelogix.com, sewerai.com"></textarea>
+      <button type="button" id="compRead" class="btn2" style="padding:8px 15px;white-space:nowrap">Read their rankings</button>
+    </div>
+    <div id="compKwOut" style="margin-top:6px"></div>
+
     <label>Negative terms<span class="pl" title="adtini supplies this from the product line — you don't type it">pulled from product line</span></label>
     <div class="help">Words this client should never be quoted for. Whole words only, so &ldquo;carrier&rdquo; won&rsquo;t catch &ldquo;career&rdquo;. A focus term you typed still wins.</div>
     <div class="pillbox" data-for="neg"><input type="text" id="neg_in" placeholder="carrier, underwriting, jobs"></div>
@@ -1934,6 +1947,84 @@ async function runRankedKeywords(){
     + kws.slice(0,24).map(chip).join('');
   wireSvcChips(box);
 }
+
+// WHAT THE COMPETITORS RANK FOR, when the client's own site cannot say.
+//
+// Drainify is a UK company entering the US. The tool read their UK site and
+// built a US grid out of "drain survey" and "drainage inspection"; the US
+// market calls the same work sewer inspection, pipeline inspection and PACP
+// coding, and not one of those words is anywhere on the client's site. All
+// eighteen terms came back with no US volume and the quote fell to the floor.
+//
+// The overlap is the signal, not the volume: a term five of nine competitors
+// hold is the category's vocabulary, and one term one of them holds alone is
+// that competitor's angle. Chips are accepted by hand — what is accepted
+// becomes the planner's OWN seed, which is what keeps the competitor-name
+// filter from cutting a rival's product name straight back out. (2026-09-04)
+async function runCompetitorSeeds(){
+  const box=document.getElementById('compKwOut');
+  const ta=document.getElementById('comp_in');
+  const btn=document.getElementById('compRead');
+  if(!box || !ta) return;
+  const doms=String(ta.value||'').split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  if(!doms.length){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">Add at least one competitor website.</div>';
+    return;
+  }
+  if(btn){ btn.disabled=true; btn.textContent='Reading '+doms.length+'\u2026'; }
+  box.innerHTML='<div class="nf" style="font-size:11.5px">Reading what '+doms.length+' competitor'+(doms.length===1?'':'s')+' rank for\u2026</div>';
+  let r;
+  try{
+    r=await postJSON('/api/competitor_seeds',{competitors:doms, seeds:stores.kw.slice(),
+      brand:($('brand')||{}).value||'',
+      geo_values:stores.geo.slice(), state:($('state')||{}).value||''});
+  }catch(e){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">Couldn\u2019t read them ('
+      +escapeHtml(String(e.message)).slice(0,90)+').</div>';
+    return;
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='Read their rankings'; }
+  }
+  const kws=(r&&r.keywords)||[];
+  const readN=((r&&r.domains_read)||[]).length;
+  const failed=(r&&r.domains_failed)||[];
+  if(!kws.length){
+    box.innerHTML='<div class="nf" style="font-size:11.5px">'
+      +(r&&r.total ? 'Everything they rank for is already on your list.'
+                   : 'None of them rank for anything in the top 100.')+'</div>';
+    return;
+  }
+  const chip=x=>{
+    const n=Number(x.competitors||0), core=n>1;
+    const vend=(x.vendor_terms||[]).length;
+    return '<span class="svc-chip" data-vol="'+Number(x.volume||0)+'" data-src="competitor"'
+      +' data-label="'+escapeHtml(String(x.term)).replace(/"/g,'&quot;')+'"'
+      +' title="'+escapeHtml(n+' of '+readN+' rank for this'
+                             +(x.position?' \u00b7 best position #'+x.position:'')
+                             +' \u00b7 '+(x.on||[]).join(', '))+'"'
+      +' style="display:inline-block;margin:0 6px 6px 0;padding:4px 11px;border-radius:14px;border:1px solid '
+      +(core?'var(--atlas)':'#9db3c8')+';color:'+(vend?'#7a5410':'var(--atlas)')
+      +';font-size:12.5px;cursor:pointer;background:'+(core?'#eef4fb':'#fff')+'">'
+      +escapeHtml(String(x.term))
+      +' <span class="nf" style="font-size:10.5px">'+n+'/'+readN
+      +(x.volume?' \u00b7 '+Number(x.volume).toLocaleString()+'/mo':'')+'</span></span>';
+  };
+  const shared=kws.filter(x=>Number(x.competitors||0)>1);
+  const vendy=kws.filter(x=>(x.vendor_terms||[]).length);
+  box.innerHTML='<div class="nf" style="font-size:11.5px;margin-bottom:4px">\u{1F3C1} <b>'
+    +kws.length+' term'+(kws.length===1?'':'s')+' from '+readN+' competitor'+(readN===1?'':'s')+'</b>'
+    +(shared.length?' \u2014 <b>'+shared.length+'</b> held by more than one':'')
+    +(r.already_seeded?' \u00b7 '+r.already_seeded+' already on your list':'')
+    +(failed.length?' \u00b7 <span style="color:#7a5410">couldn\u2019t read '+failed.map(escapeHtml).join(', ')+'</span>':'')
+    +tipOf('Ordered by how many of them rank for the term, then by demand. A term several competitors share is the category\u2019s own vocabulary; one that only one holds is that competitor\u2019s angle.'
+      +(vendy.length?'<br><br><b>'+vendy.length+' carry a competitor\u2019s name</b> (shown in amber). \u201cX login\u201d is their navigation and there is nothing to win; \u201cX alternative\u201d is the comparison term a switch campaign is built on. Yours to judge \u2014 neither is dropped.':'')
+      +((r.family_capped||[]).length?'<br><br><b>'+r.family_capped.length+' extra wording'+(r.family_capped.length===1?'':'s')+' of one service held back.</b>':''))
+    +'</div>'
+    + kws.slice(0,30).map(chip).join('');
+  wireSvcChips(box);
+}
+const _compBtn=document.getElementById('compRead');
+if(_compBtn) _compBtn.onclick=()=>runCompetitorSeeds();
 
 // EXPAND BEFORE BUILDING, ON BY DEFAULT. Three sources sat behind one button and
 // then behind a chip-click each: reading the site, asking the industry, and reading
@@ -4360,6 +4451,32 @@ function cropLandscape(dataUrl, ratio){
   });
 }
 
+// THE WARNING HAS TO TRAVEL WITH THE NUMBER.
+//
+// Step 1 said "these terms have no demand — 90/mo total. Volume contributes
+// $0". Step 4, three sections lower, printed $2,950 with nothing beside it, and
+// that is the number that gets read. On Drainify every demand signal was at
+// zero — no volume, no zero-ranking uplift — so the price was the bare anchor
+// plus the competition adder, which is a floor rather than a measurement of
+// that client. Two clients in completely different markets price identically
+// there. (2026-09-04, Kiri)
+function noDemandHtml(p){
+  if(!p || !p.no_demand) return '';
+  const b=p.price_basis||{};
+  const vol=Number(b.total_volume||0);
+  const live=[], dead=[];
+  (b.volume_add?live:dead).push('demand volume');
+  (b.zero_ranking_uplift_pct?live:dead).push('current visibility');
+  (b.competitive_adder?live:dead).push('competition');
+  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:12px">
+    \u26a0 <b>Priced without a demand signal.</b> The keyword list totals
+    ${vol.toLocaleString()}/mo, so the volume component added $0 and the price
+    below is the anchor${b.competitive_adder?` plus a ${money(b.competitive_adder)} competition adder`:''}
+    \u2014 a floor, not a measurement of this client.
+    <div class="nf" style="margin-top:3px">Contributing: ${live.length?live.join(', '):'nothing but the anchor'}${dead.length?` \u00b7 at zero: ${dead.join(', ')}`:''}.</div>
+    <div class="nf" style="margin-top:3px">Rebuild the list from the competitors\u2019 rankings in step 1, or set the partner hard cost by hand \u2014 the formula cannot separate this client from any other with an unmeasured list.</div>
+  </div>`;
+}
 function renderStep4(p){
   ST.pricing = p;   // keep the latest pricing so the whole quote can be saved
   const cpcOf=kw=>(ST.cpc&&ST.cpc[kw])?ST.cpc[kw]:'';
@@ -4492,6 +4609,7 @@ function renderStep4(p){
         </div>
       </div>
     </div>
+    ${noDemandHtml(p)}
     <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px">
       <span style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--atlas);font-weight:600">Client price · markup</span>
       <input type="text" id="markup_live" value="${p.markup_pct}" style="width:56px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px">
