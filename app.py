@@ -1959,6 +1959,41 @@ _NON_PLACE_GEOS = {
 }
 
 
+# COUNTRIES THIS TOOL CANNOT MEASURE.
+#
+# Every location string it builds ends in "United States" — loc_string appends
+# it unconditionally and the Labs calls hardcode country 2840 — so a market
+# entered as "UK" became the location "UK,United States", which Google has
+# never heard of. Drainify is a UK company entering the US: the geo box held
+# UK and United States, five rank lookups came back 40501 Invalid Field, the
+# volume read returned nothing for the whole grid, and page one measured zero
+# incumbents. Nothing in the tool said the country was the problem.
+#
+# Dropped from the measurable markets rather than silently mangled, and named
+# on the panel, because the honest answer is that US demand is the only demand
+# this tool can read. (2026-09-04, Kiri)
+_FOREIGN_GEOS = {
+    "uk", "u.k.", "united kingdom", "great britain", "britain", "gb",
+    "england", "scotland", "wales", "northern ireland", "ireland", "eire",
+    "canada", "mexico", "australia", "new zealand", "south africa", "india",
+    "germany", "france", "spain", "italy", "portugal", "netherlands", "holland",
+    "belgium", "switzerland", "austria", "sweden", "norway", "denmark",
+    "finland", "poland", "japan", "china", "singapore", "uae",
+    "united arab emirates", "brazil", "argentina", "europe", "emea", "apac",
+    "latam", "international", "worldwide", "global", "rest of world",
+}
+
+
+def is_foreign_geo(m):
+    """True if this entered geo is a country the tool cannot measure in.
+
+    Tested on the bare name the same way is_non_place_geo tests it.
+    """
+    t = re.sub(r"[‘’“”]", "", str(m or "")).strip().lower()
+    t = re.sub(r"\s+", " ", t.strip(" .-—–\t"))
+    return t in _FOREIGN_GEOS
+
+
 def is_non_place_geo(m):
     """True if this entered geo is not a place at all.
 
@@ -1984,7 +2019,8 @@ def usable_markets(markets):
     behind their back is worse than showing it and refusing to measure in it.
     """
     return [str(m).strip() for m in (markets or [])
-            if str(m).strip() and not is_non_place_geo(m)]
+            if str(m).strip() and not is_non_place_geo(m)
+            and not is_foreign_geo(m)]
 
 
 # WHAT PEOPLE CALL A CITY IS NOT ALWAYS WHAT THE PROVIDER CALLS IT.
@@ -12547,8 +12583,26 @@ def api_rankings_collect():
     rivals = {}
 
     def one(t):
-        data = dfs_post(f"/serp/google/organic/task_get/regular/{t['task_id']}",
-                        None, timeout=12, method="GET")
+        # A TASK THAT NO LONGER EXISTS IS NOT A SLOW TASK.
+        #
+        # DataForSEO drops a task once its result has been read, and expires it
+        # after that. Asking again returns 40401 Task Not Found — an HTTP 404,
+        # which dfs_post raises — and the catch below filed every raised
+        # exception as "pending: poll again". So a dead task was re-requested
+        # every 4 seconds for the full 240-second poll: five of them is three
+        # hundred failed calls in one run, which is what DataForSEO wrote to
+        # Kiri about. Reopening a saved quote and retrying its rankings does
+        # exactly this, because the task IDs saved with it are days old.
+        #
+        # Gone is permanent, so it is answered once. (2026-09-04, Kiri)
+        try:
+            data = dfs_post(f"/serp/google/organic/task_get/regular/{t['task_id']}",
+                            None, timeout=12, method="GET")
+        except requests.HTTPError as e:
+            _code = getattr(getattr(e, "response", None), "status_code", None)
+            if _code in (404, 410):
+                return ("gone", None, [], [])
+            raise
         task0 = (data.get("tasks") or [{}])[0]
         sc = task0.get("status_code")
         if sc == 20000:
@@ -12557,6 +12611,9 @@ def api_rankings_collect():
             return ("done", pos, qs, doms)
         if sc in (40601, 40602, 40100):      # queued / in progress
             return ("pending", None, [], [])
+        # 40401 also arrives inside a 200 body on some endpoints.
+        if sc == 40401:
+            return ("gone", None, [], [])
         return ("error", None, [], [])
 
     with ThreadPoolExecutor(max_workers=8) as ex:
@@ -12583,6 +12640,11 @@ def api_rankings_collect():
             # list below, because one SERP is an anecdote and ten is a market.
             for _d in doms:
                 rivals[_d] = rivals.get(_d, 0) + 1
+        elif status == "gone":
+            # Reported as its own thing: retrying THIS id can only fail again,
+            # and the fix is a fresh submit rather than another poll.
+            done.append({"kw": t["kw"], "pos": "—", "ranked_top": False,
+                         "error": True, "gone": True})
         elif status == "error":
             done.append({"kw": t["kw"], "pos": "—", "ranked_top": False, "error": True})
         else:
@@ -13677,6 +13739,7 @@ def api_markets():
         # early return skipped the suggestion entirely. (2026-08-10)
         return jsonify({"cities": 0, "entered": 0, "markets": 0, "groups": [],
                         "unlocated": [], "non_place": [], "state_geos": [],
+                        "foreign": [],
                         "overlaps": [], "covered": [],
                         "radius": int(CFG.get("market_radius_miles", 25)),
                         "located": 0,
@@ -13685,19 +13748,24 @@ def api_markets():
     # Non-places cover nothing, so they cannot be markets. Reported back so the
     # operator can see WHY the count moved rather than watching a pill silently
     # stop mattering.
-    non_place = [m for m in entered if is_non_place_geo(m)]
+    # A COUNTRY THE TOOL CANNOT MEASURE IN is its own answer, separate from a
+    # non-place: "UK" is a real location, just not one any call here can reach.
+    foreign = [m for m in entered if is_foreign_geo(m)]
+    non_place = [m for m in entered if is_non_place_geo(m) and m not in foreign]
     # A whole state is not a market either. Reported separately from non-places
     # because the fix is different: a state usually means the operator wants
     # every city in it, which is a Statewide scope, not a pill.
-    state_geos = [m for m in entered if m not in non_place and is_state_geo(m)]
-    mk = [m for m in entered if m not in non_place and m not in state_geos]
+    state_geos = [m for m in entered
+                  if m not in non_place and m not in foreign and is_state_geo(m)]
+    mk = [m for m in entered if m not in non_place and m not in foreign
+          and m not in state_geos]
     overlaps = geo_overlaps(entered, state)
     covered = sorted({c for o in overlaps if o["kind"] in ("county", "duplicate")
                       for c in o["contained"]})
     if not mk:
         return jsonify({"cities": len(entered), "markets": 0, "groups": [],
                         "unlocated": [], "non_place": non_place,
-                        "state_geos": state_geos,
+                        "state_geos": state_geos, "foreign": foreign,
                         "overlaps": overlaps, "covered": covered,
                         "radius": int(CFG.get("market_radius_miles", 25)),
                         "located": 0, "scope_suggestion": {}})
@@ -13719,6 +13787,7 @@ def api_markets():
         "unlocated": unlocated,
         "non_place": non_place,
         "state_geos": state_geos,
+        "foreign": foreign,
         "overlaps": overlaps,
         "covered": covered,
         "radius": int(CFG.get("market_radius_miles", 25)),
@@ -14375,6 +14444,14 @@ def api_serp_fetch():
         return jsonify({"ready": True, "keyword": keyword,
                         "data_url": f"data:{mime};base64,{b64}"})
     except requests.HTTPError as e:
+        # A 404 here is 40401 Task Not Found: the SERP task has been read or has
+        # expired, and no number of polls will bring it back. Everything else
+        # from this endpoint really is "still running". (2026-09-04, Kiri)
+        _code = getattr(getattr(e, "response", None), "status_code", None)
+        if _code in (404, 410):
+            return jsonify({"ready": False, "gone": True,
+                            "error": "That queued SERP task no longer exists — "
+                                     "generate a new one."})
         # screenshot endpoint returns an error while the task is still running;
         # treat as not-ready rather than a hard failure so the poll continues
         return jsonify({"ready": False, "status": f"processing ({e})"})

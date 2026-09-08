@@ -4951,6 +4951,15 @@ function renderStep4(p){
         const f=await postJSON('/api/serp_fetch',{task_id:q.task_id, device:q.device, keyword:kw,
           width:q.width, height:q.height, scale:q.scale});
         if(f.ready && f.data_url){ done=f; break; }
+        // 40401 Task Not Found. The task has been read or has expired, and
+        // forty more polls can only ask forty more times — which is how a dead
+        // task turned into a page of errors in DataForSEO's inbox. Stop and
+        // say what to do. (2026-09-04, Kiri)
+        if(f.gone){
+          out.innerHTML=`<div class="err">${escapeHtml(String(f.error||'That queued SERP task no longer exists.'))} Click Generate to queue a fresh one.</div>`;
+          btn.disabled=false; btn.textContent='\u{1F4F8} Generate SERP';
+          return;
+        }
       }
       if(!done){ out.innerHTML=`<div class="err">SERP didn't finish in 2 minutes — DataForSEO's queue may be busy. Click Generate to retry (often works on a second try).</div>`; }
       else{
@@ -7101,7 +7110,17 @@ function overlapHtml(r){
   const ovs = (r.overlaps||[]);
   const np  = (r.non_place||[]);
   const sg  = (r.state_geos||[]);
+  const fg  = (r.foreign||[]);
   const bits = [];
+  // A COUNTRY IS A REAL PLACE THE TOOL STILL CANNOT REACH. Every location it
+  // builds ends in "United States", so "UK" went out as "UK,United States" and
+  // came back 40501 on every call — five failed rank lookups, no volume for the
+  // whole grid and zero incumbents measured, with nothing on screen naming the
+  // country as the cause. (2026-09-04, Kiri)
+  if(fg.length){
+    bits.push(`<div class="nf" style="font-size:12px;margin-top:3px">\u26a0 <b>${fg.map(x=>escapeHtml(x)).join(', ')}</b> ${fg.length===1?'is a country this tool cannot measure in':'are countries this tool cannot measure in'} \u2014 every lookup it makes is US demand on a US SERP, so ${fg.length===1?'it is':'they are'} not counted and never used to pull volume or check rankings. Quote the US side here and price the rest by hand. `
+      + `<button type="button" id="dropForeign" class="btn2" style="padding:1px 8px;font-size:11px">Remove</button></div>`);
+  }
   if(sg.length){
     bits.push(`<div class="nf" style="font-size:12px;margin-top:3px">\u26a0 <b>${sg.map(x=>escapeHtml(x)).join(', ')}</b> ${sg.length===1?'is a whole state':'are whole states'}, not ${sg.length===1?'a market':'markets'} \u2014 not counted. If the client really covers the whole state, set <b>Geo scope</b> to Statewide; otherwise list the cities. `
       + `<button type="button" id="dropStateGeo" class="btn2" style="padding:1px 8px;font-size:11px">Remove</button></div>`);
@@ -7142,6 +7161,8 @@ function wireOverlap(r){
   };
   const a = $('dropNonPlace');
   if(a) a.onclick = ()=> drop(r.non_place||[]);
+  const fgb = $('dropForeign');
+  if(fgb) fgb.onclick = ()=> drop(r.foreign||[]);
   const sgb = $('dropStateGeo');
   if(sgb) sgb.onclick = ()=> drop(r.state_geos||[]);
   const b = $('dropCovered');
