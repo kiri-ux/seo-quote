@@ -1330,7 +1330,12 @@ function wirePills(key, inputId){
     // Seen with seven CA/MN/PA cities entered under a panel still reading
     // "2 areas -> 2 markets ... couldn't place california, pennsylvania".
     // (2026-08-10)
-    if(key === 'geo'){ try{ scheduleMarketSummary(); }catch(e){} }
+    // The state warning is computed from stores.geo but was only ever redrawn
+    // by the state <select>. Removing the pills it named left it on screen
+    // naming them: US and UK, on a quote whose geo box was empty, across two
+    // rebuilds. (2026-09-08, Kiri)
+    if(key === 'geo'){ try{ scheduleMarketSummary(); }catch(e){}
+                       try{ renderStateNeeded(); }catch(e){} }
     // Same reasoning, other field: a site arriving with an empty focus list is
     // the moment to propose one. Inside render() so every path reaches it —
     // typing, the x button, a report import, a restore.
