@@ -7819,6 +7819,28 @@ def swap_low_volume_services(services, vols, seeds, topics, min_volume=None,
     return out, report
 
 
+def national_row_volume(row, vols):
+    """The measured volume for a row that was NOT crossed with a city, or None.
+
+    A nationwide build makes no crossings: build_grid emits the bare service as
+    the row and leaves volume at 0, and _apply_volumes skipped every row with no
+    city so the 0 stayed. Every keyword on every national quote read "no data"
+    while the volume that answers it sat in the same dict the total is summed
+    from — Drainify showed eighteen blanks against a 300/mo total, and the whole
+    list read as dead demand.
+
+    Keyword first, service second: a "near me" row also carries no city, and it
+    was measured as itself rather than as a service crossed with a place.
+    (2026-09-08, Kiri)
+    """
+    vols = vols or {}
+    for key in ((row or {}).get("keyword"), (row or {}).get("service")):
+        k = str(key or "").strip().lower()
+        if k and vols.get(k):
+            return vols[k]
+    return None
+
+
 def build_grid(services, markets, state, prepicked=False, geo_forms=None):
     """Cross each SERVICE with each CITY, in the proposal format
     ('auto insurance fairfax va'). The tier comes from the service, so every
@@ -9251,6 +9273,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 # reached the proposal carrying no data even on a build where it
                 # survived the rebuilds. (2026-08-24)
                 if not city_l:
+                    # Nationwide: the row IS the service, so its own measured
+                    # figure is the one to show. Only fills a blank, so a figure
+                    # already read for a near-me row is never overwritten.
+                    if not r.get("volume"):
+                        _nv = national_row_volume(r, vols)
+                        if _nv:
+                            r["volume"] = _nv
                     continue
                 # This city's own volume for the SERVICE. Not the volume of the
                 # geo-modified phrase — local phrases mostly report zero — and
