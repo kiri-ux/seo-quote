@@ -7078,7 +7078,16 @@ async function refreshMarketSummary(){
       ? `<div class="nf" style="margin-top:2px">Couldn\u2019t place ${r.unlocated.map(x=>escapeHtml(x)).join(', ')} \u2014 counted separately.</div>` : '';
     const entered = (r.entered!=null ? r.entered : r.cities);
     if(!entered){
-      // Band advice only.
+      // Band advice only — and the band still has to be SET. This branch
+      // returned before autoApplyScope ran, so a national campaign with no
+      // areas kept whatever the dropdown happened to hold: Drainify sat on
+      // Single city for four rebuilds while the server was answering
+      // "nationwide, high confidence" every time, and the derived line under it
+      // never redrew either. The one case the comment above says to keep asking
+      // about was the one case that never applied the answer.
+      // (2026-09-08, Kiri)
+      autoApplyScope(r.scope_suggestion);
+      try{ renderScopeDerived(r.scope_suggestion); }catch(e){}
       box.innerHTML = scopeSuggestionHtml(r.scope_suggestion);
       wireScopeSuggestion(r.scope_suggestion);
       return;
