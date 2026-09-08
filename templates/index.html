@@ -32,6 +32,10 @@
 .ppvol{font-variant-numeric:tabular-nums;font-weight:700;color:var(--atlas)}
 .pph{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   color:var(--atlas);margin:22px 0 8px}
+.iofold>summary{list-style:none;user-select:none}
+.iofold>summary::-webkit-details-marker{display:none}
+.iofold>summary::before{content:'\25B8';display:inline-block;width:13px}
+.iofold[open]>summary::before{content:'\25BE'}
   /* ============================================================
      adtini · Quote Builder — design system matched to Consent Scanner
      Vici brand: Atlas Blue / Velocity Blue / Vici Gold / Parchment
@@ -5375,7 +5379,10 @@ function handoffChart(){
     + `<td class="nf">${note||''}</td></tr>`;
   const eff=h.ai_search_pct_effective||{};
   const effTxt=T.map(k=>eff[k]).filter(v=>v!==undefined&&v!==null);
-  return `<div class="pph" style="margin-top:16px">Sent to the IO — what adtini pulls from this quote</div>
+  // Reviewers get the client-facing half; the IO field list is ours and sits
+  // folded for them. Open by default for the planner.
+  return `<details class="iofold"${REVIEW_MODE?'':' open'}>
+    <summary class="pph" style="margin-top:16px;cursor:pointer">Sent to the IO — what adtini pulls from this quote</summary>
     <div class="ppwrap"><table>
       <tr><th>Field</th><th style="text-align:right">Base</th><th style="text-align:right">Intermediate</th>
           <th style="text-align:right">Advanced</th><th>Notes</th></tr>
@@ -5407,7 +5414,7 @@ function handoffChart(){
       + 'Same reason Margin $ is a row rather than a sum: Package $ × (1 − Margin %) does not '
       + 'return Partner Hard Cost, because the client figure rounds UP to $50 and each partner '
       + 'figure rounds to the NEAREST $50 — up to ~$75 a tier apart, and that gap is margin.')}</div>
-    ${handoffProposal()}`;
+    ${handoffProposal()}</details>`;
 }
 
 function handoffProposal(){
@@ -6942,6 +6949,7 @@ function wireAddonField(){
     ST.inputs.addon_markets = v;
     try{ renderAddonCost(); }catch(e){}
     try{ refreshAddonSuggestion(); }catch(e){}
+    try{ repriceForAddons(); }catch(e){}
     try{ scheduleAutoSave(); }catch(e){}
   };
   a.addEventListener('input', push);
@@ -6953,6 +6961,50 @@ function wireAddonField(){
   if(dn) dn.onclick = step(-1);
   try{ renderAddonCost(); }catch(e){}
   try{ wireAddonToggle(); }catch(e){}
+}
+
+// THE CARDS MOVED AND NOTHING ELSE DID.
+//
+// The stepper repaints the tier cards and the add-on table locally, straight
+// off the bracket schedule, so the panel is right the moment it is clicked. But
+// ST.pricing is the response the server sent, and it was still the one computed
+// with zero add-on markets — so the handoff table, the proposal tab, the saved
+// quote and the .docx all carried "Add-On Market Discount 0% · 0 markets" and
+// the undiscounted rate, beside a Build tab showing 1 market at 10% off.
+//
+// /api/price is pure arithmetic and instant. Debounced so holding the stepper
+// does not fire one per keystroke, and it replaces the object every downstream
+// reader takes its numbers from. (2026-09-08, Kiri)
+let _addonPriceTimer = null;
+function repriceForAddons(){
+  if(!ST.pricing || !ST.inputs) return;
+  clearTimeout(_addonPriceTimer);
+  _addonPriceTimer = setTimeout(async ()=>{
+    const want = Number((ST.inputs||{}).addon_markets||0)||0;
+    let p=null;
+    try{
+      p = await postJSON('/api/price',{
+        site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'',
+        pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'',
+        addon_override:ST.addonOverride||'',
+        ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),
+        national_demand:!!(ST.inputs&&ST.inputs.national_demand),
+        goal:(ST.inputs&&ST.inputs.goal)||'',
+        industry:(ST.inputs&&ST.inputs.industry)||'',
+        ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+        band:ST.inputs.geo_scope, adder:ST.adder,
+        zero_ranking:(ST.rankUnmeasured?false:ST.zero),
+        base_override:ST.baseOverride||'',
+        addon_markets:want, markup_pct:ST.inputs.markup_pct,
+        pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol});
+    }catch(e){ return; }
+    // The stepper may have moved again while this was out.
+    if((Number((ST.inputs||{}).addon_markets||0)||0) !== want) return;
+    ST.pricing = p;
+    ST.pricedWith = pricingSignature();
+    try{ renderProposalTab(); }catch(e){}
+    try{ scheduleAutoSave(); }catch(e){}
+  }, 450);
 }
 
 // ORDER DETAILS PANEL. Two jobs: say what the order is when it is folded, and
