@@ -1,8 +1,8 @@
 // THE IO FIELD LIST IS OURS, NOT THE REVIEWER'S.
 //
 // Two long internal tables sat open above the proposal on every copy of the
-// quote, including the one sent out for review. Folded, and closed by default
-// for a reviewer. (2026-09-08, Kiri)
+// quote, including the one sent out for review. Folded, and closed until
+// somebody opens them. (2026-09-08, Kiri)
 const { chromium } = require('/root/work/node_modules/playwright-core');
 
 (async () => {
@@ -69,11 +69,11 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
   check('and both IO tables are inside it', out.holdsBothTables, true);
   check('including the proposal fields', out.proposalFieldsInside, true);
 
-  console.log('\nOPEN FOR THE PLANNER, CLOSED FOR A REVIEWER');
-  check('open on the working copy', out.openForPlanner, true);
-  check('the page really is in review mode', closed.mode, true);
+  console.log('\nCLOSED UNTIL SOMEBODY WANTS IT');
+  check('closed on the working copy', out.openForPlanner, false);
+  check('the review page really is in review mode', closed.mode, true);
   check('present on the review copy', closed.present, true);
-  check('and closed there', closed.open, false);
+  check('and closed there too', closed.open, false);
 
   console.log(fail.length ? '\n' + fail.length + ' FAILED: ' + fail.join(', ') : '\nall OK');
   await b.close();
