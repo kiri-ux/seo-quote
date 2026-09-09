@@ -11157,6 +11157,16 @@ PROPOSAL = {
                       "high as possible on page 1 of search results to drive "
                       "high quality, qualified traffic and leads to your "
                       "website.",
+    # ---- add-on markets ---------------------------------------------------
+    # Brendan's wording, from the TN Water & Air proposal — the only one of the
+    # ten that carries add-on markets. Sits under the three options, priced per
+    # market per month, and the count of markets the client operates in is
+    # named so any or all of them can be picked up. (2026-09-09, Kiri)
+    "addon_heading": "Optional Add-On Markets",
+    "addon_lead": "In conjunction with the above SEO campaigns, add-on markets "
+                  "can be added as follows:",
+    "addon_close": "Any or all of these markets can be included under the above "
+                   "add-on market pricing.",
     "options_lead": "Depending on how aggressive you wish to be with an SEO "
                     "campaign, we have included three options below following a "
                     "“good, better, best” model.  Additional campaign "
@@ -11308,9 +11318,8 @@ PROPOSAL = {
     # (2026-08-19)
     "gap_verdicts": [
         (15, "a small gap",
-         "That is a small gap, and the closest thing to a quick win in this "
-         "proposal — an intermediate campaign would close it and move on to the "
-         "harder terms inside the first year."),
+         "That is a small gap. An intermediate campaign would close it and "
+         "move on to the harder terms inside the first year."),
         (30, "a moderate gap",
          "That is a moderate gap, and the pace of the campaign is what decides "
          "how quickly it closes — an intermediate or advanced campaign gets "
@@ -17565,10 +17574,10 @@ def build_proposal_docx(d, _notes=None):
 
     # ---- background -------------------------------------------------------
     head(P["intro_heading"])
-    desc = _clean_desc(d.get("business_desc"))
+    # The business description is the client's own marketing line, read off
+    # their site. It is the vocabulary sample the build measures against, not
+    # copy for a document going back to them. (2026-09-09, Kiri)
     body(P["intro_line"].format(brand=brand))
-    if desc:
-        body(desc)
     body(P["intro_close"])
 
     # ---- the SEO section --------------------------------------------------
@@ -17677,12 +17686,11 @@ def build_proposal_docx(d, _notes=None):
             if v:
                 body(v["line"], True)
             if g and not g.get("level"):
-                body(f"In practical terms that is roughly "
-                     f"{int(round(g['points']))} points "
-                     f"of authority. Published industry benchmarks put a move of "
-                     f"that size at {g['links']} acquired over {g['months']} of "
-                     f"sustained work — which is what the link building and "
-                     f"content elements of the campaign below are for.")
+                body(f"Closing it means roughly "
+                     f"{int(round(g['points']))} points of authority, which "
+                     f"industry benchmarks put at {g['links']} over "
+                     f"{g['months']} of sustained work. That is what the link "
+                     f"building and content work is for.")
         health = sig.get("health") or {}
         if health.get("failed"):
             body("On-site issues found on your site, which we address in the "
@@ -17718,6 +17726,26 @@ def build_proposal_docx(d, _notes=None):
                    f"This option would be a monthly investment of "
                    f"{_p_money(tiers.get(key))} with a {term} month term "
                    f"which then becomes a month-to-month commitment.")
+    # ---- add-on markets ---------------------------------------------------
+    # Priced per market per month at the bracket rate the quote already holds —
+    # the discount is inside these figures, so they are printed as they are
+    # rather than derived from the campaign price.
+    _pr = d.get("pricing") or {}
+    _addper = dict(_pr.get("client_addon_per_market") or {})
+    _naddon = int(_pr.get("addon_markets") or 0)
+    if _naddon > 0 and any(_addper.get(k) for k in
+                           ("base", "intermediate", "advanced")):
+        head(P["addon_heading"], size=12)
+        body(P["addon_lead"])
+        for key, label in (("base", "Base"), ("intermediate", "Intermediate"),
+                           ("advanced", "Advanced")):
+            if _addper.get(key):
+                bullet(f"{label} Campaign: {_p_money(_addper[key])} per month "
+                       f"per add-on market")
+        body(f"We noted the company operates in a total of {_naddon} "
+             f"additional market{'' if _naddon == 1 else 's'}. "
+             + P["addon_close"])
+
     head(P["additional_heading"], size=12)
     body(P["closing"][0])
 
