@@ -5560,6 +5560,8 @@ function proposalKeywords(){
 
 function renderProposal(){
   const host=$('proposalView'); if(!host) return;
+  // Never pull the page out from under a download that is already running.
+  if(PP_DOWNLOADING){ PP_RERENDER_WANTED = true; return; }
   const p=ST.pricing||{};
   if(!p.client_tiers){ host.innerHTML='<div class="nf">Price the quote first — the proposal is built from it.</div>'; return; }
   const t=p.client_tiers, ai=(p.ai_search||{}).client_total || null;
@@ -5674,9 +5676,40 @@ async function renderProposalPerf(){
   <div class="nf" style="font-size:12px;margin-top:5px">Nothing is charged until a term ranks. ${r.term_months} month initial term, then month to month, with a ${r.tail_months} month tail on any term still ranking after cancellation. Minimum ${ppMoney(r.minimum)} of potential value to initiate \u2014 this list carries ${ppMoney(r.total_page1)}.</div>`;
 }
 
+// A FAILURE NOBODY CAN SEE IS A FAILURE NOBODY CAN REPORT.
+//
+// The download stopped working and the panel said nothing at all: the only
+// place this wrote its errors was #ppMsg, which is rendered by renderProposal
+// and is gone the moment anything re-renders the tab — and a re-price now does
+// exactly that. So the button reset, the message went to a detached node, and
+// the screen was unchanged. Errors are looked up live and, if the element has
+// gone, one is put back next to the button. (2026-09-09, Kiri)
+function ppSay(html, bad){
+  let msg=document.getElementById('ppMsg');
+  if(!msg){
+    const host=document.getElementById('proposalView');
+    if(!host) return;
+    msg=document.createElement('div');
+    msg.id='ppMsg'; msg.className='nf'; msg.style.marginTop='10px';
+    host.appendChild(msg);
+  }
+  msg.innerHTML = bad ? '<span class="err">'+html+'</span>' : html;
+  try{ msg.scrollIntoView({block:'nearest'}); }catch(_e){}
+}
+// A RE-RENDER MID-DOWNLOAD IS WHY NOTHING HAPPENED.
+//
+// repriceForAddons() redraws the whole proposal tab 450ms after the add-on
+// count moves. Redrawing replaces #ppDownload and #ppMsg, so a download already
+// in flight finished against detached nodes: the button that reset was not the
+// button on screen, the message went into a node nobody could see, and the tab
+// looked untouched. The redraw waits. (2026-09-09, Kiri)
+let PP_DOWNLOADING = false;
+let PP_RERENDER_WANTED = false;
 async function downloadProposal(){
-  const b=$('ppDownload'), msg=$('ppMsg');
+  const b=$('ppDownload');
   if(b){ b.disabled=true; b.textContent='Building…'; }
+  PP_DOWNLOADING = true;
+  ppSay('Building the document\u2026');
   // The panel computes the performance table asynchronously; a download fired
   // before it settles — or on a quote reopened straight into this tab — would
   // send nothing and leave the server to recompute it off a second live lookup.
@@ -5707,18 +5740,30 @@ async function downloadProposal(){
         serp:(ST.serp&&ST.serp.img)?ST.serp:adoptSerpFromDom()})});
     if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
     const _omit=res.headers.get('X-Perf-Omitted');
-    if(_omit && msg){ msg.innerHTML='<span style="color:#8a5a10">\u26a0 Performance section left out \u2014 '
-      +escapeHtml(_omit)+'.</span>'; }
+    if(_omit){ ppSay('<span style="color:#8a5a10">\u26a0 Performance section left out \u2014 '
+      +escapeHtml(_omit)+'.</span>'); }
     const blob=await res.blob();
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
     a.download=(((ST.inputs||{}).brand)||'proposal').replace(/[^A-Za-z0-9]+/g,'_')+'_SEO_Proposal.docx';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
-    if(msg) msg.textContent='Downloaded. Open it in Word to finish the Background section.';
+    ppSay('Downloaded. Open it in Word to finish the Background section.');
   }catch(e){
-    if(msg) msg.innerHTML='<span class="err">'+escapeHtml(String(e.message))+'</span>';
-  }finally{ if(b){ b.disabled=false; b.textContent='⬇ Download proposal (.docx)'; } }
+    // Name what failed, not just what it said: a network refusal and a 500 from
+    // the builder read identically as a bare message.
+    console.error('proposal download failed:', e);
+    ppSay(escapeHtml(String((e && e.message) || e || 'Unknown error'))
+          + ' <span class="nf">\u2014 details in the browser console</span>', true);
+  }finally{
+    PP_DOWNLOADING = false;
+    const bb=document.getElementById('ppDownload');
+    if(bb){ bb.disabled=false; bb.textContent='\u2b07 Download proposal (.docx)'; }
+    if(PP_RERENDER_WANTED){
+      PP_RERENDER_WANTED = false;
+      setTimeout(()=>{ try{ renderProposal(); }catch(_e){} }, 1200);
+    }
+  }
 }
 
 function showView(which){
