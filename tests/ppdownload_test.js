@@ -58,6 +58,39 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
     await new Promise(r => setTimeout(r, 200));
     R.errAfterRedraws = say();
 
+    // ---- a sleeping instance is retried, not reported --------------------
+    let tries = 0;
+    window.fetch = async (u, o) => {
+      if (String(u).includes('/api/proposal.docx')) {
+        tries++;
+        if (tries < 3) return { ok: false, status: 502, json: async () => ({}),
+                                headers: { get: () => null } };
+        return { ok: true, status: 200, headers: { get: () => null },
+                 blob: async () => new Blob(['x']) };
+      }
+      return real(u, o);
+    };
+    renderProposal();
+    const t0 = Date.now();
+    await downloadProposal();
+    R.tries502 = tries;
+    R.waited = Date.now() - t0 >= 4000;
+    R.recovered = /Downloaded/.test(say());
+
+    // a 500 is NOT retried — the document is what is wrong
+    let tries500 = 0;
+    window.fetch = async (u, o) => {
+      if (String(u).includes('/api/proposal.docx')) {
+        tries500++;
+        return { ok: false, status: 500, json: async () => ({ error: 'bad table' }),
+                 headers: { get: () => null } };
+      }
+      return real(u, o);
+    };
+    renderProposal();
+    await downloadProposal();
+    R.tries500 = tries500;
+
     // ---- a network refusal too -----------------------------------------
     window.fetch = async (u, o) => {
       if (String(u).includes('/api/proposal.docx')) throw new TypeError('Failed to fetch');
@@ -112,6 +145,12 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
   check('and a redrawn button still works',
         /python-docx is not installed/.test(out.errAfterRedraws), true);
   check('a network refusal too', /Failed to fetch/.test(out.netShown), true);
+
+  console.log('\nA SLEEPING HOST IS WAITED OUT');
+  check('502 is retried until it answers', out.tries502, 3);
+  check('with a real pause between tries', out.waited, true);
+  check('and the file still arrives', out.recovered, true);
+  check('a 500 is asked once and reported', out.tries500, 1);
 
   console.log('\nA RE-RENDER WAITS FOR THE DOWNLOAD');
   check('the button on screen is the one that was clicked',

@@ -5718,9 +5718,7 @@ async function downloadProposal(){
     try{ await renderProposalPerf(); }catch(e){}
   }
   try{
-    const res=await fetch('/api/proposal.docx',{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
+    const _body=JSON.stringify({
         brand:((ST.inputs||{}).brand)||'',
         business_desc:((ST.inputs||{}).business_desc)||'',
         geo_values:((ST.inputs||{}).geo_values)||[],
@@ -5738,8 +5736,30 @@ async function downloadProposal(){
         inputs:{geo_values:((ST.inputs||{}).geo_values)||[]},
         // Same adoption as the view: a capture already on the Build tab goes in
         // the document rather than being reported as missing.
-        serp:(ST.serp&&ST.serp.img)?ST.serp:adoptSerpFromDom()})});
-    if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||('Request failed ('+res.status+')')); }
+        serp:(ST.serp&&ST.serp.img)?ST.serp:adoptSerpFromDom()});
+    console.log('proposal payload', Math.round(_body.length/1024)+' KB');
+    // A 502/503/504 is the HOST, not the document: on the free plan the
+    // instance sleeps and the first request after it wakes is refused while it
+    // boots. Retried on a rising delay rather than reported as a failure the
+    // planner can do nothing about. Anything else is answered straight away.
+    let res=null;
+    for(const wait of [0, 5000, 15000]){
+      if(wait){
+        ppSay('Server waking up \u2014 retrying in '+(wait/1000)+'s\u2026');
+        await new Promise(r=>setTimeout(r, wait));
+        ppSay('Building the document\u2026');
+      }
+      res=await fetch('/api/proposal.docx',{method:'POST',
+        headers:{'Content-Type':'application/json'}, body:_body});
+      if(res.ok || ![502,503,504].includes(res.status)) break;
+    }
+    if(!res.ok){
+      const e=await res.json().catch(()=>({}));
+      throw new Error(e.error||('Request failed ('+res.status+')'
+        + ([502,503,504].includes(res.status)
+           ? ' — the server did not answer. Check the Render logs for this deploy.'
+           : '')));
+    }
     const _omit=res.headers.get('X-Perf-Omitted');
     if(_omit){ ppSay('<span style="color:#8a5a10">\u26a0 Performance section left out \u2014 '
       +escapeHtml(_omit)+'.</span>'); }
