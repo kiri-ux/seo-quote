@@ -17849,6 +17849,34 @@ def build_proposal_docx(d, _notes=None):
     return buf
 
 
+def ascii_header(value, limit=180):
+    """A header value gunicorn will actually send.
+
+    X-Perf-Omitted carries the reason the performance section removed itself,
+    and that reason is prose written for a human: "only 5 of 17 measured terms
+    rank inside the first 5 pages \u2014 this client is starting close enough to
+    scratch...". The em dash is not Latin-1, and gunicorn 22 refuses the whole
+    response rather than send it:
+
+        [WARNING] Invalid request from ip=...: Invalid HTTP Header: "..."
+        POST /api/proposal.docx HTTP/1.1" 400 0
+
+    So Drainify \u2014 a quote where the section omits itself WITH a reason \u2014
+    could never download its proposal, while every quote that qualified for
+    performance downloaded fine. Punctuation is folded to ASCII, newlines are
+    dropped, and anything left that will not encode is removed.
+    (2026-09-09, Kiri)
+    """
+    t = str(value or "")
+    for a, b in (("\u2014", "-"), ("\u2013", "-"), ("\u2018", "'"),
+                 ("\u2019", "'"), ("\u201c", '"'), ("\u201d", '"'),
+                 ("\u2026", "..."), ("\u00a0", " "), ("\u00d7", "x")):
+        t = t.replace(a, b)
+    t = re.sub(r"[\r\n\t]+", " ", t)
+    t = t.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", t).strip()[:limit]
+
+
 @app.route("/api/proposal.docx", methods=["POST"])
 def api_proposal_docx():
     """The quote as an SSG-shaped Word document."""
@@ -17872,5 +17900,7 @@ def api_proposal_docx():
     # and nothing anywhere reported the decision. The header rides back with
     # the file and the panel prints it. (2026-08-22)
     if notes.get("perf_omitted"):
-        resp.headers["X-Perf-Omitted"] = str(notes["perf_omitted"])[:200]
+        _pm = ascii_header(notes["perf_omitted"])
+        if _pm:
+            resp.headers["X-Perf-Omitted"] = _pm
     return resp
