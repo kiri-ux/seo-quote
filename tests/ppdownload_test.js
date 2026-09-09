@@ -45,9 +45,18 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
       return real(u, o);
     };
     renderProposal();
-    await downloadProposal();
+    // Clicked, not called — the binding is the thing that broke.
+    document.getElementById('ppDownload').click();
+    await new Promise(r => setTimeout(r, 200));
     R.errShown = say();
     R.buttonBack = (document.getElementById('ppDownload') || {}).textContent || '';
+
+    // ...and it still works after the tab redraws itself
+    renderProposal();
+    renderProposal();
+    document.getElementById('ppDownload').click();
+    await new Promise(r => setTimeout(r, 200));
+    R.errAfterRedraws = say();
 
     // ---- a network refusal too -----------------------------------------
     window.fetch = async (u, o) => {
@@ -100,6 +109,8 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
   check('the server error reaches the screen',
         /python-docx is not installed/.test(out.errShown), true);
   check('and the button comes back', /Download proposal/.test(out.buttonBack), true);
+  check('and a redrawn button still works',
+        /python-docx is not installed/.test(out.errAfterRedraws), true);
   check('a network refusal too', /Failed to fetch/.test(out.netShown), true);
 
   console.log('\nA RE-RENDER WAITS FOR THE DOWNLOAD');

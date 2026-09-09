@@ -5607,7 +5607,8 @@ function renderProposal(){
     ${proposalSerp()}
     ${proposalKeywords()}
     <div id="ppMsg" class="nf" style="margin-top:10px"></div>`;
-  const b=$('ppDownload'); if(b) b.onclick=downloadProposal;
+  // Wired by delegation below, not here — a handler attached to the element
+  // dies with every re-render of this tab, and this tab re-renders itself.
   // The same count the Build tab holds — one number, two places to set it.
   const setAddon=v=>{
     if(!ST.inputs) return;
@@ -5765,6 +5766,21 @@ async function downloadProposal(){
     }
   }
 }
+
+// THE BUTTON IS BOUND TO THE PAGE, NOT TO A NODE.
+//
+// #ppDownload was given an onclick inside renderProposal(), so every redraw of
+// the proposal tab replaced the button and any handler that had not been
+// re-attached went with it. A click then did nothing at all: no file, no error,
+// no line — which is exactly what Kiri saw twice. Delegated once, at the
+// document, where no redraw can reach it. (2026-09-09, Kiri)
+document.addEventListener('click', e=>{
+  const t=(e.target && e.target.closest) ? e.target.closest('#ppDownload') : null;
+  if(!t) return;
+  e.preventDefault();
+  if(PP_DOWNLOADING) return;
+  downloadProposal();
+});
 
 function showView(which){
   const tabs=document.querySelectorAll('.vtab');
