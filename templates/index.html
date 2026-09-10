@@ -2777,6 +2777,26 @@ function volTag(x){
   return ` <span class="nf">(${v.toLocaleString()})</span>`;
 }
 
+// WHICH CALL PUT THE TERM IN THE LIST. Off by default; the tag only matters
+// when a term looks wrong and the question is where it came from.
+const SRC_LABEL={
+  ideas:   ['ideas',     'Google Ads keyword ideas'],
+  suggest: ['suggested', 'Google Ads keyword suggestions'],
+  site:    ['site',      "Keywords for the client's own domain"],
+  geo:     ['geo',       'Seed crossed with a market'],
+  gen:     ['generated', 'Generated question form'],
+  claude:  ['AI',        'Added by the AI pass'],
+  grid:    ['grid',      'Service grid'],
+  typed:   ['typed',     'Typed in by hand'],
+  build:   ['build',     'Carried through from the build step']
+};
+function srcTag(x){
+  if(!ST.kwSrc) return '';
+  const m=SRC_LABEL[String(x.src||'')];
+  if(!m) return ` <span class="nf" style="font-size:10px">[?]</span>`;
+  return ` <span class="nf" title="${escapeHtml(m[1])}" style="font-size:10px;letter-spacing:.2px">[${m[0]}]</span>`;
+}
+
 function kwBucket(title, bucketKey){
   const arr=ST.kw[bucketKey]||[];
   const items=arr.map((x,i)=>{
@@ -2789,7 +2809,7 @@ function kwBucket(title, bucketKey){
     // Only the × gets a gutter, so it no longer lands wherever the wrap did.
     // (2026-08-11)
     return `<li class="kwrow">
-      <span class="kwt"${added?' style="color:#1c5fa8"':''}>${dot}${x.kw}${volTag(x)}</span>
+      <span class="kwt"${added?' style="color:#1c5fa8"':''}>${dot}${x.kw}${volTag(x)}${srcTag(x)}</span>
       <b data-bucket="${bucketKey}" data-i="${i}" class="kwrm" style="cursor:pointer;color:#b04a4a;font-weight:700">×</b>
     </li>`;
   }).join('');
@@ -2821,7 +2841,8 @@ function renderStep1(){
       informational or off-topic terms. Rebuild once the cause is fixed, or edit the terms by hand.</span>
     </div>` : '';
   panel('p1', refineErr + `
-    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
+    <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>
+      <a href="#" id="kwSrcTog" class="nf" style="font-size:11px;font-weight:400;margin-left:8px;text-decoration:underline;cursor:pointer">${ST.kwSrc?'hide sources':'sources'}</a>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
@@ -2834,6 +2855,8 @@ function renderStep1(){
       ${kwBucket('Long Tail','long_tail')}
     </div>
     ${stepBtn('step2','2 · Score competition')}`);
+  const _srcTog=$('kwSrcTog');
+  if(_srcTog) _srcTog.onclick=e=>{ e.preventDefault(); ST.kwSrc=!ST.kwSrc; renderStep1(); };
   // wire removes
   document.querySelectorAll('.kwrm').forEach(b=>{
     b.onclick=()=>{
@@ -2852,7 +2875,7 @@ function renderStep1(){
         e.preventDefault();
         const bk=inp.dataset.bucket, v=inp.value.trim();
         if(!v) return;
-        const row={kw:v,vol:0};
+        const row={kw:v,vol:0,src:'typed'};
         ST.kw[bk].push(row);
         ST.kw.all.push(row);
         if((bk==='ultra'||bk==='competitive') && ST.kw.head) ST.kw.head.push(row);

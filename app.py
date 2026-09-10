@@ -11881,6 +11881,11 @@ def api_keywords():
                        # in that market rather than in the primary one for every
                        # row — see api_rankings. (2026-08-10)
                        "city": r.get("city", ""),
+                       # WHICH CALL PUT THIS ROW IN THE LIST. Every row is
+                       # tagged at the point it enters the pool; the tag has to
+                       # travel to the browser or an off-topic term can only be
+                       # guessed at.
+                       "src": r.get("src", ""),
                        "origin": r.get("origin", "")} for r in L]
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
@@ -11927,9 +11932,14 @@ def api_refine():
         band=d.get("geo_scope", d.get("band", "")),
         manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
         markets=markets, goal=(d.get("goal") or ""))
-    # rebuild bucket rows from what the frontend sends back (kw + vol)
+    # rebuild bucket rows from what the frontend sends back (kw + vol + src)
     def rows(key):
-        return [{"keyword": x["kw"], "volume": x.get("vol", 0), "src": "build"}
+        # THE SOURCE TAG SURVIVES THE ROUND TRIP. Stamping every rebuilt row
+        # "build" erased the one fact that says where an off-topic term came
+        # from, so a term could only be traced by re-running the build and
+        # reading the logs.
+        return [{"keyword": x["kw"], "volume": x.get("vol", 0),
+                 "src": (x.get("src") or "")}
                 for x in d.get(key, []) if x.get("kw")]
     ultra, competitive, long_tail = rows("ultra"), rows("competitive"), rows("long_tail")
     try:
@@ -11950,7 +11960,8 @@ def api_refine():
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
-        conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"], "origin": ""} for r in L]
+        conv0 = lambda L: [{"kw": r["keyword"], "vol": r["volume"],
+                            "src": r.get("src", ""), "origin": ""} for r in L]
         app.logger.exception("stage1b_refine failed")
         return jsonify({"national_demand": nat_demand,
                         "national_demand_reason": nat_reason,
@@ -11971,6 +11982,11 @@ def api_refine():
                        # in that market rather than in the primary one for every
                        # row — see api_rankings. (2026-08-10)
                        "city": r.get("city", ""),
+                       # WHICH CALL PUT THIS ROW IN THE LIST. Every row is
+                       # tagged at the point it enters the pool; the tag has to
+                       # travel to the browser or an off-topic term can only be
+                       # guessed at.
+                       "src": r.get("src", ""),
                        "origin": r.get("origin", "")} for r in L]
     return jsonify({
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
