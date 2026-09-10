@@ -887,6 +887,16 @@ CFG = {
     "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
+    # keywords_for_site returns the domain's whole keyword profile, and for some
+    # domains that profile is not the client's subject at all. Every site term
+    # must share a real word with the seeds.
+    "site_term_min_token": 4,          # token length that counts as substantive
+    # When the measured list is this thin, or one term carries this much of it,
+    # the vertical's own words have run out and the wider buyer category is the
+    # only place left to look.
+    "widen_volume_floor": 2000,        # total monthly volume below which to offer it
+    "widen_top_share": 0.60,           # one term holding this share of the total
+    "widen_terms": 14,                 # candidates asked for
     "longtail_min_words": 4,           # >= this many words qualifies as long-tail
     "longtail_prefixes": ["how","what","why","when","where","which","who","best",
                           "affordable","cheap","near","cost","top","is","can","do"],
@@ -8102,6 +8112,111 @@ Return ONLY valid JSON in exactly this shape. Each keyword item is [keyword, ori
 
 
 # ---------------------------------------------------------------------------
+# WIDER BUYER VOCABULARY
+# ---------------------------------------------------------------------------
+def widen_offer(rows, floor=None, share_at=None):
+    """Has this vertical's own vocabulary run out?
+
+    Two ways a keyword list can be too thin to carry a proposal, and they look
+    nothing alike. The list is small everywhere -- Drainify's UK build measured
+    680/mo across fifteen terms -- or it is large only because one term is
+    carrying it: of that 680, `drain manholes` was 590, and `drain manholes` is
+    what a homeowner searches, not a company buying survey software.
+
+    Both mean the same thing. The words this vertical uses about itself have
+    been exhausted, and the demand is in the wider category the buyer shops in
+    before they know the niche exists.
+
+    Returns {"show", "total", "measured", "top", "top_share", "fact"}.
+    """
+    floor = int(CFG.get("widen_volume_floor", 2000) if floor is None else floor)
+    share_at = float(CFG.get("widen_top_share", 0.60) if share_at is None else share_at)
+    pairs = []
+    for r in (rows or []):
+        kw = (r.get("kw") or r.get("keyword") or "").strip()
+        try:
+            v = int(r.get("vol", r.get("volume", 0)) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        if kw and v > 0:
+            pairs.append((kw, v))
+    total = sum(v for _, v in pairs)
+    if not pairs:
+        return {"show": True, "total": 0, "measured": 0, "top": "",
+                "top_share": 0.0, "fact": "No term on the list returned volume."}
+    top_kw, top_v = max(pairs, key=lambda x: x[1])
+    share = top_v / total if total else 0.0
+    thin = total < floor
+    lopsided = share >= share_at
+    fact = "%s/mo across %d measured term%s." % (
+        format(total, ","), len(pairs), "" if len(pairs) == 1 else "s")
+    if lopsided:
+        fact += " %s is %d%% of it." % (top_kw, round(share * 100))
+    return {"show": bool(thin or lopsided), "total": total, "measured": len(pairs),
+            "top": top_kw, "top_share": round(share, 3), "fact": fact}
+
+
+def widen_vocabulary(seeds, business_desc, industry, domain, existing, n=None):
+    """Terms from the WIDER CATEGORY THE BUYER SHOPS IN.
+
+    Not synonyms. A UK drainage firm looking for survey software is shopping in
+    the field-service and job-management aisle; those terms carry real demand
+    while "drain survey software" measures at ten. The audience has to hold
+    still -- the trap is widening into the end customer, who searches far more
+    and buys nothing. Returns [] rather than guessing when the key is absent.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key or not seeds:
+        return []
+    n = int(CFG.get("widen_terms", 14) if n is None else n)
+    have = sorted({str(x).strip().lower() for x in (existing or []) if str(x).strip()})
+    prompt = f"""A business sells: {business_desc or ', '.join(seeds[:6])}
+Industry: {industry or 'unspecified'}
+Website: {domain or 'unknown'}
+Their own vocabulary: {json.dumps(sorted(set(seeds))[:40], ensure_ascii=False)}
+
+Their niche's own words measure almost no search volume. Name the WIDER CATEGORY their BUYER shops in before they know this niche exists, and give search terms from it.
+
+RULES:
+1. THE BUYER STAYS THE SAME. If the buyer is a contractor buying software, every term must be one that contractor types. Do NOT widen into that contractor's own customers -- consumer and end-user searches carry far more volume and none of it converts. This is the single most common way this goes wrong.
+2. The wider category is the aisle, not a synonym. For drain-survey software the aisle is field service management, job management, asset inspection, crew scheduling -- not "drainage survey tool".
+3. Adjacent job-to-be-done and adjacent workflow count. Adjacent industry does not.
+4. Real searches only. No invented volumes, no brand names, no geography.
+5. EXCLUDE anything already here: {json.dumps(have[:120], ensure_ascii=False)}
+
+Return ONLY valid JSON: {{"terms": ["term one", "term two", ...]}} -- at most {n} terms, strongest first."""
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            data=json.dumps({
+                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "max_tokens": 900, "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}],
+            }), timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        text = "".join(b.get("text", "") for b in body.get("content", [])
+                       if b.get("type") == "text").strip()
+        if text.startswith("```"):
+            text = text.split("```", 2)[1]
+            if text.startswith("json"):
+                text = text[4:]
+        parsed = json.loads(text.strip())
+    except Exception:
+        return []
+    seen, terms = set(have), []
+    for t in (parsed.get("terms") or []):
+        k = str(t).strip().lower()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        terms.append(k)
+    return terms[:n]
+
+
+# ---------------------------------------------------------------------------
 # STAGE 1 — keyword list
 # ---------------------------------------------------------------------------
 def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc=""):
@@ -8129,6 +8244,9 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
         r["src"] = "site"; raw.append(r)
 
     seed_tokens = {t.lower() for s in seeds for t in s.split()}
+    _min_tok = int(CFG.get("site_term_min_token", 4))
+    seed_long_tokens = {t for t in seed_tokens if len(t) >= _min_tok}
+    site_dropped = []
     brand_l = (brand or "").lower()
     # Connector words that signal a stitched-together / garbled phrase rather
     # than a real search query ("adhd and therapy", "treatment or counseling").
@@ -8150,10 +8268,25 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
             continue
         if is_junk(kw):
             continue
-        # Seed-token relevance filter applies to seed-derived sources only.
-        # Site keywords come from the client's own domain and are on-topic by
-        # construction, so they bypass it (but still drop the brand name above).
-        if r.get("src") != "site" and seed_tokens and not (seed_tokens & set(kw.split())):
+        # Seed-token relevance filter.
+        #
+        # "ON-TOPIC BY CONSTRUCTION" WAS NOT TRUE. Site keywords used to bypass
+        # this filter on the reasoning that a domain's own keyword profile is
+        # about that domain. drainify.io came back with `vict` (301,000),
+        # `note note` (165,000), `meta`, `manifest`, `modus operandi`,
+        # `reverso context`, `copacetic` and forty more dictionary entries, all
+        # of them tagged site, all of them straight past the filter and into
+        # the Ultra Competitive column ahead of every real term.
+        #
+        # Site terms are held to the same rule, on SUBSTANTIVE words only: a
+        # site term shares a word of four letters or more with the seeds, or it
+        # is not this client's subject. Short-token matches ("is", "to") are
+        # what let junk through.
+        if r.get("src") == "site":
+            if seed_long_tokens and not (seed_long_tokens & set(kw.split())):
+                site_dropped.append(r["keyword"])
+                continue
+        elif seed_tokens and not (seed_tokens & set(kw.split())):
             continue
         kept.append(r)
 
@@ -8206,7 +8339,6 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
         # with the seeds. This drops loose API associations and garbled near-words
         # like "add therapy" (the seed was "adhd treatment" — "add" is only 3 chars
         # and isn't a seed word) while keeping real expansions ("adhd therapy").
-        seed_long_tokens = {t.lower() for s in seeds for t in s.split() if len(t) >= 4}
         def shares_substantive_seed(kw):
             return bool(seed_long_tokens & set(kw.lower().split()))
         related = [r["keyword"] for r in kept
@@ -8294,6 +8426,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
         # untraceable.
         "pool": [{"keyword": r["keyword"], "volume": r["volume"],
                   "src": r.get("src", "")} for r in kept[:400]],
+        "site_dropped": site_dropped[:40],
+        "site_dropped_n": len(site_dropped),
     }
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
@@ -11894,6 +12028,7 @@ def api_keywords():
                        # guessed at.
                        "src": r.get("src", ""),
                        "origin": r.get("origin", "")} for r in L]
+    resp_all_for_widen = conv(s1["all"])
     resp = {
         "ultra": conv(s1["ultra"]), "competitive": conv(s1["competitive"]),
         "long_tail": conv(s1["long_tail"]), "head": conv(s1["head"]),
@@ -11904,6 +12039,9 @@ def api_keywords():
         "market_vocab": s1.get("market_vocab", []),
         "market_pool": s1.get("market_pool", []),
         "pool": s1.get("pool", []),
+        "site_dropped": s1.get("site_dropped", []),
+        "site_dropped_n": s1.get("site_dropped_n", 0),
+        "widen": widen_offer(resp_all_for_widen),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short
     # list. Flag it so the partner can add more seed terms for a fuller table.
@@ -11912,6 +12050,38 @@ def api_keywords():
             "be low-volume, or try adding more seed terms (e.g. related services) "
             "for a fuller keyword table like the proposals.")
     return jsonify(resp)
+
+@app.route("/api/widen", methods=["POST"])
+@_json_error_guard
+def api_widen():
+    """Terms from the wider category the buyer shops in, with measured volume.
+
+    Measured here rather than in the browser: an unmeasured suggestion is a
+    guess, and a guess is what this replaces."""
+    d = request.get_json(force=True)
+    seeds = clean_seeds(d.get("keywords", []))
+    if not seeds:
+        return jsonify({"error": "At least one focus term is required."}), 400
+    existing = list(seeds) + [str(x.get("kw") or "") for x in (d.get("current") or [])
+                              if isinstance(x, dict)]
+    terms = widen_vocabulary(seeds,
+                             (d.get("business_desc") or "").strip(),
+                             (d.get("industry") or "").strip(),
+                             (d.get("domain") or "").strip(),
+                             existing)
+    if not terms:
+        return jsonify({"terms": [], "note": "No wider terms came back."})
+    vols = fetch_exact_volume(terms, [], "", national=True) or {}
+    rows = [{"kw": t, "vol": int(vols.get(t.lower(), 0) or 0)} for t in terms]
+    rows.sort(key=lambda r: (-r["vol"], r["kw"]))
+    measured = [r for r in rows if r["vol"] > 0]
+    return jsonify({
+        "terms": rows,
+        "measured": len(measured),
+        "added_volume": sum(r["vol"] for r in measured),
+        "basis": f"{country()} national",
+    })
+
 
 @app.route("/api/refine", methods=["POST"])
 @_json_error_guard
@@ -12032,6 +12202,7 @@ def api_refine():
         "unranked_probe_max": s1.get("unranked_probe_max", 0),
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
+        "widen": widen_offer(conv(s1["all"])),
         "seed_services_dropped": s1.get("seed_services_dropped", 0),
         "pinned_head_terms": s1.get("pinned_head_terms") or [],
         "blocked_pins": s1.get("blocked_pins") or [],

@@ -2805,6 +2805,59 @@ function srcTag(x){
   return ` <span class="nf" title="${escapeHtml(m[1])}" style="font-size:10px;letter-spacing:.2px">[${m[0]}]</span>`;
 }
 
+// THE VERTICAL'S OWN WORDS RUN OUT AND THE TOOL SAYS SO. Deciding a list was
+// too thin, working out which wider category the buyer shops in, and measuring
+// the candidates was done by hand every time it came up.
+function widenHtml(){
+  const w=(ST.kw&&ST.kw.widen)||null;
+  if(!w||!w.show) return '';
+  const res=ST._widen;
+  const added=ST._widenAdded||{};
+  let body='';
+  if(ST._widenRunning){
+    body=`<div class="nf" style="margin-top:6px">Measuring…</div>`;
+  }else if(res&&res.terms&&res.terms.length){
+    const rows=res.terms.map(r=>{
+      const on=!!added[r.kw];
+      return `<tr>`
+        +`<td style="padding:2px 12px 2px 0">${escapeHtml(r.kw)}</td>`
+        +`<td style="padding:2px 12px 2px 0;text-align:right;white-space:nowrap">`
+        +(r.vol?`${r.vol.toLocaleString()}`:`<span class="nf">no data</span>`)+`</td>`
+        +`<td style="padding:2px 0">`+(on
+          ? `<span class="nf">added</span>`
+          : `<b class="widenadd" data-kw="${escapeHtml(r.kw)}" style="cursor:pointer;color:var(--velocity,#378ADD)">+ add</b>`)
+        +`</td></tr>`;
+    }).join('');
+    body=`<div style="margin-top:6px" class="nf">`
+      +`${res.measured} of ${res.terms.length} measured · ${(res.added_volume||0).toLocaleString()}/mo · ${escapeHtml(res.basis||'')}`
+      +`</div><table style="font-size:12px;border-collapse:collapse;margin-top:4px">${rows}</table>`
+      +(Object.keys(added).length
+        ? `<div style="margin-top:6px;color:var(--velocity,#378ADD);font-size:12px">Added to Product / Vertical Focus. Rebuild the list to price them.</div>`
+        : '');
+  }else if(res){
+    body=`<div class="nf" style="margin-top:6px">${escapeHtml(res.note||'No wider terms came back.')}</div>`;
+  }else{
+    body=`<div style="margin-top:6px"><button id="widenBtn" class="btn" style="font-size:12px;padding:5px 11px">Find wider buyer terms</button></div>`;
+  }
+  return `<div class="calc" style="background:#fdf1d8;border-color:#e8c98a;margin-top:10px">
+    <b>${escapeHtml(w.fact||'')}</b>${body}</div>`;
+}
+
+async function runWiden(){
+  ST._widenRunning=true; renderStep1();
+  try{
+    ST._widen=await postJSON('/api/widen',{
+      keywords:(stores.kw||[]).slice(),
+      business_desc:(ST.inputs&&ST.inputs.business_desc)||(ST.kw&&ST.kw.business_desc)||'',
+      industry:(ST.inputs&&ST.inputs.industry)||'',
+      domain:(ST.inputs&&ST.inputs.domain)||'',
+      current:(ST.kw&&ST.kw.all)||[]});
+  }catch(e){
+    ST._widen={terms:[], note:String(e&&e.message||e).slice(0,200)};
+  }
+  ST._widenRunning=false; renderStep1();
+}
+
 function rawPoolHtml(){
   if(!ST.kwSrc) return '';
   const pool=ST.kwRaw||[];
@@ -2891,8 +2944,22 @@ function renderStep1(){
       ${kwBucket('Competitive','competitive')}
       ${kwBucket('Long Tail','long_tail')}
     </div>
+    ${widenHtml()}
     ${rawPoolHtml()}
     ${stepBtn('step2','2 · Score competition')}`);
+  const _wb=$('widenBtn');
+  if(_wb) _wb.onclick=()=>runWiden();
+  document.querySelectorAll('.widenadd').forEach(b=>{
+    b.onclick=()=>{
+      const k=b.dataset.kw;
+      if(!k) return;
+      if(!(stores.kw||[]).some(x=>String(x).toLowerCase()===k.toLowerCase())){
+        stores.kw.push(k); PILL_RENDER.kw();
+      }
+      ST._widenAdded=ST._widenAdded||{}; ST._widenAdded[k]=true;
+      renderStep1();
+    };
+  });
   const _srcTog=$('kwSrcTog');
   if(_srcTog) _srcTog.onclick=e=>{ e.preventDefault(); ST.kwSrc=!ST.kwSrc; renderStep1(); };
   // wire removes
