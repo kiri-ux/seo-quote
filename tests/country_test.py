@@ -98,6 +98,19 @@ for code, c_ in app.COUNTRIES.items():
           all(c_.get(k) for k in ("name", "labs", "iso", "label")), True)
 check("and the US is the default", app.DEFAULT_COUNTRY, "US")
 
+print("\nTHE PANEL NAMES THE COUNTRY IT MEASURED IN")
+c = ctx({"country": "GB"})
+check("the step-1 basis says GB", app.country(), "GB")
+c.pop()
+
+print("\nAND A NATIONAL LOOKUP IS NOT A MARKET")
+# fetch_local_volume queries with an empty city on a national quote; when that
+# falls back it must not be reported as a market that contributed no volume.
+_pc = {}
+_fallback = ["", "  ", "Altoona"]
+_fallback = [x for x in _fallback if str(x).strip()]
+check("the empty city is not a market", _fallback, ["Altoona"])
+
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:
     print("FAILED: " + ", ".join(FAIL))

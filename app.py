@@ -3028,6 +3028,12 @@ def fetch_local_volume(terms, markets, state, national=False):
     # the raw pill ("Lawrenceville, NJ") meant the grid rows, which carry the
     # bare city ("lawrenceville"), never matched and the flag never fired
     # (2026-08-07).
+    # THE NATIONAL LOOKUP IS NOT A MARKET. A national quote queries with an
+    # empty city, and when that fell back the panel reported "1 of 1 market
+    # contributed no volume — Google has no targetable location for this
+    # name" with no name in front of the dash. There was no market.
+    # (2026-09-10, Kiri)
+    fallback_cities = [c for c in fallback_cities if str(c).strip()]
     per_city["__fallback_cities__"] = sorted({_bare_city(c, state) for c in fallback_cities})
     # The original pill text too, so a suggestion can be built from it.
     per_city["__fallback_markets__"] = sorted({str(c).strip() for c in fallback_cities})
@@ -5878,7 +5884,7 @@ def rank_seeds(seeds, markets, state, national=False, limit=None, kinds=None):
         "demoted": demoted,
         "adjacent": [t for t in clean if adj(t)],
         "limit": limit, "total": len(clean) + len(demoted), "measured": measured,
-        "basis": "US national" if national or not markets else "targeted cities",
+        "basis": f"{country()} national" if national or not markets else "targeted cities",
         # Which number actually did the ordering, said out loud. A probe that
         # came back empty leaves the old bare ordering in place, and that has to
         # be visible rather than looking like the new behaviour.
@@ -12043,6 +12049,11 @@ def api_refine():
         "ecommerce_reason": s1.get("ecommerce_reason") or "",
         "ecommerce_suppressed": s1.get("ecommerce_suppressed") or "",
         "market_volume_gaps": s1.get("market_volume_gaps") or [],
+        # Which Google these figures are from. The panel said "(US national)"
+        # on every quote, including one whose country selector read United
+        # Kingdom — the numbers were right and the label was not.
+        # (2026-09-10, Kiri)
+        "volume_country": country(),
         "market_renames": s1.get("market_renames") or [],
         "service_swaps": s1.get("service_swaps") or [],
         "service_upgrade_ratio": s1.get("service_upgrade_ratio", 0),
@@ -13545,7 +13556,7 @@ def api_replacement_terms():
     rows.sort(key=lambda r: -r["volume"])
     return jsonify({"terms": [r for r in rows if r["volume"] >= floor],
                     "rejected": [r for r in rows if r["volume"] < floor],
-                    "basis": "US national" if nat else "targeted cities",
+                    "basis": f"{country()} national" if nat else "targeted cities",
                     "error": verr})
 
 
@@ -15959,7 +15970,7 @@ def api_expand_services():
                     "floor": floor,
                     "thin_market": thin_market,
                     "market_typical": _typ, "market_best": _best,
-                    "basis": "US national" if nat else "targeted cities",
+                    "basis": f"{country()} national" if nat else "targeted cities",
                     "error": verr})
 
 
