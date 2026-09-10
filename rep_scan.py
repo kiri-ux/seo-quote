@@ -421,6 +421,16 @@ def reviews_collect(task_ids):
                 n2 = sum(1 for v in vals if v == 2)
                 n12 = n1 + n2
                 n3 = sum(1 for v in vals if v == 3)
+                # THE 4s AND 5s TOO. Without them the star split has to be
+                # inferred from the profile's one-decimal average, and a 4.4
+                # is anything from 4.35 to 4.45 -- on 600 reviews that is a
+                # band 30 rating-points wide, which moves the "how many
+                # removals reach 4.5" answer by several reviews. When the pull
+                # covers the whole profile these are exact and nothing needs
+                # inferring. (2026-09-10, Kiri)
+                n4 = sum(1 for v in vals if v == 4)
+                n5 = sum(1 for v in vals if v >= 5)
+                _total = res.get("reviews_count") or 0
                 done.append({
                     "id": tid,
                     "place_id": (task.get("data") or {}).get("tag"),
@@ -429,6 +439,10 @@ def reviews_collect(task_ids):
                     "profile_reviews": res.get("reviews_count"),
                     "pulled": len(items),
                     "neg_1": n1, "neg_2": n2, "neg_1_2": n12, "weak_3": n3,
+                    "pos_4": n4, "pos_5": n5,
+                    # Every review on the profile was pulled, so the buckets
+                    # above are the whole distribution rather than a sample.
+                    "complete": bool(_total and len(items) >= int(_total)),
                     "truncated": n12 >= len(items) and len(items) > 0,
                 })
             else:

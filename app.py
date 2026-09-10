@@ -78,7 +78,8 @@ BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
 # to confirm from the header that the deploy had taken. rep_pricing/rep_scan
 # included for the same reason — they carry the rep quote's actual maths.
 FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html",
-                     "templates/reputation.html", "rep_pricing.py", "rep_scan.py")
+                     "templates/reputation.html", "rep_pricing.py",
+                     "rep_scan.py", "rep_docx.py")
 
 def _source_fingerprint():
     import hashlib
@@ -17020,6 +17021,85 @@ def api_rep_quote():
         return jsonify(rep_pricing.build_rep_quote(d))
     except Exception as e:
         return jsonify({"error": f"Quote build failed: {e}"}), 500
+
+@app.route("/api/rep_removals.docx", methods=["POST"])
+def api_rep_removals_docx():
+    """The review analysis on its own — no reputation management in it.
+
+    The whole conversation is often just "our rating is 4.4 and we want 4.5",
+    and the only document the rep tool could produce was the full ORM quote.
+    This is the star distribution per location, the fewest one-star removals
+    that reach the next tier, and what that costs off the rate card.
+    (2026-09-10, Kiri)
+    """
+    d = request.get_json(force=True) or {}
+    try:
+        import rep_docx
+    except ImportError:
+        return jsonify({"error": "python-docx is not installed on this "
+                                 "server."}), 500
+    # The rate card, as CLIENT prices at the margin this quote is using —
+    # the config holds Vici's hard cost and the gross is derived from it.
+    mg = d.get("margin_pct")
+    cfg = rep_pricing.REP_CFG["review_removal"]
+    mg = cfg["default_margin_pct"] if mg in (None, "") else float(mg)
+    mg = min(0.90, max(0.0, mg))
+    brackets = [{"min": b["min"], "max": b["max"],
+                 "price": rep_pricing.r5(b["hard"] / (1.0 - mg))}
+                for b in cfg["brackets"]]
+    d["brackets"] = brackets
+
+    # WHICH BRACKET THE WHOLE ORDER LANDS IN. Same whole-order rule the quote
+    # uses: the rate for the total count applies to every removal, so the
+    # figure in the document has to be looked up on the total rather than
+    # assumed to be the first row.
+    need = 0
+    for loc in (d.get("locations") or []):
+        r = rep_docx.removal_range(loc)
+        if r:
+            need += r.get("remove_max") or r["remove"]
+    if need:
+        for br in brackets:
+            if need >= br["min"] and (br["max"] is None or need <= br["max"]):
+                d["rate_for_total"] = br["price"]
+                break
+        else:
+            d["rate_for_total"] = brackets[-1]["price"]
+
+    try:
+        buf = rep_docx.build_review_removal_docx(d)
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("review removal docx failed")
+        return jsonify({"error": str(e)[:200]}), 500
+    name = re.sub(r"[^A-Za-z0-9]+", "_",
+                  (d.get("brand") or "client")).strip("_") or "client"
+    return send_file(buf, as_attachment=True,
+                     download_name=f"{name}_Review_Removal_Analysis.docx",
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "wordprocessingml.document")
+
+
+@app.route("/api/rep_proposal.docx", methods=["POST"])
+def api_rep_proposal_docx():
+    """Every line the reputation quote carries, with the totals."""
+    d = request.get_json(force=True) or {}
+    try:
+        import rep_docx
+    except ImportError:
+        return jsonify({"error": "python-docx is not installed on this "
+                                 "server."}), 500
+    try:
+        buf = rep_docx.build_rep_proposal_docx(d)
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("rep proposal docx failed")
+        return jsonify({"error": str(e)[:200]}), 500
+    name = re.sub(r"[^A-Za-z0-9]+", "_",
+                  (d.get("brand") or "client")).strip("_") or "client"
+    return send_file(buf, as_attachment=True,
+                     download_name=f"{name}_Reputation_Proposal.docx",
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "wordprocessingml.document")
+
 
 @app.route("/api/rep_volume", methods=["POST"])
 @_json_error_guard

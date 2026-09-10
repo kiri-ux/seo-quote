@@ -574,6 +574,8 @@ function render(d, payload){
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
   }
+  h += '<div style="margin-top:12px"><button type="button" id="dlRepProposal" class="btn2">\u2b07 Download proposal (.docx)</button>'
+     + '<span id="dlRepProposalMsg" class="help" style="margin-left:9px"></span></div>';
   h += repHandoffTable(d);
   h += renderSaveBox();
   $('out').innerHTML = h;
@@ -1624,6 +1626,10 @@ function renderNegCounts(done){
        + '<td class="n">'+(d.neg_1||0)+'</td><td class="n">'+(d.neg_2||0)+'</td><td class="n">'+d.weak_3+'</td></tr>';
   });
   h += '</table>';
+  // THE REVIEW ANALYSIS ON ITS OWN. Most of these conversations are only about
+  // the rating — the full ORM proposal was the only document there was.
+  h += '<div style="margin-top:9px"><button type="button" id="dlRemovals" class="btn2">\u2b07 Download review analysis (.docx)</button>'
+     + '<span id="dlRemovalsMsg" class="help" style="margin-left:9px"></span></div>';
   $('negOut').innerHTML = h;
   document.getElementById('negTh').onchange = ()=> renderNegCounts(window._negDone);
   // The strategy card sits above this block and now depends on the flagged
@@ -1631,6 +1637,67 @@ function renderNegCounts(done){
   // changes — otherwise it keeps showing the pre-count recommendation.
   if(document.getElementById('brandReco')) renderBrandReco();
 }
+
+// ---------------- Word downloads ----------------
+// Delegated at the document, not bound in the render: both panels redraw
+// themselves — the review counts on every threshold change, the quote on every
+// override keystroke — and a handler attached to the button dies with it.
+// (2026-09-10, Kiri)
+async function repDownload(url, payload, btnId, msgId, fallbackName){
+  const btn = document.getElementById(btnId);
+  const say = t => { const m = document.getElementById(msgId); if(m) m.textContent = t; };
+  if(btn){ btn.disabled = true; }
+  say('Building…');
+  try{
+    let res = null;
+    for(const wait of [0, 5000, 15000]){
+      if(wait){ say('Server waking up — retrying in '+(wait/1000)+'s…');
+                await new Promise(r=>setTimeout(r, wait)); say('Building…'); }
+      res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify(payload)});
+      if(res.ok || ![502,503,504].includes(res.status)) break;
+    }
+    if(!res.ok){
+      const e = await res.json().catch(()=>({}));
+      throw new Error(e.error || ('Request failed ('+res.status+')'));
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fallbackName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+    say('Downloaded.');
+  }catch(e){
+    console.error('rep download failed:', e);
+    say(String((e && e.message) || e || 'Unknown error'));
+  }finally{
+    const b2 = document.getElementById(btnId);
+    if(b2) b2.disabled = false;
+  }
+}
+document.addEventListener('click', e=>{
+  const t = (e.target && e.target.closest) ? e.target.closest('#dlRemovals') : null;
+  if(!t) return;
+  e.preventDefault();
+  const brand = (($('brand')||{}).value||'').trim() || 'client';
+  repDownload('/api/rep_removals.docx', {
+    brand: brand,
+    locations: window._negDone || [],
+    margin_pct: (+($('clientMargin')||{}).value||35)/100,
+  }, 'dlRemovals', 'dlRemovalsMsg',
+     brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Review_Removal_Analysis.docx');
+});
+document.addEventListener('click', e=>{
+  const t = (e.target && e.target.closest) ? e.target.closest('#dlRepProposal') : null;
+  if(!t) return;
+  e.preventDefault();
+  const brand = (($('brand')||{}).value||'').trim() || 'client';
+  repDownload('/api/rep_proposal.docx', {
+    brand: brand, campaign: campaign, quote: lastQuote || {},
+  }, 'dlRepProposal', 'dlRepProposalMsg',
+     brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Reputation_Proposal.docx');
+});
 
 // ---------------- saving (mirrors SEO tool: auto-save when priced) ----------------
 let CURRENT_QUOTE_ID = null, CURRENT_QUOTE_NAME = '', SAVING_ENABLED = null, lastQuote = null, lastPayload = null;
