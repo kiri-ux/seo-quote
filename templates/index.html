@@ -7889,11 +7889,22 @@ function step1Grid(kw){
       const hasQ=f.some(x=>x.kind==='quota');
       if(!un.length&&!sd.length&&!nc.length&&!hasQ) return '';
       const pct=v=>Math.round(Number(v||0)*100)+'%';
+      // "sewer crawler at 4% is below the 4% a guaranteed slot needs" — 3.7 and
+      // 4.0 both round to 4. Two numbers being compared have to be able to
+      // differ on screen, so precision widens until they do.
+      const pct2=(a,b)=>{
+        for(const d of [0,1,2]){
+          const fa=(Number(a||0)*100).toFixed(d), fb=(Number(b||0)*100).toFixed(d);
+          if(fa!==fb) return [fa+'%', fb+'%'];
+        }
+        return [pct(a), pct(b)];
+      };
       const bits=[];
       // The protection threshold moves with the slot count, so a topic covered
       // on a one-city grid is uncovered on a five-city one. Said out loud
       // because the alternative is "9% -> 0 services" with no reason. (2026-08-17)
-      if(un.length) bits.push(un.map(x=>'<b>'+escapeHtml(x.topic)+'</b> at '+pct(x.share)+' is below the '+pct(x.needed_share)+' a guaranteed slot needs on a '+x.slots+'-slot grid').join('<br>'));
+      if(un.length) bits.push(un.map(x=>{const[a,b]=pct2(x.share,x.needed_share);
+        return '<b>'+escapeHtml(x.topic)+'</b> at '+a+' is below the '+b+' a guaranteed slot needs on a '+x.slots+'-slot grid';}).join('<br>'));
       if(sd.length) bits.push('Fewer than two topics were left protected, so the coverage guarantee did not run at all.');
       if(nc.length) bits.push(nc.map(x=>'<b>'+escapeHtml(x.topic)+'</b> had a slot reserved but no term left to put in it').join('<br>'));
       // The raw decision, so the next build answers this instead of me guessing.
