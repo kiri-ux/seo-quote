@@ -315,9 +315,9 @@
             <div class="help" style="margin-top:6px">
               <b>Removable (this service):</b> Google Business reviews — the removal partners work Google exclusively.<br><br>
               <b>NOT removable via review removal</b> — route to the noted alternative instead:<br>
-              · <b>Yelp</b> — reviews can't be removed → Search Protection Bundle (suppression)<br>
-              · <b>Glassdoor / Indeed</b> — employment reviews, removal only via legal process → Search Protection Bundle (suppression)<br>
-              · <b>BBB</b> — complaints can't be bought off the platform → Search Protection Bundle (suppression)<br>
+              · <b>Yelp</b> — reviews can't be removed → Reactive · Search Protection (suppression)<br>
+              · <b>Glassdoor / Indeed</b> — employment reviews, removal only via legal process → Reactive · Search Protection (suppression)<br>
+              · <b>BBB</b> — complaints can't be bought off the platform → Reactive · Search Protection (suppression)<br>
               · <b>Trustpilot / Ripoff Report / complaint boards / Reddit threads</b> — can't remove the review itself, but the whole page can often be removed from Google via Website Removal (Visions precedent: complaintsboard, pissedconsumer, Reddit, Trustpilot pages)<br>
               · <b>News articles / legal databases</b> — that's the Article Removal service, not review removal
             </div>
@@ -334,7 +334,7 @@
           <p class="help">Partner hard costs are canonical; client price = hard ÷ (1 − margin). At 35% this replays partner rates — rack $7,500 sliding to $4,950 bulk (16+), premium $12,500. Pay on success. Always custom-quoted after human review.</p>
         </div>
 
-        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl">Search Protection Bundle<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.</span></span></span></div>
+        <div class="toggle-row"><label class="switch"><input type="checkbox" id="useSearchBundle" checked><span class="slider"></span></label><span class="lbl">Reactive \u00b7 Search Protection<span class="tipwrap"><span class="tipicon">i</span><span class="tip">Pushes negative results, suggestions, and related searches out of sight by promoting positive content across rankings, auto-suggest, and related searches.</span></span></span></div>
         <div id="searchFields" class="hidden">
           <label>Monthly brand search volume</label>
           <input type="number" id="volume" min="0" placeholder="run Scan brand, or pull manually below" style="max-width:none">
@@ -363,7 +363,7 @@
 
       <div class="card hidden" id="secProactive">
         <h2><span id="proNum">3</span> · Proactive</h2>
-        <p class="help" style="margin-top:-6px"><b>Brand Shield Bundle</b> <span class="pillnote">estimated $ — pending review</span></p>
+        <p class="help" style="margin-top:-6px"><b>Proactive \u00b7 Brand Shield</b> <span class="pillnote">estimated $ — pending review</span></p>
         <p class="help">SEO brand shield &amp; asset building · 24/7 brand monitoring &amp; threat detection — one monthly bundle.</p>
         <label># of locations</label>
         <input type="number" id="nLocations" min="1" value="1">
@@ -843,8 +843,13 @@ function repHandoffTable(d){
    + r('Price per Standard Site Removal', money(h.price_per_standard_site_removal), 'client rate, per page')
    + r('Price per Premium Site Removal', money(h.price_per_premium_site_removal), 'client rate, per page')
    + r('Monthly Budget', money(h.monthly_budget), 'client \u00b7 the two bundles below, summed')
-   + r('Search Protection Bundle', money(h.search_protection_monthly), 'reactive \u00b7 sent on its own so the form can reprice it')
-   + r('Brand Shield Bundle', money(h.brand_shield_monthly), 'proactive \u00b7 sent on its own so the form can reprice it')
+   + r('Reactive \u00b7 Search Protection', money(h.search_protection_monthly), 'client \u00b7 sent on its own so the form can reprice it')
+   + r('Proactive \u00b7 Brand Shield', money(h.brand_shield_monthly), 'client \u00b7 sent on its own so the form can reprice it')
+   + r('Partner \u2014 Reactive \u00b7 Search Protection', money(h.partner_search_protection_monthly), 'what Billing charges the partner')
+   + r('Partner \u2014 Proactive \u00b7 Brand Shield', money(h.partner_brand_shield_monthly), 'what Billing charges the partner')
+   + r('Partner \u2014 Review Removals total', money(h.partner_review_removals_total), 'rate \u00d7 count, a pay-on-success maximum')
+   + r('Partner \u2014 Standard Sites total', money(h.partner_standard_sites_total), 'rate \u00d7 count')
+   + r('Partner \u2014 Premium Sites total', money(h.partner_premium_sites_total), 'rate \u00d7 count')
    + r('Search Volume', (h.search_volume||0).toLocaleString()+'/mo', 'brand volume the Search Protection rate is priced off')
    + r('# of Locations', (h.locations||0).toLocaleString(), 'the Brand Shield rate is priced off this')
    + r('Margin %', Math.round((h.margin_pct||0)*1000)/10+'%', 'margin of gross')
@@ -864,7 +869,7 @@ function renderTerms(d){
   if(d.negative_volume > 0){
     const negs = (d.terms||[]).filter(x=>x.class==='negative').slice(0,4)
       .map(x=>x.term+' ('+x.volume.toLocaleString()+')').join(' + ');
-    reco('useSearchBundle','Search Protection Bundle',
+    reco('useSearchBundle','Reactive \u00b7 Search Protection',
       d.negative_volume.toLocaleString()+'/mo negative-modifier volume'+(negs?' — '+negs:''));
   }
   if(d.total_volume){
@@ -969,9 +974,9 @@ function renderSerp(d){
     reco('useArticles','Negative Website/Article Removals',
       siteRemovals+' removable pages — '+pages.slice(0,5).join(', '), {nArtStd: siteRemovals});
   }
-  if(d.owned_in_top10 <= 2) reco('useSearchBundle','Search Protection Bundle', d.owned_in_top10+' of top 10 client-controlled');
+  if(d.owned_in_top10 <= 2) reco('useSearchBundle','Reactive \u00b7 Search Protection', d.owned_in_top10+' of top 10 client-controlled');
   if(d.ai_negative && d.ai_negative.length) reco('useGeo','Reputational AI Search','negative AI Overview detected');
-  if(d.negative_related && d.negative_related.length) reco('useSearchBundle','Search Protection Bundle', d.negative_related.length+' negative related searches');
+  if(d.negative_related && d.negative_related.length) reco('useSearchBundle','Reactive \u00b7 Search Protection', d.negative_related.length+' negative related searches');
   if(d.ai_overview){
     const cls = (d.ai_negative && d.ai_negative.length) ? 'warn' : 'help';
     h += '<div class="'+cls+'" style="margin:6px 0">AI Overview'
@@ -1152,7 +1157,7 @@ function renderAutocomplete(ac){
     return;
   }
   Object.values(ac).forEach(a=>{ (a && a.negative || []).forEach(x=>window._negPhrases.add(x.toLowerCase())); });
-  if(window._negPhrases.size) reco('useSearchBundle','Search Protection Bundle', window._negPhrases.size+' negative phrases in auto-suggest');
+  if(window._negPhrases.size) reco('useSearchBundle','Reactive \u00b7 Search Protection', window._negPhrases.size+' negative phrases in auto-suggest');
   bumpNegPhrases();
   let h = '';
   Object.keys(ac).forEach(k=>{
@@ -2042,14 +2047,14 @@ function renderCfg(c){
   h += cfgHdr('Website Removals ($ / site)', 'pricing from one example quote — need confirmation', 'warn');
   c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
   h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
-  h += cfgHdr('Search Protection Bundle', 'hard-cost canonical · Sage replay approximate ($7,550 vs $7,400 actual) · 3-phrase inclusion unconfirmed', 'warn');
+  h += cfgHdr('Reactive · Search Protection', 'hard-cost canonical · Sage replay approximate ($7,550 vs $7,400 actual) · 3-phrase inclusion unconfirmed', 'warn');
   h += cfgRow('Suppression component base — hard $/mo', cfgIn('c_supp', c.bundle.supp_base));
   h += cfgRow('Auto-suggest/related component base — hard $/mo', cfgIn('c_as', c.bundle.as_base));
   h += cfgRow('Hard $ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Hard $ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Included negative phrases <span style="font-weight:400;color:var(--warn)">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
   h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
-  h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
+  h += cfgHdr('Proactive · Brand Shield', 'internal estimate — pending review', 'warn');
   h += cfgRow('Partner hard cost base /mo', cfgIn('c_shield', c.shield_monthly));
   h += cfgRow('Partner hard cost per extra location /mo', cfgIn('c_shloc', c.shield_per_extra_location));
   h += cfgHdr('Reputational AI Search', 'Sage GEO card actuals — reputational use unconfirmed', 'warn');

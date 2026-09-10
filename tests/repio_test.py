@@ -111,6 +111,48 @@ check("both bundles zero",
       (r3["search_protection_monthly"], r3["brand_shield_monthly"]), (0, 0))
 check("the removals still went", r3["reviews_count"], 26)
 
+print("\nTHE TWO BUNDLES CARRY THEIR BRANDING")
+check("reactive line", [l["service"] for l in q["lines"] if "Search Protection" in l["service"]],
+      ["Reactive \u00b7 Search Protection"])
+check("proactive line", [l["service"] for l in q["lines"] if "Brand Shield" in l["service"]],
+      ["Proactive \u00b7 Brand Shield"])
+check("the shield detail is not its own name again",
+      [l["detail"] for l in q["lines"] if "Brand Shield" in l["service"]],
+      ["4 locations (+$700/extra location)"])
+check("one location reads singular",
+      R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
+                         "shield": {"locations": 1}})["lines"][0]["detail"],
+      "1 location")
+
+print("\nPARTNER COST FOR EVERY CLIENT FIGURE")
+# The margin can change on the order form after the quote is built, and every
+# client component rounds UP separately, so no client price divides back.
+for c, pk in [("monthly_budget", "partner_monthly_cost"),
+              ("search_protection_monthly", "partner_search_protection_monthly"),
+              ("brand_shield_monthly", "partner_brand_shield_monthly"),
+              ("price_per_review_removal", "partner_hard_cost_per_review"),
+              ("price_per_standard_site_removal", "partner_hard_cost_per_standard_site"),
+              ("price_per_premium_site_removal", "partner_hard_cost_per_premium_site")]:
+    check("%s has a partner figure" % c, bool(h.get(pk)) and h[pk] > 0, True)
+    check("  and it is below the client one", h[pk] < h[c], True)
+check("reactive partner", h["partner_search_protection_monthly"], 4200)
+check("proactive partner", h["partner_brand_shield_monthly"], 3600)
+check("the two sum to the partner monthly",
+      h["partner_search_protection_monthly"] + h["partner_brand_shield_monthly"],
+      h["partner_monthly_cost"])
+check("review removals at partner cost",
+      h["partner_review_removals_total"], round(552.5 * 26, 2))
+check("standard sites", h["partner_standard_sites_total"], 9750)
+check("premium sites", h["partner_premium_sites_total"], 8125)
+
+print("\nA WORKSTREAM THAT IS NOT ON THE QUOTE SENDS ZERO, NOT A MISSING KEY")
+_r = R.build_rep_quote({"campaign": "reactive", "margin_pct": 0.35,
+                        "reviews": {"count": 5}})["handoff"]
+for k in ("partner_search_protection_monthly", "partner_brand_shield_monthly",
+          "partner_standard_sites_total", "partner_premium_sites_total"):
+    check(k, _r[k], 0)
+check("the review partner total still lands", _r["partner_review_removals_total"] > 0, True)
+
 print("\nSTRATEGY IS FOUR VALUES, READ OFF THE QUOTE")
 check("all four", h["strategy"],
       ["Review Removals", "Site/Article Removals", "Reactive", "Proactive"])
@@ -134,7 +176,7 @@ print("\nA REMOVAL CAN SIT BESIDE A BRAND SHIELD")
 mix = R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                          "shield": {"locations": 3}, "reviews": {"count": 10}})
 check("both lines", [l["service"] for l in mix["lines"]],
-      ["Negative Review Removals", "Proactive Brand Shield"])
+      ["Negative Review Removals", "Proactive \u00b7 Brand Shield"])
 check("and both strategies", mix["handoff"]["strategy"],
       ["Review Removals", "Proactive"])
 

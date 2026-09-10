@@ -498,7 +498,7 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
     m = r50(hard / (1 - mg))
     inc = SEARCH_BUNDLE.get("included_negatives", 3)
     return {
-        "service": "Search Protection Bundle",
+        "service": "Reactive \u00b7 Search Protection",
         "detail": f"Scales with brand search volume \u00b7 "
                   f"{volume:,}/mo measured",
         "kind": "monthly", "total": m, "timeline": SEARCH_BUNDLE["timeline"],
@@ -727,11 +727,10 @@ def price_shield(locations=1, margin_pct=None, hard_override=None):
     loc_client = r50(loc_hard / (1 - m))
     total = base_client + extra * loc_client
     hard_total = base_hard + extra * loc_hard
-    det = "Proactive Brand Shield Bundle"
-    if extra:
-        det += f" \u00b7 {locations} locations (+${loc_client:,}/extra location)"
+    det = (f"{locations} location{'s' if locations != 1 else ''}"
+           + (f" (+${loc_client:,}/extra location)" if extra else ""))
     return {
-        "service": "Proactive Brand Shield",
+        "service": "Proactive \u00b7 Brand Shield",
         "detail": det, "kind": "monthly", "total": total,
         "timeline": "Ongoing",
         "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_override else [])
@@ -903,8 +902,24 @@ def build_rep_quote(payload):
     # of the money was which, or reprice either one on its own.
     def _sum(pred):
         return sum(l["total"] for l in monthly_lines if pred(l["service"]))
-    _search_monthly = _sum(lambda n: n.startswith("Search Protection"))
-    _shield_monthly = _sum(lambda n: "Brand Shield" in n)
+    def _is_search(n):
+        return n.startswith("Reactive") or n.startswith("Search Protection")
+
+    def _is_shield(n):
+        return "Brand Shield" in n
+
+    _search_monthly = _sum(_is_search)
+    _shield_monthly = _sum(_is_shield)
+
+    # PARTNER COST FOR EVERY CLIENT FIGURE. The margin can be changed on the
+    # order form after the quote is built, and a client price cannot be divided
+    # back to its cost -- every component rounds UP separately. Each client
+    # field is sent with the partner figure it was derived from.
+    def _hard(pred):
+        return sum(float(l.get("hard_total") or 0)
+                   for l in monthly_lines if pred(l["service"]))
+    _search_hard = _hard(_is_search)
+    _shield_hard = _hard(_is_shield)
 
     _strategy = []
     if rev:
@@ -947,6 +962,16 @@ def build_rep_quote(payload):
         # Billing charges the partner off the cost.
         "partner_hard_cost_per_standard_site": _hard_per(std),
         "partner_hard_cost_per_premium_site": _hard_per(prm),
+        # The two recurring bundles, matching the client figures above.
+        "partner_search_protection_monthly": _search_hard,
+        "partner_brand_shield_monthly": _shield_hard,
+        # Everything billed per asset, at partner cost: rate x count, the same
+        # pay-on-success maximum the client total is.
+        "partner_review_removals_total": round(
+            (_hard_per(rev) or ((rev or {}).get("internal") or {}).get("hard_per") or 0)
+            * ((rev or {}).get("qty") or 0), 2),
+        "partner_standard_sites_total": round(_hard_per(std) * ((std or {}).get("qty") or 0), 2),
+        "partner_premium_sites_total": round(_hard_per(prm) * ((prm or {}).get("qty") or 0), 2),
         # STRATEGY IS FOUR VALUES, READ OFF THE QUOTE. It used to be two,
         # derived from our internal campaign word, which is why the proposal
         # spec needed a branch per combination -- "when strategy = Reactive +
