@@ -3528,7 +3528,18 @@ def grounding_gap_words(dropped, limit=6):
     return sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))[:int(limit)]
 
 
-def enforce_seed_services(services, seeds, max_services, markets, state, phrase_geos=None):
+def seed_service_name(sd, markets, state, phrase_geos=None):
+    """The name a focus term takes when it becomes a grid service. Shared so a
+    volume measured against a seed and the slot that seed competes for are keyed
+    the same way."""
+    return clean_kw(strip_placeholders(strip_proximity(
+        _strip_markets((sd or "").lower(),
+                       list(markets or []) + list(phrase_geos or []),
+                       state)))).strip()
+
+
+def enforce_seed_services(services, seeds, max_services, markets, state,
+                          phrase_geos=None, volumes=None):
     """Make the partner's own seed terms the backbone of the service list.
 
     The prompt asks for this and the model does not reliably comply: a
@@ -3543,24 +3554,37 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
     they outrank anything the model invents. Model-chosen services only fill
     the slots the seeds don't.
 
-    Returns (services, used_seed_count, clean_seed_total). The total matters
-    because the slice below is clean[:max_services] IN ENTRY ORDER, not by
-    volume — hand the tool 80 focus terms against a 20-service grid and 60 of
-    them are silently dropped on typing order alone. The caller surfaces that.
-    (2026-08-11)
+    Returns (services, used_seed_count, clean_seed_total, seeds_over_capacity).
+
+    WHEN THERE ARE MORE FOCUS TERMS THAN SLOTS, DEMAND DECIDES, NOT TYPING
+    ORDER. The slice was clean[:max_services] in entry order. Drainify's UK
+    build had 32 focus terms against 20 slots, and adding eight measured terms
+    to the end of the list pushed `field service management software` (880/mo,
+    the largest term on the quote) out of the grid entirely -- so ADDING demand
+    made the measured total fall, from 1,500/mo to 840. Terms that measure
+    nothing kept their slots because they had been typed earlier.
+
+    Ordering only changes when the list overflows; a list that fits keeps the
+    operator's order, and with it the tiering that follows from it.
+    (2026-09-10)
     """
     clean = []
     seen = set()
     for sd in seeds or []:
-        name = clean_kw(strip_placeholders(strip_proximity(
-            _strip_markets((sd or "").lower(),
-                           list(markets or []) + list(phrase_geos or []),
-                           state)))).strip()
+        name = seed_service_name(sd, markets, state, phrase_geos)
         if name and name not in seen and len(name.split()) <= 6:
             seen.add(name)
             clean.append(name)
     if not clean:
-        return list(services or []), 0, 0
+        return list(services or []), 0, 0, []
+    over = []
+    cap = int(max_services or 0)
+    if cap and len(clean) > cap:
+        vols = volumes or {}
+        ranked = sorted(range(len(clean)),
+                        key=lambda i: (-int(vols.get(clean[i], 0) or 0), i))
+        clean = [clean[i] for i in ranked]
+        over = clean[cap:]
 
     # Seeds FIRST, then model picks fill what's left. The earlier version
     # appended seeds to the model's list and displaced from the tail, which
@@ -3639,7 +3663,7 @@ def enforce_seed_services(services, seeds, max_services, markets, state, phrase_
         svc["tier"] = ("ultra" if i < n_u
                        else "competitive" if i < n_u + n_c
                        else "long_tail")
-    return out, used, len(clean)
+    return out, used, len(clean), over
 
 
 # Words that describe the SHAPE of a retail term rather than its subject. They
@@ -8829,8 +8853,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # abbreviation lookups into a twenty-term quote, and the panel reported
         # neither. A warning, not a filter. (2026-08-13)
         seed_quality = {"zero": [], "question": []}
+        _sv = {}
         try:
-            _sv = {}
             if seeds:
                 _sv, _pc2, _ = fetch_local_volume(
                     [seed_norm(x, markets, state) for x in seeds if x],
@@ -8911,10 +8935,21 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # re-inserted below it. Filter again AFTER pinning and fold the two
         # result sets together; a pin is not a licence to sell in a state the
         # client doesn't operate in.
-        services, seed_used, seed_total = (enforce_seed_services(
+        # Measured demand decides which focus terms get the slots when there
+        # are more terms than slots. Keyed the same way the slot list is.
+        _seed_vols = {}
+        for _s in (seeds or []):
+            _k = seed_service_name(_s, markets, state, phrase_geos)
+            if not _k:
+                continue
+            _v = int((_sv or {}).get(seed_norm(_s, markets, state), 0) or 0)
+            if _v > _seed_vols.get(_k, 0):
+                _seed_vols[_k] = _v
+        services, seed_used, seed_total, seeds_over = (enforce_seed_services(
                                         services, seeds, n_services,
-                                        markets, state, phrase_geos)
-                               if seeds else (services, 0, 0))
+                                        markets, state, phrase_geos,
+                                        volumes=_seed_vols)
+                               if seeds else (services, 0, 0, []))
         services, geo_dropped2 = drop_foreign_geo_services(services, markets, state)
         # QUALIFIERS THE MARKET DOES NOT USE — and it has to run HERE, after
         # enforce_seed_services, not before it. Every term this filter took out
@@ -9893,6 +9928,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
+            # WHICH ones, not just how many. A focus term that measures nothing
+            # losing its slot to one that measures 880 is the right outcome and
+            # an invisible one.
+            "seed_services_over": seeds_over[:40],
             # Removed for real (empty when the filter stood down) versus what it
             # WOULD have removed — the panel needs both to say anything true.
             "dropped_ungrounded": ([] if grounding_off
@@ -12224,6 +12263,7 @@ def api_refine():
         "unranked_probe_max": s1.get("unranked_probe_max", 0),
         "seed_services_used": s1.get("seed_services_used", 0),
         "seed_services_total": s1.get("seed_services_total", 0),
+        "seed_services_over": s1.get("seed_services_over", []),
         "widen": widen_offer(conv(s1["all"])),
         "seed_services_dropped": s1.get("seed_services_dropped", 0),
         "pinned_head_terms": s1.get("pinned_head_terms") or [],
