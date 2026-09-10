@@ -8247,6 +8247,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     _min_tok = int(CFG.get("site_term_min_token", 4))
     seed_long_tokens = {t for t in seed_tokens if len(t) >= _min_tok}
     site_dropped = []
+    fragments_dropped = []
+    seeds_lower = {str(x).strip().lower() for x in seeds}
     brand_l = (brand or "").lower()
     # Connector words that signal a stitched-together / garbled phrase rather
     # than a real search query ("adhd and therapy", "treatment or counseling").
@@ -8287,6 +8289,22 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
                 site_dropped.append(r["keyword"])
                 continue
         elif seed_tokens and not (seed_tokens & set(kw.split())):
+            continue
+        # A WORD LIFTED OUT OF A SEED IS NOT A KEYWORD.
+        #
+        # "drainage field service management software" is a seed. `field` came
+        # back at 27,100/mo -- 98% of the whole list's measured demand -- and
+        # led the Ultra Competitive column for a company selling drain-survey
+        # software. Every keyword source does this: the ideas call returns the
+        # parts of the phrases it was given, and a bare modifier always outmeasures
+        # the real term, so it always wins the top slot.
+        #
+        # A one-word candidate qualifies only if that word is a focus term in its
+        # own right. A plumber who seeded "plumber" keeps it; nobody who seeded
+        # "personal injury lawyer" wants to be quoted on `injury`.
+        _toks = kw.split()
+        if len(_toks) == 1 and _toks[0] in seed_tokens and kw not in seeds_lower:
+            fragments_dropped.append(r["keyword"])
             continue
         kept.append(r)
 
@@ -8428,6 +8446,8 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
                   "src": r.get("src", "")} for r in kept[:400]],
         "site_dropped": site_dropped[:40],
         "site_dropped_n": len(site_dropped),
+        "fragments_dropped": fragments_dropped[:40],
+        "fragments_dropped_n": len(fragments_dropped),
     }
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
@@ -12041,6 +12061,8 @@ def api_keywords():
         "pool": s1.get("pool", []),
         "site_dropped": s1.get("site_dropped", []),
         "site_dropped_n": s1.get("site_dropped_n", 0),
+        "fragments_dropped": s1.get("fragments_dropped", []),
+        "fragments_dropped_n": s1.get("fragments_dropped_n", 0),
         "widen": widen_offer(resp_all_for_widen),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short

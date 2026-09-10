@@ -78,6 +78,42 @@ tops = [r["keyword"] for r in s1["ultra"]]
 check("nothing from the dictionary leads the list",
       sorted(set(tops) & set(DICT_TERMS)), [])
 
+print("\nA WORD LIFTED OUT OF A SEED IS NOT A KEYWORD")
+# `field` measured 27,100 -- 98% of the list -- and led Ultra Competitive for a
+# company selling drain-survey software, because "drainage field service
+# management software" is a seed and the ideas call returns its parts.
+FIELD_SEEDS = ["drainage field service management software",
+               "sewer inspection software", "cctv drain survey"]
+app.dfs_post = lambda path, payload, **k: {"tasks": [{"result": [
+    {"keyword": "field", "search_volume": 27100},
+    {"keyword": "software", "search_volume": 90500},
+    {"keyword": "drainage", "search_volume": 14800},
+    {"keyword": "sewer inspection software", "search_volume": 10},
+    {"keyword": "drainage field service management software", "search_volume": 20},
+]}]}
+app.fetch_suggestions = lambda *a, **k: []
+app.fetch_keywords_for_site = lambda *a, **k: []
+f1 = app.stage1_keyword_list(FIELD_SEEDS, [], "", "Drainify", "drainify.io", "")
+f_kw = {r["keyword"] for r in f1["pool"]}
+check("the bare modifier is gone", "field" in f_kw, False)
+check("so is every other seed word",
+      sorted(f_kw & {"software", "drainage"}), [])
+check("counted out", f1["fragments_dropped_n"], 3)
+check("the whole seed survives",
+      "drainage field service management software" in f_kw, True)
+check("and the real term does", "sewer inspection software" in f_kw, True)
+
+# A one-word focus term is the client's own choice and stays.
+app.dfs_post = lambda path, payload, **k: {"tasks": [{"result": [
+    {"keyword": "plumber", "search_volume": 60500},
+    {"keyword": "emergency", "search_volume": 40500},
+    {"keyword": "emergency plumber", "search_volume": 8100},
+]}]}
+f2 = app.stage1_keyword_list(["plumber", "emergency plumber"], [], "", "Acme", "", "")
+f2_kw = {r["keyword"] for r in f2["pool"]}
+check("a seeded single word stays", "plumber" in f2_kw, True)
+check("an unseeded one does not", "emergency" in f2_kw, False)
+
 print("\nA SHORT WORD IS NOT A MATCH")
 # "sic" shares no substantive token; "survey" does. The filter is on words of
 # four letters or more precisely so that "is"/"to" cannot carry a term through.
