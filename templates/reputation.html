@@ -383,7 +383,7 @@
           <div><label style="font-size:12px">Premium site removal — hard $/page</label><input type="number" id="ovArtPrem" placeholder="formula" min="0"></div>
           <div><label style="font-size:12px">Monthly cost — hard $/mo (all recurring)</label><input type="number" id="ovMonthly" placeholder="formula" min="0"></div>
         </div>
-        <p class="help" style="margin:8px 0 0">Monthly cost sets the total across every recurring line — Search Protection, its maintenance phase, Reputational AI Search and the Brand Shield — and the split between them keeps the formula's own proportions. The IO carries one Monthly Budget for ORM, so there is one figure here. <button type="button" id="ovClear" style="background:#fff;color:var(--bad);border:1px solid var(--bad-line);padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
+        <p class="help" style="margin:8px 0 0">Monthly cost sets the total across every recurring line — Search Protection, Reputational AI Search and the Brand Shield — and the split between them keeps the formula's own proportions. The IO carries one Monthly Budget for ORM, so there is one figure here. <button type="button" id="ovClear" style="background:#fff;color:var(--bad);border:1px solid var(--bad-line);padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
         </details>
         <!-- ALWAYS ON SCREEN. Both downloads used to render inside panels that
              only exist after something has been run — the review analysis
@@ -502,10 +502,25 @@ function money(x){ return '$'+x.toLocaleString(); }
 // column states the same fact two different ways and looks like a
 // contradiction. Anchor it to the phase it sits under. Only inside a bundle:
 // a Proactive-only quote has no phases, and there "Ongoing" is exactly right.
-function phaseTimeline(l, isBundle){
-  const t = String(l.timeline || '');
-  if(isBundle && l.phase === 2 && /^ongoing$/i.test(t.trim())) return 'Ongoing \u2014 months 4+';
-  return t;
+// EVERY LINE'S OWN TIMEFRAME, UNCHANGED. "Ongoing" used to be rewritten to
+// "Ongoing - months 4+" so it agreed with a phase heading that no longer
+// exists.
+function phaseTimeline(l){
+  return String(l.timeline || '');
+}
+
+// THE SECTION A LINE BELONGS TO, WHICH IS ITS WORKSTREAM. The table grouped by
+// phase and labelled the groups with month ranges -- Phase 1 was "Months 1-3"
+// and held the Search Protection Bundle, whose own stated timeframe is 4-6
+// months. The four workstreams are independent, each appears only when it is
+// on the quote, and each line already prints its own timeframe.
+function lineSection(svc){
+  const n = String(svc || '');
+  if(n.indexOf('Negative Review Removals') === 0) return 'Review Removals';
+  if(n.indexOf('Negative Website/Article') === 0) return 'Site & Article Removals';
+  if(n.indexOf('Search Protection') === 0)        return 'Reactive \u00b7 Search Protection';
+  if(n.indexOf('Brand Shield') >= 0)              return 'Proactive \u00b7 Brand Shield';
+  return '';
 }
 
 function render(d, payload){
@@ -555,12 +570,12 @@ function render(d, payload){
       timeline: deDash(raw.timeline),
       notes: (raw.notes||[]).map(deDash),
     });
-    if(isBundle && l.phase !== lastPhase){
-      lastPhase = l.phase;
-      const nm = l.phase===1 ? 'Phase 1 · Triage & Cleanup (Months 1–3)' : 'Phase 2 · Brand Shield (Months 4+)';
-      h += '<tr class="phasehdr"><td colspan="3">'+nm+'</td></tr>';
+    const sect = lineSection(l.service);
+    if(sect && sect !== lastPhase){
+      lastPhase = sect;
+      h += '<tr class="phasehdr"><td colspan="3">'+sect+'</td></tr>';
     }
-    const per = (l.kind==='monthly'||l.kind==='monthly_maint') ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
+    const per = (l.kind==='monthly') ? '<span style="font-size:12px;color:var(--muted)">/mo</span>' : '';
     // THE PER-LINE INTERNAL-COST RAIL IS GONE (2026-08-28, Kiri). It hung a
     // "Demo only — internal cost" expander under every line while the quote
     // was being calibrated. Partner cost now has one home: the Sent to the IO
@@ -570,7 +585,7 @@ function render(d, payload){
     const internal = '';
     h += '<tr><td><div class="svc">'+l.service+'</div><div class="det">'+l.detail+'</div>'
        + (l.notes && l.notes.length ? '<ul class="nlist">'+l.notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>' : '')
-       + '</td><td>'+phaseTimeline(l, isBundle)+'</td><td class="amt">'
+       + '</td><td>'+phaseTimeline(l)+'</td><td class="amt">'
        + (l.unit_label
           ? '<div style="font-weight:700;color:var(--atlas)">'+l.unit_label+'</div><div class="help" style="margin:3px 0 0;text-align:right">up to '+money(l.total)+'<br>'+l.qty.toLocaleString()+' flagged</div>'
           : (l.kind==='per_asset'?'up to ':'')+money(l.total)+per)
@@ -629,12 +644,9 @@ function updateSearchFormula(){
   const sb = +B.supp_base || 1750, ab = +B.as_base || 2250;
   const ps = +B.supp_per_1k || +B.comp_per_1k || 9.75, pa = +B.as_per_1k || +B.comp_per_1k || 6.50;
   const floor = +B.floor || 3950, cap = +B.cap || 10050;
-  const mp = +B.maintenance_pct || 0.544;
   const suppH = r50(sb + ps*v/1000), asH = r50(ab + pa*v/1000);
   const hard = Math.min(cap, Math.max(floor, suppH + asH));
   const client = r50(hard / (1 - mg));
-  const maintHard = r50(suppH*mp) + r50(asH*mp);
-  const maintClient = r50(maintHard / (1 - mg));
   const fc = (hard === floor) ? ' (floor '+money(floor)+' applied)'
            : (hard === cap)   ? ' (cap '+money(cap)+' applied)' : '';
   box.innerHTML =
@@ -651,9 +663,7 @@ function updateSearchFormula(){
             'Vici delivery cost')
     + fmRow('Client @ '+Math.round(mg*100)+'%', money(hard)+' \u00f7 '+(1-mg).toFixed(2)+' \u2192 <b>'+money(client)+'/mo</b> active (months 4\u20136)',
             'margin is % of gross, rounded up to the nearest $50')
-    + fmRow('Maintenance', (Math.round(mp*1000)/10)+'% \u2192 '+money(maintHard)+' \u2192 <b>'+money(maintClient)+'/mo</b> client (months 7\u201312)',
-            'Visions active\u2192maintenance ratio; reactive-only \u2014 Brand Shield covers this on bundles')
-    + fmFoot('All dollar values are <b>partner hard cost</b> except the client lines. Base, per-1K, floor/cap, and maintenance % are editable in Pricing config.');
+    + fmFoot('All dollar values are <b>partner hard cost</b> except the client lines. Base, per-1K and floor/cap are editable in Pricing config.');
 }
 document.addEventListener('DOMContentLoaded', ()=>{
   ['volume','clientMargin'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input', updateSearchFormula); });
@@ -790,7 +800,11 @@ function repHandoffTable(d){
    + r('# of Premium Sites', (h.premium_sites||0).toLocaleString(), 'news and high-authority \u2014 its own rate')
    + r('Price per Standard Site Removal', money(h.price_per_standard_site_removal), 'client rate, per page')
    + r('Price per Premium Site Removal', money(h.price_per_premium_site_removal), 'client rate, per page')
-   + r('Monthly Budget', money(h.monthly_budget), 'client \u00b7 EXCLUDES the maintenance phase, which replaces the active rate rather than adding to it')
+   + r('Monthly Budget', money(h.monthly_budget), 'client \u00b7 the two bundles below, summed')
+   + r('Search Protection Bundle', money(h.search_protection_monthly), 'reactive \u00b7 sent on its own so the form can reprice it')
+   + r('Brand Shield Bundle', money(h.brand_shield_monthly), 'proactive \u00b7 sent on its own so the form can reprice it')
+   + r('Search Volume', (h.search_volume||0).toLocaleString()+'/mo', 'brand volume the Search Protection rate is priced off')
+   + r('# of Locations', (h.locations||0).toLocaleString(), 'the Brand Shield rate is priced off this')
    + r('Margin %', Math.round((h.margin_pct||0)*1000)/10+'%', 'margin of gross')
    + r('Partner Monthly Cost', money(h.partner_monthly_cost), 'what Billing charges the partner')
    + r('Partner Hard Cost per Review', money(h.partner_hard_cost_per_review), 'per removed review')
@@ -1962,13 +1976,12 @@ function renderCfg(c){
   h += cfgHdr('Website Removals ($ / site)', 'pricing from one example quote — need confirmation', 'warn');
   c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
   h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
-  h += cfgHdr('Search Protection Bundle', 'hard-cost canonical · Sage replay approximate ($7,550 vs $7,400 actual) · 3-phrase inclusion + maintenance % unconfirmed', 'warn');
+  h += cfgHdr('Search Protection Bundle', 'hard-cost canonical · Sage replay approximate ($7,550 vs $7,400 actual) · 3-phrase inclusion unconfirmed', 'warn');
   h += cfgRow('Suppression component base — hard $/mo', cfgIn('c_supp', c.bundle.supp_base));
   h += cfgRow('Auto-suggest/related component base — hard $/mo', cfgIn('c_as', c.bundle.as_base));
   h += cfgRow('Hard $ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Hard $ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Included negative phrases <span style="font-weight:400;color:var(--warn)">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
-  h += cfgRow('Maintenance % of active rate', cfgIn('c_maintpct', Math.round((c.bundle.maintenance_pct ?? 0.544)*1000)/10, 1));
   h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   h += cfgHdr('Proactive Brand Shield', 'internal estimate — pending review', 'warn');
   h += cfgRow('Partner hard cost base /mo', cfgIn('c_shield', c.shield_monthly));
@@ -1994,7 +2007,7 @@ $('cfgApply').onclick = async ()=>{
     site_premium_per: v('c_sprem'),
     bundle: {supp_base: v('c_supp'), as_base: v('c_as'),
              supp_per_1k: v('c_p1ks'), as_per_1k: v('c_p1ka'),
-             included_negatives: v('c_incneg'), maintenance_pct: v('c_maintpct')/100,
+             included_negatives: v('c_incneg'),
              floor: v('c_floor'), cap: v('c_cap')},
     shield_monthly: v('c_shield'), shield_per_extra_location: v('c_shloc'),
     geo: {setup: v('c_geos'), scale: v('c_geoc')},

@@ -152,37 +152,29 @@ REP_CFG = {
             "label": "Auto-Suggest Manipulation",
             "base": 3400, "per_1k": 10,
             "floor": 3400, "cap": 7950,
-            "timeline": "2\u20133 months to results, then 3\u20136 months maintenance",
+            "timeline": "2\u20133 months to results",
             "included_negatives": 3,            # ⚠ UNCONFIRMED — Sage actual
                                                 # covered 2 phrases at this rate
             "per_extra_negative": 250,          # GUESS
-            # Ongoing-mode maintenance mirrors the Visions related-search
-            # structure ($2,150/mo after results). The $750 below stays as
-            # the guaranteed-mode actual (Goldstone 2021).
-            "ongoing_maintenance_monthly": 2150,
-            "ongoing_maintenance_timeline": "3\u20136 months post-result hold",
             # Guaranteed per-phrase actuals span $4,125 (Goldstone 2020, 2
             # phrases) to $9,250 (Goldstone 2021, 1 complex phrase) —
             # complexity-driven per Brendan's notes. Editable per quote.
             "guaranteed_per_phrase": 4125,
             "guaranteed_timeline": "45\u201360 days\u20136 months, pay on success",
-            "maintenance_monthly": 750,          # Goldstone actual, 6-mo minimum
         },
         # Related Searches — priced SEPARATELY in every Brendan example
         # (Goldstone '21, Bing/DDG '25, Visions '24, Sage '26). Google uses
-        # the same volume formula; maintenance = Visions actual $2,150/mo.
+        # the same volume formula.
         "related": {
             "label": "Related Search Manipulation",
             "base": 3400, "per_1k": 10,
             "floor": 3400, "cap": 7950,
             "timeline": "\u224885% success over 6 months (per keyword)",
-            "maintenance_monthly": 2150,
-            "maintenance_timeline": "3\u20136 months post-removal maintenance",
         },
         # Bing/DuckDuckGo are FLAT monthlies (Goldstone 2025 actuals), not a
         # multiplier on the Google formula: each engine is its own campaign.
         "alt_engine_flat": {"autosuggest": 1500, "related": 1250},
-        "alt_engine_timeline": "6\u20138 months to fully resolve, then maintenance",
+        "alt_engine_timeline": "6\u20138 months to fully resolve",
         "review_above_volume": 150000,
         "bundle_discount_pct": 0.0,
     },
@@ -206,14 +198,6 @@ REP_CFG = {
         "per_extra_location_hard": 450,   # partner hard cost per extra location
     },
 
-    # ---------------------------------------------------------------- bundle
-    "bundle": {
-        # Reactive + Proactive phased plan. Optional discount applied to the
-        # recurring lines (not per-asset removals) when both phases are sold.
-        "recurring_discount_pct": 0.0,    # PLACEHOLDER — 0 until decided
-        "phase1_months": "2\u20136 mo. duration",
-        "phase2_start": "Months 4+",
-    },
 }
 
 
@@ -273,8 +257,7 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         "timeline": cfg["timeline"],
         "notes": ["Pay on success \u2014 billed per removed review; the total is "
                   "a maximum, not a committed spend.",
-                  "Success rate: ~100% via 48-hour priority routing; 40\u201350% "
-                  "via bulk routing (30\u201360 days).",
+                  "Success rate: ~70% across Google Reviews.",
                   "Some sensitive content cannot be removed."],
         "internal": {
             "hard_per": hard_per, "hard_total": hard_total,
@@ -488,12 +471,6 @@ SEARCH_BUNDLE = {
     # ⚠ UNCONFIRMED — Sage actual covered 2 phrases at this rate; 3 is an
     # internal assumption pending Brendan's confirmation.
     "included_negatives": 3,
-    # Maintenance phase per the actuals: full rate until results, then a
-    # drop. Visions 2024: $3,950 active → $2,150 maintenance = 0.544; the
-    # ratio is applied per component on the hard side. (Suppression-side
-    # maintenance is INFERRED — no SSG actual exists for it.)
-    "maintenance_pct": 0.544,
-    "maintenance_timeline": "Months 7\u201312",
     "timeline": "4\u20136 months",
 }
 
@@ -531,48 +508,6 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None):
             {"label": f"\u26a0 {inc}-phrase inclusion",
              "value": "internal assumption \u2014 Sage actual covered 2; "
                       "pending pricing review", "tbd": True}]},
-    }
-
-
-def price_search_bundle_maintenance(volume, margin_pct=None, hard_override=None):
-    """Post-result maintenance phase, per the actuals: full rate while
-    active, then a drop once negatives are cleared. Ratio 0.544 is derived
-    from the Visions 2024 actual ($3,950 active → $2,150 maintenance) and,
-    applied per component, replays the $2,150 exactly on the auto-suggest
-    side. Sequential — never billed alongside the active line."""
-    pct = SEARCH_BUNDLE.get("maintenance_pct", 0.544)
-    if hard_override:
-        # override is the ACTIVE-phase hard/mo; maintenance keeps the ratio
-        hard = float(hard_override) * pct
-    else:
-        supp_h, as_h = _bundle_components(volume)
-        hard = r50(supp_h * pct) + r50(as_h * pct)
-    mg = ART_CAL_MARGIN if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
-    m = r50(hard / (1 - mg))
-    return {
-        "service": "Search Protection \u2014 Maintenance Phase",
-        "detail": "Reduced monthly rate once your results are achieved \u2014 "
-                  "protects the cleaned-up search presence",
-        "kind": "monthly_maint", "total": m,
-        "timeline": SEARCH_BUNDLE.get("maintenance_timeline",
-                                      "3\u20136 months, as results are "
-                                      "achieved (auto-suggest typically "
-                                      "clears in 2\u20133 months)"),
-        "notes": (["\u2699 Manual hard-cost override active \u2014 maintenance "
-                   "keeps its % ratio off the overridden active rate."]
-                  if hard_override else [])
-               + ["Begins only after the active campaign reaches its goals, "
-                  "and replaces the active monthly rate \u2014 the two are "
-                  "never billed together.",
-                  "Recommended to lock in results and keep negative content "
-                  "from returning."],
-        "hard_total": hard,
-        "internal": {"rows": _mrows(hard, "/mo") + [
-            {"label": "\u26a0 Maintenance reduction",
-             "value": f"currently {int(pct*1000)/10}% of active (Visions "
-                      "2024: $3,950\u2192$2,150) \u2014 how deep should "
-                      "the reduction be?",
-             "tbd": "pricing review"}]},
     }
 
 
@@ -633,13 +568,6 @@ def price_search_protection(volume, use_suppression, use_autosuggest,
                 "notes": ["Pay on success \u2014 nothing upfront; billed only for "
                           "phrases removed."],
             })
-            lines.append({
-                "service": "Search Protection \u2014 Phrase Maintenance",
-                "detail": f"${c['maintenance_monthly']:,}/mo following removal",
-                "kind": "monthly", "total": c["maintenance_monthly"],
-                "timeline": "6-month minimum, 9\u201312 months recommended",
-                "notes": ["Keeps removed phrases suppressed (Goldstone actual)."],
-            })
         else:
             m = _vol(c)
             extra = max(0, n - c["included_negatives"])
@@ -657,15 +585,6 @@ def price_search_protection(volume, use_suppression, use_autosuggest,
                           f"\u26a0 {c['included_negatives']}-phrase inclusion is an "
                           "internal assumption (Sage actual covered 2) \u2014 "
                           "pending pricing review."],
-            })
-            lines.append({
-                "service": "Search Protection \u2014 Auto-Suggest Maintenance",
-                "detail": f"${c['ongoing_maintenance_monthly']:,}/mo after results "
-                          "(mirrors Visions related-search actual)",
-                "kind": "monthly_maint", "total": c["ongoing_maintenance_monthly"],
-                "timeline": c["ongoing_maintenance_timeline"],
-                "notes": ["Sequential \u2014 replaces the active line; never "
-                          "billed concurrently."],
             })
 
     if use_related:
@@ -686,14 +605,6 @@ def price_search_protection(volume, use_suppression, use_autosuggest,
                           "brand volume \u00b7 until negative removed",
                 "kind": "monthly", "total": _vol(c), "timeline": c["timeline"],
                 "notes": ["Priced per keyword carrying negatives."],
-            })
-            lines.append({
-                "service": "Search Protection \u2014 Related Search Maintenance",
-                "detail": f"${c['maintenance_monthly']:,}/mo after removal (Visions actual)",
-                "kind": "monthly_maint", "total": c["maintenance_monthly"],
-                "timeline": c["maintenance_timeline"],
-                "notes": ["Not billed concurrently with the active phase \u2014 "
-                          "sequential: active \u2192 maintenance."],
             })
 
     if use_suppression and (use_autosuggest or use_related) and sp["bundle_discount_pct"]:
@@ -826,7 +737,7 @@ def price_shield(locations=1, margin_pct=None, hard_override=None):
     }
 
 
-MONTHLY_KINDS = ("monthly", "monthly_maint")
+MONTHLY_KINDS = ("monthly",)
 
 
 def apply_monthly_override(lines, target_hard, margin_pct=None):
@@ -843,11 +754,6 @@ def apply_monthly_override(lines, target_hard, margin_pct=None):
     formula put 70% of the monthly on Search Protection still does after the
     override.
 
-    Maintenance is deliberately included in the proportioning even though it
-    never bills alongside the active line — it is a monthly the client is being
-    quoted, and leaving it on the formula rate while everything around it moved
-    is how a quote ends up with a maintenance phase costing more than the
-    campaign it maintains.
     """
     try:
         target = float(target_hard or 0)
@@ -891,7 +797,13 @@ def build_rep_quote(payload):
     lines, warnings = [], []
     phase1, phase2 = [], []
 
-    if campaign in ("reactive", "bundle"):
+    # FOUR WORKSTREAMS, EACH ON ITS OWN. They used to be gated on the campaign
+    # word -- reviews and article removals priced only when the campaign was
+    # "reactive" or "bundle" -- so a quote could not carry a removal beside a
+    # Brand Shield, and the spec needed a branch per combination of campaign
+    # names rather than one rule per workstream. Each line is priced when its
+    # own inputs are present; STRATEGY is then read off what the quote holds.
+    if True:
         rv = payload.get("reviews") or {}
         ln = price_reviews(rv.get("count", 0),
                            rv.get("margin_pct", payload.get("margin_pct")),
@@ -909,20 +821,12 @@ def build_rep_quote(payload):
         se = payload.get("search") or {}
         if se.get("bundle"):
             vol = int(se.get("volume") or 0)
-            sp_line = price_search_bundle(vol, payload.get("margin_pct"))
-            if campaign == "bundle":
-                # Reactive + Proactive: the Brand Shield (phase 2) IS the
-                # post-result hold — quoting a separate maintenance phase
-                # would double-bill the same protective work. SSG actuals
-                # never stacked them: every maintenance quote (Visions,
-                # Sage, Goldstone) was a standalone reactive engagement.
-                # (Client-facing note about this removed July 2026 — the
-                # absence of a maintenance line speaks for itself.)
-                phase1.append(sp_line)
-            else:
-                phase1.append(sp_line)
-                phase1.append(price_search_bundle_maintenance(
-                    vol, payload.get("margin_pct")))
+            # Reactive and bundle alike. The bundle case used to be the only
+            # branch that appended without also appending a maintenance phase;
+            # removing maintenance left the condition behind it, and a
+            # reactive-only quote priced the Search Protection bundle and then
+            # dropped the line.
+            phase1.append(price_search_bundle(vol, payload.get("margin_pct")))
             sp = REP_CFG["search_protection"]
             if vol > sp["review_above_volume"]:
                 warnings.append(
@@ -935,8 +839,8 @@ def build_rep_quote(payload):
                                     payload.get("margin_pct")))
 
 
-    if campaign in ("proactive", "bundle"):
-        sh = payload.get("shield") or {}
+    sh = payload.get("shield") or {}
+    if sh.get("enabled", campaign in ("proactive", "bundle")):
         phase2.append(price_shield(sh.get("locations", 1),
                                    payload.get("margin_pct")))
 
@@ -946,15 +850,6 @@ def build_rep_quote(payload):
     if ov.get("monthly_hard"):
         apply_monthly_override(phase1 + phase2, ov["monthly_hard"],
                                payload.get("margin_pct"))
-
-    # bundle discount on recurring lines when both phases present
-    if campaign == "bundle" and REP_CFG["bundle"]["recurring_discount_pct"]:
-        pct = REP_CFG["bundle"]["recurring_discount_pct"]
-        for ln in phase1 + phase2:
-            if ln["kind"] == "monthly":
-                ln["total"] = r50(ln["total"] * (1 - pct))
-        warnings.append(f"Bundle discount applied to recurring lines: {int(pct*100)}%.")
-
 
     for ln in phase1:
         ln["phase"] = 1
@@ -995,11 +890,27 @@ def build_rep_quote(payload):
     prm = _find(lambda l: "Website/Article Removals" in l["service"]
                 and "Premium" in l["service"])
 
-    # MAINTENANCE IS NOT IN THE MONTHLY BUDGET. It REPLACES the active Search
-    # Protection rate once results land — the two are never billed together —
-    # so summing every recurring line would bill the same protective work twice.
-    # It is kind "monthly_maint" precisely so this sum can leave it out.
     monthly_lines = [l for l in lines if l["kind"] == "monthly"]
+
+    # THE TWO RECURRING BUNDLES GO OVER SEPARATELY. They are different
+    # products on different bases -- Search Protection scales with brand
+    # search volume, the Brand Shield with location count -- and collapsing
+    # them into one Monthly Budget meant the form could not tell which half
+    # of the money was which, or reprice either one on its own.
+    def _sum(pred):
+        return sum(l["total"] for l in monthly_lines if pred(l["service"]))
+    _search_monthly = _sum(lambda n: n.startswith("Search Protection"))
+    _shield_monthly = _sum(lambda n: "Brand Shield" in n)
+
+    _strategy = []
+    if rev:
+        _strategy.append("Review Removals")
+    if std or prm:
+        _strategy.append("Site/Article Removals")
+    if _search_monthly:
+        _strategy.append("Reactive")
+    if _shield_monthly:
+        _strategy.append("Proactive")
 
     handoff = {
         "review_removals": bool(rev),
@@ -1011,6 +922,13 @@ def build_rep_quote(payload):
         "price_per_standard_site_removal": (std or {}).get("unit") or 0,
         "price_per_premium_site_removal": (prm or {}).get("unit") or 0,
         "monthly_budget": sum(l["total"] for l in monthly_lines),
+        "search_protection_monthly": _search_monthly,
+        "brand_shield_monthly": _shield_monthly,
+        # WHAT EACH BUNDLE IS PRICED OFF. The form recalculates against these
+        # two, and neither was being sent -- so a repriced quote had no way to
+        # arrive at the same number.
+        "search_volume": int((payload.get("search") or {}).get("volume") or 0),
+        "locations": max(1, int((payload.get("shield") or {}).get("locations") or 1)),
         "margin_pct": (payload.get("margin_pct") if payload.get("margin_pct")
                        is not None else ART_CAL_MARGIN),
         # What Billing charges the partner. Sent rather than derived: every
@@ -1025,15 +943,15 @@ def build_rep_quote(payload):
         # Billing charges the partner off the cost.
         "partner_hard_cost_per_standard_site": _hard_per(std),
         "partner_hard_cost_per_premium_site": _hard_per(prm),
-        # THE FORM'S STRATEGY FIELD IS A MULTISELECT OF Reactive / Proactive.
-        # It used to get our internal campaign name, and "bundle" is not one of
-        # its values — it would have landed as an unmatched option or an empty
-        # multiselect. A bundle IS both, so send both.
-        "strategy": ({"reactive": ["Reactive"], "proactive": ["Proactive"],
-                      "bundle": ["Reactive", "Proactive"]}
-                     .get(campaign) or [campaign.title()]),
+        # STRATEGY IS FOUR VALUES, READ OFF THE QUOTE. It used to be two,
+        # derived from our internal campaign word, which is why the proposal
+        # spec needed a branch per combination -- "when strategy = Reactive +
+        # Proactive" -- instead of one rule per workstream. Each value is here
+        # because a line for it is on the quote, so the four sections are
+        # independent and every combination is covered by the same four rules.
+        "strategy": _strategy,
     }
 
     return {"campaign": campaign, "lines": lines, "totals": totals,
             "warnings": warnings, "handoff": handoff,
-            "bundle_meta": REP_CFG["bundle"] if campaign == "bundle" else None}
+            "bundle_meta": None}

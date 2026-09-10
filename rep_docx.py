@@ -80,14 +80,18 @@ COPY = {
                         "bulk pricing above beyond 500 reviews per month on a "
                         "multi-month basis.",
 
+    # BRENDAN'S WORDING, LESS THE MAINTENANCE PHASE. Both of these promised a
+    # post-removal maintenance period the tool no longer prices, so the
+    # document would have sold something with no line item behind it.
+    # search_basis kept its reason for not being performance-based; the
+    # maintenance clause became "ongoing work". search_rates lost its second
+    # sentence entirely.
     "search_basis": "This is the only campaign we are proposing which is not "
                     "done on a performance basis because it requires both "
-                    "initial work as well as several months of maintenance to "
-                    "maintain the removal of the negative result.",
+                    "initial work as well as several months of ongoing work "
+                    "to hold the removal of the negative result.",
     "search_rates": "We have a 85+% success rate at removal of negative "
-                    "results over a 6 month period. We then recommend 3-6 "
-                    "months of post-removal maintenance to maintain the "
-                    "removal.",
+                    "results over a 6 month period.",
     "search_influence": "Additionally, if desired, we can actually influence "
                         "what shows up here \u2014 we can put positive terms "
                         "in their place. This is all done based on volume.",
