@@ -31,6 +31,86 @@ GOLD = RGBColor(0xF1, 0xB4, 0x34)
 MUTED = RGBColor(0x66, 0x6666 // 0x100, 0x66)
 
 
+# ---------------------------------------------------------------------- copy
+# Brendan's own wording, lifted from the two reputation proposals he has sent:
+# Visions Electronics (March 2024) and Sage Dental (January 2026). Kept
+# verbatim rather than paraphrased -- the pay-on-success sentence in
+# particular is the commercial term, not a description of one.
+COPY = {
+    "from": "Brendan Egan, Aaron Peterson - Simple SEO Group",
+    "ip": "Until accepted, all written proposals and recommendations remain "
+          "the intellectual property of Simple SEO Group and its officers and "
+          "may not be shared, distributed, copied, or otherwise reproduced in "
+          "any manner.",
+    "summary": "{brand} is requesting information to assist in improving "
+               "their online reputation. All pricing within this proposal is "
+               "listed in US dollars.",
+
+    "sites_intro": "We have developed a method for removing websites from "
+                   "Google search results which to date has a 100% success "
+                   "rate. We have helped hundreds of companies remove "
+                   "negative listings online utilizing this strategy.",
+    "sites_terms": "Pricing for website removals is as follows; payment is "
+                   "only due upon successful removal of the site from Google. "
+                   "In the event we cannot remove a site from Google, you "
+                   "would still receive the bulk pricing based on the amount "
+                   "of sites you requested us to remove and would not be "
+                   "charged for any sites which we cannot remove from Google.",
+    "sites_timeline": "It takes an average of 2-3 months to remove a site "
+                      "from Google, but in certain cases can take up to 6 "
+                      "months.",
+
+    "reviews_intro": "We can assist with flagging and removing negative "
+                     "Google reviews (you, as the end client, can define "
+                     "which reviews you want removed by us OR you can tell us "
+                     "to remove any 1 star, 2 star, etc. reviews).",
+    "reviews_rates": "We have a roughly 60% success rate at removing reviews "
+                     "that are newer than 6 months old. We have a roughly 50% "
+                     "success rate at removing reviews which are older than 6 "
+                     "months.",
+    "reviews_terms": "Pricing for Google review removals is as follows; "
+                     "payment is only due upon successful removal of the "
+                     "review from Google. In the event we cannot remove a "
+                     "review from Google, you would still receive the bulk "
+                     "pricing based on the amount of reviews you requested us "
+                     "to remove and would not be charged for any reviews "
+                     "which we cannot remove from Google.",
+    "reviews_capacity": "We have the capacity to remove up to 500 reviews per "
+                        "month. A long term contract can be signed to achieve "
+                        "bulk pricing above beyond 500 reviews per month on a "
+                        "multi-month basis.",
+
+    "search_basis": "This is the only campaign we are proposing which is not "
+                    "done on a performance basis because it requires both "
+                    "initial work as well as several months of maintenance to "
+                    "maintain the removal of the negative result.",
+    "search_rates": "We have a 85+% success rate at removal of negative "
+                    "results over a 6 month period. We then recommend 3-6 "
+                    "months of post-removal maintenance to maintain the "
+                    "removal.",
+    "search_influence": "Additionally, if desired, we can actually influence "
+                        "what shows up here \u2014 we can put positive terms "
+                        "in their place. This is all done based on volume.",
+
+    "next_heading": "Proposal - Next Steps",
+    "next_1": "If you have any questions regarding this proposal or would "
+              "like to review together, please contact Brendan at "
+              "Brendan@simpleseogroup.com to schedule a call to review.",
+    "next_2": "When you\u2019re ready to get started with services, please "
+              "complete our new client registration / master services "
+              "agreement located conveniently online at "
+              "https://www.simpleseogroup.com/new-client-registration-contract/",
+    "next_3": "Upon completion, we\u2019ll contact you within 24 hours or "
+              "less to begin your services with us.",
+
+    "footer_1": "1-888-918-1665 | info@SimpleSEOGroup.com | "
+                "www.SimpleSEOGroup.com",
+    "footer_2": "All proposals expire 30 days from the date of issuance. All "
+                "proposals are subject to our full terms of service available "
+                "for review at SimpleSEOGroup.com/TOS",
+}
+
+
 # ---------------------------------------------------------------- primitives
 def _doc():
     doc = Document()
@@ -123,6 +203,60 @@ def _table(doc, headers, rows, widths=None, right_from=1):
         for i, w in enumerate(widths):
             for row in tb.rows:
                 row.cells[i].width = Inches(w)
+    return tb
+
+
+def _letterhead(doc, brand, subject, when=None):
+    """Date / Subject / From, then the IP notice — the way both of Brendan's
+    reputation proposals open."""
+    import datetime
+    day = when or datetime.date.today()
+    _body(doc, f"Date: {day.strftime('%B')} {day.day}, {day.year}")
+    _body(doc, f"Subject: {brand} - {subject}")
+    _body(doc, "From: " + COPY["from"])
+    _body(doc, COPY["ip"], size=8.5, italic=True)
+
+
+def _footer(doc):
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(16)
+    r = p.add_run(COPY["footer_1"])
+    r.font.size = Pt(8.5)
+    r.bold = True
+    q = doc.add_paragraph()
+    rq = q.add_run(COPY["footer_2"])
+    rq.font.size = Pt(7.5)
+    rq.italic = True
+
+
+def _rate_table(doc, headers, prices, head_label, price_label):
+    """Brendan prints a rate card ACROSS the page: the bands on the top row,
+    the per-unit price under each. Read as a ladder rather than a list."""
+    tb = doc.add_table(rows=2, cols=len(headers) + 1)
+    tb.style = "Table Grid"
+    cells = tb.rows[0].cells
+    cells[0].text = ""
+    r = cells[0].paragraphs[0].add_run(head_label)
+    r.bold = True
+    r.font.size = Pt(9)
+    for i, h in enumerate(headers, start=1):
+        cells[i].text = ""
+        p = cells[i].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        rr = p.add_run(str(h))
+        rr.bold = True
+        rr.font.size = Pt(9)
+    cells = tb.rows[1].cells
+    cells[0].text = ""
+    r = cells[0].paragraphs[0].add_run(price_label)
+    r.bold = True
+    r.font.size = Pt(9)
+    for i, v in enumerate(prices, start=1):
+        cells[i].text = ""
+        p = cells[i].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        rr = p.add_run(str(v))
+        rr.font.size = Pt(9)
     return tb
 
 
@@ -280,6 +414,7 @@ def build_review_removal_docx(d):
     locs = [l for l in (d.get("locations") or []) if l.get("profile_reviews")]
     where = (d.get("region") or "").strip()
 
+    _letterhead(doc, brand, "Google Review Removal Analysis")
     _title(doc, "Google Business Profile Review Analysis",
            brand + (f" — {where}" if where else ""),
            "Review distribution by location and star rating")
@@ -385,12 +520,17 @@ def build_review_removal_docx(d):
                        "is a minimum.", italic=True)
 
     # ---- the money --------------------------------------------------------
-    _head(doc, "Review Removal Pricing")
-    _body(doc, "Pay only if we successfully remove a review:", bold=True)
-    for row in (d.get("brackets") or []):
-        lo, hi, price = row.get("min"), row.get("max"), row.get("price")
-        span = f"{lo}-{hi}" if hi else f"{lo}+"
-        _bullet(doc, f"{span} removals: {_money(price)} per review")
+    _head(doc, "Google Review Removals")
+    _body(doc, COPY["reviews_intro"])
+    _body(doc, COPY["reviews_rates"])
+    _body(doc, COPY["reviews_terms"])
+    card = d.get("brackets") or []
+    if card:
+        _rate_table(doc,
+                    [f"{b['min']}-{b['max']}" if b.get("max") else f"{b['min']}+"
+                     for b in card],
+                    [_money(b["price"]) for b in card],
+                    "# Of Reviews Removed", "Cost Per Review Removed")
 
     if need:
         rate = d.get("rate_for_total")
@@ -409,7 +549,14 @@ def build_review_removal_docx(d):
                "location. Totals and weighted averages are calculated from "
                "those counts rather than read off the profile, and the "
                "scenarios move only one-star reviews.", italic=True)
+    _body(doc, COPY["reviews_capacity"])
     _body(doc, d.get("stat_line") or STAT_LINE, italic=True)
+
+    _head(doc, COPY["next_heading"])
+    _body(doc, COPY["next_1"])
+    _body(doc, COPY["next_2"])
+    _body(doc, COPY["next_3"])
+    _footer(doc)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -418,48 +565,120 @@ def build_review_removal_docx(d):
 
 
 # ------------------------------------------------------ everything-proposed
+def _bracket_rows(lines):
+    """The removal rate cards this quote's lines were priced off, if any."""
+    out = {}
+    for ln in lines:
+        card = ln.get("rate_card")
+        if card:
+            out[ln.get("service")] = card
+    return out
+
+
 def build_rep_proposal_docx(d):
-    """Every line the reputation quote carries, with the totals."""
+    """Everything proposed, in the shape Brendan's own proposals take.
+
+    Header, a summary, a section per service in his wording, the rate card
+    across the page, then Next Steps. The quote supplies the numbers; the
+    prose is his. (2026-09-10, Kiri)
+    """
     doc = _doc()
     brand = (d.get("brand") or "This client").strip()
     q = d.get("quote") or {}
     lines = q.get("lines") or []
     totals = q.get("totals") or {}
-    campaign = {"reactive": "Reactive", "proactive": "Proactive",
-                "bundle": "Reactive + Proactive"}.get(
-                    d.get("campaign") or "", (d.get("campaign") or "").title())
 
-    _title(doc, "Reputation Management Proposal", brand,
-           campaign + " campaign" if campaign else None)
+    _letterhead(doc, brand, "Reputation Management Proposal")
+
+    _head(doc, "Summary")
+    _body(doc, COPY["summary"].format(brand=brand))
+
+    def _find(pred):
+        return [l for l in lines if pred(l)]
+
+    reviews = _find(lambda l: str(l.get("service", "")).startswith(
+        "Negative Review Removals"))
+    sites = _find(lambda l: "Website/Article Removals" in str(l.get("service", "")))
+    search = _find(lambda l: "Search Protection" in str(l.get("service", ""))
+                   or "Brand Shield" in str(l.get("service", "")))
+    other = [l for l in lines
+             if l not in reviews and l not in sites and l not in search]
+
+    # ---- website removals -------------------------------------------------
+    if sites:
+        _head(doc, "Website Removals")
+        _body(doc, COPY["sites_intro"])
+        _body(doc, COPY["sites_terms"])
+        card = d.get("site_rate_card")
+        if card:
+            _rate_table(doc, [c["band"] for c in card],
+                        [_money(c["price"]) for c in card],
+                        "# Of Sites Removed", "Cost Per Site Removed")
+        for l in sites:
+            _body(doc, f"{l.get('service')}: {l.get('detail')} — "
+                       f"{_money(l.get('total'))}.", bold=True)
+        _body(doc, COPY["sites_timeline"])
+
+    # ---- review removals --------------------------------------------------
+    if reviews:
+        _head(doc, "Google Review Removals")
+        _body(doc, COPY["reviews_intro"])
+        _body(doc, COPY["reviews_rates"])
+        _body(doc, COPY["reviews_terms"])
+        card = d.get("brackets")
+        if card:
+            _rate_table(doc,
+                        [f"{b['min']}-{b['max']}" if b.get("max")
+                         else f"{b['min']}+" for b in card],
+                        [_money(b["price"]) for b in card],
+                        "# Of Reviews Removed", "Cost Per Review Removed")
+        for l in reviews:
+            _body(doc, f"{l.get('detail')} — up to {_money(l.get('total'))}.",
+                  bold=True)
+        _body(doc, COPY["reviews_capacity"])
+
+    # ---- search results ---------------------------------------------------
+    if search:
+        _head(doc, "Search Results, Related Searches and Auto Suggest")
+        _body(doc, COPY["search_basis"])
+        _body(doc, COPY["search_rates"])
+        _body(doc, COPY["search_influence"])
+        _table(doc, ["Service", "Detail", "Price"],
+               [[l.get("service") or "", l.get("detail") or "",
+                 _money(l.get("total")) + ("/mo" if l.get("kind") == "monthly"
+                                           else "")] for l in search],
+               widths=[1.9, 3.1, 1.2], right_from=2)
+
+    if other:
+        _head(doc, "Additional Services")
+        _table(doc, ["Service", "Detail", "Price"],
+               [[l.get("service") or "", l.get("detail") or "",
+                 _money(l.get("total")) + ("/mo" if l.get("kind") == "monthly"
+                                           else "")] for l in other],
+               widths=[1.9, 3.1, 1.2], right_from=2)
 
     if not lines:
         _body(doc, "Nothing is proposed on this quote yet.")
-        buf = io.BytesIO()
-        doc.save(buf)
-        buf.seek(0)
-        return buf
 
-    for phase, heading in ((1, "Phase 1 — Reactive"),
-                           (2, "Phase 2 — Proactive")):
-        rows = [l for l in lines if int(l.get("phase") or 1) == phase]
-        if not rows:
-            continue
-        _head(doc, heading)
-        _table(doc, ["Service", "Detail", "Qty", "Price"],
-               [[l.get("service") or "", l.get("detail") or "",
-                 l.get("qty") or "", _money(l.get("total"))] for l in rows],
-               widths=[1.9, 2.7, 0.6, 1.0], right_from=2)
-
-    _head(doc, "Totals")
-    rows = []
-    if totals.get("one_time"):
-        rows.append(["One-time and per-asset", _money(totals["one_time"])])
-    if totals.get("monthly"):
-        rows.append(["Monthly", _money(totals["monthly"]) + " / month"])
-    _table(doc, ["", "Amount"], rows, widths=[4.6, 1.6])
+    # ---- totals -----------------------------------------------------------
+    if totals.get("one_time") or totals.get("monthly"):
+        _head(doc, "Totals")
+        rows = []
+        if totals.get("one_time"):
+            rows.append(["One-time and per-asset (pay on success)",
+                         _money(totals["one_time"])])
+        if totals.get("monthly"):
+            rows.append(["Monthly", _money(totals["monthly"]) + " / month"])
+        _table(doc, ["", "Amount"], rows, widths=[4.6, 1.6])
 
     for w in (q.get("warnings") or []):
         _body(doc, w, italic=True)
+
+    _head(doc, COPY["next_heading"])
+    _body(doc, COPY["next_1"])
+    _body(doc, COPY["next_2"])
+    _body(doc, COPY["next_3"])
+    _footer(doc)
 
     buf = io.BytesIO()
     doc.save(buf)

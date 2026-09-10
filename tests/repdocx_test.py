@@ -133,11 +133,30 @@ check("naming the client", "Ski Barn" in t, True)
 check("with every location", all(l["title"] in t for l in SKI_BARN), True)
 check("the star distribution", "5 ★ | 4 ★ | 3 ★ | 2 ★ | 1 ★" in t, True)
 check("the scenarios", "Rating Improvement Scenarios" in t, True)
-check("the rate card", "1-25 removals: $900 per review" in t, True)
+check("the rate card", "1-25 | 26-50 | 51-100" in t, True)
 check("and the whole-order rate for 30 removals", "$850 per review" in t, True)
 check("no reputation management in it",
       any(w in t for w in ("Brand Shield", "Search Protection",
                            "Proactive", "monthly")), False)
+
+print("\nAND IT OPENS AND CLOSES THE WAY HIS OWN PROPOSALS DO")
+check("the subject line", "Subject: Ski Barn - Google Review Removal Analysis" in t, True)
+check("the from line",
+      "From: Brendan Egan, Aaron Peterson - Simple SEO Group" in t, True)
+check("the IP notice", "remain the intellectual property of Simple SEO Group" in t, True)
+check("his review wording, verbatim",
+      "you, as the end client, can define which reviews you want removed" in t, True)
+check("the success rates", "roughly 60% success rate" in t, True)
+check("the pay-on-success terms",
+      "payment is only due upon successful removal of the review from Google" in t, True)
+check("the rate card across the page",
+      "# Of Reviews Removed | 1-25 | 26-50 | 51-100 | 101-250 | 251-350 | 351-500" in t,
+      True)
+check("with the prices under it",
+      "Cost Per Review Removed | $900 | $850 | $800 | $750 | $700 | $650" in t, True)
+check("the capacity note", "capacity to remove up to 500 reviews per month" in t, True)
+check("next steps", "Proposal - Next Steps" in t, True)
+check("and the footer", "1-888-918-1665 | info@SimpleSEOGroup.com" in t, True)
 
 print("\nTHE PROPOSAL DOCUMENT")
 q = rep_pricing.build_rep_quote(
@@ -145,13 +164,27 @@ q = rep_pricing.build_rep_quote(
      "reviews": {"count": 26}, "articles": {"standard": 2, "premium": 1},
      "search": {"volume": 8000, "bundle": True}, "shield": {"locations": 4}})
 r2 = client.post("/api/rep_proposal.docx",
-                 json={"brand": "Ski Barn", "campaign": "bundle", "quote": q})
+                 json={"brand": "Ski Barn", "campaign": "bundle", "quote": q,
+                       "margin_pct": 0.35})
 check("it builds", r2.status_code, 200)
 t2 = text_of(r2.data)
-check("both phases", "Phase 1 — Reactive" in t2 and "Phase 2 — Proactive" in t2, True)
-check("the review line", "Negative Review Removals" in t2, True)
-check("the shield", "Proactive Brand Shield" in t2, True)
-check("and the totals", "One-time and per-asset" in t2 and "Monthly" in t2, True)
+check("it opens as a proposal",
+      "Subject: Ski Barn - Reputation Management Proposal" in t2, True)
+check("the summary is his", "requesting information to assist in improving "
+      "their online reputation" in t2, True)
+check("website removals, his wording",
+      "which to date has a 100% success rate" in t2, True)
+check("with his pay-on-success terms",
+      "payment is only due upon successful removal of the site from Google" in t2, True)
+check("and his timeline", "average of 2-3 months to remove a site" in t2, True)
+check("review removals, his wording", "roughly 50% success rate" in t2, True)
+check("the search campaign is flagged as not performance-based",
+      "not done on a performance basis" in t2, True)
+check("the priced lines survive", "26 flagged reviews" in t2, True)
+check("the shield", "Brand Shield" in t2, True)
+check("the totals", "One-time and per-asset (pay on success)" in t2, True)
+check("next steps", "new-client-registration-contract" in t2, True)
+check("and the footer", "SimpleSEOGroup.com/TOS" in t2, True)
 
 print("\nAN EMPTY QUOTE SAYS SO RATHER THAN FAILING")
 r3 = client.post("/api/rep_proposal.docx",

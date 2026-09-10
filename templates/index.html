@@ -525,6 +525,18 @@
          seventh that nobody had the information to answer. The select stays in
          the DOM (everything reads its value) but the row is hidden behind
          "change" for the case a human genuinely knows better. (2026-08-19) -->
+    <label>Country<span class="pl" title="adtini supplies this from the product line — you don't type it">pulled from product line</span></label>
+    <div class="help">Which Google this quote is measured against. Outside the US the campaign is national — the market grouping runs on US data and has nothing to place a town with.</div>
+    <select id="country">
+      <option value="US" selected>United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="CA">Canada</option>
+      <option value="AU">Australia</option>
+      <option value="IE">Ireland</option>
+      <option value="NZ">New Zealand</option>
+    </select>
+    <div id="countryNote" class="hidden" style="margin:7px 0 2px;padding:8px 11px;background:var(--warn-bg);border:1px solid #e8c98a;border-radius:8px;font-size:12.5px"></div>
+
     <div id="scopeDerived" class="help" style="margin:6px 0 2px"></div>
     <div id="scopeRow" class="hidden">
     <label>Geo scope<span class="pl" title="adtini supplies this from the product line — you don't type it">pulled from product line</span></label>
@@ -2476,6 +2488,14 @@ function collectInputs(){
 }
 
 async function postJSON(url, body, method){
+  // ONE PLACE, NOT TWENTY PAYLOADS. The country decides which Google every
+  // lookup is made against, so it has to ride on all of them — and adding it
+  // to each call site by hand is how one gets missed and a single panel
+  // silently measures the wrong country. (2026-09-10, Kiri)
+  if(body && typeof body==='object' && !Array.isArray(body) && body.country===undefined){
+    const cs=document.getElementById('country');
+    if(cs && cs.value) body={...body, country:cs.value};
+  }
   const res=await fetch(url,{method:method||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const text=await res.text();
   let data; try{data=JSON.parse(text);}catch(_){throw new Error(`Server ${res.status} (timeout or non-JSON).`);}
@@ -6279,6 +6299,7 @@ function snapshotQuote(){
     negatives: stores.neg.slice(),
     state: $('state') ? $('state').value : (ST.inputs.state||''),
     geo_scope: $('geo_scope') ? $('geo_scope').value : ST.inputs.geo_scope,
+    country: $('country') ? $('country').value : (ST.inputs.country||'US'),
     strategy: (document.querySelector('#strategies input:checked')||{}).value||ST.inputs.strategy||'Core SEO',
     ecommerce: !!(ST.inputs&&ST.inputs.ecommerce),   // legacy passthrough for old saved quotes
     industry: stores.industry.join(' | ') || (ST.inputs.industry||''),
@@ -6528,6 +6549,8 @@ function reflectInputs(inp){
   if($('pastseo_detail')) $('pastseo_detail').value = inp.past_seo_detail||'';
   if($('business_desc')) $('business_desc').value = inp.business_desc||'';
   if($('geo_scope'))     $('geo_scope').value = inp.geo_scope||'single_city';
+  if($('country')){ $('country').value = inp.country||'US';
+                    try{ renderCountry(); }catch(e){} }
   if($('site_rebuild'))  $('site_rebuild').value = inp.site_rebuild||'';
   stores.industry = (inp.industries && inp.industries.slice())
     || ((inp.industry||'').split(' | ').map(x=>x.trim()).filter(Boolean));
@@ -8412,6 +8435,39 @@ if($('geo_scope')){
   $('geo_scope').addEventListener('change', (e)=>{
     if(e && e.isTrusted){ ST._scopeTouched=true; try{ renderScopeDerived(); }catch(_){} }
   });
+}
+
+// OUTSIDE THE US THE CAMPAIGN IS NATIONAL, and the form has to stop offering
+// what cannot be measured: the market grouping, the county index and the
+// spelling repair all read a US ZIP dataset, so a London pill would place
+// nowhere. National demand is forced on for the same reason — the anchor has
+// to be the nationwide one. (2026-09-10, Kiri)
+function renderCountry(){
+  const sel=$('country'); if(!sel) return;
+  const code=sel.value||'US', dom=(code==='US');
+  const label=sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : code;
+  if(ST.inputs) ST.inputs.country=code;
+  const note=$('countryNote');
+  if(note){
+    note.classList.toggle('hidden', dom);
+    if(!dom) note.innerHTML='\u26a0 <b>'+escapeHtml(label)+'</b> \u2014 measured nationally. '
+      + 'Geographic areas and add-on markets are US-only, and the pricing anchors are '
+      + 'fitted on US quotes, so the number this returns is the US card applied to a '
+      + '<b>'+escapeHtml(label)+'</b> measurement.';
+  }
+  const geoWrap=$('geo_in') ? $('geo_in').closest('.pillbox') : null;
+  if(geoWrap) geoWrap.style.display = dom ? '' : 'none';
+  if(!dom){
+    if((stores.geo||[]).length){ stores.geo=[]; try{ PILL_RENDER.geo(); }catch(e){} }
+    const nd=$('natdemand');
+    if(nd && !nd.checked){ nd.checked=true; try{ renderNatDemand(); }catch(e){} }
+    try{ setScope('nationwide'); }catch(e){}
+  }
+  try{ scheduleMarketSummary(); }catch(e){}
+}
+if($('country')){
+  $('country').addEventListener('change', ()=>{ renderCountry(); try{ scheduleAutoSave(); }catch(e){} });
+  try{ renderCountry(); }catch(e){}
 }
 
 function syncStateSummary(){

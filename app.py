@@ -20,7 +20,7 @@ import html
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 import requests
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, g
 import time as _time
 import storage
 
@@ -2019,6 +2019,11 @@ def usable_markets(markets):
     separate from the pill list on purpose — dropping the operator's own entry
     behind their back is worse than showing it and refusing to measure in it.
     """
+    # Outside the US the market machinery has no data to run on -- the ZIP
+    # index, the county index and the spelling repair are all US -- so a
+    # non-US quote is national and carries no markets at all.
+    if not is_domestic():
+        return []
     return [str(m).strip() for m in (markets or [])
             if str(m).strip() and not is_non_place_geo(m)
             and not is_foreign_geo(m)]
@@ -2085,13 +2090,17 @@ def loc_string(markets, state):
         # same silent failure, different half of the string. (2026-08-21)
         st = _abbrev_to_state().get(str(st or "").strip().lower(), st).title() \
             if str(st or "").strip().lower() in _abbrev_to_state() else st
+        # A non-US quote is national by construction — the market machinery
+        # below it is US-only — so the country IS the location.
+        if not is_domestic():
+            return country_name()
         if city and st:
             return f"{city},{st},United States"
         if city:                      # city without state — still localizes
             return f"{city},United States"
     if state:
         return f"{state},United States"
-    return "United States"
+    return country_name()
 
 # City -> state auto-derivation. Covers major US metros + the cities in the
 # sample proposals. Unknown cities fall back to "City,United States", which
@@ -2127,6 +2136,82 @@ def _abbrev_to_state():
     if _ABBREV_TO_STATE is None:
         _ABBREV_TO_STATE = {v: k for k, v in STATE_ABBREV.items()}   # 'nj' -> 'new jersey'
     return _ABBREV_TO_STATE
+
+# ---------------------------------------------------------------------------
+# WHICH COUNTRY THIS QUOTE IS MEASURED IN.
+#
+# Every location string this tool built ended in "United States" and every Labs
+# call sent country 2840, so a UK client entering the US market had its UK side
+# measured as US demand -- eighteen terms with no volume, and nothing on screen
+# saying the country was the reason. DataForSEO is multi-country on the same
+# subscription; the hardcoding was ours.
+#
+# NATIONAL ONLY outside the US. The market clustering, the county index and the
+# "Mount Union" spelling repair all run on a US ZIP dataset, so a non-US quote
+# with geographic areas would place none of them. The selector enforces it and
+# the panel says so.
+#
+# Carried on flask.g rather than threaded through sixteen call sites: it is a
+# property of the request, and g is per-request under gthread. Defaults to the
+# US, so every existing quote and every saved quote behaves exactly as before.
+# (2026-09-10, Kiri)
+COUNTRIES = {
+    "US": {"name": "United States", "labs": 2840, "iso": "us", "label": "United States"},
+    "GB": {"name": "United Kingdom", "labs": 2826, "iso": "gb", "label": "United Kingdom"},
+    "CA": {"name": "Canada",         "labs": 2124, "iso": "ca", "label": "Canada"},
+    "AU": {"name": "Australia",      "labs": 2036, "iso": "au", "label": "Australia"},
+    "IE": {"name": "Ireland",        "labs": 2372, "iso": "ie", "label": "Ireland"},
+    "NZ": {"name": "New Zealand",    "labs": 2554, "iso": "nz", "label": "New Zealand"},
+}
+DEFAULT_COUNTRY = "US"
+
+
+def set_country(code):
+    """Fix the country for THIS request. Unknown codes fall back to the US."""
+    c = str(code or "").strip().upper()
+    try:
+        g.country = c if c in COUNTRIES else DEFAULT_COUNTRY
+    except RuntimeError:                       # no request context (tests, jobs)
+        pass
+    return c if c in COUNTRIES else DEFAULT_COUNTRY
+
+
+def country():
+    try:
+        return getattr(g, "country", DEFAULT_COUNTRY) or DEFAULT_COUNTRY
+    except RuntimeError:
+        return DEFAULT_COUNTRY
+
+
+def country_name():
+    return COUNTRIES[country()]["name"]
+
+
+def labs_location_code():
+    return COUNTRIES[country()]["labs"]
+
+
+def is_domestic():
+    return country() == DEFAULT_COUNTRY
+
+
+@app.before_request
+def _pick_country():
+    """Read the country off the request once, before anything looks it up.
+
+    Every payload in both tools already carries the whole form; adding one key
+    to it is cheaper and far less error-prone than passing a country through
+    sixteen call sites and the four background pollers.
+    """
+    code = request.args.get("country")
+    if not code and request.method in ("POST", "PUT"):
+        body = request.get_json(silent=True)
+        if isinstance(body, dict):
+            code = body.get("country")
+            if not code and isinstance(body.get("inputs"), dict):
+                code = body["inputs"].get("country")
+    set_country(code)
+
 
 def parse_market(m, default_state=""):
     """Split an entered market into (city, state). Accepts 'Cherry Hill, NJ',
@@ -2290,7 +2375,7 @@ def fetch_keywords_for_site(domain, markets, state):
         return []
     try:
         # Labs endpoint: use numeric location_code (2840 = US), not location_name.
-        payload = [{"target": dom, "location_code": 2840,
+        payload = [{"target": dom, "location_code": labs_location_code(),
                     "language_code": "en", "limit": CFG["site_keywords_limit"]}]
         data = dfs_post("/dataforseo_labs/google/keywords_for_site/live", payload)
         res = (data["tasks"][0]["result"] or [])
@@ -2819,8 +2904,9 @@ def fetch_local_volume(terms, markets, state, national=False):
                         # does not tell someone to retype a market under a name
                         # this call has just been refused on.
                         alt_tried[city] = alt
-                broader = (f"{city_st},United States" if city_st
-                           else (f"{state},United States" if state else "United States"))
+                broader = (f"{city_st},{country_name()}" if city_st
+                           else (f"{state},{country_name()}" if state
+                                 else country_name()))
                 _rows, _code = call(broader)
                 resolved_codes[city] = _code
                 return _rows, broader
@@ -2867,9 +2953,9 @@ def fetch_local_volume(terms, markets, state, national=False):
     if own_data:
         # Own-location results first so they claim their location before any
         # fallback that resolved to the same place.
-        ordered = sorted(results, key=lambda r: (r[3], r[2] == "United States"))
+        ordered = sorted(results, key=lambda r: (r[3], r[2] == country_name()))
     else:
-        ordered = sorted(results, key=lambda r: r[2] == "United States")
+        ordered = sorted(results, key=lambda r: r[2] == country_name())
     for city, rows, used_loc, was_fb in ordered:
         # DataForSEO tells us which location it ACTUALLY used for each city —
         # that is exact market identity, not an inference. Two cities resolving
@@ -2884,7 +2970,8 @@ def fetch_local_volume(terms, markets, state, national=False):
             # Not this city's location, and someone else's figures are real.
             count_it = False
             broader_skipped.append(city)
-        if used_loc == "United States" and [r for r in results if r[2] != "United States"]:
+        if used_loc == country_name() and [r for r in results
+                                           if r[2] != country_name()]:
             count_it = False
             us_skipped = True
         counted_locs.add(used_loc)
@@ -2969,7 +3056,7 @@ def _labs_loc_field(markets, state, national=False):
 
     Returns (payload_fragment, label) — the label is what the UI reports.
     """
-    return {"location_code": 2840}, "United States"
+    return {"location_code": labs_location_code()}, country_name()
 
 
 def fetch_exact_volume(keywords, markets, state, national=False):
@@ -5660,7 +5747,7 @@ def geo_qualified_volume(terms, markets, state):
     out = {}
     try:
         data = dfs_post("/keywords_data/google_ads/search_volume/live",
-                        [{"keywords": probe[:700], "location_name": "United States",
+                        [{"keywords": probe[:700], "location_name": country_name(),
                           "language_code": "en"}], timeout=25)
         for it in (data["tasks"][0]["result"] or []):
             k = str(it.get("keyword", "")).lower()
@@ -7059,7 +7146,7 @@ def validate_region_names(candidates, service_term, markets, state):
     vols = {}
     try:
         payload = [{"keywords": probe,
-                    "location_name": loc_string(markets, state) or "United States",
+                    "location_name": loc_string(markets, state) or country_name(),
                     "language_code": "en"}]
         data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
         for row in ((data.get("tasks") or [{}])[0].get("result") or []):
@@ -7271,7 +7358,7 @@ def pick_geo_forms(markets, state, service_terms):
         payload = [{"keywords": probes[:700],
                     # NATIONAL on purpose — see the docstring. This is a question
                     # about wording, not about local demand.
-                    "location_name": "United States",
+                    "location_name": country_name(),
                     "language_code": "en"}]
         data = dfs_post("/keywords_data/google_ads/search_volume/live", payload)
         for it in (data["tasks"][0]["result"] or []):
@@ -9664,7 +9751,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "grid_axis": {"axis": axis, "reason": axis_reason, "evidence": axis_ev},
             "near_me_added": [[f, v] for f, v in (near_added or [])],
             "acronym_collisions": acronym_collisions(full),
-            "volume_location": "United States" if national_demand else loc_string(markets, state),
+            "volume_location": (country_name() if national_demand
+                                else loc_string(markets, state)),
             "volume_source": volume_source,
             "national_demand": bool(national_demand),
             "national_demand_reason": national_demand_reason,
@@ -9759,7 +9847,7 @@ def fetch_keyword_difficulty(kws, markets, state):
         # the Google Ads endpoints use). 2840 = United States. Keyword difficulty
         # is a national-level organic metric, so country-level is appropriate.
         payload = [{"keywords": kws[:1000],
-                    "location_code": 2840,
+                    "location_code": labs_location_code(),
                     "language_code": "en"}]
         data = dfs_post("/dataforseo_labs/google/bulk_keyword_difficulty/live", payload)
         task = (data.get("tasks") or [{}])[0]
@@ -9938,12 +10026,12 @@ def stage3_metrics(head, markets, state, national=False, industry=""):
     # competition on the SAME basis or the two halves of one quote describe
     # different markets. This was never plumbed through, so a nationwide client
     # with cities entered had its bids read from those cities (2026-08-04).
-    primary_loc = "United States" if national else loc_string(markets, state)
+    primary_loc = country_name() if national else loc_string(markets, state)
     loc_chain = [primary_loc]
     if state and f"{state},United States" not in loc_chain:
         loc_chain.append(f"{state},United States")
-    if "United States" not in loc_chain:
-        loc_chain.append("United States")
+    if country_name() not in loc_chain:
+        loc_chain.append(country_name())
     bid_err = None
     items = []
     bid_loc_used = primary_loc
@@ -10310,7 +10398,7 @@ def rank_location(markets, state, national=False):
     pure-play ecommerce, the MPG case — gets measured nationally.
     """
     if national and not markets:
-        return "United States"
+        return country_name()
     return loc_string(markets, state)
 
 
@@ -10323,7 +10411,7 @@ def rank_location_note(markets, state, national=False):
     # California — Measured in mill valley, California. Demand is pulled…".
     # And "a regional retailer" was Ski Barn's wording leaking onto every client;
     # NASSCO is a standards body and the sentence read as nonsense. (2026-08-10)
-    if loc == "United States":
+    if loc == country_name():
         return {"location": loc, "scope": "national",
                 "note": "No markets are set, so there is nowhere local to measure "
                         "— this is the whole-country result."}
@@ -13480,7 +13568,7 @@ def api_acronym_serp():
                                       goal=(d.get("goal") or ""))
     # An acronym's ownership is a national question — "who does Google think this
     # word belongs to" — so it is asked nationally even on a local quote.
-    loc = "United States"
+    loc = country_name()
     _ = (nat, state, markets)
     out = []
     budget = time.time() + max(18, REQUEST_BUDGET_S - 12)
@@ -16061,7 +16149,8 @@ def fetch_ranked_keywords(domain, markets=None, state="", limit=None):
     if not dom:
         return []
     lim = int(limit or CFG.get("ranked_keywords_limit", 80))
-    payload = [{"target": dom, "location_code": 2840, "language_code": "en",
+    payload = [{"target": dom, "location_code": labs_location_code(),
+                "language_code": "en",
                 "limit": lim, "load_rank_absolute": True,
                 "order_by": ["ranked_serp_element.serp_item.rank_group,asc"],
                 "filters": [["ranked_serp_element.serp_item.rank_group", "<=",
@@ -16305,7 +16394,7 @@ def api_describe_client():
     markets = usable_markets(d.get("geo_values") or [])
     state = derive_state(markets, (d.get("state") or "").strip())
     dom = re.sub(r"^https?://", "", (d.get("domain") or "").strip()).strip("/")
-    loc = loc_string(markets, state) if markets else "United States"
+    loc = loc_string(markets, state) if markets else country_name()
     # The name plus the place, which is what a person would type. The market goes
     # in the QUERY as well as the location, because a national location with a
     # bare brand name finds the biggest company sharing it.
@@ -17088,6 +17177,16 @@ def api_rep_proposal_docx():
     except ImportError:
         return jsonify({"error": "python-docx is not installed on this "
                                  "server."}), 500
+    # THE RATE CARDS, AS CLIENT PRICES. Both documents print the ladder the
+    # line was priced off, and the config holds partner cost.
+    mg = d.get("margin_pct")
+    rcfg = rep_pricing.REP_CFG["review_removal"]
+    mg = rcfg["default_margin_pct"] if mg in (None, "") else float(mg)
+    mg = min(0.90, max(0.0, mg))
+    d.setdefault("brackets",
+                 [{"min": b["min"], "max": b["max"],
+                   "price": rep_pricing.r5(b["hard"] / (1.0 - mg))}
+                  for b in rcfg["brackets"]])
     try:
         buf = rep_docx.build_rep_proposal_docx(d)
     except Exception as e:                                    # noqa: BLE001
