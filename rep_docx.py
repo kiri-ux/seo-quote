@@ -92,6 +92,19 @@ COPY = {
                         "what shows up here \u2014 we can put positive terms "
                         "in their place. This is all done based on volume.",
 
+    # Sage Dental (January 2026) — the shape a removals-only proposal takes:
+    # a "Reputation Management:" heading, the areas needing improvement, then
+    # Google Review Removals as one of them with the ladder written down the
+    # page. The Partner A / Partner B paragraphs from that document are NOT
+    # here: the Vici rate card replaced Partner A/B as client pricing in July
+    # 2026 and they are internal fulfilment routing now.
+    "rm_heading": "Reputation Management:",
+    "rm_lead": "{brand} has several areas which require improvement from a "
+               "reputational standpoint:",
+    "rm_reviews_head": "Google Review Removals:",
+    "rm_tier_lead": "Removals are priced on the whole order — the rate for the "
+                    "total number of reviews applies to every removal:",
+
     "next_heading": "Proposal - Next Steps",
     "next_1": "If you have any questions regarding this proposal or would "
               "like to review together, please contact Brendan at "
@@ -414,10 +427,11 @@ def build_review_removal_docx(d):
     locs = [l for l in (d.get("locations") or []) if l.get("profile_reviews")]
     where = (d.get("region") or "").strip()
 
-    _letterhead(doc, brand, "Google Review Removal Analysis")
-    _title(doc, "Google Business Profile Review Analysis",
-           brand + (f" — {where}" if where else ""),
-           "Review distribution by location and star rating")
+    _letterhead(doc, brand, "Reputation Management Proposal")
+    _head(doc, COPY["rm_heading"], size=15)
+    _body(doc, COPY["rm_lead"].format(brand=brand))
+    _body(doc, "Google Business Profile review analysis"
+               + (f" — {where}" if where else ""), italic=True)
 
     read = [(l, *star_buckets(l)) for l in locs]
     read = [(l, b, e) for (l, b, e) in read if b]
@@ -520,17 +534,20 @@ def build_review_removal_docx(d):
                        "is a minimum.", italic=True)
 
     # ---- the money --------------------------------------------------------
-    _head(doc, "Google Review Removals")
+    _head(doc, COPY["rm_reviews_head"])
     _body(doc, COPY["reviews_intro"])
     _body(doc, COPY["reviews_rates"])
     _body(doc, COPY["reviews_terms"])
+    # Written down the page the way Sage's ladder is, not across it: this
+    # document is only about reviews, so the ladder is the subject rather than
+    # one card among several.
     card = d.get("brackets") or []
     if card:
-        _rate_table(doc,
-                    [f"{b['min']}-{b['max']}" if b.get("max") else f"{b['min']}+"
-                     for b in card],
-                    [_money(b["price"]) for b in card],
-                    "# Of Reviews Removed", "Cost Per Review Removed")
+        _body(doc, COPY["rm_tier_lead"])
+        for b in card:
+            span = (f"{b['min']} to {b['max']} reviews" if b.get("max")
+                    else f"{b['min']}+ reviews")
+            _body(doc, f"{span}: {_money(b['price'])} per", bold=True)
 
     if need:
         rate = d.get("rate_for_total")

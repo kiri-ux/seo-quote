@@ -385,6 +385,15 @@
         </div>
         <p class="help" style="margin:8px 0 0">Monthly cost sets the total across every recurring line — Search Protection, its maintenance phase, Reputational AI Search and the Brand Shield — and the split between them keeps the formula's own proportions. The IO carries one Monthly Budget for ORM, so there is one figure here. <button type="button" id="ovClear" style="background:#fff;color:var(--bad);border:1px solid var(--bad-line);padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px">Clear all</button></p>
         </details>
+        <!-- ALWAYS ON SCREEN. Both downloads used to render inside panels that
+             only exist after something has been run — the review analysis
+             appeared only once a review count had been polled — so there was
+             no way to find out they existed. (2026-09-10, Kiri) -->
+        <div id="dlRow" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0 4px;padding-top:11px;border-top:1px solid var(--line)">
+          <button type="button" id="dlRemovals" class="btn2">⬇ Review removal proposal (.docx)</button>
+          <button type="button" id="dlRepProposal" class="btn2">⬇ Full proposal (.docx)</button>
+        </div>
+        <div id="dlMsg" class="help" style="margin:0 0 6px"></div>
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
       <div class="card hidden" id="shotCard">
@@ -574,8 +583,6 @@ function render(d, payload){
   if(payload.brand){
     h += '<p class="help" style="margin-top:14px">Prepared for <b>'+payload.brand+'</b> · '+new Date().toLocaleDateString()+'</p>';
   }
-  h += '<div style="margin-top:12px"><button type="button" id="dlRepProposal" class="btn2">\u2b07 Download proposal (.docx)</button>'
-     + '<span id="dlRepProposalMsg" class="help" style="margin-left:9px"></span></div>';
   h += repHandoffTable(d);
   h += renderSaveBox();
   $('out').innerHTML = h;
@@ -1626,10 +1633,6 @@ function renderNegCounts(done){
        + '<td class="n">'+(d.neg_1||0)+'</td><td class="n">'+(d.neg_2||0)+'</td><td class="n">'+d.weak_3+'</td></tr>';
   });
   h += '</table>';
-  // THE REVIEW ANALYSIS ON ITS OWN. Most of these conversations are only about
-  // the rating — the full ORM proposal was the only document there was.
-  h += '<div style="margin-top:9px"><button type="button" id="dlRemovals" class="btn2">\u2b07 Download review analysis (.docx)</button>'
-     + '<span id="dlRemovalsMsg" class="help" style="margin-left:9px"></span></div>';
   $('negOut').innerHTML = h;
   document.getElementById('negTh').onchange = ()=> renderNegCounts(window._negDone);
   // The strategy card sits above this block and now depends on the flagged
@@ -1681,21 +1684,31 @@ document.addEventListener('click', e=>{
   if(!t) return;
   e.preventDefault();
   const brand = (($('brand')||{}).value||'').trim() || 'client';
+  if(!(window._negDone||[]).length){
+    const m=$('dlMsg');
+    if(m) m.textContent = 'Run Count negative reviews first — the analysis is built from that pull.';
+    return;
+  }
   repDownload('/api/rep_removals.docx', {
     brand: brand,
     locations: window._negDone || [],
     margin_pct: (+($('clientMargin')||{}).value||35)/100,
-  }, 'dlRemovals', 'dlRemovalsMsg',
-     brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Review_Removal_Analysis.docx');
+  }, 'dlRemovals', 'dlMsg',
+     brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Review_Removal_Proposal.docx');
 });
 document.addEventListener('click', e=>{
   const t = (e.target && e.target.closest) ? e.target.closest('#dlRepProposal') : null;
   if(!t) return;
   e.preventDefault();
   const brand = (($('brand')||{}).value||'').trim() || 'client';
+  if(!lastQuote){
+    const m=$('dlMsg');
+    if(m) m.textContent = 'Build the quote first.';
+    return;
+  }
   repDownload('/api/rep_proposal.docx', {
     brand: brand, campaign: campaign, quote: lastQuote || {},
-  }, 'dlRepProposal', 'dlRepProposalMsg',
+  }, 'dlRepProposal', 'dlMsg',
      brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Reputation_Proposal.docx');
 });
 

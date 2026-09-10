@@ -128,19 +128,31 @@ r = client.post("/api/rep_removals.docx",
 check("it builds", r.status_code, 200)
 check("it is a docx", r.data[:2], b"PK")
 t = text_of(r.data)
-check("titled as a review analysis", "GOOGLE BUSINESS PROFILE REVIEW ANALYSIS" in t, True)
+check("it opens the way Sage's does", "Reputation Management:" in t, True)
+check("with the areas line",
+      "Ski Barn has several areas which require improvement from a "
+      "reputational standpoint:" in t, True)
+check("and the analysis named under it",
+      "Google Business Profile review analysis" in t, True)
 check("naming the client", "Ski Barn" in t, True)
 check("with every location", all(l["title"] in t for l in SKI_BARN), True)
 check("the star distribution", "5 ★ | 4 ★ | 3 ★ | 2 ★ | 1 ★" in t, True)
 check("the scenarios", "Rating Improvement Scenarios" in t, True)
-check("the rate card", "1-25 | 26-50 | 51-100" in t, True)
+check("the ladder is written down the page, as Sage's is",
+      "1 to 25 reviews: $900 per" in t, True)
+check("every rung", all(f"{a} to {b} reviews:" in t for a, b in
+      ((1, 25), (26, 50), (51, 100), (101, 250), (251, 350), (351, 500))), True)
 check("and the whole-order rate for 30 removals", "$850 per review" in t, True)
-check("no reputation management in it",
+check("no ORM services in it",
       any(w in t for w in ("Brand Shield", "Search Protection",
-                           "Proactive", "monthly")), False)
+                           "Proactive", "Auto Suggest", "Related Searches")),
+      False)
+check("and no Partner A / Partner B — the rate card replaced them",
+      "Partner A" in t or "Partner B" in t, False)
 
 print("\nAND IT OPENS AND CLOSES THE WAY HIS OWN PROPOSALS DO")
-check("the subject line", "Subject: Ski Barn - Google Review Removal Analysis" in t, True)
+check("the subject line",
+      "Subject: Ski Barn - Reputation Management Proposal" in t, True)
 check("the from line",
       "From: Brendan Egan, Aaron Peterson - Simple SEO Group" in t, True)
 check("the IP notice", "remain the intellectual property of Simple SEO Group" in t, True)
@@ -149,11 +161,6 @@ check("his review wording, verbatim",
 check("the success rates", "roughly 60% success rate" in t, True)
 check("the pay-on-success terms",
       "payment is only due upon successful removal of the review from Google" in t, True)
-check("the rate card across the page",
-      "# Of Reviews Removed | 1-25 | 26-50 | 51-100 | 101-250 | 251-350 | 351-500" in t,
-      True)
-check("with the prices under it",
-      "Cost Per Review Removed | $900 | $850 | $800 | $750 | $700 | $650" in t, True)
 check("the capacity note", "capacity to remove up to 500 reviews per month" in t, True)
 check("next steps", "Proposal - Next Steps" in t, True)
 check("and the footer", "1-888-918-1665 | info@SimpleSEOGroup.com" in t, True)
@@ -184,6 +191,9 @@ check("the priced lines survive", "26 flagged reviews" in t2, True)
 check("the shield", "Brand Shield" in t2, True)
 check("the totals", "One-time and per-asset (pay on success)" in t2, True)
 check("next steps", "new-client-registration-contract" in t2, True)
+check("the rate card runs across the page there",
+      "# Of Reviews Removed | 1-25 | 26-50 | 51-100 | 101-250 | 251-350 | 351-500"
+      in t2, True)
 check("and the footer", "SimpleSEOGroup.com/TOS" in t2, True)
 
 print("\nAN EMPTY QUOTE SAYS SO RATHER THAN FAILING")
