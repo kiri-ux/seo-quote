@@ -145,6 +145,21 @@ check("review removals at partner cost",
 check("standard sites", h["partner_standard_sites_total"], 9750)
 check("premium sites", h["partner_premium_sites_total"], 8125)
 
+print("\nMARGIN DOLLARS, THE WAY THE SEO HANDOFF SENDS THEM")
+# Client figures round UP and partner figures do not, so client x (1 - margin)
+# does not return partner. The difference is stated instead of derived.
+_md = h["margin_dollars"]
+check("monthly", _md["monthly"],
+      round(h["monthly_budget"] - h["partner_monthly_cost"], 2))
+check("per asset", _md["per_asset"],
+      round(q["totals"]["per_asset"]
+            - (h["partner_review_removals_total"]
+               + h["partner_standard_sites_total"]
+               + h["partner_premium_sites_total"]), 2))
+check("both positive", _md["monthly"] > 0 and _md["per_asset"] > 0, True)
+check("and it is not the naive product",
+      _md["monthly"] == round(h["monthly_budget"] * 0.35, 2), False)
+
 print("\nA WORKSTREAM THAT IS NOT ON THE QUOTE SENDS ZERO, NOT A MISSING KEY")
 _r = R.build_rep_quote({"campaign": "reactive", "margin_pct": 0.35,
                         "reviews": {"count": 5}})["handoff"]

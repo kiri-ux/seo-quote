@@ -850,6 +850,8 @@ function repHandoffTable(d){
    + r('Partner \u2014 Review Removals total', money(h.partner_review_removals_total), 'rate \u00d7 count, a pay-on-success maximum')
    + r('Partner \u2014 Standard Sites total', money(h.partner_standard_sites_total), 'rate \u00d7 count')
    + r('Partner \u2014 Premium Sites total', money(h.partner_premium_sites_total), 'rate \u00d7 count')
+   + r('Margin $ \u2014 monthly', money((h.margin_dollars||{}).monthly), 'client less partner \u00b7 the rounding drift is margin')
+   + r('Margin $ \u2014 per asset', money((h.margin_dollars||{}).per_asset), 'client less partner')
    + r('Search Volume', (h.search_volume||0).toLocaleString()+'/mo', 'brand volume the Search Protection rate is priced off')
    + r('# of Locations', (h.locations||0).toLocaleString(), 'the Brand Shield rate is priced off this')
    + r('Margin %', Math.round((h.margin_pct||0)*1000)/10+'%', 'margin of gross')
