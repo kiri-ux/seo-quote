@@ -2684,6 +2684,14 @@ $('step1').addEventListener('click', async()=>{
       keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
       domain:inp.domain, business_desc:inp.business_desc, negatives:inp.negatives});
     ST.kw=kw;
+    // THE POOL BEFORE REFINEMENT, KEPT. The AI pass rebuilds every row from
+    // the service grid, so the refined list tags every term "grid" and the
+    // question "where did this term come from" has no answer left in it.
+    // Off-topic terms are visible for the few seconds the raw list is on
+    // screen and nowhere after.
+    ST.kwRaw = (kw.pool && kw.pool.length
+      ? kw.pool.map(r=>({kw:r.keyword, vol:r.volume, src:r.src||''}))
+      : (kw.all||[]).map(r=>({kw:r.kw, vol:r.vol, src:r.src||''})));
     renderStep1();
     try{ aimAtList(false); }catch(e){}
     // Step 1b — AI refinement runs as its OWN request so it can't time out the
@@ -2797,6 +2805,33 @@ function srcTag(x){
   return ` <span class="nf" title="${escapeHtml(m[1])}" style="font-size:10px;letter-spacing:.2px">[${m[0]}]</span>`;
 }
 
+function rawPoolHtml(){
+  if(!ST.kwSrc) return '';
+  const pool=ST.kwRaw||[];
+  if(!pool.length) return '';
+  const by={};
+  pool.forEach(r=>{ const k=String(r.src||''); by[k]=(by[k]||0)+1; });
+  const counts=Object.keys(by).sort((a,b)=>by[b]-by[a]).map(k=>{
+    const m=SRC_LABEL[k];
+    return `<span style="margin-right:12px">${m?m[0]:'?'} <b>${by[k]}</b></span>`;
+  }).join('');
+  const rows=pool.slice()
+    .sort((a,b)=>(Number(b.vol)||0)-(Number(a.vol)||0)||String(a.kw).localeCompare(String(b.kw)))
+    .map(r=>{
+      const m=SRC_LABEL[String(r.src||'')];
+      return `<tr><td style="padding:2px 12px 2px 0">${escapeHtml(String(r.kw))}</td>`
+        +`<td style="padding:2px 12px 2px 0;text-align:right;white-space:nowrap">${(Number(r.vol)||0).toLocaleString()}</td>`
+        +`<td class="nf" style="padding:2px 0"${m?` title="${escapeHtml(m[1])}"`:''}>${m?m[0]:'?'}</td></tr>`;
+    }).join('');
+  return `<details class="iofold" style="margin-top:10px">
+    <summary style="cursor:pointer;font-size:12.5px">Pool before refinement — ${pool.length} terms</summary>
+    <div style="font-size:11.5px;margin:6px 0 8px" class="nf">${counts}</div>
+    <div style="max-height:340px;overflow:auto">
+      <table style="font-size:12px;border-collapse:collapse">${rows}</table>
+    </div>
+  </details>`;
+}
+
 function kwBucket(title, bucketKey){
   const arr=ST.kw[bucketKey]||[];
   const items=arr.map((x,i)=>{
@@ -2854,6 +2889,7 @@ function renderStep1(){
       ${kwBucket('Competitive','competitive')}
       ${kwBucket('Long Tail','long_tail')}
     </div>
+    ${rawPoolHtml()}
     ${stepBtn('step2','2 · Score competition')}`);
   const _srcTog=$('kwSrcTog');
   if(_srcTog) _srcTog.onclick=e=>{ e.preventDefault(); ST.kwSrc=!ST.kwSrc; renderStep1(); };

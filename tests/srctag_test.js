@@ -22,6 +22,14 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
                   { kw: 'orphan term', vol: 0 }],
     };
     ST.kw.all = [...ST.kw.ultra, ...ST.kw.competitive, ...ST.kw.long_tail];
+    // What the build returned, before the AI pass rebuilt everything from the
+    // service grid. Holds candidates that never reached a bucket.
+    ST.kwRaw = [
+      { kw: 'vict', vol: 301000, src: 'ideas' },
+      { kw: 'note note', vol: 165000, src: 'ideas' },
+      { kw: 'reverso context', vol: 40500, src: 'suggest' },
+      { kw: 'cctv drain survey software', vol: 90, src: 'site' },
+    ];
 
     renderStep1();
     R.offByDefault = !/\[ideas\]|\[site\]/.test($('p1').textContent || '');
@@ -41,6 +49,16 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
     // The tag rides beside the term, not in place of the volume.
     R.volumeStillThere = /301,000/.test(t);
 
+    // The pool fold: candidates that never reached a bucket, and the count
+    // per source.
+    const fold = $('p1').querySelector('details.iofold');
+    R.poolFold = !!fold;
+    R.poolSummary = fold ? (fold.querySelector('summary').textContent || '').trim() : '';
+    R.poolClosed = fold ? !fold.open : null;
+    const ft = fold ? (fold.textContent || '') : '';
+    R.poolHasUnbucketed = /reverso context/.test(ft);
+    R.poolCounts = /ideas\s*2/.test(ft.replace(/\s+/g, ' '));
+
     // A term typed in by hand names itself.
     const inp = document.querySelector('.kwadd[data-bucket="long_tail"]');
     inp.value = 'drain manholes';
@@ -59,6 +77,8 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
     onAfterClick: true, ideas: true, site: true, suggested: true,
     generated: true, untagged: true, toggleNowReads: 'hide sources',
     volumeStillThere: true, typedRowTagged: 'typed', typedShows: true,
+    poolFold: true, poolSummary: 'Pool before refinement — 4 terms',
+    poolClosed: true, poolHasUnbucketed: true, poolCounts: true,
     offAgain: true,
   };
   let bad = 0;

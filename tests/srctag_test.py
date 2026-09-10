@@ -41,8 +41,8 @@ SRCTEXT = open(SRC, encoding="utf-8").read()
 
 print("\nTHE BUILD RESPONSE CARRIES THE TAG")
 # Both conv lambdas -- /api/keywords and /api/refine -- name "src".
-check("both response shapes and the failure path name src",
-      SRCTEXT.count('"src": r.get("src", "")'), 3)
+check("every response shape names src",
+      SRCTEXT.count('"src": r.get("src", "")'), 4)
 check("the failure path names it too",
       '"src": r.get("src", ""), "origin": ""' in SRCTEXT, True)
 
@@ -57,6 +57,13 @@ for tag in ("ideas", "suggest", "site", "geo", "gen", "claude", "grid"):
     check("%s is stamped" % tag, ('"src": "%s"' % tag) in SRCTEXT
           or ('r["src"] = "%s"' % tag) in SRCTEXT, True)
 
+print("\nTHE POOL SURVIVES THE AI PASS")
+# The refined list is rebuilt from the service grid -- every row reads "grid"
+# and the lineage is gone. The candidate pool is returned alongside it.
+check("the build returns the pool",
+      '"pool": [{"keyword": r["keyword"], "volume": r["volume"],' in SRCTEXT, True)
+check("the response forwards it", '"pool": s1.get("pool", []),' in SRCTEXT, True)
+
 print("\nTHE BROWSER RENDERS IT")
 IDX = open(os.path.join(SRCDIR, "templates", "index.html"), encoding="utf-8").read()
 check("a label exists for every stamped source",
@@ -66,6 +73,8 @@ check("a label exists for every stamped source",
 check("the chip calls it", "${volTag(x)}${srcTag(x)}" in IDX, True)
 check("off unless asked for", "if(!ST.kwSrc) return '';" in IDX, True)
 check("a hand-typed term says so", "src:'typed'" in IDX, True)
+check("the pool is kept before refine overwrites it", "ST.kwRaw = (kw.pool" in IDX, True)
+check("and rendered under the buckets", "${rawPoolHtml()}" in IDX, True)
 
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:

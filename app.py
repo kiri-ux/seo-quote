@@ -8287,6 +8287,13 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
         "site_terms":  [r["keyword"] for r in site_terms],   # passed to refine step
         "market_vocab": market_vocab,        # both passed to refine step, because
         "market_pool":  market_pool,         # the pool itself cannot survive the trip
+        # EVERY CANDIDATE, WITH THE CALL THAT PRODUCED IT. The buckets are a
+        # capped slice of this and the refined list is rebuilt from the service
+        # grid, so an off-topic candidate that never reached a bucket -- and
+        # every candidate at all once the AI pass has run -- is otherwise
+        # untraceable.
+        "pool": [{"keyword": r["keyword"], "volume": r["volume"],
+                  "src": r.get("src", "")} for r in kept[:400]],
     }
 
 def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
@@ -11896,6 +11903,7 @@ def api_keywords():
         "site_terms": s1.get("site_terms", []),
         "market_vocab": s1.get("market_vocab", []),
         "market_pool": s1.get("market_pool", []),
+        "pool": s1.get("pool", []),
     }
     # Thin-list guard: sparse/niche verticals or too few seeds produce a short
     # list. Flag it so the partner can add more seed terms for a fuller table.
