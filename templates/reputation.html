@@ -76,7 +76,8 @@
   summary{font-family:'Barlow',sans-serif}
 
   /* ---- strategy type selector -------------------------------- */
-  .ctypes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .ctypes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:980px){.ctypes{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:700px){.ctypes{grid-template-columns:1fr}}
   .ctype{border:1px solid var(--line);border-radius:10px;padding:14px 12px;cursor:pointer;
     background:#fff;text-align:center;user-select:none;transition:border-color .15s}
@@ -268,10 +269,12 @@
   <div class="card">
     <h2>1 · Strategy Type</h2>
     <div class="ctypes" id="ctypes">
-      <div class="ctype on" data-c="reactive"><b>Reactive</b><small>Removals + suppression cleanup</small></div>
+      <div class="ctype on" data-c="reviews"><b>Review Removals</b><small>Negative Google reviews, pay on success</small></div>
+      <div class="ctype" data-c="sites"><b>Site &amp; Article Removals</b><small>Pages taken down, pay on success</small></div>
+      <div class="ctype" data-c="reactive"><b>Reactive</b><small>Search Protection monthly bundle</small></div>
       <div class="ctype" data-c="proactive"><b>Proactive</b><small>Brand Shield monthly bundle</small></div>
-      <div class="ctype" data-c="bundle"><b>Reactive + Proactive</b><small>Phased: cleanup → brand shield</small></div>
     </div>
+    <p class="help" style="margin:10px 0 0">Pick every workstream this quote carries. Each one prices on its own inputs.</p>
   </div>
 
   <div class="grid">
@@ -407,30 +410,69 @@
 
 <script>
 const $ = id => document.getElementById(id);
+// STRATEGY IS THE FOUR WORKSTREAMS, PICKED INDEPENDENTLY. It was three
+// mutually exclusive cards, one of which ("Reactive + Proactive") existed only
+// to name a combination -- and a quote could not carry a review removal beside
+// a Brand Shield at all.
+const STRAT = new Set(['reviews']);
+const STRAT_KEYS = ['reviews','sites','reactive','proactive'];
 let campaign = 'reactive';
 
+// campaign is still derived: saved quotes, the brand recommendation and the
+// auto-generated quote name all read it.
+function syncCampaign(){
+  const pro = STRAT.has('proactive');
+  const re  = STRAT.has('reviews') || STRAT.has('sites') || STRAT.has('reactive');
+  campaign = (pro && re) ? 'bundle' : (pro ? 'proactive' : 'reactive');
+}
+
+function paintStrategy(){
+  document.querySelectorAll('.ctype').forEach(x=>
+    x.classList.toggle('on', STRAT.has(x.dataset.c)));
+}
+
 function syncVisibility(){
-  const showReactive  = (campaign==='reactive'||campaign==='bundle');
-  const showProactive = (campaign==='proactive'||campaign==='bundle');
+  syncCampaign();
+  const showReactive  = STRAT.has('reviews') || STRAT.has('sites') || STRAT.has('reactive');
+  const showProactive = STRAT.has('proactive');
   $('secReactive').classList.toggle('hidden', !showReactive);
   $('secProactive').classList.toggle('hidden', !showProactive);
   $('proNum').textContent = showReactive ? '4' : '3';
+  // The strategy cards ARE the workstream switches. The per-line checkboxes
+  // follow them rather than sitting beside them disagreeing.
+  $('useReviews').checked      = STRAT.has('reviews');
+  $('useArticles').checked     = STRAT.has('sites');
+  $('useSearchBundle').checked = STRAT.has('reactive');
   $('reviewFields').classList.toggle('hidden', !$('useReviews').checked);
   $('articleFields').classList.toggle('hidden', !$('useArticles').checked);
   $('searchFields').classList.toggle('hidden', !$('useSearchBundle').checked);
   $('geoFields').classList.toggle('hidden', !$('useGeo').checked);
 }
 
+function setStrategy(keys, on){
+  keys.forEach(k=>{
+    if(on) STRAT.add(k);
+    else if(STRAT.size > 1) STRAT.delete(k);
+  });
+  paintStrategy(); syncVisibility();
+  if(document.getElementById('brandReco')) renderBrandReco();
+  refreshQuoteNameStrategy();
+}
+
 document.querySelectorAll('.ctype').forEach(el=>{
   el.onclick = ()=>{
-    document.querySelectorAll('.ctype').forEach(x=>x.classList.remove('on'));
-    el.classList.add('on'); campaign = el.dataset.c; syncVisibility();
-    if(document.getElementById('brandReco')) renderBrandReco();
-    refreshQuoteNameStrategy();
+    const k = el.dataset.c;
+    // One has to stay on, or the quote has nothing to price.
+    if(STRAT.has(k) && STRAT.size === 1) return;
+    setStrategy([k], !STRAT.has(k));
   };
 });
 ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{
-  $(id).onchange = syncVisibility;
+  $(id).onchange = ()=>{
+    const k = {useReviews:'reviews', useArticles:'sites', useSearchBundle:'reactive'}[id];
+    if(k) setStrategy([k], $(id).checked);
+    else syncVisibility();
+  };
 });
 syncVisibility();
 
@@ -463,7 +505,7 @@ async function buildQuote(){
     articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0, classes: window._artClasses||null} : {},
     search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked},
     geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
-    shield: {locations:+$('nLocations').value||1},
+    shield: {locations:+$('nLocations').value||1, enabled: STRAT.has('proactive')},
     overrides: {review_hard:+$('ovReview').value||0, art_std_hard:+$('ovArtStd').value||0,
                 art_prem_hard:+$('ovArtPrem').value||0,
                 monthly_hard:+$('ovMonthly').value||0},
@@ -1022,7 +1064,7 @@ async function captureShot(keyword){
     window._scanData.shots[keyword] = r.data_url;
     const out = $('shotOut');
     if(out) out.innerHTML = '<img class="shotimg" src="'+r.data_url+'">'
-      + '<div class="help"><a href="'+r.data_url+'" download="serp-'+keyword.replace(/\s+/g,'-')+'.jpg">Download</a> — saves with the quote.</div>';
+      + '<div class="help"><a href="'+r.data_url+'" download="serp-'+keyword.replace(/\s+/g,'-')+'.jpg">Download</a> — saves with the quote and goes into the proposal.</div>';
     done('Captured.');
   };
   poll();
@@ -1176,6 +1218,9 @@ function renderBrandReco(){
   // problem to sell against. Recommending a monthly shield here prices a
   // campaign the evidence does not support.
   const nothingNeeded = !reasons.length && reviewsCounted && flaggedReviews === 0;
+  // "Bundle" was one card; it is two workstreams. The button turns both on and
+  // leaves whatever else is already selected alone.
+  const REC_KEYS = {bundle: ['reactive','proactive'], proactive: ['proactive'], none: ['proactive']};
   const rec = reasons.length ? 'bundle' : (nothingNeeded ? 'none' : 'proactive');
   const recLabel = rec==='bundle' ? 'Reactive + Proactive' : 'Proactive';
   // Applies to every branch, not just the clean one: until the counts land the
@@ -1199,12 +1244,12 @@ function renderBrandReco(){
     // anyway is not stuck, but nothing here nudges toward the sale.
     box.innerHTML = '<div style="border:1px solid var(--ok-line);background:var(--ok-bg);border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
       + '<b style="color:var(--ok)">Recommended: no reputation management needed</b> \u2014 '+why+' '
-      + (campaign==='proactive'
+      + (STRAT.has('proactive')
           ? '<button class="btn2" type="button" disabled style="opacity:.5;cursor:default">\u2713 Proactive selected</button>'
           : '<button class="btn2" type="button" id="brandRecoBtn" data-rec="proactive">Quote Proactive anyway</button>')
       + '</div>';
   }else{
-  const matches = campaign === rec;
+  const matches = REC_KEYS[rec].every(k=>STRAT.has(k));
   box.innerHTML = '<div style="border:1px solid var(--velocity);background:var(--info-bg);border-radius:9px;padding:10px 14px;margin:4px 0 10px;font-size:13px">'
     + '<b style="color:var(--atlas)">Recommended strategy: '+recLabel+'</b> \u2014 '+why+' '
     + (matches ? '<button class="btn2" type="button" disabled style="opacity:.5;cursor:default">\u2713 '+recLabel+' selected</button>'
@@ -1212,10 +1257,7 @@ function renderBrandReco(){
     + '</div>';
   }
   const bb = document.getElementById('brandRecoBtn');
-  if(bb) bb.onclick = ()=>{
-    const el = document.querySelector('.ctype[data-c="'+bb.dataset.rec+'"]');
-    if(el) el.click();
-  };
+  if(bb) bb.onclick = ()=> setStrategy(REC_KEYS[bb.dataset.rec] || [bb.dataset.rec], true);
 }
 function renderReco(){
   const rs = window._reco||[];
@@ -1660,6 +1702,16 @@ function renderNegCounts(done){
 // themselves — the review counts on every threshold change, the quote on every
 // override keystroke — and a handler attached to the button dies with it.
 // (2026-09-10, Kiri)
+// THE CAPTURED SERPS, ON THEIR WAY TO THE DOCUMENT. They have been sitting in
+// the page as data URLs with a Download link beside each one, so the evidence
+// every SSG reputation proposal opens with had to be pasted in by hand.
+function serpShots(){
+  const shots = (window._scanData || {}).shots || {};
+  return Object.keys(shots)
+    .filter(q => typeof shots[q] === 'string' && shots[q].indexOf('data:image') === 0)
+    .map(q => ({query: q, data_url: shots[q]}));
+}
+
 async function repDownload(url, payload, btnId, msgId, fallbackName){
   const btn = document.getElementById(btnId);
   const say = t => { const m = document.getElementById(msgId); if(m) m.textContent = t; };
@@ -1722,6 +1774,7 @@ document.addEventListener('click', e=>{
   }
   repDownload('/api/rep_proposal.docx', {
     brand: brand, campaign: campaign, quote: lastQuote || {},
+    serp_shots: serpShots(),
   }, 'dlRepProposal', 'dlMsg',
      brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Reputation_Proposal.docx');
 });
@@ -1744,6 +1797,7 @@ function collectForm(){
   });
   ['useReviews','useArticles','useSearchBundle','useGeo'].forEach(id=>{ f[id] = $(id).checked; });
   f.campaign = campaign;
+  f.strategy = STRAT_KEYS.filter(k=>STRAT.has(k));
   return f;
 }
 function restoreForm(f){
@@ -1753,11 +1807,23 @@ function restoreForm(f){
     const el = $(k); if(!el) return;
     if(el.type === 'checkbox') el.checked = !!f[k]; else el.value = f[k] ?? '';
   });
-  if(f.campaign){
-    campaign = f.campaign;
-    document.querySelectorAll('.ctype').forEach(x=>x.classList.toggle('on', x.dataset.c===campaign));
-    if(document.getElementById('brandReco')) renderBrandReco();
+  // A quote saved before the four cards existed carries only campaign.
+  const restored = Array.isArray(f.strategy) ? f.strategy.filter(k=>STRAT_KEYS.includes(k)) : [];
+  STRAT.clear();
+  if(restored.length){
+    restored.forEach(k=>STRAT.add(k));
+  }else{
+    const c = f.campaign || 'reactive';
+    if(c === 'reactive' || c === 'bundle'){
+      if(f.useReviews !== false) STRAT.add('reviews');
+      if(f.useArticles) STRAT.add('sites');
+      if(f.useSearchBundle) STRAT.add('reactive');
+      if(!STRAT.size) STRAT.add('reviews');
+    }
+    if(c === 'proactive' || c === 'bundle') STRAT.add('proactive');
   }
+  paintStrategy();
+  if(document.getElementById('brandReco')) renderBrandReco();
   syncVisibility();
 }
 

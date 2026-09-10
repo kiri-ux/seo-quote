@@ -144,12 +144,22 @@ check("no bundle meta",
       R.build_rep_quote({"campaign": "bundle", "margin_pct": 0.35,
                          "shield": {"locations": 1}})["bundle_meta"], None)
 
-print("\nTHE SUCCESS RATE IS THE ONE THAT SHIPS")
+print("\nONE SUCCESS RATE, AND THE DOCUMENT SAYS THE SAME")
+# Three versions were in play: the tool's routing split (~100% priority,
+# 40-50% bulk), a flat ~70%, and Brendan's split by review age. A client
+# holding an SSG proposal can read his, so his is the one that ships.
 _rev = [l for l in q["lines"] if l["service"] == "Negative Review Removals"][0]
 check("stated once", [n for n in _rev["notes"] if "Success rate" in n],
-      ["Success rate: ~70% across Google Reviews."])
+      ["Success rate: ~60% on reviews newer than 6 months; ~50% on older ones."])
 check("no routing split",
       [n for n in _rev["notes"] if "bulk routing" in n], [])
+check("and no flat rate",
+      [n for n in _rev["notes"] if "70%" in n], [])
+check("the document carries the same split",
+      D.COPY["reviews_rates"],
+      "We have a roughly 60% success rate at removing reviews that are newer "
+      "than 6 months old. We have a roughly 50% success rate at removing "
+      "reviews which are older than 6 months.")
 
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:

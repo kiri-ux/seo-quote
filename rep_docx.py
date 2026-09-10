@@ -586,6 +586,53 @@ def build_review_removal_docx(d):
 
 
 # ------------------------------------------------------ everything-proposed
+def serp_images(shots, cap=3):
+    """Decode the captured SERP screenshots into (query, bytes) pairs.
+
+    The rep tool has captured these since the scan shipped -- they sit in the
+    browser as data URLs and could be downloaded one at a time -- but nothing
+    carried them into the document, so the evidence Brendan's proposals are
+    built around had to be pasted in by hand afterwards. Bad or oversized
+    entries are skipped rather than failing the download.
+    """
+    import base64
+    out = []
+    for sh in (shots or [])[:cap]:
+        if not isinstance(sh, dict):
+            continue
+        url = str(sh.get("data_url") or "")
+        if "," not in url or not url.lower().startswith("data:image"):
+            continue
+        try:
+            raw = base64.b64decode(url.split(",", 1)[1], validate=False)
+        except Exception:                                     # noqa: BLE001
+            continue
+        # A Word document is not a place for an eight-megabyte screenshot, and
+        # a truncated one raises inside python-docx rather than here.
+        if not (1024 <= len(raw) <= 12 * 1024 * 1024):
+            continue
+        out.append((str(sh.get("query") or "").strip(), raw))
+    return out
+
+
+def _serp_section(doc, shots):
+    """The search results as they actually look, which is the evidence every
+    one of Brendan's reputation proposals opens its search section with."""
+    imgs = serp_images(shots)
+    if not imgs:
+        return False
+    _head(doc, "Search Results")
+    for query, raw in imgs:
+        if query:
+            _body(doc, f"\u201c{query}\u201d", italic=True)
+        try:
+            doc.add_picture(io.BytesIO(raw), width=Inches(6.2))
+        except Exception:                                     # noqa: BLE001
+            continue
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    return True
+
+
 def _bracket_rows(lines):
     """The removal rate cards this quote's lines were priced off, if any."""
     out = {}
@@ -613,6 +660,8 @@ def build_rep_proposal_docx(d):
 
     _head(doc, "Summary")
     _body(doc, COPY["summary"].format(brand=brand))
+
+    _serp_section(doc, d.get("serp_shots"))
 
     def _find(pred):
         return [l for l in lines if pred(l)]

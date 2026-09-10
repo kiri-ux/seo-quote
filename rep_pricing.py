@@ -257,7 +257,11 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
         "timeline": cfg["timeline"],
         "notes": ["Pay on success \u2014 billed per removed review; the total is "
                   "a maximum, not a committed spend.",
-                  "Success rate: ~70% across Google Reviews.",
+                  # BRENDAN'S NUMBERS, AND THE ONLY ONES A CLIENT CAN ALSO
+                  # READ. rep_docx carries this same split verbatim in
+                  # reviews_rates, so the quote and the document agree.
+                  "Success rate: ~60% on reviews newer than 6 months; "
+                  "~50% on older ones.",
                   "Some sensitive content cannot be removed."],
         "internal": {
             "hard_per": hard_per, "hard_total": hard_total,
