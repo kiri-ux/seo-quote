@@ -58,6 +58,18 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
     const ft = fold ? (fold.textContent || '') : '';
     R.poolHasUnbucketed = /reverso context/.test(ft);
     R.poolCounts = /ideas\s*2/.test(ft.replace(/\s+/g, ' '));
+    R.headerCount = /pool 4/.test($('p1').textContent || '');
+
+    // A reloaded quote has no pool. The panel says so rather than showing
+    // nothing at all.
+    const keep = ST.kwRaw;
+    ST.kwRaw = [];
+    renderStep1();
+    R.poolAbsentSays = /Pool before refinement — not in this build/
+      .test($('p1').textContent || '');
+    R.noFoldWhenAbsent = !$('p1').querySelector('details.iofold');
+    ST.kwRaw = keep;
+    renderStep1();
 
     // A term typed in by hand names itself.
     const inp = document.querySelector('.kwadd[data-bucket="long_tail"]');
@@ -79,6 +91,7 @@ const { chromium } = require('/root/work/node_modules/playwright-core');
     volumeStillThere: true, typedRowTagged: 'typed', typedShows: true,
     poolFold: true, poolSummary: 'Pool before refinement — 4 terms',
     poolClosed: true, poolHasUnbucketed: true, poolCounts: true,
+    headerCount: true, poolAbsentSays: true, noFoldWhenAbsent: true,
     offAgain: true,
   };
   let bad = 0;

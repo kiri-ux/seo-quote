@@ -2808,7 +2808,9 @@ function srcTag(x){
 function rawPoolHtml(){
   if(!ST.kwSrc) return '';
   const pool=ST.kwRaw||[];
-  if(!pool.length) return '';
+  if(!pool.length) return `<div class="nf" style="font-size:12px;margin-top:10px">`
+    +`Pool before refinement — not in this build. It is captured when the list is built;`
+    +` a reloaded quote does not carry it.</div>`;
   const by={};
   pool.forEach(r=>{ const k=String(r.src||''); by[k]=(by[k]||0)+1; });
   const counts=Object.keys(by).sort((a,b)=>by[b]-by[a]).map(k=>{
@@ -2877,7 +2879,7 @@ function renderStep1(){
     </div>` : '';
   panel('p1', refineErr + `
     <h4 class="sec">Step 1 · Keyword list <span class="nf">(${kw.all.length} terms)</span>
-      <a href="#" id="kwSrcTog" class="nf" style="font-size:11px;font-weight:400;margin-left:8px;text-decoration:underline;cursor:pointer">${ST.kwSrc?'hide sources':'sources'}</a>${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
+      <a href="#" id="kwSrcTog" class="nf" style="font-size:11px;font-weight:400;margin-left:8px;text-decoration:underline;cursor:pointer">${ST.kwSrc?'hide sources':'sources'}</a>${ST.kwSrc&&(ST.kwRaw||[]).length?`<span class="nf" style="font-size:11px;font-weight:400;margin-left:6px">pool ${(ST.kwRaw||[]).length}</span>`:''}${kw.refined_by_ai?` <span style="background:var(--velocity,#378ADD);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;letter-spacing:.3px;vertical-align:middle">✦ AI-refined</span>`:''}</h4>
     ${kw.thin_warning?`<div style="background:#fde8c8;border:1px solid var(--gold);color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠ ${kw.thin_warning}</div>`:''}
     ${kw.business_desc && !(ST.inputs&&ST.inputs.business_desc&&ST.inputs.business_desc.trim())?`<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#1c5fa8;padding:7px 11px;border-radius:8px;font-size:12px;margin-bottom:8px"><b>AI read of the business</b> <span class="nf">(auto-inferred)</span><b>:</b> ${kw.business_desc}${kw.site_pages_found?` <span class="nf">· read ${kw.site_pages_found} site pages</span>`:''}</div>`:''}
     ${kw.state_missing?`<div style="background:#fdf1d8;border:1px solid #e8c98a;color:#7a5410;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:8px">⚠ <b>No state set.</b> Keywords were built without a state suffix (e.g. "commercial contractor kaukauna" instead of "commercial contractor kaukauna wi"). Local searches usually include the state, so the rank check may find nothing and wrongly report the client as not ranking — which <b>raises the price</b> via the zero-ranking uplift. Add the state and re-run before quoting.</div>`:''}
