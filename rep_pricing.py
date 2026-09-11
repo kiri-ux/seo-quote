@@ -979,20 +979,19 @@ def build_rep_quote(payload):
         # because a line for it is on the quote, so the four sections are
         # independent and every combination is covered by the same four rules.
         "strategy": _strategy,
-        # CLIENT MINUS PARTNER, STATED RATHER THAN DERIVED. Client figures round
-        # UP -- $5 on review removals, $50 on everything else -- and partner
-        # figures do not, so the two drift. That drift is margin, and it is
-        # Vici's. The SEO handoff sends the same field for the same reason.
-        "margin_dollars": {
-            "monthly": round(sum(l["total"] for l in monthly_lines)
-                             - sum(float(l.get("hard_total") or 0)
-                                   for l in monthly_lines), 2),
-            "per_asset": round(
-                sum(l["total"] for l in lines if l["kind"] == "per_asset")
-                - (round(_hard_per(rev) * ((rev or {}).get("qty") or 0), 2)
-                   + round(_hard_per(std) * ((std or {}).get("qty") or 0), 2)
-                   + round(_hard_per(prm) * ((prm or {}).get("qty") or 0), 2)), 2),
-        },
+        # CLIENT MINUS PARTNER ON THE RECURRING LINES, STATED RATHER THAN
+        # DERIVED. Each client line rounds UP to $50 and each partner line does
+        # not, so a margin percentage does not reproduce it: $12,100 against
+        # $7,800 is $4,300, where 35% of $12,100 says $4,235. That $65 exists
+        # only as a subtraction. The SEO handoff sends the same field.
+        #
+        # The removal lines get no equivalent. They are rate x count on both
+        # sides with no rounding between them, so the difference is exact
+        # arithmetic on two figures already sent -- and being pay-on-success,
+        # any total is a maximum rather than money that will be booked.
+        "margin_dollars_monthly": round(
+            sum(l["total"] for l in monthly_lines)
+            - sum(float(l.get("hard_total") or 0) for l in monthly_lines), 2),
     }
 
     return {"campaign": campaign, "lines": lines, "totals": totals,

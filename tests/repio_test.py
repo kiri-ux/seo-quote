@@ -148,17 +148,19 @@ check("premium sites", h["partner_premium_sites_total"], 8125)
 print("\nMARGIN DOLLARS, THE WAY THE SEO HANDOFF SENDS THEM")
 # Client figures round UP and partner figures do not, so client x (1 - margin)
 # does not return partner. The difference is stated instead of derived.
-_md = h["margin_dollars"]
-check("monthly", _md["monthly"],
+check("monthly", h["margin_dollars_monthly"],
       round(h["monthly_budget"] - h["partner_monthly_cost"], 2))
-check("per asset", _md["per_asset"],
-      round(q["totals"]["per_asset"]
-            - (h["partner_review_removals_total"]
-               + h["partner_standard_sites_total"]
-               + h["partner_premium_sites_total"]), 2))
-check("both positive", _md["monthly"] > 0 and _md["per_asset"] > 0, True)
-check("and it is not the naive product",
-      _md["monthly"] == round(h["monthly_budget"] * 0.35, 2), False)
+check("the Ski Barn figure", h["margin_dollars_monthly"], 4300)
+check("a margin % does not reproduce it",
+      h["margin_dollars_monthly"] == round(h["monthly_budget"] * 0.35, 2), False)
+# The removal lines get no equivalent: rate x count on both sides with no
+# rounding between them, and pay-on-success makes any total a maximum.
+check("no per-asset margin field",
+      [k for k in h if "margin_dollars" in k], ["margin_dollars_monthly"])
+check("it would have been exact arithmetic anyway",
+      round(h["price_per_review_removal"] - h["partner_hard_cost_per_review"], 2)
+      * h["reviews_count"],
+      round(22100 - h["partner_review_removals_total"], 2))
 
 print("\nA WORKSTREAM THAT IS NOT ON THE QUOTE SENDS ZERO, NOT A MISSING KEY")
 _r = R.build_rep_quote({"campaign": "reactive", "margin_pct": 0.35,
