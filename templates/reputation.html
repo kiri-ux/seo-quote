@@ -1790,9 +1790,19 @@ document.addEventListener('click', e=>{
     if(m) m.textContent = 'Build the quote first.';
     return;
   }
+  const _sd = window._scanData || {};
   repDownload('/api/rep_proposal.docx', {
     brand: brand, campaign: campaign, quote: lastQuote || {},
     serp_shots: serpShots(),
+    // THE SNAPSHOT THE PANEL DRAWS, ON ITS WAY TO THE DOCUMENT. The pricing is
+    // an answer to these three tables and the client could not see the question.
+    snapshot: {
+      query: (_sd.serp || {}).query || (brand + ' reviews').toLowerCase(),
+      terms: (_sd.terms || []).filter(t => t && t.class && t.class !== 'neutral').slice(0, 10),
+      organic: (_sd.serp || {}).organic || [],
+      forums: (_sd.serp || {}).forums || [],
+      locations: window._negDone || [],
+    },
   }, 'dlRepProposal', 'dlMsg',
      brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Reputation_Proposal.docx');
 });

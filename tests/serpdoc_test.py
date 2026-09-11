@@ -155,6 +155,67 @@ check("a domain with no url still lists",
            "removal_pages": [{"domain": "gripeo.com"}]})).paragraphs]
        if x.strip() == "gripeo.com"], ["gripeo.com"])
 
+print("\nTHE SNAPSHOT THE PANEL DRAWS REACHES THE DOCUMENT")
+# Negative-term demand, the tagged page-one results and the star split per
+# location were rendered on screen and went no further. The pricing is an
+# answer to those three tables.
+SNAP = {"query": "sage dental reviews",
+        "terms": [{"term": "sage dental reviews", "class": "watch", "volume": 720},
+                  {"term": "sage dental lawsuit", "class": "negative", "volume": 170}],
+        "organic": [{"pos": 1, "domain": "trustpilot.com", "owned": False,
+                     "tactic": "site removal"},
+                    {"pos": 3, "domain": "mysagedental.com", "owned": True,
+                     "tactic": "owned \u2014 boost"},
+                    {"pos": 6, "domain": "yelp.com", "owned": False,
+                     "tactic": "suppression", "rating": 2.6}],
+        "forums": [],
+        "locations": [{"title": "Sage Dental of Midtown Atlanta", "profile_rating": 3.8,
+                       "profile_reviews": 714, "neg_1": 54, "neg_2": 34, "weak_3": 17},
+                      {"title": "Sage Dental of Tucker", "profile_rating": 3.9,
+                       "profile_reviews": 671, "neg_1": 47, "neg_2": 26, "weak_3": 16}]}
+
+
+def snap_doc(snapshot=SNAP, shots=None):
+    return Document(D.build_rep_proposal_docx(
+        {"brand": "Sage Dental", "quote": QUOTE, "snapshot": snapshot,
+         "serp_shots": shots, "brackets": BRACKETS}))
+
+
+sd = snap_doc()
+st = [p.text for p in sd.paragraphs if p.text.strip()]
+heads = [[c.text for c in t.rows[0].cells] for t in sd.tables]
+check("it has its own heading", "Reputation Snapshot" in st, True)
+check("negative terms", ["Term", "Class", "Searches/mo"] in heads, True)
+check("page one with its routing", ["#", "Result", "Routing", "Rating"] in heads, True)
+check("review profiles by location",
+      ["Location", "Rating", "Reviews", "1\u2605", "2\u2605", "3\u2605"] in heads, True)
+_terms = sd.tables[heads.index(["Term", "Class", "Searches/mo"])]
+check("volume is formatted", _terms.rows[1].cells[2].text, "720")
+_res = sd.tables[heads.index(["#", "Result", "Routing", "Rating"])]
+check("owned is marked as owned", _res.rows[2].cells[2].text, "owned \u2014 owned \u2014 boost")
+check("a third party is not", _res.rows[1].cells[2].text, "third party \u2014 site removal")
+check("a missing rating is a dash", _res.rows[1].cells[3].text, "\u2014")
+check("a rating shows", _res.rows[3].cells[3].text, "2.6\u2605")
+check("the flagged total is stated",
+      any(x.startswith("161 reviews sit at 1\u20132 stars") for x in st), True)
+
+print("\nTHE SCREENSHOT SITS INSIDE IT, WITHOUT A SECOND HEADING")
+sd2 = snap_doc(shots=[{"query": "sage dental reviews", "data_url": URL}])
+st2 = [p.text for p in sd2.paragraphs if p.text.strip()]
+check("image", len(sd2.inline_shapes), 1)
+check("no duplicate Search Results heading", "Search Results" in st2, False)
+check("the page-one sentence introduces it",
+      any(x.startswith("Page one for") for x in st2), True)
+
+print("\nNO SCAN IS NO SECTION")
+check("nothing at all", "Reputation Snapshot" in
+      [p.text for p in snap_doc(snapshot={}).paragraphs], False)
+check("terms alone still draws it", "Reputation Snapshot" in
+      [p.text for p in snap_doc(snapshot={"terms": SNAP["terms"]}).paragraphs], True)
+check("a screenshot alone keeps its heading",
+      "Search Results" in [p.text for p in snap_doc(
+          snapshot={}, shots=[{"query": "q", "data_url": URL}]).paragraphs], True)
+
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:
     print("FAILED: " + ", ".join(FAIL))

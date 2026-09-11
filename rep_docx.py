@@ -620,13 +620,82 @@ def serp_images(shots, cap=3):
     return out
 
 
-def _serp_section(doc, shots):
+def _snapshot(doc, d, brand):
+    """WHAT THE SCAN MEASURED, IN THE PROPOSAL. The tool renders a Reputation
+    Snapshot -- negative-term demand, the tagged page-one results, and the star
+    split per location -- and none of it left the screen. The pricing that
+    follows is an answer to these three tables, and a client reading the
+    proposal alone could not see the question.
+
+    Drawn as tables rather than the panel's pie: a Word document has no chart,
+    and the numbers behind it are the point.
+    """
+    snap = d.get("snapshot") or {}
+    terms = [t for t in (snap.get("terms") or []) if isinstance(t, dict)][:10]
+    organic = [o for o in (snap.get("organic") or []) if isinstance(o, dict)]
+    forums = [f for f in (snap.get("forums") or []) if isinstance(f, dict)]
+    locs = [l for l in (snap.get("locations") or []) if isinstance(l, dict)]
+    shots = d.get("serp_shots")
+    if not (terms or organic or locs or serp_images(shots)):
+        return False
+
+    _head(doc, "Reputation Snapshot")
+
+    if terms:
+        _body(doc, "Search demand on the brand's negative and watch terms:")
+        _table(doc, ["Term", "Class", "Searches/mo"],
+               [[str(t.get("term") or ""), str(t.get("class") or ""),
+                 f"{int(t.get('volume') or 0):,}"] for t in terms],
+               widths=[3.4, 1.4, 1.4])
+
+    rows = []
+    for o in (organic + forums)[:12]:
+        rating = o.get("rating")
+        rows.append([
+            str(o.get("pos") or "\u2014"),
+            str(o.get("domain") or ""),
+            ("owned" if o.get("owned") else "third party")
+            + (f" \u2014 {o.get('tactic')}" if o.get("tactic") else ""),
+            (f"{rating}\u2605" if rating else "\u2014"),
+        ])
+    if rows:
+        _body(doc, f"Page one for \u201c{snap.get('query') or (brand + ' reviews')}\u201d, "
+                   "with the route we would take on each result:")
+        _table(doc, ["#", "Result", "Routing", "Rating"], rows,
+               widths=[0.5, 2.5, 2.3, 0.9])
+
+    _serp_section(doc, shots, heading=not rows)
+
+    if locs:
+        lrows, flagged = [], 0
+        for l in locs:
+            n1 = int(l.get("neg_1") or 0)
+            n2 = int(l.get("neg_2") or 0)
+            flagged += n1 + n2
+            lrows.append([
+                str(l.get("title") or l.get("place_id") or ""),
+                f"{float(l.get('profile_rating') or 0):.1f}\u2605",
+                f"{int(l.get('profile_reviews') or 0):,}",
+                str(n1), str(n2), str(int(l.get("weak_3") or 0)),
+            ])
+        _body(doc, "Google review profiles, by location:")
+        _table(doc, ["Location", "Rating", "Reviews", "1\u2605", "2\u2605", "3\u2605"],
+               lrows, widths=[2.6, 0.8, 0.9, 0.6, 0.6, 0.6])
+        if flagged:
+            _body(doc, f"{flagged:,} review{'s' if flagged != 1 else ''} sit at 1\u20132 stars "
+                       "and are the removal candidates priced below.", bold=True)
+    return True
+
+
+def _serp_section(doc, shots, heading=True):
     """The search results as they actually look, which is the evidence every
     one of Brendan's reputation proposals opens its search section with."""
     imgs = serp_images(shots)
     if not imgs:
         return False
-    _head(doc, "Search Results")
+    # Inside the snapshot the sentence above the image already introduces it.
+    if heading:
+        _head(doc, "Search Results")
     for query, raw in imgs:
         if query:
             _body(doc, f"\u201c{query}\u201d", italic=True)
@@ -666,7 +735,7 @@ def build_rep_proposal_docx(d):
     _head(doc, "Summary")
     _body(doc, COPY["summary"].format(brand=brand))
 
-    _serp_section(doc, d.get("serp_shots"))
+    _snapshot(doc, d, brand)
 
     def _find(pred):
         return [l for l in lines if pred(l)]
