@@ -145,6 +145,37 @@ check("review removals at partner cost",
 check("standard sites", h["partner_standard_sites_total"], 9750)
 check("premium sites", h["partner_premium_sites_total"], 8125)
 
+print("\nTHE TAGGED PAGES TRAVEL, NOT JUST THEIR COUNT")
+# Every page-one result carries one tag -- owned/positive/site removal/
+# suppression -- and the quote was sending only how many. "2 standard sites" is
+# not an instruction to fulfilment, and Brendan's proposals list the URLs.
+PAGES = [{"pos": 3, "domain": "complaintsboard.com",
+          "url": "https://www.complaintsboard.com/ski-barn-c12", "title": "Ski Barn complaints"},
+         {"pos": 7, "domain": "reddit.com",
+          "url": "https://www.reddit.com/r/skiing/comments/abc/", "title": "Avoid Ski Barn"}]
+SUP = [{"pos": 2, "domain": "yelp.com", "url": "https://www.yelp.com/biz/ski-barn",
+        "title": "Ski Barn - Yelp"}]
+tagged = R.build_rep_quote({
+    "campaign": "bundle", "margin_pct": 0.35,
+    "search": {"bundle": True, "volume": 8000, "pages": SUP},
+    "shield": {"locations": 4},
+    "reviews": {"count": 26},
+    "articles": {"standard": 2, "premium": 1, "pages": PAGES}})["handoff"]
+check("removal pages", [x["url"] for x in tagged["removal_pages"]],
+      [p["url"] for p in PAGES])
+check("suppression pages", [x["url"] for x in tagged["suppression_pages"]],
+      [p["url"] for p in SUP])
+check("the position rides along", tagged["removal_pages"][0]["pos"], 3)
+check("counts still sent", tagged["standard_sites"], 2)
+
+print("\nAND NOTHING TAGGED IS AN EMPTY LIST, NOT A MISSING KEY")
+check("no pages", h["removal_pages"], [])
+check("none to suppress", h["suppression_pages"], [])
+check("a row with neither url nor domain is dropped",
+      R.build_rep_quote({"campaign": "reactive", "margin_pct": 0.35,
+                         "articles": {"standard": 1, "pages": [{"pos": 1}, "nope"]}
+                         })["handoff"]["removal_pages"], [])
+
 print("\nMARGIN DOLLARS, THE WAY THE SEO HANDOFF SENDS THEM")
 # Client figures round UP and partner figures do not, so client x (1 - margin)
 # does not return partner. The difference is stated instead of derived.

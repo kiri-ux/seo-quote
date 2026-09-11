@@ -502,8 +502,10 @@ async function buildQuote(){
     margin_pct: (+$('clientMargin').value||35)/100,
     reviews: $('useReviews').checked ? {count: +$('nReviews').value||0,
       scan_meta: (window._scanProv && window._scanProv.flagged === (+$('nReviews').value||0)) ? window._scanProv : null} : {count:0},
-    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0, classes: window._artClasses||null} : {},
-    search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked},
+    articles: $('useArticles').checked ? {standard:+$('nArtStd').value||0, premium:+$('nArtPrem').value||0,
+      classes: window._artClasses||null, pages: window._removalPages||[]} : {},
+    search: {volume:+$('volume').value||0, bundle:$('useSearchBundle').checked,
+      pages: $('useSearchBundle').checked ? (window._suppressionPages||[]) : []},
     geo: {enabled:$('useGeo').checked, phase:$('geoPhase').value},
     shield: {locations:+$('nLocations').value||1, enabled: STRAT.has('proactive')},
     overrides: {review_hard:+$('ovReview').value||0, art_std_hard:+$('ovArtStd').value||0,
@@ -757,7 +759,7 @@ $('scanBtn').onclick = async ()=>{
   $('scanCard').classList.remove('hidden');
   $('scanProg').classList.remove('hidden');
   $('scanOut').innerHTML = '';
-  window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
+  window._reco = []; window._negPhrases = new Set(); window._artClasses = null; window._removalPages = null; window._suppressionPages = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
   window._scanData = {}; window._negDone = null; window._scanProv = null; negGen++; reviewTasks = [];
   $('scanOut').innerHTML = '<div id="termsBlock"></div><div id="serpBlock"></div><div id="locsBlock"></div>';
   try{ renderBrandDomainWarning(); }catch(e){}
@@ -840,6 +842,8 @@ function repHandoffTable(d){
    + r('Site/Article Removals', yn(h.site_article_removals), 'true when either removal line exists')
    + r('# of Standard Sites', (h.standard_sites||0).toLocaleString(), '')
    + r('# of Premium Sites', (h.premium_sites||0).toLocaleString(), 'news and high-authority \u2014 its own rate')
+   + r('Pages to remove', ((h.removal_pages||[]).length||0).toLocaleString(), (h.removal_pages||[]).map(x=>esc(x.url||x.domain)).join('<br>') || 'none tagged')
+   + r('Pages to suppress', ((h.suppression_pages||[]).length||0).toLocaleString(), (h.suppression_pages||[]).map(x=>esc(x.url||x.domain)).join('<br>') || 'none tagged')
    + r('Price per Standard Site Removal', money(h.price_per_standard_site_removal), 'client rate, per page')
    + r('Price per Premium Site Removal', money(h.price_per_premium_site_removal), 'client rate, per page')
    + r('Monthly Budget', money(h.monthly_budget), 'client \u00b7 the two bundles below, summed')
@@ -971,6 +975,14 @@ function renderSerp(d){
                     : /(reddit\.|quora\.)/.test(dm||'') ? 'forum' : 'gripe';
     window._artClasses = {};
     remPages.forEach(p=>{ const c = classOf(p.domain); window._artClasses[c] = (window._artClasses[c]||0)+1; });
+    // THE PAGES THEMSELVES, NOT JUST HOW MANY. A count is not an instruction to
+    // fulfilment, and Brendan's proposals list the URLs under Website Removals.
+    window._removalPages = remPages.map(p=>({
+      pos: p.pos||null, domain: p.domain||'', url: p.url||'',
+      title: p.title||'', tier: 'standard'}));
+    window._suppressionPages = [...(d.organic||[]), ...(d.forums||[])]
+      .filter(x=>x.tactic==='suppression')
+      .map(p=>({pos: p.pos||null, domain: p.domain||'', url: p.url||'', title: p.title||''}));
     const pages = remPages.map(p=>'#'+(p.pos||'—')+' '+p.domain);
     reco('useArticles','Negative Website/Article Removals',
       siteRemovals+' removable pages — '+pages.slice(0,5).join(', '), {nArtStd: siteRemovals});
@@ -1950,7 +1962,7 @@ async function loadSavedList(){
 function restoreScan(sc){
   if(!sc || !sc.data) return;
   window._scanData = sc.data;
-  window._reco = []; window._negPhrases = new Set(); window._artClasses = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
+  window._reco = []; window._negPhrases = new Set(); window._artClasses = null; window._removalPages = null; window._suppressionPages = null; document.querySelectorAll(".reco-note").forEach(e=>e.remove());
   $('scanOut').innerHTML = '<div id="termsBlock"></div><div id="serpBlock"></div><div id="locsBlock"></div>';
   $('scanCard').classList.remove('hidden');
   $('scanOut').innerHTML = '';

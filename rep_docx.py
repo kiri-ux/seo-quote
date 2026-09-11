@@ -46,6 +46,11 @@ COPY = {
                "their online reputation. All pricing within this proposal is "
                "listed in US dollars.",
 
+    # Visions Electronics lists the pages by URL under this heading, one bullet
+    # each, before the rate card. The lead-in is his.
+    "sites_found": "We have reviewed {brand}'s online reputation and have found "
+                   "the following listings we would recommend removing, which "
+                   "are coming up on the first few pages of Google:",
     "sites_intro": "We have developed a method for removing websites from "
                    "Google search results which to date has a 100% success "
                    "rate. We have helped hundreds of companies remove "
@@ -678,6 +683,12 @@ def build_rep_proposal_docx(d):
     if sites:
         _head(doc, "Website Removals")
         _body(doc, COPY["sites_intro"])
+        pages = [x for x in (d.get("removal_pages") or [])
+                 if isinstance(x, dict) and (x.get("url") or x.get("domain"))]
+        if pages:
+            _body(doc, COPY["sites_found"].format(brand=brand))
+            for x in pages:
+                _bullet(doc, str(x.get("url") or x.get("domain")))
         _body(doc, COPY["sites_terms"])
         card = d.get("site_rate_card")
         if card:

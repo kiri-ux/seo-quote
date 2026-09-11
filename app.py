@@ -17455,6 +17455,10 @@ def api_rep_proposal_docx():
                  [{"min": b["min"], "max": b["max"],
                    "price": rep_pricing.r5(b["hard"] / (1.0 - mg))}
                   for b in rcfg["brackets"]])
+    # The tagged pages travel on the quote's handoff, so the document does not
+    # need them sent a second time.
+    d.setdefault("removal_pages",
+                 ((d.get("quote") or {}).get("handoff") or {}).get("removal_pages") or [])
     try:
         buf = rep_docx.build_rep_proposal_docx(d)
     except Exception as e:                                    # noqa: BLE001

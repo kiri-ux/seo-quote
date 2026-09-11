@@ -219,6 +219,10 @@ def scan_serp(brand, domain=""):
                 "pos": it.get("rank_absolute"),
                 "title": it.get("title"),
                 "domain": _domain(it.get("domain")),
+                # THE PAGE, NOT JUST ITS HOST. A removal is quoted per page and
+                # Brendan's proposals list the URLs; the domain alone cannot say
+                # which of a host's pages was tagged.
+                "url": it.get("url") or "",
                 "snippet": (it.get("description") or "")[:200],
                 "rating": rat.get("value") or _rating_from_text(
                     it.get("description"), it.get("title")),
@@ -236,6 +240,7 @@ def scan_serp(brand, domain=""):
                     "pos": it.get("rank_absolute"),
                     "domain": dom,
                     "title": el.get("title"),
+                    "url": el.get("url") or "",
                     "tactic": route_tactic(dom, forum=True),
                 })
         elif t == "ai_overview":

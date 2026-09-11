@@ -963,6 +963,19 @@ def build_rep_quote(payload):
         "partner_hard_cost_per_standard_site": _hard_per(std),
         "partner_hard_cost_per_premium_site": _hard_per(prm),
         # The two recurring bundles, matching the client figures above.
+        # WHICH PAGES WERE QUOTED. The counts say how many; fulfilment and the
+        # proposal both need to know which -- Brendan's own proposals list the
+        # URLs under Website Removals.
+        "removal_pages": [
+            {"pos": x.get("pos"), "domain": x.get("domain"), "url": x.get("url") or "",
+             "title": x.get("title") or "", "tier": x.get("tier") or "standard"}
+            for x in ((payload.get("articles") or {}).get("pages") or [])
+            if isinstance(x, dict) and (x.get("url") or x.get("domain"))][:40],
+        "suppression_pages": [
+            {"pos": x.get("pos"), "domain": x.get("domain"), "url": x.get("url") or "",
+             "title": x.get("title") or ""}
+            for x in ((payload.get("search") or {}).get("pages") or [])
+            if isinstance(x, dict) and (x.get("url") or x.get("domain"))][:40],
         "partner_search_protection_monthly": _search_hard,
         "partner_brand_shield_monthly": _shield_hard,
         # Everything billed per asset, at partner cost: rate x count, the same

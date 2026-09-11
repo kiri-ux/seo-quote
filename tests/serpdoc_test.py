@@ -124,6 +124,37 @@ check("image", len(anon.inline_shapes), 1)
 check("no empty quotes",
       [p.text for p in anon.paragraphs if p.text.strip() == "“”"], [])
 
+print("\nTHE REMOVAL PAGES ARE LISTED, THE WAY VISIONS LISTS THEM")
+PAGES = [{"pos": 3, "domain": "complaintsboard.com",
+          "url": "https://www.complaintsboard.com/ski-barn-c12"},
+         {"pos": 7, "domain": "reddit.com",
+          "url": "https://www.reddit.com/r/skiing/comments/abc/"}]
+doc2 = Document(D.build_rep_proposal_docx(
+    {"brand": "Ski Barn", "quote": QUOTE, "removal_pages": PAGES, "brackets": BRACKETS}))
+t2 = [p.text for p in doc2.paragraphs if p.text.strip()]
+check("the lead-in names the client",
+      any(x.startswith("We have reviewed Ski Barn's online reputation") for x in t2), True)
+check("every url is a bullet",
+      [x for x in t2 if x.startswith("https://")], [p["url"] for p in PAGES])
+check("it sits under Website Removals",
+      t2.index("https://www.complaintsboard.com/ski-barn-c12") > t2.index("Website Removals"), True)
+check("and before the rate card terms",
+      t2.index("https://www.reddit.com/r/skiing/comments/abc/")
+      < next(i for i, x in enumerate(t2) if x.startswith("Pricing for website removals")), True)
+
+print("\nNO PAGES IS NO LEAD-IN")
+doc3 = Document(D.build_rep_proposal_docx(
+    {"brand": "Ski Barn", "quote": QUOTE, "brackets": BRACKETS}))
+t3 = [p.text for p in doc3.paragraphs if p.text.strip()]
+check("no dangling sentence",
+      any(x.startswith("We have reviewed") for x in t3), False)
+check("the section still builds", "Website Removals" in t3, True)
+check("a domain with no url still lists",
+      [x for x in [p.text for p in Document(D.build_rep_proposal_docx(
+          {"brand": "Ski Barn", "quote": QUOTE, "brackets": BRACKETS,
+           "removal_pages": [{"domain": "gripeo.com"}]})).paragraphs]
+       if x.strip() == "gripeo.com"], ["gripeo.com"])
+
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:
     print("FAILED: " + ", ".join(FAIL))
