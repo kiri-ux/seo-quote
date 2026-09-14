@@ -396,6 +396,7 @@
           <button type="button" id="dlRemovals" class="btn2">⬇ Review removal proposal (.docx)</button>
           <button type="button" id="dlRepProposal" class="btn2">⬇ Full proposal (.docx)</button>
         </div>
+        <div id="dlMsgRem" class="help" style="margin:0 0 4px"></div>
         <div id="dlMsg" class="help" style="margin:0 0 6px"></div>
         <div id="out"><p class="help">Configure the campaign and hit <b>Build quote</b>.</p></div>
       </div>
@@ -1745,16 +1746,29 @@ async function repDownload(url, payload, btnId, msgId, fallbackName){
       if(res.ok || ![502,503,504].includes(res.status)) break;
     }
     if(!res.ok){
-      const e = await res.json().catch(()=>({}));
-      throw new Error(e.error || ('Request failed ('+res.status+')'));
+      // THE SERVER'S OWN WORDS, AND THE STATUS. "Request failed" on its own
+      // sent every diagnosis back to guesswork.
+      const txt = await res.text().catch(()=>'');
+      let msg = '';
+      try{ msg = (JSON.parse(txt)||{}).error || ''; }catch(_){ msg = txt.slice(0,160); }
+      throw new Error('HTTP '+res.status+(msg ? ' \u2014 '+msg : ''));
+    }
+    const ct = res.headers.get('content-type') || '';
+    if(ct.indexOf('wordprocessingml') < 0 && ct.indexOf('octet-stream') < 0){
+      const txt = await res.text().catch(()=>'');
+      throw new Error('Server sent '+(ct||'no content type')+' instead of a document'
+                      + (txt ? ' \u2014 '+txt.slice(0,160) : ''));
     }
     const blob = await res.blob();
+    if(!blob || blob.size < 1024){
+      throw new Error('Document came back empty ('+((blob&&blob.size)||0)+' bytes).');
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = fallbackName;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
-    say('Downloaded.');
+    say('Downloaded \u00b7 '+Math.round(blob.size/1024)+' KB.');
   }catch(e){
     console.error('rep download failed:', e);
     say(String((e && e.message) || e || 'Unknown error'));
@@ -1769,7 +1783,7 @@ document.addEventListener('click', e=>{
   e.preventDefault();
   const brand = (($('brand')||{}).value||'').trim() || 'client';
   if(!(window._negDone||[]).length){
-    const m=$('dlMsg');
+    const m=$('dlMsgRem');
     if(m) m.textContent = 'Run Count negative reviews first — the analysis is built from that pull.';
     return;
   }
@@ -1777,7 +1791,7 @@ document.addEventListener('click', e=>{
     brand: brand,
     locations: window._negDone || [],
     margin_pct: (+($('clientMargin')||{}).value||35)/100,
-  }, 'dlRemovals', 'dlMsg',
+  }, 'dlRemovals', 'dlMsgRem',
      brand.replace(/[^A-Za-z0-9]+/g,'_')+'_Review_Removal_Proposal.docx');
 });
 document.addEventListener('click', e=>{
