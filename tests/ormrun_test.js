@@ -135,8 +135,8 @@ const QUOTE = {
     return R;
   });
 
-  const seq = calls.map(c => c.url)
-    .filter(u => u !== '/api/config' && u !== '/api/lists');
+  const seq = calls.map(c => c.url).filter(u =>
+    u !== '/api/config' && u !== '/api/lists' && u !== '/api/quotes/status');
   const quoteCall = calls.find(c => c.url === '/api/rep_quote') || { body: {} };
 
   const want = {

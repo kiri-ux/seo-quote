@@ -18,6 +18,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const errs = [];
+  let out0 = {};
   const run = async (rankPos) => {
     const p = await b.newPage();
     p.on('pageerror', e => errs.push(e.message));
@@ -42,6 +43,11 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
           handoff: {package: {base: 2950}, margin_pct: 0.35,
                     addon_markets: bd.addon_markets || 0,
                     addon_market_price: {base: 2655}, addon_market_discount_pct: 10}});
+      if (url === '/api/county_seats')
+        return json(route, {seats: ['Knoxville, TN', 'Crossville, TN', 'Morristown, TN',
+                                    'Cleveland, TN'],
+                            unresolved: ['Bradley County, TN'].slice(0, 0),
+                            counties: []});
       if (url === '/api/serp_recommend') return json(route, {recommended: 'vein treatment knox county'});
       if (url === '/api/serp_queue') return json(route, {task_id: 't', device: 'desktop'});
       if (url === '/api/serp_fetch') return json(route, {ready: false});
@@ -66,6 +72,10 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     await p.click('#kwBuilder');
     await p.click('#kbBuild');
     await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent));
+    out0 = await p.evaluate(() => ({
+      widen: (document.getElementById('kbWiden').textContent || '').replace(/\s+/g, ' ').trim(),
+      offersSeats: !!document.getElementById('kbSeats'),
+    }));
     await p.click('#gen');
     await p.click('#gen');
     await p.waitForSelector('.prod[data-row="0"] .qres');
@@ -79,6 +89,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     });
     await p.close();
     out.asked = calls.includes('/api/addon_suggestion');
+    out.widen = out0.widen; out.offersSeats = out0.offersSeats;
     return out;
   };
 
@@ -97,6 +108,9 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     'measured.namesTheRegionCaveat': [/contiguous region — adjacent markets are already/
       .test(measured.addon || ''), true],
     'both.widerAreaNamedOnDemand': [/answered from a wider area/.test(measured.demand || ''), true],
+    'counties.nothingMeasuredIsFlagged':
+      [/answered from a wider area/.test(measured.widen || ''), true],
+    'counties.offersTheSeats': [measured.offersSeats, true],
   };
 
   let bad = 0;

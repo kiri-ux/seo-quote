@@ -426,7 +426,10 @@ const CFG = {
     // the capture is fired off the measured table, without being asked
     'serp.recommendedThenQueued': [seq.filter(u => /serp/.test(u)).slice(0, 2).join(','),
       '/api/serp_recommend,/api/serp_queue'],
-    'serp.landsOnTheRow': [serp.msg, 'SERP captured for “dental implants boca raton”.'],
+    // the row carries both facts: whether it saved, and the capture
+    'serp.landsOnTheRow': [serp.msg,
+      'Not saved — saving is off for this deploy. · '
+      + 'SERP captured for “dental implants boca raton”.'],
     'serp.onTheQuote': [serp.onQuote, true],
     'serp.reachesTheProposal': [serp.serpRow.join(' | '),
       'SERP — screenshotserp | data:image/png;base64,iVBORw0KGgo='],

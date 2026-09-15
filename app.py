@@ -14584,6 +14584,32 @@ REP_STRATEGY_OPTIONS = ["Review Removals", "Site/Article Removals",
                         "Reactive", "Proactive"]
 
 
+@app.route("/api/county_seats", methods=["POST"])
+@_json_error_guard
+def api_county_seats():
+    """The principal cities of each county market, and which names did not
+    resolve. County-level keyword volume is rarely reported, so a quote on
+    counties measures nothing and prices as a client with no demand; the seats
+    measure directly."""
+    d = request.get_json(force=True)
+    state = (d.get("state") or "").strip()
+    out, unknown, seats = [], [], []
+    for m in (d.get("markets") or []):
+        m = str(m or "").strip()
+        if not m:
+            continue
+        key = county_key(m, state)
+        cities = county_cities(m, state, limit=1)
+        if not key:
+            unknown.append(m)
+            continue
+        out.append({"market": m, "county": key[0], "state": key[1],
+                    "seats": [c.title() + ", " + key[1] for c in cities]})
+        seats.extend(c.title() + ", " + key[1] for c in cities)
+    return jsonify({"counties": out, "unresolved": unknown,
+                    "seats": list(dict.fromkeys(seats))})
+
+
 @app.route("/api/lists")
 @_json_error_guard
 def api_lists():

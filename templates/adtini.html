@@ -105,7 +105,10 @@
         <div class="f" data-past><label>Past SEO Details</label><textarea data-k="past_details"></textarea></div>
 
         <div class="f" data-past><label>Current Spend / Month</label><input type="text" data-k="spend"></div>
-        <div class="f" data-past><a class="dl" href="#">&#11015; Current SEO Report</a></div>
+        <div class="f" data-past><label class="dl" for="pastReport">&#11015; Current SEO Report</label>
+          <input id="pastReport" type="file" hidden
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg">
+          <span class="hint" id="pastReportName"></span></div>
 
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
       </div>
@@ -409,7 +412,8 @@ function rowHtml(r, i){
       <div data-pane="details">
         <div class="prow">
           <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Config</button>
-          <span class="rowmsg" data-msg="${i}">${esc(r.note || '')}</span>
+          <span class="rowmsg" data-msg="${i}">${esc([r.saveNote, r.note]
+            .filter(Boolean).join(' · '))}</span>
           <div class="right">
             <span class="spark">&#10022;</span>
             <button class="btn adtini" type="button" data-open="${i}" data-view="form">adtini Forecast</button>
@@ -446,8 +450,15 @@ function savePayload(r){
   return p;
 }
 async function persist(r){
-  if (!LIVE) return;
-  const body = {name: `${r.name} — ${r.qid}`, client: CLIENT || r.data.brand || '',
+  await saveReady();
+  const client = CLIENT || r.data.brand || '';
+  if (!LIVE) {
+    r.saveNote = 'Not saved — saving is off for this deploy.'
+      + (SAVE_DETAIL ? ` ${SAVE_DETAIL}` : '');
+    return false;
+  }
+  if (!client) { r.saveNote = 'Not saved — the quote needs a brand name.'; return false; }
+  const body = {name: `${r.name} — ${r.qid}`, client,
                 payload: savePayload(r), tool: r.kind === 'orm' ? 'rep' : 'seo'};
   try {
     if (r.saveId) {
@@ -455,8 +466,21 @@ async function persist(r){
     } else {
       const got = await post('/api/quotes', body);
       r.saveId = got.id;
+      CLIENT = CLIENT || client;         // later runs group under the same client
+      // The order number belongs to the client, so a new quote carries it over.
+      const ord = new URLSearchParams(location.search).get('order');
+      if (ord) {
+        try {
+          await post('/api/adtini/client_meta', {client, order_no: ord});
+        } catch (e) { /* the quote is saved either way */ }
+      }
     }
-  } catch (e) { $('saved').textContent = 'Saved on screen only — ' + e.message; }
+    r.saveNote = `Saved to ${client} · ${r.qid}.`;
+    return true;
+  } catch (e) {
+    r.saveNote = 'Not saved — ' + e.message;
+    return false;
+  }
 }
 
 // THE HEADLINE IS THE BASE TIER, per month. Written after the row is built so
@@ -551,16 +575,29 @@ const STRAT_FROM = f => {
 
 // THE STORE IS THE PAGE WHEN THERE IS ONE. Every saved quote on this client is
 // a row, however many of each product it has; the sample rows are the fallback.
-let LIVE = false, CLIENT = '';
+// SAVING IS A PROPERTY OF THE TOOL, NOT OF HOW YOU GOT HERE. It used to be set
+// only while loading a client, so a quote started from New quote ran, priced,
+// and saved nothing.
+let LIVE = false, CLIENT = '', SAVE_P = null;
+function saveReady(){
+  if (!SAVE_P) {
+    SAVE_P = fetch('/api/quotes/status').then(r => r.json())
+      .then(j => { LIVE = !!j.enabled; SAVE_DETAIL = j.detail || ''; return LIVE; })
+      .catch(() => false);
+  }
+  return SAVE_P;
+}
+let SAVE_DETAIL = '';
+
 async function loadClient(){
   const q = new URLSearchParams(location.search);
+  await saveReady();
   if (q.get('new')) return;              // a new quote has nothing to load yet
   CLIENT = q.get('client') || '';
   if (!CLIENT) return;
   let list = null;
   try { list = await (await fetch('/api/adtini/clients')).json(); } catch (e) { return; }
   if (!list || !list.enabled) return;
-  LIVE = true;
   const c = (list.clients || []).find(x => x.client === CLIENT);
   if (!c || !(c.quotes || []).length) { ROWS.length = 0; draw(); return; }
   const loaded = [];
@@ -1143,6 +1180,7 @@ function load(form, data){
     chipbox(box, (data[box.dataset.chips] || []).slice()));
   pastFields();
   geoFields(form);
+  if (form === $('fseo')) $('pastReportName').textContent = data.past_report || '';
 }
 // A CHILD FIELD FOLLOWS ITS CHECKBOX. City is a question only once City is
 // ticked, and the same for the other three.
@@ -1598,9 +1636,58 @@ function kbDraw(r){
   $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${countryOf(r.data)}`
     + (wideN ? ` · ${wideN} answered from a wider area` : '');
   const w = kw.widen;
-  $('kbWiden').hidden = !(w && w.show);
-  $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';
+  // NOT ONE TERM MEASURED IN THESE MARKETS. Either every figure came from a
+  // wider area or there is no figure at all -- both price as no demand.
+  const inMarket = all.filter(x => x.vol && x.vol_scope !== 'broader').length;
+  const nothing = all.length && !inMarket;
+  const thin = inMarket && total > 0 && total < 500;
+  if (nothing || thin) {
+    // A QUOTE MEASURED ON NOTHING PRICES AS A CLIENT WITH NO DEMAND. County
+    // keyword volume is rarely reported; the county seat measures directly.
+    $('kbWiden').hidden = false;
+    $('kbWiden').innerHTML =
+      `<b>${nothing ? `${wideN} of ${all.length} terms answered from a wider area`
+                     : `${total.toLocaleString()}/mo measured across ${all.length} terms`}</b>`
+      + `<p class="hint" style="margin:0 0 10px">Nothing measured in `
+      + `${esc(geoOf(r.data).join(', ') || 'these markets')}, so the volume component`
+      + ` prices on almost nothing.</p>`
+      + `<button class="btn" type="button" id="kbSeats">Use county seats instead</button>`
+      + `<span class="hint" id="kbSeatsMsg" style="margin-left:10px"></span>`;
+  } else {
+    $('kbWiden').hidden = !(w && w.show);
+    $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';
+  }
 }
+
+// THE SEATS, IN PLACE OF THE COUNTIES. Swapped on the quote's own targeting so
+// the rebuild measures where the demand is reported, and a county name that
+// does not exist is named rather than silently dropped.
+document.addEventListener('click', async e => {
+  if (!e.target.closest('#kbSeats')) return;
+  const r = ROWS[ROW], d = r.data;
+  const markets = asList(d.county).concat(asList(d.city));
+  const say = t => { const n = $('kbSeatsMsg'); if (n) n.textContent = t; };
+  say('Looking up the seats…');
+  let got = null;
+  try { got = await post('/api/county_seats', {markets, state: stateOf(d)}); }
+  catch (err) { say(err.message); return; }
+  if (!(got.seats || []).length) {
+    say((got.unresolved || []).length
+      ? `No seats found. These names did not resolve: ${got.unresolved.join(', ')}.`
+      : 'No county markets to swap.');
+    return;
+  }
+  d.city = got.seats.slice();
+  d.county = [];
+  d.g_city = true;
+  d.g_county = false;
+  load(formOf(r), d);
+  kbScopeNote(r);
+  say(`Targeting ${got.seats.join(', ')}`
+    + ((got.unresolved || []).length
+       ? ` · dropped ${got.unresolved.join(', ')} — no such county` : '')
+    + ' · rebuild the list.');
+});
 
 // EXPAND ON FOCUS TERMS, WIRED. The toggle on the form promised this and did
 // nothing: the three passes the SEO tab runs before a build -- what their site
@@ -1734,6 +1821,16 @@ $('kbBuild').onclick = async () => {
   }
   $('kbBuild').disabled = false;
 };
+// THE REPORT IS AN ATTACHMENT ON THE ORDER. The tool records which file it is
+// so the order form and the proposal name the same document; the file itself
+// rides with the order, not with the quote.
+$('pastReport').onchange = e => {
+  const f = (e.target.files || [])[0];
+  if (ROW == null) return;
+  ROWS[ROW].data.past_report = f ? f.name : '';
+  $('pastReportName').textContent = f ? f.name : '';
+};
+
 $('kbSrc').onchange = () => kbDraw();
 
 // REMOVE AN OFF-TARGET TERM, ADD ONE THEY ASKED FOR. The edit is the list the
@@ -2061,7 +2158,7 @@ async function generate(){
     const note = t => {
       r.note = t;
       const n = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"] .rowmsg`);
-      if (n) n.textContent = t;
+      if (n) n.textContent = [r.saveNote, t].filter(Boolean).join(' · ');
     };
     autoSerp(r, d, ranks, note).then(async shot => {
       if (!shot) { note('SERP capture — not captured.'); return; }
