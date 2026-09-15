@@ -413,3 +413,13 @@ input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background
   letter-spacing:.06em;color:var(--muted)}
 .pv b{font-size:13.5px;font-weight:600;color:var(--navy)}
 .pvserp{margin-bottom:12px}
+
+/* the keyword list and the capture, side by side under the quote */
+.pvsplit{display:grid;grid-template-columns:3fr 1fr;gap:12px;align-items:start;margin-bottom:12px}
+@media(max-width:900px){.pvsplit{grid-template-columns:1fr}}
+.pvkw,.pvserp{background:var(--fill);border-radius:12px;padding:12px 14px}
+.pvkw h5,.pvserp h5{margin:0 0 8px;font-size:10.5px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--muted);display:flex;justify-content:space-between}
+.pvscroll{max-height:260px;overflow-y:auto}
+.pvkw table.kv{width:100%}
+.pvserp img{width:100%;border-radius:8px;border:1px solid var(--line)}

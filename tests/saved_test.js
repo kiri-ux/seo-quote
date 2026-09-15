@@ -75,8 +75,21 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     const url = new URL(route.request().url()).pathname;
     if (url === '/api/adtini/clients') return json(route, CLIENTS);
     if (url === '/api/quotes/11') return json(route, LEGACY_SEO);
-    if (url === '/api/quotes/12')
-      return json(route, Object.assign({}, LEGACY_SEO, {id: 12, name: 'Drainify UK — 2026-09-04'}));
+    if (url === '/api/quotes/12') {
+      const older = JSON.parse(JSON.stringify(LEGACY_SEO));
+      older.id = 12; older.name = 'Drainify UK — 2026-09-04';
+      delete older.payload.pricing.handoff;           // saved before the handoff existed
+      Object.assign(older.payload.pricing, {
+        client_tiers: {base: 3800, intermediate: 5250, advanced: 6700},
+        ai_search: {client_total: {base: 5966, intermediate: 8242, advanced: 10516},
+                    geo_pct: 57},
+        client_addon_per_market: {base: 900},
+        addon_discount_pct: 10,
+        hard_true_tiers: {base: 2470, intermediate: 3412, advanced: 4355},
+        agency_profit_tiers: {base: 1330},
+        margin_pct_of_gross: 35});
+      return json(route, older);
+    }
     if (url === '/api/quotes/21') return json(route, LEGACY_REP);
     if (url === '/api/adtini/client_meta') {
       posted.push(JSON.parse(route.request().postData() || '{}'));
@@ -127,6 +140,19 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     R.pastShown = [...document.querySelectorAll('#fseo [data-past]')].filter(x => !x.hidden).length;
     R.markets = document.querySelector('#fseo [data-k="markets"]').value;
     document.getElementById('close').click();
+    // the second quote on this client was saved before the handoff block
+    const q2 = document.querySelector('.prod[data-row="1"] .qres');
+    q2.querySelectorAll('.qfold').forEach(f => f.open = true);
+    const ordFold = [...q2.querySelectorAll('.qfold')]
+      .find(f => /^Order form/.test(f.querySelector('summary').textContent));
+    const rowIn = k => {
+      const tr = [...ordFold.querySelectorAll('tbody tr')]
+        .find(t => (t.querySelector('td span') || {}).textContent === k);
+      return tr ? [...tr.children].map(td => td.textContent.trim()) : null;
+    };
+    R.olderPackage = rowIn('package');
+    R.olderMargin = rowIn('margin_pct');
+    R.olderPartner = rowIn('partner_hard_cost');
     return R;
   });
 
@@ -176,6 +202,13 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'seo.formFocus': [seo.focus.join(','), 'drain unblocking,cctv survey'],
     'seo.pastSeoFieldsOpen': [seo.pastShown, 3],
     'seo.addOnMarketCount': [seo.markets, '3'],
+    // a quote saved before the handoff block still reads
+    'older.packageRead': [seo.olderPackage.join(' | '),
+      'Package $ (Core + AI) — per tierpackage'
+      + ' | base: $5,966 · intermediate: $8,242 · advanced: $10,516'],
+    'older.marginRead': [seo.olderMargin[1], '0.35'],
+    'older.partnerRead': [seo.olderPartner[1],
+      'base: $2,470 · intermediate: $3,412 · advanced: $4,355'],
     'orm.readAsOrm': [/^Online Reputation Management/.test(orm.name), true],
     'orm.tiles': [orm.tiles.join(' / '),
       'Monthly $12,550 / Removals — max $95,250 / Total $133,000'],

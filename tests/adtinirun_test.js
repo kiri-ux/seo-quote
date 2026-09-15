@@ -68,6 +68,14 @@ const CFG = {
     }
     if (url === '/api/price') return json(route, PRICE);
     if (url === '/api/config') return json(route, CFG);
+    if (url === '/api/serp_recommend')
+      return json(route, {recommended: 'dental implants boca raton',
+                          basis: 'measured, and they are not there'});
+    if (url === '/api/serp_queue')
+      return json(route, {task_id: 't-1', device: 'desktop', width: 1100,
+                          height: 1700, scale: 2});
+    if (url === '/api/serp_fetch')
+      return json(route, {ready: true, data_url: 'data:image/png;base64,iVBORw0KGgo='});
     if (url === '/api/site_services')
       return json(route, {services: [{term: 'dental crowns', volume: 720}]});
     if (url === '/api/expand_services')
@@ -197,17 +205,42 @@ const CFG = {
     R.proSections = [...proFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
     R.ordHasPartner = !!rowIn(ordFold, 'partner_hard_cost');
     R.proHasPartner = !!rowIn(proFold, 'partner_hard_cost');
-    R.proHasKeywordTable = !!proFold.querySelector('table.kv');
-    R.rankRows = [...proFold.querySelectorAll('table.kv tr')].slice(1)
+    R.ordHasSerp = !!rowIn(ordFold, 'serp');
+    // the keyword list is on the quote itself now, beside the capture
+    R.rankRows = [...q.querySelectorAll('.pvkw table.kv tr')].slice(1)
       .map(tr => [...tr.children].map(td => td.textContent.trim()).join(' | '));
     R.serpRow = rowIn(proFold, 'serp');
-    R.quoteIdRow = rowIn(ordFold, 'quote_id');
     R.modalClosed = document.getElementById('scrim').hidden;
     // the run lands in that row's History tab
     document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="history"]').click();
     R.historyCols = [...document.querySelectorAll('.prod[data-row="0"] .hist thead th')]
       .map(t => t.textContent.trim()).filter(Boolean);
     R.historyRows = document.querySelectorAll('.prod[data-row="0"] .hist tbody tr').length;
+    return R;
+  });
+
+  // ---------------- the capture fires itself ----------------
+  await p.waitForFunction(() =>
+    /SERP captured/.test(document.querySelector('.prod[data-row="0"] .rowmsg').textContent),
+    { timeout: 20000 });
+  const serp = await p.evaluate(() => {
+    const prod = document.querySelector('.prod[data-row="0"]');
+    prod.querySelectorAll('.qfold').forEach(f => f.open = true);
+    const R = {msg: prod.querySelector('.rowmsg').textContent.trim(),
+               onQuote: !!prod.querySelector('.pvserp img')};
+    const pro = [...prod.querySelectorAll('.qfold')]
+      .find(f => /^Proposal/.test(f.querySelector('summary').textContent));
+    const row = k => {
+      const tr = [...pro.querySelectorAll('tbody tr')]
+        .find(t => (t.querySelector('td span') || {}).textContent === k);
+      return tr ? [...tr.children].map(td => td.textContent.trim()) : null;
+    };
+    R.serpRow = row('serp');
+    R.termRow = row('serp_keyword');
+    R.noPerfRow = !row('perf_rows');
+    R.noRankingWindow = !row('ranking_window');
+    R.noTierCounts = !row('tier_keyword_counts');
+    R.noTypedFields = !row('flights') && !row('website_cms') && !row('billing_frequency');
     return R;
   });
 
@@ -247,7 +280,7 @@ const CFG = {
     'kb.widenText': [kb.widenText, 'One term is 77% of measured demand.'],
     'kb.srcTags': [srcTags.join(','), '[seed],[grid],[site]'],
     // steps 2-4
-    'run.order': [seq.slice(6).join(','), '/api/metrics,/api/rankings,/api/price'],
+    'run.order': [seq.slice(6, 9).join(','), '/api/metrics,/api/rankings,/api/price'],
     'run.headTerms': [(metCall.body.head || []).join(','), 'dental implants'],
     'run.rankBatched': [rankCalls.length, 1],
     'run.rankBatchSize': [(rankCalls[0].body.batch || []).length, 3],
@@ -269,20 +302,32 @@ const CFG = {
     'res.foldsStartClosed': [res.closed, true],
     'res.plannerViewFirst': [res.planner.slice(0, 2).join(' | '),
       'AI Search: not on this quote | Add-on markets: none'],
-    'res.serpNamed': [res.serpLine, 'SERP capture — not captured'],
+    'res.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
     'order.sections': [res.ordSections.join(' / '),
-      'This quote / Order form · campaign & budget / Order form · product details'
-      + ' / Order form · forecast request / Order form · strategies / Partner cost'],
+      'Product card / Split — Core SEO and AI Search / Add-on market brackets'
+      + ' / Partner cost and margin'],
     'proposal.sections': [res.proSections.join(' / '),
-      'This quote / Order form · campaign & budget / Order form · product details'
-      + ' / Order form · strategies / Proposal · keyword details / Proposal · measurement'],
+      'Product card / Split — Core SEO and AI Search / Add-on market brackets'
+      + ' / Proposal payload'],
     'order.keepsPartnerCost': [res.ordHasPartner, true],
     'proposal.noPartnerCost': [res.proHasPartner, false],
-    'proposal.carriesTheKeywordTable': [res.proHasKeywordTable, true],
+    'order.noKeywordsOrSerp': [res.ordHasSerp, false],
 
-    'proposal.namesWhatIsMissing': [res.serpRow.join(' | '), 'SERP captureserp | not captured'],
-    'order.quoteIdTravels': [res.quoteIdRow.join(' | '),
-      'Internal quote IDquote_id | Q-100241'],
+    // the capture is fired off the measured table, without being asked
+    'serp.recommendedThenQueued': [seq.filter(u => /serp/.test(u)).slice(0, 2).join(','),
+      '/api/serp_recommend,/api/serp_queue'],
+    'serp.landsOnTheRow': [serp.msg, 'SERP captured for “dental implants boca raton”.'],
+    'serp.onTheQuote': [serp.onQuote, true],
+    'serp.reachesTheProposal': [serp.serpRow.join(' | '),
+      'SERP — screenshotserp | data:image/png;base64,iVBORw0KGgo='],
+    'serp.namesItsTerm': [serp.termRow.join(' | '),
+      'SERP — keyword it was captured onserp_keyword | dental implants boca raton'],
+    // pay-for-performance stays on the legacy tab; the slide copy is not data
+    'proposal.noPerformanceTable': [serp.noPerfRow, true],
+    'proposal.noRankingWindow': [serp.noRankingWindow, true],
+    'proposal.noTierKeywordCounts': [serp.noTierCounts, true],
+    'lists.onlyWhatIsSent': [serp.noTypedFields, true],
+
     'res.rankRows': [res.rankRows.join(' // '),
       'dental implants | 3,600 | 4 // dental implants boca raton | 880 | Not Found'
       + ' // affordable dental implants near me | 210 | Not Found'],

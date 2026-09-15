@@ -132,6 +132,18 @@
             <option>Australia</option><option>Ireland</option><option>New Zealand</option>
           </select></div>
 
+        <div class="f wide">
+          <div class="geohead">Geographic Targeting Areas</div>
+          <div class="checks">
+            <label><input type="checkbox" data-k="g_city"> City</label>
+            <label><input type="checkbox" data-k="g_county"> County</label>
+            <label><input type="checkbox" data-k="g_state"> State</label>
+            <label><input type="checkbox" data-k="g_country"> Country</label>
+          </div>
+        </div>
+        <div class="f"><label>City</label><input type="text" data-k="city"></div>
+        <div class="f"><label>County</label><input type="text" data-k="county"></div>
+
         <div class="f"><label>Auto-Suggest / Related</label>
           <div class="yn" data-k="autosuggest"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
@@ -345,6 +357,8 @@ const ROWS = [
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
     reviews:161, locations:3, std:2, prem:1, volume:8000,
+    g_city:true, g_county:false, g_state:false, g_country:false,
+    city:'Boca Raton, FL', county:'',
     country:'United States', autosuggest:1, markup:'35'}},
 ];
 
@@ -480,7 +494,8 @@ function adopt(got){
            country: 'United States', expand: 1, lock: 0},
     kw: pay.kw || null,
     result: pay.pricing ? {
-      pricing: pay.pricing, ranks, table: pay.table || [],
+      pricing: Object.assign({addon_markets: i.addon_markets || 0}, pay.pricing),
+      ranks, table: pay.table || [],
       metrics: {cpc: pay.cpc || {}, kd_score: (pay.kd || {}).score, adder: pay.adder},
       shot: ((pay.serp || {}).img) || null,
       headline: `${money((((pay.pricing || {}).handoff || {}).package || {})[
@@ -592,7 +607,35 @@ function kvTable(obj, skip){
 // proposal read, what this quote has in it, and which of the two it travels to.
 // A field a destination needs and the quote has not got reads "not captured",
 // because a silent gap is how a proposal ships without its rank table.
-const H = r => ((r.result || {}).pricing || {}).handoff || {};
+// A QUOTE SAVED BEFORE THE HANDOFF EXISTED STILL CARRIES THE PRICES. The older
+// saved quotes hold client_tiers and ai_search.client_total instead, and read
+// as "not captured" against the handoff names — so they are mapped onto them.
+function H(r){
+  const p = (r.result || {}).pricing || {};
+  if (p.handoff) return p.handoff;
+  const ai = p.ai_search || {};
+  const client = ai.client_total || p.client_tiers;
+  if (!client) return {};
+  const core = p.client_tiers || {};
+  const aiAdd = {};
+  Object.keys(client).forEach(k => { aiAdd[k] = (client[k] || 0) - (core[k] || 0); });
+  const someAi = Object.keys(aiAdd).some(k => aiAdd[k] > 0);
+  return {
+    package: client, core_seo_price: core,
+    ai_search_price: someAi ? aiAdd : null,
+    ai_search_pct: someAi ? (ai.geo_pct || null) : 0,
+    ai_search_pct_effective: ai.geo_pct_effective || null,
+    margin_pct: p.margin_pct_of_gross != null ? p.margin_pct_of_gross / 100
+              : (p.markup_pct != null ? p.markup_pct : null),
+    addon_markets: p.addon_markets || 0,
+    addon_market_price: p.client_addon_per_market || null,
+    addon_market_discount_pct: p.addon_discount_pct || null,
+    partner_hard_cost: p.hard_true_tiers || p.hard_tiers || null,
+    partner_core_seo_cost: p.hard_tiers || null,
+    partner_addon_market_cost: p.hard_addon_per_market || null,
+    margin_dollars: p.agency_profit_tiers || null,
+  };
+}
 const P = r => (r.result || {}).pricing || {};
 const Q = r => (r.result || {}).quote || {};          // ORM: /api/rep_quote
 const RH = r => (Q(r).handoff) || {};
@@ -610,195 +653,99 @@ const tierCounts = r => {
     : undefined;
 };
 
-// SEO -- the adtini order form's SEO+ product block, and the SEO+ proposal
-// slides. Anything marked `manual` is typed on the order form by the planner,
-// so an empty one is not a gap in the quote.
+// WHAT LEAVES THE QUOTE, AND NOTHING ELSE. These two lists are step 12 of the
+// SEO generator tab and step 7 of the Reputation tab -- the fields the SEO+
+// product card, the Billing Engine and the proposal payload read, named the way
+// they name them. Anything the planner types straight into adtini is not here.
 const SEND_SEO = [
-  ['This quote', [
-    ['quote_id', 'Internal quote ID', 'both', r => r.qid],
-    ['built', 'Date built', 'both', r => dateOf(r)],
-  ]],
-  ['Order form · campaign & budget', [
-    ['seo_version', 'SEO version', 'order', r => (r.data.strategy || []).join(', ')],
-    ['package', 'SEO package — per tier', 'both', r => H(r).package],
-    ['selected_tier', 'Tier selected', 'order', r => r.tier, 'manual'],
-    ['monthly_budget', 'Monthly budget', 'both', r => (H(r).package || {})[r.tier || 'base']],
-    ['months_running', 'Months running', 'both', r => P(r).min_term_months],
-    ['total_budget', 'Total budget', 'both', r => {
-      const m = (H(r).package || {})[r.tier || 'base'], n = P(r).min_term_months;
-      return m && n ? m * n : undefined; }],
-    ['add_on_markets', 'Add-on markets', 'both', r => H(r).addon_markets ? 'Yes' : 'No'],
-    ['n_add_on_markets', '# of add-on markets', 'both', r => H(r).addon_markets],
-    ['add_on_price', 'Add-on price', 'both',
-     r => ifAddon(r, (H(r).addon_market_price || {})[r.tier || 'base'])],
+  ['Product card', [
+    ['package', 'Package $ (Core + AI) — per tier', 'order', r => H(r).package],
     ['margin_pct', 'Margin %', 'order', r => H(r).margin_pct],
-    ['discount_pct', 'Multi-site / multi-location discount', 'order',
+    ['addon_markets', 'Add-on markets', 'both', r => H(r).addon_markets],
+    ['addon_market_price', 'Add-On Market Price — per tier', 'both',
+     r => ifAddon(r, H(r).addon_market_price)],
+  ]],
+  ['Split — Core SEO and AI Search', [
+    ['core_seo_price', 'Core SEO Price — per tier', 'both', r => H(r).core_seo_price],
+    ['ai_search_price', 'AI Search Price — per tier', 'both', r => ifAi(r, H(r).ai_search_price)],
+    ['ai_search_pct', 'AI Search %', 'order', r => ifAi(r, H(r).ai_search_pct)],
+    ['ai_search_pct_effective', 'AI Search % — effective per tier', 'order',
+     r => ifAi(r, H(r).ai_search_pct_effective)],
+  ]],
+  ['Add-on market brackets', [
+    ['addon_market_discount_pct', 'Add-On Market Discount %', 'both',
      r => ifAddon(r, H(r).addon_market_discount_pct)],
-    ['auto_renewal', 'Auto-renewal', 'order', r => r.data.auto_renewal, 'manual'],
-    ['flights', 'Flights — dates and budget', 'order', r => r.data.flights, 'manual'],
-    ['billing_frequency', 'Billing frequency', 'order', r => r.data.billing_frequency, 'manual'],
-  ]],
-  ['Order form · product details', [
-    ['brand', 'Brand name', 'both', r => r.data.brand],
-    ['business_desc', 'What the client does', 'prop', r => r.data.business_desc],
-    ['website', 'Website needing SEO', 'both', r => r.data.site],
-    ['website_cms', 'Website CMS', 'order', r => r.data.cms, 'manual'],
-    ['additional_profiles', 'Additional profiles', 'order', r => r.data.profiles, 'manual'],
-    ['metric_goals', 'Metric goals', 'order', r => (r.data.goals || [])[0]],
-    ['geo_targeting', 'Geographic targeting areas', 'both', r => geoOf(r.data)],
-    ['state', 'State', 'prop', r => stateOf(r.data)],
-    ['geo_scope', 'Geo scope', 'both', r => BANDS[bandOf(r.data)]],
-    ['additional_instructions', 'Additional instructions', 'order',
-     r => r.data.instructions, 'manual'],
-  ]],
-  ['Order form · forecast request', [
-    ['client_budget', "Client's estimated budget", 'order', r => r.data.spend],
-    ['past_seo', 'Has done SEO in the past', 'order', r => r.data.past ? 'Yes' : 'No'],
-    ['past_seo_details', 'Past SEO details', 'order', r => r.data.past_details],
-    ['past_seo_report', 'Past SEO report', 'order', r => r.data.past_report, 'manual'],
-  ]],
-  ['Order form · strategies', [
-    ['strategy', 'Strategies', 'both', r => r.data.strategy],
-    ['ai_search_price', 'AI Search — per tier', 'both', r => ifAi(r, H(r).ai_search_price)],
-    ['core_seo_price', 'Core SEO — per tier', 'both', r => H(r).core_seo_price],
-    ['ai_search_pct', 'AI Search % of Core SEO', 'order', r => ifAi(r, H(r).ai_search_pct)],
-  ]],
-  ['Proposal · keyword details', [
-    ['keywords', 'Keyword table', 'prop', r => (r.kw && r.kw.all) || undefined],
-    ['google_rank', 'Google rank per keyword', 'prop', r => (r.result || {}).table],
-    ['competitiveness', 'Competitiveness per keyword', 'prop', r => tierCounts(r)],
-    ['keyword_distribution', 'Keyword distribution — chart', 'prop', r => tierCounts(r)],
-    ['tier_keyword_counts', 'Keywords per tier on the slide', 'prop',
-     r => (r.result || {}).tier_keywords],
-  ]],
-  ['Proposal · measurement', [
-    ['total_volume', 'Measured demand', 'prop', r => P(r).total_volume],
-    ['pct_not_ranking', '% of terms not ranking', 'prop', r => P(r).pct_not_ranking],
-    ['cpc', 'Top-of-page bids', 'prop', r => ((r.result || {}).metrics || {}).cpc],
-    ['kd_score', 'Keyword difficulty', 'prop', r => ((r.result || {}).metrics || {}).kd_score],
-    ['signals', 'Competitor signals', 'prop', r => (r.result || {}).signals],
-    ['perf_rows', 'Performance table', 'prop', r => (r.result || {}).perf_rows],
-    ['serp', 'SERP capture', 'prop', r => (r.result || {}).shot],
-    ['ranking_window', 'Ranking improvement window', 'prop',
-     r => (r.result || {}).ranking_window],
-  ]],
-  ['Partner cost', [
-    ['partner_hard_cost', 'Partner hard cost', 'order', r => H(r).partner_hard_cost],
-    ['partner_core_seo_cost', 'Partner Core SEO', 'order', r => H(r).partner_core_seo_cost],
-    ['partner_ai_search_cost', 'Partner AI Search', 'order',
-     r => ifAi(r, H(r).partner_ai_search_cost)],
-    ['partner_addon_market_cost', 'Partner add-on market', 'order',
+    ['addon_market_price_by_bracket', 'Add-On Market Price by Bracket', 'both',
+     r => ifAddon(r, H(r).addon_market_price_by_bracket)],
+    ['partner_addon_market_cost', 'Partner Add-On Market Cost — per tier', 'order',
      r => ifAddon(r, H(r).partner_addon_market_cost)],
-    ['addon_market_price_by_bracket', 'Every add-on bracket the deck can move to',
-     'order', r => ifAddon(r, H(r).addon_market_price_by_bracket)],
-    ['margin_dollars', 'Margin $', 'order', r => H(r).margin_dollars],
   ]],
-  ['List insights', [
-    ['widen', 'Widen the offer', 'screen', r => ((r.kw || {}).widen || {}).fact],
-    ['expansion', 'Terms added by expansion', 'screen', r => (r.expandNote || {}).added],
-    ['site_dropped', 'Dropped as off-topic', 'screen', r => (r.kw || {}).site_dropped],
-    ['fragments_dropped', 'Dropped as fragments', 'screen',
-     r => (r.kw || {}).fragments_dropped],
-    ['national_demand', 'National demand', 'screen',
-     r => r.natReason || (bandOf(r.data) === 'nationwide' ? 'priced nationally' : '')],
+  ['Partner cost and margin', [
+    ['partner_hard_cost', 'Partner Hard Cost — per tier', 'order', r => H(r).partner_hard_cost],
+    ['partner_core_seo_cost', 'Partner Core SEO Cost — per tier', 'order',
+     r => H(r).partner_core_seo_cost],
+    ['partner_ai_search_cost', 'Partner AI Search Cost — per tier', 'order',
+     r => ifAi(r, H(r).partner_ai_search_cost)],
+    ['margin_dollars', 'Margin $ — per tier', 'order', r => H(r).margin_dollars],
+  ]],
+  ['Proposal payload', [
+    ['keywords', 'Keywords — term, Google rank, competitiveness', 'prop',
+     r => (r.kw && r.kw.all) || undefined],
+    ['serp', 'SERP — screenshot', 'prop', r => (r.result || {}).shot],
+    ['serp_keyword', 'SERP — keyword it was captured on', 'prop',
+     r => ((r.result || {}).serp || {}).kw],
   ]],
 ];
 
-// ORM -- the order form's Online Reputation Management block, and the ORM
-// proposal slides (Reputation Snapshot and Product Details).
 const SEND_ORM = [
-  ['This quote', [
-    ['quote_id', 'Internal quote ID', 'both', r => r.qid],
-    ['built', 'Date built', 'both', r => dateOf(r)],
-  ]],
-  ['Order form · campaign & budget', [
-    ['monthly_budget', 'Monthly budget', 'both', r => RH(r).monthly_budget],
-    ['review_removals', 'Review removals', 'both',
+  ['Product card', [
+    ['review_removals', 'Review Removals', 'order',
      r => RH(r).review_removals === undefined ? undefined
         : (RH(r).review_removals ? 'Yes' : 'No')],
-    ['reviews_count', '# of reviews', 'both', r => RH(r).reviews_count],
-    ['price_per_review_removal', 'Price per review removal', 'both',
+    ['reviews_count', '# of Reviews', 'order', r => RH(r).reviews_count],
+    ['price_per_review_removal', 'Price per Review Removal', 'order',
      r => RH(r).price_per_review_removal],
-    ['site_article_removals', 'Site / article removals', 'both',
+    ['site_article_removals', 'Site/Article Removals', 'order',
      r => RH(r).site_article_removals === undefined ? undefined
         : (RH(r).site_article_removals ? 'Yes' : 'No')],
-    ['standard_sites', '# of standard sites', 'both', r => RH(r).standard_sites],
-    ['price_per_standard_site_removal', 'Price per standard site', 'both',
+    ['standard_sites', '# of Standard Sites', 'order', r => RH(r).standard_sites],
+    ['price_per_standard_site_removal', 'Price per Standard Site Removal', 'order',
      r => RH(r).price_per_standard_site_removal],
-    ['premium_sites', '# of premium sites', 'both', r => RH(r).premium_sites],
-    ['price_per_premium_site_removal', 'Price per premium site', 'both',
+    ['premium_sites', '# of Premium Sites', 'order', r => RH(r).premium_sites],
+    ['price_per_premium_site_removal', 'Price per Premium Site Removal', 'order',
      r => RH(r).price_per_premium_site_removal],
-    ['max_removal_cost', 'Max removal cost', 'both', r => (Q(r).totals || {}).removals_max],
-    ['months_running', 'Months running', 'both', r => r.data.months],
+    ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
     ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
-    ['auto_renewal', 'Auto-renewal', 'order', r => r.data.auto_renewal, 'manual'],
-    ['flights', 'Flights — dates and budget', 'order', r => r.data.flights, 'manual'],
-    ['billing_frequency', 'Billing frequency', 'order', r => r.data.billing_frequency, 'manual'],
+    ['strategy', 'Strategy', 'order', r => RH(r).strategy || r.data.strategy],
   ]],
-  ['Order form · strategies', [
-    ['strategy', 'Strategies', 'both', r => RH(r).strategy || r.data.strategy],
-    ['search_protection_monthly', 'Reactive — Search Protection / month', 'both',
-     r => RH(r).search_protection_monthly],
-    ['brand_shield_monthly', 'Proactive — Brand Shield / month', 'both',
-     r => RH(r).brand_shield_monthly],
-    ['search_volume', 'Brand search volume', 'both', r => RH(r).search_volume],
-    ['locations', '# of locations', 'both', r => RH(r).locations],
-  ]],
-  ['Order form · product details', [
-    ['brand', 'Brand name', 'both', r => r.data.brand],
-    ['website', 'Client website', 'both', r => r.data.site],
-    ['geo_targeting', 'Geographic targeting areas', 'order', r => r.data.geo, 'manual'],
-    ['additional_instructions', 'Additional instructions', 'order',
-     r => r.data.instructions, 'manual'],
-    ['client_budget', "Client's estimated budget", 'order', r => r.data.spend],
-    ['past_orm', 'Has done ORM in the past', 'order',
-     r => r.data.past === undefined ? undefined : (r.data.past ? 'Yes' : 'No')],
-    ['past_orm_details', 'Past ORM details', 'order', r => r.data.past_details],
-  ]],
-  ['Proposal · reputation snapshot', [
-    ['negative_terms', 'Negative terms — term, class, vol/mo', 'prop',
-     r => (SC(r).terms || {}).rows],
-    ['page_one', 'Top Google results', 'prop', r => (SC(r).serp || {}).rows],
-    ['location_reviews', 'Top location Google reviews', 'prop',
-     r => (SC(r).locations || {}).locations],
-    ['star_breakdown', 'Star reviews breakdown', 'prop', r => SC(r).stars],
-    ['to_remove', '1–2 star reviews to remove', 'prop', r => RH(r).reviews_count],
-    ['autocomplete', 'Auto-suggest findings', 'prop', r => (SC(r).autocomplete || {}).rows],
-    ['serp_shots', 'SERP captures', 'prop', r => SC(r).shots],
-  ]],
-  ['Proposal · product details', [
-    ['removal_pages', 'Pages quoted for removal', 'both', r => RH(r).removal_pages],
-    ['suppression_pages', 'Pages quoted for suppression', 'both',
-     r => RH(r).suppression_pages],
-    ['review_rate', 'Review removal rate', 'prop', r => RH(r).price_per_review_removal],
-    ['site_rate_card', 'Site removal rate card', 'prop', r => (Q(r).lines || []).length],
-    ['success_rates', 'Success rates and timeframes', 'prop', r => (Q(r).warnings || []).length],
-    ['total_budget', 'Total budget', 'both', r => (Q(r).totals || {}).total],
-  ]],
-  ['Partner cost', [
-    ['partner_monthly_cost', 'Partner monthly cost', 'order', r => RH(r).partner_monthly_cost],
-    ['partner_search_protection_monthly', 'Partner Search Protection', 'order',
-     r => RH(r).partner_search_protection_monthly],
-    ['partner_brand_shield_monthly', 'Partner Brand Shield', 'order',
-     r => RH(r).partner_brand_shield_monthly],
-    ['partner_hard_cost_per_review', 'Partner cost per review', 'order',
-     r => RH(r).partner_hard_cost_per_review],
-    ['partner_hard_cost_per_standard_site', 'Partner cost per standard site', 'order',
-     r => RH(r).partner_hard_cost_per_standard_site],
-    ['partner_hard_cost_per_premium_site', 'Partner cost per premium site', 'order',
-     r => RH(r).partner_hard_cost_per_premium_site],
-    ['partner_review_removals_total', 'Partner review removals — total', 'order',
+  ['Partner cost and margin', [
+    ['partner_monthly_cost', 'Partner Hard Cost — per month', 'order',
+     r => RH(r).partner_monthly_cost],
+    ['partner_review_removals_total', 'Partner Total Review Removal Cost', 'order',
      r => RH(r).partner_review_removals_total],
-    ['partner_standard_sites_total', 'Partner standard sites — total', 'order',
+    ['partner_standard_sites_total', 'Partner Total Standard Site Removal Cost', 'order',
      r => RH(r).partner_standard_sites_total],
-    ['partner_premium_sites_total', 'Partner premium sites — total', 'order',
+    ['partner_premium_sites_total', 'Partner Total Premium Site Removal Cost', 'order',
      r => RH(r).partner_premium_sites_total],
     ['margin_dollars_monthly', 'Margin $ — monthly', 'order',
      r => RH(r).margin_dollars_monthly],
   ]],
-  ['Scan insights', [
-    ['scan_name', 'Name Google lists them under', 'screen', r => (SC(r).locations || {}).listed],
-    ['scan_warnings', 'Quote warnings', 'screen', r => Q(r).warnings],
+  ['Proposal payload', [
+    ['partner_search_protection_monthly', 'Reactive Partner Hard Cost', 'prop',
+     r => RH(r).partner_search_protection_monthly],
+    ['partner_brand_shield_monthly', 'Proactive Partner Hard Cost', 'prop',
+     r => RH(r).partner_brand_shield_monthly],
+    ['search_volume', 'Search Volume', 'prop', r => RH(r).search_volume],
+    ['locations', '# of Locations', 'prop', r => RH(r).locations],
+    ['negative_terms', 'Negative Terms Array', 'prop', r => (SC(r).terms || {}).rows],
+    ['page_one', 'Top Google Results Array', 'prop', r => (SC(r).serp || {}).rows],
+    ['location_reviews', 'Location & Review Array', 'prop',
+     r => (SC(r).locations || {}).locations],
+    ['review_breakdown', 'Review Breakdown Array', 'prop', r => SC(r).stars],
+    ['serp_shots', 'SERP screenshot', 'prop', r => SC(r).shots || (r.result || {}).shot],
+    ['removal_pages', 'Pages quoted for removal', 'prop', r => RH(r).removal_pages],
+    ['suppression_pages', 'Pages quoted for suppression', 'prop',
+     r => RH(r).suppression_pages],
   ]],
 ];
 
@@ -896,11 +843,33 @@ function plannerView(r){
       + Object.keys(h.margin_dollars || {}).map(k => money(h.margin_dollars[k])).join(' / '));
   }
   const shot = (r.result || {}).shot;
+  const all = (r.kw || {}).all || [];
+  const ranks = (r.result || {}).ranks || {};
+  const list = r.kind === 'orm' ? '' : `
+    <div class="pvkw">
+      <h5>Keywords <span>${all.length}</span></h5>
+      <div class="pvscroll"><table class="kv">
+        <tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
+        ${all.map(x => {
+          const rk = ranks[String(x.kw || '').toLowerCase()];
+          return `<tr><td>${esc(x.kw)}</td><td>${(x.vol || 0).toLocaleString()}</td>`
+               + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
+        }).join('')}
+      </table></div>
+    </div>`;
   return `<div class="pview">${rows.map(([k, v]) =>
       `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>
-    <div class="pvserp">${shot
-      ? `<img class="shotimg" src="${shot}" alt="SERP capture">`
-      : '<p class="hint" style="margin:0">SERP capture — not captured</p>'}</div>`;
+    <div class="pvsplit">
+      ${list}
+      <div class="pvserp">
+        <h5>SERP</h5>
+        ${shot ? `<a href="${shot}" target="_blank" rel="noopener">`
+                 + `<img class="shotimg" src="${shot}" alt="SERP capture"></a>`
+               : '<p class="hint" style="margin:0">Not captured</p>'}
+        ${((r.result || {}).serp || {}).kw
+          ? `<p class="hint" style="margin:6px 0 0">“${esc(r.result.serp.kw)}”</p>` : ''}
+      </div>
+    </div>`;
 }
 
 function resultsHtml(r){
@@ -930,16 +899,7 @@ function resultsHtml(r){
         ${ord.have} of ${ord.n} fields</summary>${ord.html}</details>
 
       <details class="qfold"><summary>Proposal &mdash;
-        ${pro.have} of ${pro.n} fields</summary>
-        ${pro.html}
-        ${r.kind === 'orm' ? '' : `
-        <table class="kv"><tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
-        ${all.map(x => {
-          const rk = (r.result.ranks || {})[String(x.kw || '').toLowerCase()];
-          return `<tr><td>${esc(x.kw)}</td><td>${(x.vol || 0).toLocaleString()}</td>`
-               + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
-        }).join('')}</table>`}
-      </details>
+        ${pro.have} of ${pro.n} fields</summary>${pro.html}</details>
     </div>
   </details>`;
 }
@@ -1613,6 +1573,35 @@ async function generateOrm(){
   $('gen').disabled = false;
 }
 
+// THE CAPTURE FIRES ITSELF. It is the one thing in the proposal that needed a
+// human to remember a button, and forgetting it is silent -- the document just
+// ships without the picture that shows the client they are absent from page
+// one. The term is recommended off the measured table, so the exhibit is a page
+// one they are NOT on.
+async function autoSerp(r, d, ranks, say){
+  const head = [...(r.kw.ultra || []).map(x => ({kw: x.kw, comp: 'Ultra'})),
+                ...(r.kw.competitive || []).map(x => ({kw: x.kw, comp: 'Competitive'}))];
+  if (!head.length) return null;
+  let kw = head[0].kw, basis = '';
+  try {
+    const rr = await post('/api/serp_recommend', {head, ranks, geo_values: geoOf(d)});
+    if (rr.recommended) { kw = rr.recommended; basis = rr.basis || ''; }
+  } catch (e) { /* the first head term is a reasonable exhibit */ }
+  try {
+    const q = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
+      state: stateOf(d), device: 'desktop', width: 1100, height: 1700, scale: 2});
+    for (let i = 0; i < 40; i++) {
+      say(`Capturing the SERP for “${kw}”… ${i * 3}s`);
+      await new Promise(z => setTimeout(z, 3000));
+      const f = await post('/api/serp_fetch', {task_id: q.task_id, device: q.device,
+        keyword: kw, width: q.width, height: q.height, scale: q.scale});
+      if (f.ready && f.data_url) return {kw, basis, img: f.data_url};
+      if (f.gone) return null;           // the task expired; asking again cannot help
+    }
+  } catch (e) { /* a quote without its exhibit is still a quote */ }
+  return null;
+}
+
 // ---------------------------------------------------------------- steps 2-4
 async function generate(){
   const r = ROWS[ROW];
@@ -1681,11 +1670,25 @@ async function generate(){
       `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
       + (pct_not_ranking == null ? 'ranking unmeasured' : `${100 - pct_not_ranking}% ranking`)};
     r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,
-                  resp: JSON.stringify(price.handoff || {}).slice(0, 40) + '…'}]
+                  resp: `${lead} · ${all.length} terms`, quote: r.result}]
                 .concat(r.history || []);
+    await persist(r);
     draw();
     say('');
     close();
+    // The capture is a queued screenshot and takes up to two minutes, so the
+    // quote is finished and on the row first. It lands on the row when it
+    // arrives, reporting on the row rather than holding the modal.
+    const row = () => document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"] .rowmsg`);
+    const note = t => { const n = row(); if (n) n.textContent = t; };
+    autoSerp(r, d, ranks, note).then(async shot => {
+      if (!shot) { note('SERP capture — not captured.'); return; }
+      r.result.serp = shot;
+      r.result.shot = shot.img;
+      await persist(r);
+      draw();
+      note(`SERP captured for “${shot.kw}”.`);
+    });
   } catch (e) {
     say(e.message);
   }

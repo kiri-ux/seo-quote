@@ -123,9 +123,10 @@ const QUOTE = {
     R.proSections = [...proFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
     R.reviewsRow = rowIn(ordFold, 'reviews_count');
     R.snapshotRow = rowIn(proFold, 'negative_terms');
-    R.starsRow = rowIn(proFold, 'star_breakdown');
+    R.starsRow = rowIn(proFold, 'review_breakdown');
     R.partnerRow = rowIn(ordFold, 'partner_monthly_cost');
     R.partnerNotOnProposal = rowIn(proFold, 'partner_monthly_cost');
+    R.stratRow = rowIn(ordFold, 'strategy');
     R.noKeywordTable = !proFold.querySelector('table.kv');
     return R;
   });
@@ -160,6 +161,9 @@ const QUOTE = {
     'quote.locationsCarried': [(quoteCall.body.shield || {}).locations, 3],
     'quote.pagesCarried': [((quoteCall.body.articles || {}).pages || []).length, 3],
     'quote.marginIsFraction': [quoteCall.body.margin_pct, 0.35],
+    'order.strategyTravels': [res.stratRow.join(' | '),
+      'StrategystrategyOrder form | 4 · Review Removals, Site/Article Removals, Reactive…']
+      .map(x => typeof x === 'string' ? x.replace('Order form', '') : x),
     'res.headline': [res.headline, 'Quote results — $3,100/mo · 2 lines · 4 workstreams'],
     'res.tiles': [res.tiles.join(' / '),
       'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],
@@ -169,18 +173,14 @@ const QUOTE = {
       + ' | Review removals: 14 × $100'],
     'res.foldsStartClosed': [res.closed, true],
     'order.sections': [res.ordSections.join(' / '),
-      'This quote / Order form · campaign & budget / Order form · strategies'
-      + ' / Order form · product details / Proposal · product details / Partner cost'],
-    'proposal.sections': [res.proSections.join(' / '),
-      'This quote / Order form · campaign & budget / Order form · strategies'
-      + ' / Order form · product details / Proposal · reputation snapshot'
-      + ' / Proposal · product details'],
-    'order.reviewsCounted': [res.reviewsRow.join(' | '), '# of reviewsreviews_count | 14'],
+      'Product card / Partner cost and margin'],
+    'proposal.sections': [res.proSections.join(' / '), 'Proposal payload'],
+    'order.reviewsCounted': [res.reviewsRow.join(' | '), '# of Reviewsreviews_count | 14'],
     'proposal.snapshotTerms': [res.snapshotRow[1],
       '3 · sage dental reviews, sage dental lawsuit, sage dental complaints'],
     'proposal.starsCaptured': [res.starsRow[1], 'locations: 3 · flagged: 14 · one_star: 9'],
     'order.partnerCost': [res.partnerRow.join(' | '),
-      'Partner monthly costpartner_monthly_cost | $2,015'],
+      'Partner Hard Cost — per monthpartner_monthly_cost | $2,015'],
     'proposal.noPartnerCost': [res.partnerNotOnProposal, null],
     'proposal.noKeywordTable': [res.noKeywordTable, true],
   };
