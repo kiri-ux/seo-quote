@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>adtini · Quote Builder — quotes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/adtini.css">
+</head>
+<body>
+
+<header class="app">
+  <div class="bar">
+    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
+    <span class="sub">adtini form — preview</span>
+  </div>
+  <nav class="tabs">
+    <a href="/">SEO</a>
+    <a href="/reputation">Reputation Mgmt</a>
+    <a href="/adtini" class="on">adtini form</a>
+  </nav>
+</header>
+
+<div class="pagehead">
+  <span class="burger">&#9776;</span>
+  <h2>Quotes</h2>
+</div>
+
+<div class="wrap">
+
+  <div class="controls">
+    <div class="search">
+      <span>&#9906;</span>
+      <input type="text" id="q" placeholder="Search quotes…">
+    </div>
+    <button class="btn-cat" type="button">&#9638; Categories</button>
+    <div class="seg" id="seg">
+      <button type="button" class="on" data-f="all">&#10003; All</button>
+      <button type="button" data-f="seo">SEO</button>
+      <button type="button" data-f="orm">ORM</button>
+      <button type="button" data-f="both">Both products</button>
+    </div>
+  </div>
+
+  <div class="tablecard">
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:64px"></th>
+            <th>Planner</th>
+            <th>Built</th>
+            <th>Client</th>
+            <th>Order</th>
+            <th>Products</th>
+            <th>Partner</th>
+            <th>Country</th>
+            <th>Quotes</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <span>Items per page:</span>
+      <select><option>100</option><option>50</option><option>25</option></select>
+      <span id="count">1 – 8 of 8</span>
+      <span class="arrows"><span>&#8676;</span><span>&#8592;</span><span>&#8594;</span><span>&#8677;</span></span>
+    </div>
+  </div>
+
+</div>
+
+<p class="note">Preview only — the rows are sample quotes. The SEO and Reputation tabs above are still the working tools.</p>
+
+<script>
+// A CLIENT IS ONE ROW, WHATEVER IT BOUGHT. Two products on one client merge
+// into a single row and the Products column carries both chips; a superscript
+// is how many separate saved quotes that product has, which is also how many
+// rows that client's forecast page shows.
+const QUOTES = [
+  {planner:'Paulina', tone:'#1E4620,#D6F2E0', built:'9/17/26', due:'ok',
+   client:'Drainify', order:'56310', seo:2, orm:0,
+   partner:'ADX Communications', country:'United Kingdom', status:'Sent for review'},
+  {planner:'Paloma', tone:'#5B1E4A,#F7D6EC', built:'9/17/26', due:'ok',
+   client:'Ski Barn', order:'56311', seo:0, orm:2,
+   partner:'Rock Paper Scissors', country:'United States', status:'RFP Pending Approval'},
+  {planner:'Anna', tone:'#5C2A12,#FBDCC8', built:'9/16/26', due:'warn',
+   client:'Sage Dental', order:'56305', seo:1, orm:1,
+   partner:'Bay Area Digital Solutions', country:'United States', status:'RFP Pending Approval'},
+  {planner:'Dan', tone:'#12294F,#D8E4F7', built:'9/16/26', due:'warn',
+   client:"Rosalyn's Ice Cream", order:'45663', seo:1, orm:0,
+   partner:'Local Media San Diego', country:'United States', status:'Draft'},
+  {planner:'Taylor', tone:'#33265C,#E2DCF7', built:'9/15/26', due:'ok',
+   client:'Renfroe Pecans', order:'56310', seo:1, orm:0,
+   partner:'ADX Communications', country:'United States', status:'Sent for review'},
+  {planner:'Paloma', tone:'#5B1E4A,#F7D6EC', built:'9/15/26', due:'ok',
+   client:'Junk Bee Gone', order:'56298', seo:1, orm:3,
+   partner:'Amperage Marketing + Fundraising', country:'United States', status:'RFP Pending Approval'},
+  {planner:'Paulina', tone:'#1E4620,#D6F2E0', built:'9/12/26', due:'warn',
+   client:'Visions Electronics', order:'56247', seo:0, orm:1,
+   partner:'Benchmarketing Group', country:'Canada', status:'Won'},
+  {planner:'Anna', tone:'#5C2A12,#FBDCC8', built:'9/11/26', due:'ok',
+   client:'Whidbey Island Electric', order:'56299', seo:1, orm:0,
+   partner:'CK Advertising Strategies', country:'United States', status:'Won'},
+];
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tag = (cls, label, n) =>
+  `<span class="tag ${cls}">${label}${n > 1 ? '<sup>' + n + '</sup>' : ''}</span>`;
+
+function draw(){
+  const f = document.querySelector('#seg button.on').dataset.f;
+  const term = (document.getElementById('q').value || '').toLowerCase();
+  const rows = QUOTES.filter(r => {
+    if (f === 'seo'  && !r.seo) return false;
+    if (f === 'orm'  && !r.orm) return false;
+    if (f === 'both' && !(r.seo && r.orm)) return false;
+    if (term && !(r.client + ' ' + r.partner + ' ' + r.order).toLowerCase().includes(term)) return false;
+    return true;
+  });
+  document.getElementById('rows').innerHTML = rows.map(r => {
+    const [fg, bg] = r.tone.split(',');
+    const chips = (r.seo ? tag('seo', 'SEO', r.seo) : '') + (r.orm ? tag('orm', 'ORM', r.orm) : '');
+    return `<tr>
+      <td><div class="rowicons"><span title="Open">&#9906;</span><span title="Duplicate">&#9646;</span><span title="Regenerate">&#10022;</span></div></td>
+      <td><span class="who" style="color:${fg};background:${bg}">${esc(r.planner)}</span></td>
+      <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${r.built}</span></td>
+      <td class="lnk"><a href="/adtini/forecast">${esc(r.client)}</a></td>
+      <td class="lnk"><a href="/adtini/forecast">${r.order}</a></td>
+      <td><div class="tags">${chips}</div></td>
+      <td>${esc(r.partner)}</td>
+      <td>${esc(r.country)}</td>
+      <td class="num">${r.seo + r.orm}</td>
+      <td>${esc(r.status)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('count').textContent = `1 – ${rows.length} of ${rows.length}`;
+}
+
+document.getElementById('seg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-f]');
+  if (!b) return;
+  document.querySelectorAll('#seg button').forEach(x => {
+    x.classList.toggle('on', x === b);
+    x.innerHTML = (x === b ? '&#10003; ' : '') + x.dataset.f
+      .replace('all', 'All').replace('seo', 'SEO').replace('orm', 'ORM')
+      .replace('both', 'Both products');
+  });
+  draw();
+});
+document.getElementById('q').addEventListener('input', draw);
+draw();
+</script>
+</body>
+</html>

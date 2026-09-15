@@ -1,89 +1,158 @@
-// THE FORM AS ADTINI DRAWS IT.
+// THE TOOL AS ADTINI DRAWS IT.
 //
-// A third tab, so the shape can be agreed against a screenshot of the real
-// Regenerate Forecast modal before either working tool is touched. Keywords
-// are built behind the header button, not in the form. (2026-09-15, Kiri)
+// Three pages: a quote list shaped like the workflow table, a per-client
+// forecast page whose product rows each hold one saved quote, and the keyword
+// builder on its own page. The form is a working form -- an edit survives a
+// close and reopen. (2026-09-15, Kiri)
 const { chromium } = require('/root/work/node_modules/playwright-core');
+const BASE = 'http://127.0.0.1:5201';
 
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const p = await b.newPage();
   const errs = [];
   p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://127.0.0.1:5199/adtini', { waitUntil: 'domcontentloaded' });
 
-  const out = await p.evaluate(() => {
+  // ---------------- quote list ----------------
+  await p.goto(BASE + '/adtini', { waitUntil: 'domcontentloaded' });
+  const home = await p.evaluate(() => {
     const R = {};
-    const css = el => getComputedStyle(el);
-    const hex = c => '#' + c.match(/\d+/g).slice(0, 3)
-      .map(n => (+n).toString(16).padStart(2, '0')).join('').toUpperCase();
-
-    // the modal chrome
-    R.title = document.querySelector('.sheet .top h2').textContent.trim();
-    R.headerNavy = hex(css(document.querySelector('.sheet .top')).backgroundColor);
-    R.pills = [...document.querySelectorAll('.toppills .pill')]
-      .map(x => x.textContent.trim()).filter(Boolean);
-    R.footer = [...document.querySelectorAll('.foot .btn')].map(x => x.textContent.trim());
-    R.generateOrange = hex(css(document.querySelector('.btn.go')).backgroundColor);
-    R.saveBlue = hex(css(document.querySelector('.btn.save')).backgroundColor);
-
-    // two forms, one at a time
-    R.tabs = [...document.querySelectorAll('#which button')].map(x => x.textContent.trim());
-    R.seoOpenFirst = !document.getElementById('fseo').hidden
-                  && document.getElementById('form').hidden;
-
-    const labels = f => [...document.getElementById(f).querySelectorAll('label, .geohead')]
-      .map(x => x.childNodes[0].textContent.trim()).filter(Boolean);
-    R.seoFields = labels('fseo');
-
-    document.querySelectorAll('#which button')[1].click();
-    R.ormOpen = document.getElementById('fseo').hidden
-             && !document.getElementById('form').hidden;
-    R.ormFields = labels('form');
-
-    // a Yes/No pair moves as one
-    document.querySelectorAll('#which button')[0].click();
-    const yn = document.querySelector('#fseo .yn');
-    yn.querySelectorAll('button')[1].click();
-    R.ynMoved = [...yn.querySelectorAll('button')].map(x => x.classList.contains('on'));
-
-    // chips come off with their x
-    const box = document.getElementById('s_focus');
-    const before = box.querySelectorAll('.chip').length;
-    box.querySelector('.chip b').click();
-    R.chipRemoved = box.querySelectorAll('.chip').length === before - 1;
-
-    // keywords are built behind the header button
-    R.kwBuilderIsHeader = !!document.querySelector('.toppills #kwBuilder');
-    R.noKwBuildInForm = !labels('fseo').some(t => /keyword builder|build keyword|generate keyword/i.test(t));
+    R.heading = document.querySelector('.pagehead h2').textContent.trim();
+    R.cols = [...document.querySelectorAll('thead th')].map(t => t.textContent.trim()).filter(Boolean);
+    R.rows = document.querySelectorAll('tbody tr').length;
+    // a client with both products is ONE row carrying both chips
+    const sage = [...document.querySelectorAll('tbody tr')]
+      .find(r => r.textContent.includes('Sage Dental'));
+    R.bothOnOneRow = [...sage.querySelectorAll('.tag')].map(t => t.textContent.trim());
+    // the superscript is how many separate saved quotes that product has
+    const jbg = [...document.querySelectorAll('tbody tr')]
+      .find(r => r.textContent.includes('Junk Bee Gone'));
+    R.counted = [...jbg.querySelectorAll('.tag')].map(t => t.textContent.trim());
+    // filters
+    document.querySelector('#seg button[data-f="both"]').click();
+    R.bothOnly = document.querySelectorAll('tbody tr').length;
+    document.querySelector('#seg button[data-f="orm"]').click();
+    R.ormOnly = document.querySelectorAll('tbody tr').length;
+    document.querySelector('#seg button[data-f="all"]').click();
+    document.getElementById('q').value = 'drain';
+    document.getElementById('q').dispatchEvent(new Event('input'));
+    R.searched = document.querySelectorAll('tbody tr').length;
     return R;
   });
 
+  // ---------------- forecast rows ----------------
+  await p.goto(BASE + '/adtini/forecast', { waitUntil: 'domcontentloaded' });
+  const fc = await p.evaluate(() => {
+    const R = {};
+    R.products = [...document.querySelectorAll('.prod > h4')].map(h => h.textContent.replace(/\s+/g, ' ').trim());
+    R.tabs = [...document.querySelectorAll('.prod:first-child .ptabs button')].map(x => x.textContent.trim());
+    R.actions = [...document.querySelectorAll('.prod:first-child .prow .btn')].map(x => x.textContent.trim());
+    // History is a tab on the row, not a separate page
+    document.querySelector('.prod:first-child .ptabs button[data-tab="history"]').click();
+    R.historyCols = [...document.querySelectorAll('.prod:first-child .hist thead th')]
+      .map(t => t.textContent.trim()).filter(Boolean);
+    R.detailsHidden = document.querySelector('.prod:first-child [data-pane="details"]').hidden;
+    return R;
+  });
+
+  // ---------------- the form actually works ----------------
+  await p.goto(BASE + '/adtini/forecast', { waitUntil: 'domcontentloaded' });
+  await p.click('[data-open="0"]');
+  const form = await p.evaluate(() => {
+    const R = {};
+    R.opensSeo = !document.getElementById('fseo').hidden && document.getElementById('form').hidden;
+    R.loaded = document.querySelector('#fseo [data-k="brand"]').value;
+    document.querySelector('#fseo [data-k="brand"]').value = 'EDITED';
+    document.querySelector('#fseo [data-k="markets"]').value = 12;
+    const inp = document.querySelector('#fseo [data-chips="focus"] .chipin');
+    inp.value = 'sedation dentistry';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.querySelector('#fseo .yn[data-k="lock"] button[data-v="1"]').click();
+    document.getElementById('save').click();
+    R.savedMsg = /^Saved \d+ fields to Search Engine Optimization – 137027\.$/
+      .test(document.getElementById('saved').textContent);
+    document.getElementById('close').click();
+    R.closed = document.getElementById('scrim').hidden;
+    document.querySelector('[data-open="0"]').click();
+    R.brandKept = document.querySelector('#fseo [data-k="brand"]').value;
+    R.marketsKept = document.querySelector('#fseo [data-k="markets"]').value;
+    R.chipKept = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
+      .some(c => c.textContent.includes('sedation dentistry'));
+    R.toggleKept = document.querySelector('#fseo .yn[data-k="lock"] button.on').dataset.v;
+    // a chip comes off again
+    document.querySelector('#fseo [data-chips="focus"] .chip b').click();
+    R.chipRemoved = document.querySelectorAll('#fseo [data-chips="focus"] .chip').length;
+    document.getElementById('close').click();
+    // an ORM row opens the ORM form
+    document.querySelector('[data-open="2"]').click();
+    R.opensOrm = document.getElementById('fseo').hidden && !document.getElementById('form').hidden;
+    R.ormStrategy = [...document.querySelectorAll('#form [data-chips="strategy"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
+    return R;
+  });
+
+  // ---------------- keyword builder is its own page ----------------
+  // Clicked from inside the modal, it NAVIGATES, the way Category Mixer does.
+  await p.evaluate(() => {
+    document.getElementById('close').click();
+    document.querySelector('[data-open="0"]').click();
+  });
+  await Promise.all([
+    p.waitForURL(/\/adtini\/keywords/, { timeout: 5000 }),
+    p.click('#kwBuilder'),
+  ]);
+  const kwHref = new URL(p.url()).pathname + new URL(p.url()).search;
+  await p.goto(BASE + '/adtini/keywords?row=137027', { waitUntil: 'domcontentloaded' });
+  const kw = await p.evaluate(() => ({
+    heading: document.querySelector('.pagehead h2').textContent.trim(),
+    buckets: [...document.querySelectorAll('.col h5')].map(h => h.childNodes[0].textContent.trim()),
+    hasSourceToggle: !!document.getElementById('showSrc'),
+    backToForecast: !!document.querySelector('a.back[href="/adtini/forecast"]'),
+  }));
+
   const want = {
-    title: 'Regenerate Forecast',
-    headerNavy: '#123A63',
-    generateOrange: '#E2761B',
-    saveBlue: '#1C5BC4',
-    pills: ['↻', '✎ Keyword Builder', 'Revert to Default'],
-    footer: ["Save But Don't Generate", 'Generate Forecast'],
-    tabs: ['SEO', 'Online Reputation Management'],
-    seoOpenFirst: true,
-    ormOpen: true,
-    ynMoved: [false, true],
-    chipRemoved: true,
-    kwBuilderIsHeader: true,
-    noKwBuildInForm: true,
+    'home.heading': [home.heading, 'Quotes'],
+    'home.cols': [home.cols.join('|'),
+      'Planner|Built|Client|Order|Products|Partner|Country|Quotes|Status'],
+    'home.rows': [home.rows, 8],
+    'home.bothOnOneRow': [home.bothOnOneRow.join(','), 'SEO,ORM'],
+    'home.counted': [home.counted.join(','), 'SEO,ORM3'],
+    'home.bothOnly': [home.bothOnly, 2],
+    'home.ormOnly': [home.ormOnly, 4],
+    'home.searched': [home.searched, 1],
+    'fc.products': [fc.products.map(t => t.replace(/\s*\S$/, '')).join(' / '),
+      'Search Engine Optimization – 137027 / Search Engine Optimization – 137031 / Online Reputation Management – 137028'],
+    'fc.tabs': [fc.tabs.join(','), 'Details,History'],
+    'fc.actions': [fc.actions.join(','), 'Preview,Gemini Forecast,Claude Forecast,adtini Forecast'],
+    'fc.historyCols': [fc.historyCols.join('|'),
+      'Date Forecasted|Forecast Prompt|Generated Response|Type|Error'],
+    'fc.detailsHidden': [fc.detailsHidden, true],
+    'form.opensSeo': [form.opensSeo, true],
+    'form.loaded': [form.loaded, 'Sage Dental'],
+    'form.savedMsg': [form.savedMsg, true],
+    'form.closed': [form.closed, true],
+    'form.brandKept': [form.brandKept, 'EDITED'],
+    'form.marketsKept': [form.marketsKept, '12'],
+    'form.chipKept': [form.chipKept, true],
+    'form.toggleKept': [form.toggleKept, '1'],
+    'form.chipRemoved': [form.chipRemoved, 3],
+    'form.opensOrm': [form.opensOrm, true],
+    'form.ormStrategy': [form.ormStrategy.join(','),
+      'Review Removals,Site/Article Removals,Reactive,Proactive'],
+    'kw.opensOwnPage': [kwHref, '/adtini/keywords?row=137027'],
+    'kw.heading': [kw.heading, 'Keyword Builder'],
+    'kw.buckets': [kw.buckets.join(','), 'Ultra Competitive,Competitive,Long Tail'],
+    'kw.hasSourceToggle': [kw.hasSourceToggle, true],
+    'kw.backToForecast': [kw.backToForecast, true],
   };
   let bad = 0;
   for (const k of Object.keys(want)) {
-    const g = JSON.stringify(out[k]), w = JSON.stringify(want[k]);
-    const ok = g === w;
+    const [got, exp] = want[k];
+    const ok = JSON.stringify(got) === JSON.stringify(exp);
     if (!ok) bad++;
-    console.log((ok ? '  ok   ' : '  FAIL ') + k + (ok ? '' : `  got ${g} want ${w}`));
+    console.log((ok ? '  ok   ' : '  FAIL ') + k
+      + (ok ? '' : `  got ${JSON.stringify(got)} want ${JSON.stringify(exp)}`));
   }
-  // field inventories, printed rather than pinned — they are the thing under review
-  console.log('\n  SEO : ' + out.seoFields.join(' · '));
-  console.log('\n  ORM : ' + out.ormFields.join(' · '));
   await b.close();
   console.log('\nerrors: ' + (errs.length ? errs.join('; ') : 'none'));
   console.log(`${Object.keys(want).length} checks, ${bad} failed`);

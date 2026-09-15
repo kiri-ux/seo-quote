@@ -79,6 +79,8 @@ BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
 # included for the same reason — they carry the rep quote's actual maths.
 FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html",
                      "templates/reputation.html", "templates/adtini.html",
+                     "templates/adtini_home.html", "templates/adtini_keywords.html",
+                     "static/adtini.css",
                      "rep_pricing.py", "rep_scan.py", "rep_docx.py")
 
 def _source_fingerprint():
@@ -17308,12 +17310,27 @@ def reputation():
     return render_template("reputation.html", build=BUILD_STR)
 
 
+# ---------------------------------------------------------------------------
+# THE TOOL AS ADTINI WILL DRAW IT. A third tab, so the shape can be agreed
+# against a screenshot before either working tool is touched. Three pages,
+# matching the dashboard: a quote list shaped like the workflow table, a
+# per-client forecast page whose product rows each hold one saved quote, and
+# the keyword builder on its own page the way Category Mixer opens on its own.
+# Nothing here posts anywhere.
+# ---------------------------------------------------------------------------
 @app.route("/adtini")
+def adtini_home():
+    return render_template("adtini_home.html", build=BUILD_STR)
+
+
+@app.route("/adtini/forecast")
 def adtini_form():
-    """THE FORM AS ADTINI WILL DRAW IT. A third tab so the shape can be agreed
-    against a screenshot before either working tool is touched. Nothing here
-    posts anywhere."""
     return render_template("adtini.html", build=BUILD_STR)
+
+
+@app.route("/adtini/keywords")
+def adtini_keywords():
+    return render_template("adtini_keywords.html", build=BUILD_STR)
 
 @app.route("/api/rep_config", methods=["GET"])
 @_json_error_guard
