@@ -5,7 +5,7 @@
 // builder on its own page. The form is a working form -- an edit survives a
 // close and reopen. (2026-09-15, Kiri)
 const { chromium } = require('/root/work/node_modules/playwright-core');
-const BASE = 'http://127.0.0.1:5202';
+const BASE = "http://127.0.0.1:5203";
 
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -20,6 +20,28 @@ const BASE = 'http://127.0.0.1:5202';
     R.heading = document.querySelector('.pagehead h2').textContent.trim();
     R.cols = [...document.querySelectorAll('thead th')].map(t => t.textContent.trim()).filter(Boolean);
     R.rows = document.querySelectorAll('tbody tr').length;
+    R.planners = [...new Set([...document.querySelectorAll('tbody select.who')].map(x => x.value))];
+    R.plannerOptions = [...document.querySelectorAll('tbody select.who')][0]
+      ? [...document.querySelectorAll('tbody select.who')[0].options].map(o => o.textContent) : [];
+    R.statusOptions = [...document.querySelectorAll('tbody select.stat')][0]
+      ? [...document.querySelectorAll('tbody select.stat')[0].options].map(o => o.textContent) : [];
+    R.partnerEditable = !!document.querySelector('tbody input.cell[data-f="partner"]');
+    R.hasCreate = !!document.querySelector('.btn-create');
+    // an edit sticks on that client
+    const inp = document.querySelector('tbody input.cell[data-f="partner"]');
+    inp.value = 'Edited Partner';
+    inp.dispatchEvent(new Event('change', {bubbles: true}));
+    const sel = document.querySelector('tbody select.stat');
+    sel.value = 'Complete';
+    sel.dispatchEvent(new Event('change', {bubbles: true}));
+    document.getElementById('q').value = 'drain';
+    document.getElementById('q').dispatchEvent(new Event('input'));
+    document.getElementById('q').value = '';
+    document.getElementById('q').dispatchEvent(new Event('input'));
+    R.partnerKept = document.querySelector('tbody input.cell[data-f="partner"]').value;
+    R.statusKept = document.querySelector('tbody select.stat').value;
+    R.strategies = [...document.querySelectorAll('tbody tr')[2].querySelectorAll('.strat')]
+      .map(x => x.textContent);
     // a client with both products is ONE row carrying both chips
     const sage = [...document.querySelectorAll('tbody tr')]
       .find(r => r.textContent.includes('Sage Dental'));
@@ -135,8 +157,18 @@ const BASE = 'http://127.0.0.1:5202';
   const want = {
     'home.heading': [home.heading, 'Quotes'],
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Client|Order|Products|Partner|Country|Quotes|Status'],
+      'Planner|Built|Client|Order|Products|Strategies|Partner|Status'],
     'home.rows': [home.rows, 8],
+    'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
+    'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],
+    'home.statusOptions': [home.statusOptions.join(','),
+      'Pending,In Progress,Ready for SSG Review,Complete'],
+    'home.partnerEditable': [home.partnerEditable, true],
+    'home.newQuoteButton': [home.hasCreate, true],
+    'home.partnerEditSticks': [home.partnerKept, 'Edited Partner'],
+    'home.statusEditSticks': [home.statusKept, 'Complete'],
+    'home.strategiesPerProduct': [home.strategies.join(','),
+      'Core SEO,Review Removals,Site/Article Removals,Reactive,Proactive'],
     'home.bothOnOneRow': [home.bothOnOneRow.join(','), 'SEO,ORM'],
     'home.counted': [home.counted.join(','), 'SEO,ORM3'],
     'home.bothOnly': [home.bothOnly, 2],

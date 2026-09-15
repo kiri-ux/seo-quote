@@ -32,8 +32,7 @@ a{color:inherit}
 header.app{background:#0B2440;color:#fff;padding:12px 20px 0}
 header.app .bar{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 header.app h1{
-  font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;
-  letter-spacing:.02em;margin:0;text-transform:uppercase;
+  font-size:16px;font-weight:600;letter-spacing:0;margin:0;
 }
 header.app .sub{color:#9BB2CB;font-size:12px}
 nav.tabs{display:flex;gap:2px;margin-top:10px}
@@ -302,8 +301,8 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 .qtile{background:var(--fill);border-radius:12px;padding:12px 14px}
 .qtile small{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;
   letter-spacing:.06em;color:var(--muted)}
-.qtile b{font-family:'Barlow Condensed',system-ui,sans-serif;font-size:24px;
-  font-weight:700;color:var(--navy);line-height:1.2}
+.qtile b{font-size:22px;font-weight:600;color:var(--navy);line-height:1.25;
+  letter-spacing:-.01em}
 .qfold{background:var(--fill);border-radius:12px;margin-bottom:10px;overflow:hidden}
 .qfold > summary{list-style:none;cursor:pointer;padding:11px 14px;font-size:12.5px;font-weight:600}
 .qfold > summary::-webkit-details-marker{display:none}
@@ -327,8 +326,7 @@ table.kv td:nth-child(2){color:var(--text);word-break:break-word}
 .cfgsec > h4{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--navy)}
 .cfgsec > .hint{margin:0 0 12px}
 .cfggrp{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
-.cfggrp > summary{list-style:none;cursor:pointer;font-family:'Barlow Condensed',system-ui,sans-serif;
-  font-size:15px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+.cfggrp > summary{list-style:none;cursor:pointer;font-size:13.5px;font-weight:600;
   color:var(--navy);display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .cfggrp > summary::-webkit-details-marker{display:none}
 .cfggrp > summary i{font-style:normal;background:var(--fill);color:var(--muted);
@@ -343,3 +341,39 @@ form .cfgrow input[type=text]{flex:0 0 112px;width:112px;min-height:36px;padding
 form .tierrow input[type=number]{flex:0 0 84px;width:84px;min-height:34px;padding:6px 10px}
 .btn-open{background:var(--blue);color:#fff;border:0;border-radius:999px;
   padding:5px 12px;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer}
+
+/* ---- what goes where ---------------------------------------------------- */
+table.send{width:calc(100% - 28px);border-collapse:collapse;background:var(--card);
+  border-radius:10px;overflow:hidden;font-size:12.5px}
+table.send th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--muted);font-weight:700;padding:9px 12px;border-bottom:1px solid var(--line)}
+table.send thead th:nth-child(3),table.send thead th:nth-child(4){width:84px;text-align:center}
+table.send td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.send td:nth-child(3),table.send td:nth-child(4){text-align:center;color:var(--blue)}
+table.send td:first-child{width:34%;font-weight:600}
+table.send td:first-child span{display:block;font-weight:400;color:var(--muted);
+  font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+table.send tr.sec th{background:var(--fill);font-size:11px;color:var(--navy);
+  letter-spacing:.05em;padding:8px 12px}
+table.send tr.gap td:nth-child(2){color:#B3261E}
+table.send tr:last-child td{border-bottom:0}
+.sendfoot{margin:8px 14px 0 !important}
+
+/* ---- quote list: the row is edited in place ----------------------------- */
+.pagehead .btn-create{margin-left:auto;background:var(--gold);color:#3A2508;
+  text-decoration:none;font-size:12.5px;font-weight:600;padding:9px 16px;border-radius:999px}
+.pagehead .btn-create:hover{background:var(--orange);color:#fff}
+select.sel{appearance:none;border:0;font-family:inherit;font-size:12px;font-weight:600;
+  border-radius:999px;padding:6px 22px 6px 12px;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),
+    linear-gradient(135deg,currentColor 50%,transparent 50%);
+  background-position:calc(100% - 12px) 12px,calc(100% - 8px) 12px;
+  background-size:4px 4px,4px 4px;background-repeat:no-repeat}
+select.who{min-width:96px}
+select.stat{background-color:var(--fill);color:var(--navy);min-width:150px}
+input.cell{border:1px solid transparent;background:none;border-radius:8px;padding:6px 8px;
+  font-family:inherit;font-size:13px;color:var(--text);width:100%;min-width:150px}
+input.cell:hover{border-color:var(--line);background:var(--card)}
+input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background:var(--card)}
+.strat{display:inline-block;background:var(--fill);color:var(--navy);font-size:11px;
+  font-weight:600;border-radius:999px;padding:3px 9px}

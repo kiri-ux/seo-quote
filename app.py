@@ -16,6 +16,7 @@ Local run:
     -> http://localhost:5000
 """
 import os, json, base64, statistics, time, re, threading, io, hashlib
+import contextlib, copy, functools
 import html
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
@@ -1031,6 +1032,151 @@ CFG = {
     "metro_no_suffix_share": 0.6,
     "grid_state_suffix": "auto",       # auto = suffix only cities that need it
 }
+
+
+# PER-QUOTE CONSTANTS. The same coercion serves two callers: /api/config
+# writes the running session (the legacy panel), and cfg_overlay applies one
+# quote's edits for the life of one request and puts the old values back. A
+# quote tuned on the adtini tab must not reprice the next planner's quote.
+CFG_LOCK = threading.RLock()
+
+
+def _cfg_apply(d, target):
+    """Coerce edited constants into `target`. Raises ValueError/TypeError."""
+    if "geo_anchor" in d:
+        for k, v in d["geo_anchor"].items():
+            if k in target["geo_anchor"]:
+                target["geo_anchor"][k] = int(v)
+    if "competitive_adder" in d:
+        for k, v in d["competitive_adder"].items():
+            target["competitive_adder"][int(k)] = int(v)
+    if "bid_score_breaks" in d:
+        target["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
+    # zero_ranking_tiers: [[pct_not_ranking, uplift_pct], ...] sorted high-to-low
+    if "zero_ranking_tiers" in d and isinstance(d["zero_ranking_tiers"], list):
+        tiers = []
+        for pair in d["zero_ranking_tiers"]:
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                tiers.append([float(pair[0]), float(pair[1])])
+        tiers.sort(key=lambda t: t[0], reverse=True)
+        target["zero_ranking_tiers"] = tiers
+    # geo_pct_tiers: [[min_pct_not_ranking, geo_pct_of_seo], ...] high-to-low
+    if "geo_pct_tiers" in d and isinstance(d["geo_pct_tiers"], list):
+        gt = []
+        for pair in d["geo_pct_tiers"]:
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                gt.append([float(pair[0]), float(pair[1])])
+        gt.sort(key=lambda t: t[0], reverse=True)
+        target["geo_pct_tiers"] = gt
+    # addon_volume_discount_tiers: [[min_market_count, pct_off], ...]
+    # high-to-low, first match wins. Counts are whole markets; a fractional
+    # threshold would make "10 markets" mean different things on two runs.
+    if ("addon_volume_discount_tiers" in d
+            and isinstance(d["addon_volume_discount_tiers"], list)):
+        at = []
+        for pair in d["addon_volume_discount_tiers"]:
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                try:
+                    lo, pct = int(float(pair[0])), float(pair[1])
+                except (TypeError, ValueError):
+                    continue
+                # A 100%-off bracket prices add-on markets at nothing and a
+                # negative one charges more for buying more. Neither is a
+                # discount, and both would price silently.
+                if lo >= 1 and 0.0 <= pct < 100.0:
+                    at.append([lo, pct])
+        at.sort(key=lambda t: t[0], reverse=True)
+        if at:
+            target["addon_volume_discount_tiers"] = at
+    if "vol_add_ramp" in d and isinstance(d["vol_add_ramp"], list) and len(d["vol_add_ramp"]) == 2:
+        target["vol_add_ramp"] = [float(d["vol_add_ramp"][0]), float(d["vol_add_ramp"][1])]
+    if "geo_pricing_mode" in d and d["geo_pricing_mode"] in ("pct", "card"):
+        target["geo_pricing_mode"] = d["geo_pricing_mode"]
+    # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
+    if "volume_brackets" in d and isinstance(d["volume_brackets"], list):
+        brs = []
+        for b in d["volume_brackets"]:
+            if isinstance(b, (list, tuple)) and len(b) >= 3:
+                lo = float(b[0])
+                hi = None if b[1] in (None, "", "null") else float(b[1])
+                rate = float(b[2])
+                brs.append([lo, hi, rate])
+        brs.sort(key=lambda x: x[0])
+        target["volume_brackets"] = brs
+    if "vol_free_below" in d and d["vol_free_below"] not in (None, ""):
+        target["vol_free_below"] = float(d["vol_free_below"])
+    if "cpc_adder_enabled" in d:
+        target["cpc_adder_enabled"] = bool(d["cpc_adder_enabled"])
+    if "grid_mode" in d:
+        target["grid_mode"] = bool(d["grid_mode"])
+    if "grid_state_suffix" in d:
+        target["grid_state_suffix"] = bool(d["grid_state_suffix"])
+    for key, caster in [("grid_target_keywords", int), ("grid_min_services", int),
+                        ("grid_max_services", int), ("grid_max_cities", int),
+                        ("metro_no_suffix_zips", int)]:
+        if key in d and d[key] not in (None, ""):
+            target[key] = caster(d[key])
+    for key, caster in [("service_min_volume", int), ("service_max_swaps", int),
+                        ("service_upgrade_ratio", float),
+                        ("metro_no_suffix_share", float),
+                        ("store_intent_tier_boost", float),
+                        ("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
+                        ("zero_ranking_frac", float), ("step_ratio", float),
+                        ("client_floor", int), ("addon_market_ratio", float),
+                        ("default_markup_pct", float), ("ultra_bucket_size", int),
+                        ("competitive_bucket_size", int), ("longtail_target", int),
+                        ("cpc_adder_mult", float), ("cpc_adder_cap", int),
+                        ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
+                        ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float),
+                        ("ecom_anchor_add", int),
+                        ("pin_head_terms", int),
+                        ("pin_min_volume", int),
+                        ("geo_pct_default", float),
+                        ("min_term_months", int),
+                        ("nationwide_service_extras", float)]:
+        if key in d and d[key] not in (None, ""):
+            target[key] = caster(d[key])
+    # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;
+    # no cap means volume brackets run uncapped).
+    for key in ("tier_step_flat", "volume_add_cap"):
+        if key in d:
+            v = d[key]
+            target[key] = None if v in (None, "", "null", 0, "0") else int(float(v))
+
+
+@contextlib.contextmanager
+def cfg_overlay(over):
+    """Apply `over` to CFG for this request only, then restore."""
+    clean = {}
+    if over:
+        probe = copy.deepcopy(CFG)
+        _cfg_apply(over, probe)          # validate before anything is swapped
+        clean = {k: v for k, v in probe.items() if v != CFG.get(k)}
+    if not clean:
+        yield {}
+        return
+    with CFG_LOCK:
+        prev = {k: copy.deepcopy(CFG.get(k)) for k in clean}
+        CFG.update(copy.deepcopy(clean))
+        try:
+            yield clean
+        finally:
+            CFG.update(prev)
+
+
+def _per_quote_cfg(fn):
+    """Route decorator: a `cfg` object on the payload prices this call only."""
+    @functools.wraps(fn)
+    def wrap(*a, **k):
+        over = {}
+        try:
+            over = (request.get_json(silent=True) or {}).get("cfg") or {}
+        except Exception:                                        # noqa: BLE001
+            over = {}
+        with cfg_overlay(over):
+            return fn(*a, **k)
+    return wrap
+
 
 def r50(x):
     return int(round(x / 50.0) * 50)
@@ -12054,6 +12200,7 @@ def api_suggest_regions():
 
 @app.route("/api/keywords", methods=["POST"])
 @_json_error_guard
+@_per_quote_cfg
 def api_keywords():
     """Step 1 — build + bucket the keyword list. One ideas call + parallel suggestions."""
     d = request.get_json(force=True)
@@ -12148,6 +12295,7 @@ def api_widen():
 
 @app.route("/api/refine", methods=["POST"])
 @_json_error_guard
+@_per_quote_cfg
 def api_refine():
     """Step 1b — AI refinement + exact-match volume, run as a SEPARATE request so
     a heavy Claude call can't time out the list build. Takes the buckets the build
@@ -12817,6 +12965,7 @@ def api_import_report():
 
 @app.route("/api/metrics", methods=["POST"])
 @_json_error_guard
+@_per_quote_cfg
 def api_metrics():
     """Step 2 — competitive adder from head-term bids. One search_volume call."""
     d = request.get_json(force=True)
@@ -13860,6 +14009,7 @@ def api_acronym_serp():
 
 @app.route("/api/rankings", methods=["POST"])
 @_json_error_guard
+@_per_quote_cfg
 def api_rankings():
     """Step 3 — rank-check ONE small batch of keywords (frontend loops batches).
     Each call is short: a few parallel SERP lookups."""
@@ -14242,6 +14392,7 @@ def api_addon_suggestion():
 
 @app.route("/api/price", methods=["POST"])
 @_json_error_guard
+@_per_quote_cfg
 def api_price():
     """Step 4 — pure pricing math, instant. Returns hard cost + client (marked-up)."""
     d = request.get_json(force=True)
@@ -14495,6 +14646,9 @@ def api_config_get():
         "longtail_target": CFG["longtail_target"],
     })
 
+
+
+
 @app.route("/api/config", methods=["POST"])
 @_json_error_guard
 def api_config_set():
@@ -14508,105 +14662,7 @@ def api_config_set():
     CFG_EDITS.append({"keys": sorted(k for k in d if k != "_note"),
                       "note": str(d.get("_note") or "")[:120]})
     try:
-        if "geo_anchor" in d:
-            for k, v in d["geo_anchor"].items():
-                if k in CFG["geo_anchor"]:
-                    CFG["geo_anchor"][k] = int(v)
-        if "competitive_adder" in d:
-            for k, v in d["competitive_adder"].items():
-                CFG["competitive_adder"][int(k)] = int(v)
-        if "bid_score_breaks" in d:
-            CFG["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
-        # zero_ranking_tiers: [[pct_not_ranking, uplift_pct], ...] sorted high-to-low
-        if "zero_ranking_tiers" in d and isinstance(d["zero_ranking_tiers"], list):
-            tiers = []
-            for pair in d["zero_ranking_tiers"]:
-                if isinstance(pair, (list, tuple)) and len(pair) == 2:
-                    tiers.append([float(pair[0]), float(pair[1])])
-            tiers.sort(key=lambda t: t[0], reverse=True)
-            CFG["zero_ranking_tiers"] = tiers
-        # geo_pct_tiers: [[min_pct_not_ranking, geo_pct_of_seo], ...] high-to-low
-        if "geo_pct_tiers" in d and isinstance(d["geo_pct_tiers"], list):
-            gt = []
-            for pair in d["geo_pct_tiers"]:
-                if isinstance(pair, (list, tuple)) and len(pair) == 2:
-                    gt.append([float(pair[0]), float(pair[1])])
-            gt.sort(key=lambda t: t[0], reverse=True)
-            CFG["geo_pct_tiers"] = gt
-        # addon_volume_discount_tiers: [[min_market_count, pct_off], ...]
-        # high-to-low, first match wins. Counts are whole markets; a fractional
-        # threshold would make "10 markets" mean different things on two runs.
-        if ("addon_volume_discount_tiers" in d
-                and isinstance(d["addon_volume_discount_tiers"], list)):
-            at = []
-            for pair in d["addon_volume_discount_tiers"]:
-                if isinstance(pair, (list, tuple)) and len(pair) == 2:
-                    try:
-                        lo, pct = int(float(pair[0])), float(pair[1])
-                    except (TypeError, ValueError):
-                        continue
-                    # A 100%-off bracket prices add-on markets at nothing and a
-                    # negative one charges more for buying more. Neither is a
-                    # discount, and both would price silently.
-                    if lo >= 1 and 0.0 <= pct < 100.0:
-                        at.append([lo, pct])
-            at.sort(key=lambda t: t[0], reverse=True)
-            if at:
-                CFG["addon_volume_discount_tiers"] = at
-        if "vol_add_ramp" in d and isinstance(d["vol_add_ramp"], list) and len(d["vol_add_ramp"]) == 2:
-            CFG["vol_add_ramp"] = [float(d["vol_add_ramp"][0]), float(d["vol_add_ramp"][1])]
-        if "geo_pricing_mode" in d and d["geo_pricing_mode"] in ("pct", "card"):
-            CFG["geo_pricing_mode"] = d["geo_pricing_mode"]
-        # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
-        if "volume_brackets" in d and isinstance(d["volume_brackets"], list):
-            brs = []
-            for b in d["volume_brackets"]:
-                if isinstance(b, (list, tuple)) and len(b) >= 3:
-                    lo = float(b[0])
-                    hi = None if b[1] in (None, "", "null") else float(b[1])
-                    rate = float(b[2])
-                    brs.append([lo, hi, rate])
-            brs.sort(key=lambda x: x[0])
-            CFG["volume_brackets"] = brs
-        if "vol_free_below" in d and d["vol_free_below"] not in (None, ""):
-            CFG["vol_free_below"] = float(d["vol_free_below"])
-        if "cpc_adder_enabled" in d:
-            CFG["cpc_adder_enabled"] = bool(d["cpc_adder_enabled"])
-        if "grid_mode" in d:
-            CFG["grid_mode"] = bool(d["grid_mode"])
-        if "grid_state_suffix" in d:
-            CFG["grid_state_suffix"] = bool(d["grid_state_suffix"])
-        for key, caster in [("grid_target_keywords", int), ("grid_min_services", int),
-                            ("grid_max_services", int), ("grid_max_cities", int),
-                            ("metro_no_suffix_zips", int)]:
-            if key in d and d[key] not in (None, ""):
-                CFG[key] = caster(d[key])
-        for key, caster in [("service_min_volume", int), ("service_max_swaps", int),
-                            ("service_upgrade_ratio", float),
-                            ("metro_no_suffix_share", float),
-                            ("store_intent_tier_boost", float),
-                            ("zero_ranking_bonus", int), ("zero_ranking_top_n", int),
-                            ("zero_ranking_frac", float), ("step_ratio", float),
-                            ("client_floor", int), ("addon_market_ratio", float),
-                            ("default_markup_pct", float), ("ultra_bucket_size", int),
-                            ("competitive_bucket_size", int), ("longtail_target", int),
-                            ("cpc_adder_mult", float), ("cpc_adder_cap", int),
-                            ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
-                            ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float),
-                            ("ecom_anchor_add", int),
-                            ("pin_head_terms", int),
-                            ("pin_min_volume", int),
-                            ("geo_pct_default", float),
-                            ("min_term_months", int),
-                            ("nationwide_service_extras", float)]:
-            if key in d and d[key] not in (None, ""):
-                CFG[key] = caster(d[key])
-        # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;
-        # no cap means volume brackets run uncapped).
-        for key in ("tier_step_flat", "volume_add_cap"):
-            if key in d:
-                v = d[key]
-                CFG[key] = None if v in (None, "", "null", 0, "0") else int(float(v))
+        _cfg_apply(d, CFG)
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"Invalid value: {e}"}), 400
     return jsonify({"ok": True})

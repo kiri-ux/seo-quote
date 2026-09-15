@@ -7,7 +7,7 @@
 <title>adtini · Quote Builder — quotes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/adtini.css">
 </head>
 <body>
@@ -15,18 +15,19 @@
 <header class="app">
   <div class="bar">
     <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
-    <span class="sub">adtini form — preview</span>
+    <span class="sub">adtini</span>
   </div>
   <nav class="tabs">
-    <a href="/">SEO</a>
-    <a href="/reputation">Reputation Mgmt</a>
-    <a href="/adtini" class="on">adtini form</a>
+    <a href="/adtini" class="on">Quotes</a>
+    <a href="/adtini/forecast">Forecast</a>
+    <span class="legacy">legacy <a href="/">SEO</a> <a href="/reputation">Rep Mgmt</a></span>
   </nav>
 </header>
 
 <div class="pagehead">
   <span class="burger">&#9776;</span>
   <h2>Quotes</h2>
+  <a class="btn-create" href="/adtini/forecast?new=1">&#43; New quote</a>
 </div>
 
 <div class="wrap">
@@ -56,9 +57,8 @@
             <th>Client</th>
             <th>Order</th>
             <th>Products</th>
+            <th>Strategies</th>
             <th>Partner</th>
-            <th>Country</th>
-            <th>Quotes</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -81,65 +81,96 @@
 // into a single row and the Products column carries both chips; a superscript
 // is how many separate saved quotes that product has, which is also how many
 // rows that client's forecast page shows.
+// PLANNER, PARTNER AND STATUS ARE EDITED HERE. They belong to the client, not
+// to a run, so they are set on this page and every quote on that client
+// inherits them. Strategies are read off the products -- what the quote is
+// actually buying.
+const PLANNERS = ['Kiri', 'Stacy', 'Hana', 'Megan', 'SSG'];
+const STATUSES = ['Pending', 'In Progress', 'Ready for SSG Review', 'Complete'];
+const TONE = {
+  Kiri:   '#12294F,#D8E4F7',
+  Stacy:  '#1E4620,#D6F2E0',
+  Hana:   '#5B1E4A,#F7D6EC',
+  Megan:  '#5C2A12,#FBDCC8',
+  SSG:    '#33265C,#E2DCF7',
+};
 const QUOTES = [
-  {planner:'Paulina', tone:'#1E4620,#D6F2E0', built:'9/17/26', due:'ok',
-   client:'Drainify', order:'56310', seo:2, orm:0,
-   partner:'ADX Communications', country:'United Kingdom', status:'Sent for review'},
-  {planner:'Paloma', tone:'#5B1E4A,#F7D6EC', built:'9/17/26', due:'ok',
-   client:'Ski Barn', order:'56311', seo:0, orm:2,
-   partner:'Rock Paper Scissors', country:'United States', status:'RFP Pending Approval'},
-  {planner:'Anna', tone:'#5C2A12,#FBDCC8', built:'9/16/26', due:'warn',
-   client:'Sage Dental', order:'56305', seo:1, orm:1,
-   partner:'Bay Area Digital Solutions', country:'United States', status:'RFP Pending Approval'},
-  {planner:'Dan', tone:'#12294F,#D8E4F7', built:'9/16/26', due:'warn',
-   client:"Rosalyn's Ice Cream", order:'45663', seo:1, orm:0,
-   partner:'Local Media San Diego', country:'United States', status:'Draft'},
-  {planner:'Taylor', tone:'#33265C,#E2DCF7', built:'9/15/26', due:'ok',
-   client:'Renfroe Pecans', order:'56310', seo:1, orm:0,
-   partner:'ADX Communications', country:'United States', status:'Sent for review'},
-  {planner:'Paloma', tone:'#5B1E4A,#F7D6EC', built:'9/15/26', due:'ok',
-   client:'Junk Bee Gone', order:'56298', seo:1, orm:3,
-   partner:'Amperage Marketing + Fundraising', country:'United States', status:'RFP Pending Approval'},
-  {planner:'Paulina', tone:'#1E4620,#D6F2E0', built:'9/12/26', due:'warn',
-   client:'Visions Electronics', order:'56247', seo:0, orm:1,
-   partner:'Benchmarketing Group', country:'Canada', status:'Won'},
-  {planner:'Anna', tone:'#5C2A12,#FBDCC8', built:'9/11/26', due:'ok',
-   client:'Whidbey Island Electric', order:'56299', seo:1, orm:0,
-   partner:'CK Advertising Strategies', country:'United States', status:'Won'},
+  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Drainify', order:'56310',
+   seo:2, orm:0, seoStrat:['Core SEO','AI Search'], ormStrat:[],
+   partner:'ADX Communications', status:'In Progress'},
+  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Ski Barn', order:'56311',
+   seo:0, orm:2, seoStrat:[], ormStrat:['Review Removals','Reactive'],
+   partner:'Rock Paper Scissors', status:'Pending'},
+  {planner:'Kiri', built:'9/16/26', due:'warn', client:'Sage Dental', order:'56305',
+   seo:1, orm:1, seoStrat:['Core SEO'],
+   ormStrat:['Review Removals','Site/Article Removals','Reactive','Proactive'],
+   partner:'Bay Area Digital Solutions', status:'Ready for SSG Review'},
+  {planner:'Kiri', built:'9/16/26', due:'warn', client:"Rosalyn's Ice Cream", order:'45663',
+   seo:1, orm:0, seoStrat:['Core SEO'], ormStrat:[],
+   partner:'Local Media San Diego', status:'Pending'},
+  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Renfroe Pecans', order:'56310',
+   seo:1, orm:0, seoStrat:['Core SEO','AI Search'], ormStrat:[],
+   partner:'ADX Communications', status:'In Progress'},
+  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Junk Bee Gone', order:'56298',
+   seo:1, orm:3, seoStrat:['Core SEO'], ormStrat:['Review Removals','Proactive'],
+   partner:'Amperage Marketing + Fundraising', status:'Ready for SSG Review'},
+  {planner:'Kiri', built:'9/12/26', due:'warn', client:'Visions Electronics', order:'56247',
+   seo:0, orm:1, seoStrat:[], ormStrat:['Reactive'],
+   partner:'Benchmarketing Group', status:'Complete'},
+  {planner:'Kiri', built:'9/11/26', due:'ok', client:'Whidbey Island Electric', order:'56299',
+   seo:1, orm:0, seoStrat:['Core SEO'], ormStrat:[],
+   partner:'CK Advertising Strategies', status:'Complete'},
 ];
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tag = (cls, label, n) =>
   `<span class="tag ${cls}">${label}${n > 1 ? '<sup>' + n + '</sup>' : ''}</span>`;
 
+function pick(list, val, cls, i, field){
+  return `<select class="${cls}" data-i="${i}" data-f="${field}">`
+    + list.map(v => `<option${v === val ? ' selected' : ''}>${esc(v)}</option>`).join('')
+    + '</select>';
+}
+
 function draw(){
   const f = document.querySelector('#seg button.on').dataset.f;
   const term = (document.getElementById('q').value || '').toLowerCase();
-  const rows = QUOTES.filter(r => {
+  const rows = QUOTES.map((r, i) => [r, i]).filter(([r]) => {
     if (f === 'seo'  && !r.seo) return false;
     if (f === 'orm'  && !r.orm) return false;
     if (f === 'both' && !(r.seo && r.orm)) return false;
     if (term && !(r.client + ' ' + r.partner + ' ' + r.order).toLowerCase().includes(term)) return false;
     return true;
   });
-  document.getElementById('rows').innerHTML = rows.map(r => {
-    const [fg, bg] = r.tone.split(',');
+  document.getElementById('rows').innerHTML = rows.map(([r, i]) => {
+    const [fg, bg] = (TONE[r.planner] || TONE.Kiri).split(',');
     const chips = (r.seo ? tag('seo', 'SEO', r.seo) : '') + (r.orm ? tag('orm', 'ORM', r.orm) : '');
+    const strat = [...new Set((r.seoStrat || []).concat(r.ormStrat || []))]
+      .map(v => `<span class="strat">${esc(v)}</span>`).join('') || '—';
     return `<tr>
       <td><div class="rowicons"><span title="Open">&#9906;</span><span title="Duplicate">&#9646;</span><span title="Regenerate">&#10022;</span></div></td>
-      <td><span class="who" style="color:${fg};background:${bg}">${esc(r.planner)}</span></td>
+      <td>${pick(PLANNERS, r.planner, 'who sel', i, 'planner')
+        .replace('class="who sel"', `class="who sel" style="color:${fg};background:${bg}"`)}</td>
       <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${r.built}</span></td>
       <td class="lnk"><a href="/adtini/forecast">${esc(r.client)}</a></td>
       <td class="lnk"><a href="/adtini/forecast">${r.order}</a></td>
       <td><div class="tags">${chips}</div></td>
-      <td>${esc(r.partner)}</td>
-      <td>${esc(r.country)}</td>
-      <td class="num">${r.seo + r.orm}</td>
-      <td>${esc(r.status)}</td>
+      <td><div class="tags">${strat}</div></td>
+      <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
+      <td>${pick(STATUSES, r.status, 'stat sel', i, 'status')}</td>
     </tr>`;
   }).join('');
   document.getElementById('count').textContent = `1 – ${rows.length} of ${rows.length}`;
 }
+
+// An edit belongs to the client and sticks -- the same planner, partner and
+// status show on every quote that client has.
+document.getElementById('rows').addEventListener('change', e => {
+  const el = e.target.closest('[data-f]');
+  if (!el) return;
+  QUOTES[+el.dataset.i][el.dataset.f] = el.value;
+  if (el.dataset.f === 'planner') draw();
+});
 
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button[data-f]');

@@ -7,7 +7,7 @@
 <title>adtini · Quote Builder — forecast</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/adtini.css">
 </head>
 <body>
@@ -63,6 +63,10 @@
 
         <div class="f wide"><label>Negative Terms <span class="i" title="What the client does not offer">i</span></label>
           <div class="box" data-chips="negatives"></div></div>
+
+        <div class="f wide"><label>What the client does
+          <span class="i" title="Read by the term expansion, the refine pass and the proposal">i</span></label>
+          <textarea data-k="business_desc"></textarea></div>
 
         <div class="f wide">
           <div class="geohead">Geographic Targeting Areas</div>
@@ -151,20 +155,15 @@
           <h4>Seed terms</h4>
           <p class="hint">What the client sells. Everything below is built from these.</p>
           <div class="box" data-chips="seeds"></div>
+          <p class="hint" id="kbScopeNote" style="margin:10px 0 0"></p>
           <div class="kbrow">
             <div class="f"><label>Country</label>
               <select id="kbCountry">
                 <option>United States</option><option>United Kingdom</option><option>Canada</option>
                 <option>Australia</option><option>Ireland</option><option>New Zealand</option>
               </select></div>
-            <div class="f"><label>Geo scope</label>
-              <select id="kbScope">
-                <option value="single_city">Single City</option>
-                <option value="contiguous_region">Contiguous region</option>
-                <option value="non_contiguous_region">Non-contiguous region</option>
-                <option value="statewide">Statewide</option>
-                <option value="nationwide">Nationwide</option>
-              </select></div>
+            <div class="f"><label>Price on national demand</label>
+              <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
           </div>
           <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
         </section>
@@ -190,8 +189,8 @@
           <div class="grid" id="cfgGrid"></div>
         </div>
         <div class="cfgsec">
-          <h4>Every quote &mdash; this session</h4>
-          <p class="hint">A redeploy reverts to the file defaults. Re-run the quote after applying.</p>
+          <h4>Pricing constants</h4>
+          <p class="hint">An edit prices this quote only. Re-run the forecast to see it.</p>
           <div id="cfgGlobal"></div>
         </div>
       </form>
@@ -237,15 +236,41 @@ function savedQuote(o){
   const vol = all.reduce((s, x) => s + x.vol, 0);
   const notRanking = Math.round(
     (1 - o.terms.filter(t => typeof t[2] === 'number').length / o.terms.length) * 100);
+  const tiers = t => ({base: t, intermediate: Math.round(t * 1.18 / 50) * 50,
+                      advanced: Math.round(t * 1.42 / 50) * 50});
+  const core = tiers(o.package[Object.keys(o.package)[0]]);
+  const addon = tiers(o.addon || 0);
+  const hard = k => Object.keys(k).reduce((z, t) => (z[t] = Math.round(k[t] * 0.65), z), {});
   return {
     pricing: {anchor: o.anchor, base: o.anchor, step: 650,
       competitive_adder: o.adder, volume_add: o.volume_add,
       zero_ranking_uplift_pct: o.uplift, pct_not_ranking: notRanking,
       total_volume: vol, min_term_months: 6,
-      handoff: {package: o.package, months: 6, markup_pct: 0.35,
-        partner_monthly: o.partner, geo_scope: o.scope, keywords: all.length,
+      client_addon_per_market: o.addon ? addon : null,
+      handoff: {
+        package: o.package,
+        core_seo_price: core, ai_search_price: {base: 0, intermediate: 0, advanced: 0},
+        ai_search_pct: 0, ai_search_pct_effective: {},
+        margin_pct: 0.35,
+        addon_markets: o.markets_n || 0,
+        addon_market_price: o.addon ? addon : {},
+        addon_market_discount_pct: o.addon ? 15 : 0,
+        addon_market_price_by_bracket: o.addon
+          ? [{min_markets: 1, discount_pct: 10, client: addon, partner: hard(addon)},
+             {min_markets: 10, discount_pct: 15, client: addon, partner: hard(addon)}]
+          : [],
+        partner_addon_market_cost: o.addon ? hard(addon) : {},
+        partner_hard_cost: hard(core), partner_core_seo_cost: hard(core),
+        partner_ai_search_cost: {base: 0, intermediate: 0, advanced: 0},
+        margin_dollars: Object.keys(core).reduce(
+          (z, t) => (z[t] = core[t] - Math.round(core[t] * 0.65), z), {}),
+        months: 6, geo_scope: o.scope, keywords: all.length,
         total_volume: vol, markets: o.markets}},
     ranks,
+    metrics: {adder: o.adder, score: 41, cpc: {'dental implants boca raton': 18.4},
+              kd_score: 62, pageone_rank: 22},
+    table: o.terms.map(t => ({kw: t[0], pos: t[2],
+                              ranked_top: typeof t[2] === 'number' && t[2] <= 10})),
     headline: `$${o.package[Object.keys(o.package)[0]].toLocaleString()}/mo · ${all.length} terms`
       + ` · ${vol.toLocaleString()}/mo · ${100 - notRanking}% ranking`,
     kw: {all, head: all.slice(0, 3),
@@ -257,14 +282,14 @@ function savedQuote(o){
 }
 const Q137027 = savedQuote({
   anchor: 4800, adder: 550, volume_add: 100, uplift: 4, partner: 4322, scope: 'single_city',
-  markets: ['Boca Raton, FL'], package: {'Core SEO': 5450, 'Add-on markets': 1200, 'Total monthly': 6650},
+  markets: ['Boca Raton, FL'], addon: 1200, markets_n: 8, package: {'Core SEO': 5450, 'Add-on markets': 1200, 'Total monthly': 6650},
   terms: [['dental implants boca raton', 3600, 4], ['emergency dentist boca raton', 1900, 12],
           ['teeth whitening boca raton', 880, 'Not Found'], ['dental implants delray beach', 720, 8],
           ['same day crowns boca raton', 390, 'Not Found'],
           ['affordable dental implants near me', 210, 'Not Found']]});
 const Q137027_PRIOR = savedQuote({
   anchor: 4800, adder: 400, volume_add: 60, uplift: 2, partner: 3987, scope: 'single_city',
-  markets: ['Boca Raton, FL'], package: {'Core SEO': 4950, 'Add-on markets': 1100, 'Total monthly': 6050},
+  markets: ['Boca Raton, FL'], addon: 1100, markets_n: 8, package: {'Core SEO': 4950, 'Add-on markets': 1100, 'Total monthly': 6050},
   terms: [['dental implants boca raton', 3600, 4], ['emergency dentist boca raton', 1900, 12],
           ['teeth whitening boca raton', 880, 6], ['dental implants delray beach', 720, 8]]});
 const Q137031 = savedQuote({
@@ -284,6 +309,7 @@ const ROWS = [
    ],
    data:{
     brand:'Sage Dental', site:'mysagedental.com',
+    business_desc:'Multi-location dental group — implants, emergency dentistry, cosmetic.',
     focus:['emergency dentist','dental implants','teeth whitening'],
     negatives:[], g_city:true, g_county:false, g_state:false, g_country:false,
     city:'Boca Raton, FL', county:'',
@@ -296,6 +322,7 @@ const ROWS = [
              resp:'$4,450/mo · 3 terms', quote: Q137031}],
    data:{
     brand:'Sage Dental', site:'mysagedental.com',
+    business_desc:'Pediatric arm of the same group.',
     focus:['pediatric dentist'], negatives:[],
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:'Atlanta, GA', county:'',
@@ -369,6 +396,115 @@ function kvTable(obj, skip){
   return `<table class="kv">${rows.join('')}</table>`;
 }
 
+// ---------------------------------------------------------------- what goes where
+// ONE PLACE THAT SAYS WHAT LEAVES THIS QUOTE. Every field the line item and the
+// proposal read, what this quote has in it, and which of the two it travels to.
+// A field a destination needs and the quote has not got reads "not captured",
+// because a silent gap is how a proposal ships without its rank table.
+const SEND_SEO = [
+  ['Order & scope', [
+    ['brand', 'Brand name', 'prop', r => r.data.brand],
+    ['business_desc', 'What the client does', 'prop', r => r.data.business_desc],
+    ['geo_values', 'Targeting areas', 'prop', r => geoOf(r.data)],
+    ['state', 'State', 'prop', r => stateOf(r.data)],
+    ['strategy', 'Strategy', 'prop', r => r.data.strategy],
+    ['goal', 'Campaign goal', 'prop', r => (r.data.goals || [])[0]],
+    ['site_rebuild', 'Site rebuild', 'prop', r => r.data.site_rebuild],
+  ]],
+  ['Client price', [
+    ['package', 'Package — per tier', 'both', r => H(r).package],
+    ['core_seo_price', 'Core SEO — per tier', 'io', r => H(r).core_seo_price],
+    ['ai_search_price', 'AI Search — per tier', 'io', r => H(r).ai_search_price],
+    ['ai_search_pct', 'AI Search % of Core', 'io', r => H(r).ai_search_pct],
+    ['ai_search_pct_effective', 'AI Search % — effective', 'io',
+     r => H(r).ai_search_pct_effective],
+    ['margin_pct', 'Margin %', 'io', r => H(r).margin_pct],
+    ['min_term_months', 'Minimum term', 'screen', r => P(r).min_term_months],
+  ]],
+  ['Add-on markets', [
+    ['addon_markets', 'Add-on market count', 'both', r => H(r).addon_markets],
+    ['addon_market_price', 'Add-on market — per tier', 'io', r => H(r).addon_market_price],
+    ['addon_market_discount_pct', 'Add-On Market %', 'io',
+     r => H(r).addon_market_discount_pct],
+    ['addon_market_price_by_bracket', 'Every bracket the deck can move to', 'io',
+     r => H(r).addon_market_price_by_bracket],
+    ['client_addon_per_market', 'Add-on market — for the deck', 'prop',
+     r => P(r).client_addon_per_market],
+  ]],
+  ['Partner cost', [
+    ['partner_hard_cost', 'Partner hard cost', 'io', r => H(r).partner_hard_cost],
+    ['partner_core_seo_cost', 'Partner Core SEO', 'io', r => H(r).partner_core_seo_cost],
+    ['partner_ai_search_cost', 'Partner AI Search', 'io', r => H(r).partner_ai_search_cost],
+    ['partner_addon_market_cost', 'Partner add-on market', 'io',
+     r => H(r).partner_addon_market_cost],
+    ['margin_dollars', 'Margin $', 'io', r => H(r).margin_dollars],
+  ]],
+  ['Keywords & measurement', [
+    ['kw', 'Keyword list', 'prop', r => (r.kw && r.kw.all) || undefined],
+    ['table', 'Rank table', 'prop', r => (r.result || {}).table],
+    ['cpc', 'Top-of-page bids', 'prop', r => ((r.result || {}).metrics || {}).cpc],
+    ['kd_score', 'Keyword difficulty', 'prop', r => ((r.result || {}).metrics || {}).kd_score],
+    ['signals', 'Competitor signals', 'prop', r => (r.result || {}).signals],
+    ['perf_rows', 'Performance table', 'prop', r => (r.result || {}).perf_rows],
+    ['serp', 'SERP capture', 'prop', r => (r.result || {}).shot],
+  ]],
+  ['List insights', [
+    ['widen', 'Widen the offer', 'screen', r => ((r.kw || {}).widen || {}).fact],
+    ['expansion', 'Terms added by expansion', 'screen',
+     r => (r.expandNote || {}).added],
+    ['site_dropped', 'Dropped as off-topic', 'screen', r => (r.kw || {}).site_dropped],
+    ['fragments_dropped', 'Dropped as fragments', 'screen',
+     r => (r.kw || {}).fragments_dropped],
+    ['national_demand', 'National demand', 'screen',
+     r => r.natReason || (bandOf(r.data) === 'nationwide' ? 'priced nationally' : '')],
+  ]],
+];
+const H = r => ((r.result || {}).pricing || {}).handoff || {};
+const P = r => (r.result || {}).pricing || {};
+const DEST = {io: [1, 0], prop: [0, 1], both: [1, 1], screen: [0, 0]};
+
+function sendValue(v){
+  if (v === undefined || v === null || v === '') return null;
+  if (Array.isArray(v)) {
+    if (!v.length) return null;
+    const named = v.map(x => typeof x === 'object' ? (x.kw || x.term || '') : x);
+    if (named.every(x => x !== ''))
+      return `${v.length} \u00b7 ${named.slice(0, 3).join(', ')}${v.length > 3 ? '…' : ''}`;
+    return `${v.length} row${v.length === 1 ? '' : 's'}`;
+  }
+  if (typeof v === 'object') {
+    const k = Object.keys(v);
+    return k.length ? k.map(t => `${t}: ${typeof v[t] === 'number' ? money(v[t]) : v[t]}`)
+      .slice(0, 3).join(' \u00b7 ') : null;
+  }
+  if (typeof v === 'number') return v.toLocaleString();
+  return String(v);
+}
+function sendMatrix(r){
+  let io = 0, ioHave = 0, pr = 0, prHave = 0;
+  const secs = SEND_SEO.map(([h, rows]) => {
+    const body = rows.map(([k, label, dest, get]) => {
+      let v = null;
+      try { v = sendValue(get(r)); } catch (e) { v = null; }
+      const [toIo, toPr] = DEST[dest];
+      if (toIo) { io++; if (v) ioHave++; }
+      if (toPr) { pr++; if (v) prHave++; }
+      const gap = !v && (toIo || toPr);
+      return `<tr class="${gap ? 'gap' : ''}">
+        <td>${label}<span>${k}</span></td>
+        <td>${v ? esc(v) : (gap ? 'not captured' : '\u2014')}</td>
+        <td>${toIo ? '&#9679;' : '&#8211;'}</td>
+        <td>${toPr ? '&#9679;' : '&#8211;'}</td></tr>`;
+    }).join('');
+    return `<tr class="sec"><th colspan="4">${h}</th></tr>${body}`;
+  }).join('');
+  return `<table class="send"><thead><tr>
+      <th>Field</th><th>This quote</th><th>Line item</th><th>Proposal</th>
+    </tr></thead><tbody>${secs}</tbody></table>
+    <p class="hint sendfoot">Line item ${ioHave} of ${io} \u00b7 Proposal ${prHave} of ${pr}
+      \u00b7 insights stay on this screen</p>`;
+}
+
 function resultsHtml(r){
   if (!r.result) return '';
   const p = r.result.pricing || {};
@@ -393,7 +529,10 @@ function resultsHtml(r){
           `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b></div>`).join('')}
       </div>
 
-      <details class="qfold"><summary>Sent to the IO &mdash; ${Object.keys(h).length} fields</summary>
+      <details class="qfold" open><summary>What goes where</summary>
+        ${sendMatrix(r)}</details>
+
+      <details class="qfold"><summary>Line item payload &mdash; ${Object.keys(h).length} fields</summary>
         ${kvTable(h)}</details>
 
       <details class="qfold"><summary>Keyword table &mdash; ${all.length} terms</summary>
@@ -405,7 +544,7 @@ function resultsHtml(r){
         }).join('')}</table></details>
 
       <details class="qfold">
-        <summary>Sent to the proposal &mdash; ${Object.keys(prop).length} fields</summary>
+        <summary>Proposal payload &mdash; ${Object.keys(prop).length} fields</summary>
         ${kvTable(prop)}
         ${r.result.shot ? `<img class="shotimg" src="${r.result.shot}" alt="SERP capture">` : ''}
       </details>
@@ -489,6 +628,11 @@ document.addEventListener('click', e => {
   if (b) {
     b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     if (b.parentNode.dataset.k === 'past') pastFields();
+    // National demand is a scope decision, so the builder's line follows it.
+    if (b.parentNode.id === 'kbNat' && ROW != null) {
+      ROWS[ROW].data.national = b.dataset.v === '1' ? 1 : 0;
+      kbScopeNote(ROWS[ROW]);
+    }
   }
   const x = e.target.closest('.chip b');
   if (x) x.closest('.chip').remove();
@@ -641,18 +785,18 @@ const CFGSPEC = [
    ]},
 ];
 
-let CFGVALS = null;
+let CFGVALS = null, CFGVIEW = null;
 const cfgGet = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
 
 function cfgRowsHtml(rows){
   return (rows || []).map(([k, label, hint]) => `
     <div class="cfgrow">
       <label>${label}${hint ? `<span>${hint}</span>` : ''}</label>
-      <input type="text" data-g="${k}" value="${esc(cfgGet(CFGVALS, k))}">
+      <input type="text" data-g="${k}" value="${esc(cfgGet(CFGVIEW, k))}">
     </div>`).join('');
 }
 function cfgTiersHtml(t){
-  return (cfgGet(CFGVALS, t.key) || []).map((row, i) => `
+  return (cfgGet(CFGVIEW, t.key) || []).map((row, i) => `
     <div class="tierrow" data-t="${t.key}">
       <span>${t.lead}</span><input type="number" value="${row[0]}">
       <span>${t.mid}</span><input type="number" value="${row[1]}">
@@ -660,7 +804,7 @@ function cfgTiersHtml(t){
     </div>`).join('');
 }
 function cfgBracketsHtml(key){
-  return (cfgGet(CFGVALS, key) || []).map(b => `
+  return (cfgGet(CFGVIEW, key) || []).map(b => `
     <div class="tierrow" data-b="${key}">
       <span>From</span><input type="number" value="${b[0]}">
       <span>to</span><input type="number" value="${b[1] == null ? '' : b[1]}" placeholder="top">
@@ -673,6 +817,10 @@ async function cfgGlobalLoad(){
     try { CFGVALS = await (await fetch('/api/config')).json(); }
     catch (e) { $('cfgGlobal').innerHTML = `<p class="hint">${esc(e.message)}</p>`; return; }
   }
+  // The file defaults are the baseline; this quote's own edits sit on top, so
+  // reopening a tuned quote shows what it was priced with.
+  const over = (ROW == null ? {} : (ROWS[ROW].over || {}));
+  CFGVIEW = Object.assign({}, CFGVALS, over);
   $('cfgGlobal').innerHTML = CFGSPEC.map(g => `
     <details class="cfggrp" open>
       <summary>${g.h}${g.note ? `<i>${g.note}</i>` : ''}</summary>
@@ -685,7 +833,7 @@ async function cfgGlobalLoad(){
 }
 // A blank stays blank -- tier_step_flat and volume_add_cap both mean "off" when
 // empty, and sending 0 instead turns the step to nothing.
-function cfgGlobalCollect(){
+function cfgPaneRead(){
   const out = {};
   $('cfgGlobal').querySelectorAll('[data-g]').forEach(el => {
     const path = el.dataset.g.split('.');
@@ -712,14 +860,37 @@ function cfgGlobalCollect(){
   if (out.volume_brackets) out.volume_brackets.sort((a, b) => a[0] - b[0]);
   return out;
 }
-async function cfgApply(){
-  const payload = cfgGlobalCollect();
-  const r = await fetch('/api/config', {method:'POST',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-  CFGVALS = null;
-  return Object.keys(payload).length;
+// ONLY WHAT MOVED TRAVELS. The pane shows every constant, so posting all of
+// them would pin this quote to today's file defaults forever. The diff against
+// what /api/config returned is the quote's own overlay, and the pipeline sends
+// it on each call -- it prices this quote and nothing else.
+// A FIELD READS BACK AS TEXT. The inputs hand back "5" where the file holds 5,
+// so a value compared raw looks changed on every constant the pane can show,
+// and the whole config would ride on every quote.
+const cfgNorm = v => Array.isArray(v) ? v.map(cfgNorm)
+  : (v && typeof v === 'object')
+    ? Object.keys(v).sort().reduce((o, k) => (o[k] = cfgNorm(v[k]), o), {})
+    : (v == null ? '' : String(v));
+
+function cfgOverride(){
+  const shown = cfgPaneRead(), out = {};
+  Object.keys(shown).forEach(k => {
+    const was = cfgGet(CFGVALS, k), now = shown[k];
+    // Only the leaves the pane shows are compared: competitive_adder carries a
+    // score-0 bucket the pane has no field for, and a whole-object compare
+    // called that a change on every quote.
+    const same = (a, b) => (a && typeof a === 'object' && !Array.isArray(a))
+      ? Object.keys(a).every(x => same(a[x], (b || {})[x]))
+      : JSON.stringify(cfgNorm(a)) === JSON.stringify(cfgNorm(b));
+    if (!same(now, was)) out[k] = now;
+  });
+  // A nested group travels whole -- geo_anchor with one city edited still needs
+  // its other four, because the coercion writes the keys it is handed.
+  Object.keys(out).forEach(k => {
+    if (out[k] && !Array.isArray(out[k]) && typeof out[k] === 'object')
+      out[k] = Object.assign({}, cfgGet(CFGVALS, k), out[k]);
+  });
+  return out;
 }
 
 // ---------------------------------------------------------------- step 1
@@ -731,11 +902,14 @@ function geoOf(d){
   if (d.g_county && d.county) g.push(d.county);
   return g;
 }
-// THE SCOPE ON SCREEN IS THE SCOPE THAT PRICES. The builder's dropdown used to
-// be decoration -- the band came off the form's checkboxes -- so the pane could
-// read Nationwide while the quote priced a single city.
+// SCOPE IS READ, NOT PICKED. It follows the targeting on the order -- the
+// builder used to carry its own dropdown, which could say Nationwide while the
+// quote priced a single city. National demand is the one thing a planner sets,
+// because it is a pricing decision rather than a fact about the order.
+const BANDS = {single_city:'Single city', contiguous_region:'Contiguous region',
+               non_contiguous_region:'Non-contiguous region',
+               statewide:'Statewide', nationwide:'Nationwide'};
 function bandOf(d){
-  if (d.scope) return d.scope;
   if (d.national || d.g_country || !geoOf(d).length) return 'nationwide';
   if (d.g_state) return 'statewide';
   if (d.g_county) return 'contiguous_region';
@@ -748,9 +922,16 @@ function stateOf(d){
 
 function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
-  $('kbScope').value = bandOf(r.data);
   $('kbCountry').value = r.data.country || 'United States';
+  $('kbNat').querySelectorAll('button').forEach(b =>
+    b.classList.toggle('on', String(b.dataset.v) === String(r.data.national ? 1 : 0)));
+  kbScopeNote(r);
   kbDraw(r);
+}
+function kbScopeNote(r){
+  const d = r.data, g = geoOf(d);
+  $('kbScopeNote').textContent = `Geo scope: ${BANDS[bandOf(d)]}`
+    + (g.length ? ` \u00b7 ${g.join(', ')}` : '');
 }
 function kbDraw(r){
   r = r || ROWS[ROW];
@@ -772,25 +953,87 @@ function kbDraw(r){
   $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';
 }
 
+// EXPAND ON FOCUS TERMS, WIRED. The toggle on the form promised this and did
+// nothing: the three passes the SEO tab runs before a build -- what their site
+// sells, what the industry sells that they have not listed, and what they
+// already rank for -- plus the regions worth naming. Whatever comes back is
+// recorded as the tool's own suggestion, so the refine pass can tell it from
+// the planner's list.
+async function expandSeeds(r, d){
+  const base = {brand: d.brand, domain: d.site, industry: (d.industry || []).join(', '),
+                business_desc: d.business_desc || '', seeds: (d.focus || []).slice(),
+                geo_values: geoOf(d), state: stateOf(d),
+                national_demand: bandOf(d) === 'nationwide', cfg: r.over || {}};
+  const [site, ind, rank] = await Promise.all([
+    post('/api/site_services', base).catch(() => ({})),
+    post('/api/expand_services', base).catch(() => ({})),
+    post('/api/rank_seeds', base).catch(() => ({})),
+  ]);
+  const have = new Set((d.focus || []).map(x => String(x).toLowerCase()));
+  const rows = [];
+  const take = (res, src) => (res.services || []).forEach(x => {
+    const term = String(x.term || '').trim();
+    if (!term || have.has(term.toLowerCase())) return;
+    have.add(term.toLowerCase());
+    rows.push({term, vol: Number(x.volume) || 0, ranked: !!x.ranked_top, src});
+  });
+  take(rank, 'ranks for it');            // a position is proof the term is real
+  take(site, 'their site');
+  take(ind, 'the industry');
+  // Best first, and stop at the slot count -- a list longer than the grid is
+  // terms nobody will quote.
+  rows.sort((a, b) => (b.ranked - a.ranked) || (b.vol - a.vol));
+  const slots = Math.max(0, 20 - (d.focus || []).length);
+  const kept = rows.slice(0, slots);
+  let regions = [];
+  try {
+    const rr = await post('/api/suggest_regions',
+      {geo_values: geoOf(d), state: stateOf(d), keywords: (d.focus || []).slice(),
+       brand: d.brand, business_desc: d.business_desc || ''});
+    regions = (rr.regions || []).map(x => String(x.name || '').trim()).filter(Boolean);
+  } catch (e) { regions = []; }
+  r.suggested = (r.suggested || []).concat(kept.map(x => x.term.toLowerCase()));
+  r.rankedSeeds = kept.filter(x => x.ranked).map(x => x.term.toLowerCase());
+  return {added: kept.map(x => x.term), rows: kept, regions,
+          held: Math.max(0, rows.length - kept.length)};
+}
+
 $('kbBuild').onclick = async () => {
   const r = ROWS[ROW];
   r.data = collect(formOf(r));
   r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
     .map(c => c.firstChild.textContent.trim());
   const d = r.data;
-  d.scope = $('kbScope').value;
+  d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.country = $('kbCountry').value;
+  kbScopeNote(r);
   const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
                 brand: d.brand, domain: d.site, negatives: d.negatives || [],
-                national_demand: bandOf(d) === 'nationwide',
+                business_desc: d.business_desc || '',
+                goal: (d.goals || [])[0] || '',
+                phrase_geos: r.phrase_geos || [],
+                national_demand: bandOf(d) === 'nationwide', cfg: r.over || {},
                 country: $('kbCountry').value === 'United States' ? 'US'
                        : $('kbCountry').value === 'United Kingdom' ? 'GB'
                        : $('kbCountry').value === 'Canada' ? 'CA'
                        : $('kbCountry').value === 'Australia' ? 'AU'
                        : $('kbCountry').value === 'Ireland' ? 'IE' : 'NZ'};
   $('kbBuild').disabled = true;
-  $('saved').textContent = 'Building the list…';
   try {
+    if (d.expand) {
+      $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
+      const got = await expandSeeds(r, d);
+      if (got.added.length) {
+        d.focus = d.focus.concat(got.added);
+        chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+        base.keywords = d.focus;
+      }
+      if (got.regions.length) { r.phrase_geos = got.regions; base.phrase_geos = got.regions; }
+      r.expandNote = got;
+    } else {
+      r.expandNote = null;
+    }
+    $('saved').textContent = 'Building the list…';
     const kw = await post('/api/keywords', base);
     $('saved').textContent = 'Refining…';
     let ref = kw;
@@ -800,12 +1043,27 @@ $('kbBuild').onclick = async () => {
         site_terms: kw.site_terms || [], market_vocab: kw.market_vocab || [],
         market_pool: kw.market_pool || [], geo_scope: bandOf(d),
         industry: (d.industry || []).join(', '),
+        // WHICH SEEDS THE TOOL PROPOSED. Without it the refine pass cannot tell
+        // its own suggestions from the planner's own list, and exempts both.
+        suggested: (r.suggested || []).slice(),
+        ranked: (r.rankedSeeds || []).slice(),
         national_demand: bandOf(d) === 'nationwide'}));
     } catch (e) { $('saved').textContent = 'Refine failed — raw list kept. ' + e.message; }
     r.kw = ref && ref.all ? ref : kw;
+    // THE BUILD CAN DISCOVER NATIONAL DEMAND. The refine pass says so, and the
+    // toggle has to agree with it or the next build sends the local scope back.
+    if (r.kw.national_demand && !d.national) {
+      d.national = 1;
+      r.natReason = r.kw.national_demand_reason || 'detected during the build';
+      $('kbNat').querySelectorAll('button').forEach(b =>
+        b.classList.toggle('on', b.dataset.v === '1'));
+      kbScopeNote(r);
+    }
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
-      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`;
+      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
+        + (r.expandNote && r.expandNote.added.length
+           ? ` · ${r.expandNote.added.length} terms added by expansion.` : '');
   } catch (e) {
     $('saved').textContent = e.message;
   }
@@ -814,18 +1072,14 @@ $('kbBuild').onclick = async () => {
 $('kbSrc').onchange = () => kbDraw();
 $('kbCountry').onchange = () => kbDraw();
 
+
 // ---------------------------------------------------------------- steps 2-4
 async function generate(){
   const r = ROWS[ROW];
   r.data = collect(formOf(r));
-  if (VIEW === 'cfg') {
-    r.cfg = cfgCollect();
-    // Generating from the config pane prices on what is on screen, so the
-    // constants go up before the pipeline reads them.
-    try { await cfgApply(); }
-    catch (e) { $('saved').textContent = e.message; return; }
-  }
+  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
   r.cfg = r.cfg || {};
+  r.over = r.over || {};
   const d = r.data;
   if (!r.kw || !(r.kw.all || []).length) {
     $('saved').textContent = 'Build the keyword list first — Keyword Builder.';
@@ -834,23 +1088,27 @@ async function generate(){
   const geo = geoOf(d), st = stateOf(d), band = bandOf(d);
   const industry = (d.industry || []).join(', ');
   const common = {geo_values: geo, state: st, industry, geo_scope: band,
-                  national_demand: band === 'nationwide', brand: d.brand, domain: d.site};
+                  national_demand: band === 'nationwide', brand: d.brand, domain: d.site,
+                  cfg: r.over};
   $('gen').disabled = true;
   const say = t => { $('saved').textContent = t; };
   try {
     say('Step 2 — scoring competition…');
     const met = await post('/api/metrics', Object.assign({}, common,
-      {head: (r.kw.head || r.kw.ultra || []).map(x => x.kw)}));
+      {head: (r.kw.head || r.kw.ultra || []).map(x => x.kw),
+       goal: (d.goals || [])[0] || ''}));
 
     say('Step 3 — checking rankings…');
     const all = r.kw.all || [];
     const ranks = {};
+    const table = [];              // the proposal's own rank table
     let ranked = 0, errored = 0;
     for (let i = 0; i < all.length; i += 10) {
       const batch = all.slice(i, i + 10).map(x => ({kw: x.kw}));
       const rk = await post('/api/rankings', Object.assign({}, common, {batch}));
       (rk.results || []).forEach(x => {
         ranks[String(x.kw).toLowerCase()] = x.pos;
+        table.push(x);
         if (x.ranked_top) ranked++;
         if (x.error) errored++;
       });
@@ -874,12 +1132,12 @@ async function generate(){
       addon_markets: d.addon ? (+d.markets || 0) : 0,
       markup_pct: parseFloat(String(r.cfg.markup || d.markup || 35)) / 100,
       pct_not_ranking, total_volume, industry,
-      national_demand: band === 'nationwide',
+      national_demand: band === 'nationwide', cfg: r.over,
       base_override: r.cfg.ov_core || '', pageone_rank: met.pageone_rank});
 
     const pkg = (price.handoff || {}).package || {};
     const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';
-    r.result = {pricing: price, ranks, headline:
+    r.result = {pricing: price, ranks, table, metrics: met, headline:
       `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
       + (pct_not_ranking == null ? 'ranking unmeasured' : `${100 - pct_not_ranking}% ranking`)};
     r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,
@@ -894,7 +1152,7 @@ async function generate(){
   $('gen').disabled = false;
 }
 
-$('save').onclick = async () => {
+$('save').onclick = () => {
   const r = ROWS[ROW];
   r.data = collect(formOf(r));
   if (VIEW === 'kw') r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -902,11 +1160,11 @@ $('save').onclick = async () => {
   const msg = `Saved ${Object.keys(r.data).length} fields to ${r.name} – ${dateOf(r)}.`;
   if (VIEW === 'cfg') {
     r.cfg = cfgCollect();
-    $('saved').textContent = `${msg} Applying…`;
-    try {
-      const n = await cfgApply();
-      $('saved').textContent = `${msg} Applied ${n} constants.`;
-    } catch (e) { $('saved').textContent = `${msg} ${e.message}`; }
+    r.over = cfgOverride();
+    const n = Object.keys(r.over).length;
+    $('saved').textContent = `${msg} ${n
+      ? `${n} constant${n === 1 ? '' : 's'} set on this quote.`
+      : 'Pricing constants on the file defaults.'}`;
     return;
   }
   $('saved').textContent = msg;
@@ -933,9 +1191,11 @@ $('gen').onclick = () => {
 $('kwBuilder').onclick = () => show(VIEW === 'kw' ? 'form' : 'kw');
 $('revert').onclick = $('reset').onclick = () => {
   const r = ROWS[ROW];
+  r.over = {};
   load(formOf(r), r.data);
   cfgLoad(r);
-  $('saved').textContent = 'Reverted.';
+  cfgGlobalLoad(true);
+  $('saved').textContent = 'Back on the file defaults.';
 };
 
 draw();

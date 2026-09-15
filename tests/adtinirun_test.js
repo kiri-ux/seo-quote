@@ -6,7 +6,7 @@
 // measures the wiring: which endpoint, with which payload, in which order.
 // (2026-09-15, Kiri)
 const { chromium } = require('/root/work/node_modules/playwright-core');
-const BASE = 'http://127.0.0.1:5202';
+const BASE = "http://127.0.0.1:5203";
 
 const KW = {
   head: [{ kw: 'dental implants', vol: 3600 }],
@@ -68,6 +68,15 @@ const CFG = {
     }
     if (url === '/api/price') return json(route, PRICE);
     if (url === '/api/config') return json(route, CFG);
+    if (url === '/api/site_services')
+      return json(route, {services: [{term: 'dental crowns', volume: 720}]});
+    if (url === '/api/expand_services')
+      return json(route, {services: [{term: 'invisalign', volume: 2400},
+                                     {term: 'denture repair', volume: 90}]});
+    if (url === '/api/rank_seeds')
+      return json(route, {services: [{term: 'root canal', volume: 480, ranked_top: true}]});
+    if (url === '/api/suggest_regions')
+      return json(route, {regions: [{name: 'Palm Beach County'}]});
     return json(route, {});
   });
 
@@ -142,7 +151,8 @@ const CFG = {
   await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent));
 
   const kb = await p.evaluate(() => ({
-    scope: document.getElementById('kbScope').value,
+    scopeNote: document.getElementById('kbScopeNote').textContent,
+    nat: document.querySelector('#kbNat button.on').dataset.v,
     country: document.getElementById('kbCountry').value,
     note: document.getElementById('saved').textContent,
     head: document.getElementById('kbHead').textContent,
@@ -170,8 +180,21 @@ const CFG = {
     const kwFold = [...q.querySelectorAll('.qfold')].find(f => /Keyword table/.test(f.textContent));
     R.rankRows = [...kwFold.querySelectorAll('table.kv tr')].slice(1)
       .map(tr => [...tr.children].map(td => td.textContent.trim()).join(' | '));
-    const io = [...q.querySelectorAll('.qfold')].find(f => /Sent to the IO/.test(f.textContent));
+    const io = [...q.querySelectorAll('.qfold')].find(f => /Line item payload/.test(f.textContent));
     R.ioKeys = [...io.querySelectorAll('table.kv td:first-child')].map(td => td.textContent.trim());
+    // the matrix: what leaves this quote, and for which destination
+    const send = q.querySelector('table.send');
+    R.sendSections = [...send.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
+    const rowOf = k => [...send.querySelectorAll('tbody tr')]
+      .find(tr => (tr.querySelector('td span') || {}).textContent === k);
+    const cells = tr => [...tr.children].map(td => td.textContent.trim());
+    R.packageRow = cells(rowOf('package'));
+    R.brandRow = cells(rowOf('brand'));
+    R.serpRow = cells(rowOf('serp'));
+    R.serpIsGap = rowOf('serp').classList.contains('gap');
+    R.insightRow = cells(rowOf('widen'));
+    R.insightIsGap = rowOf('widen').classList.contains('gap');
+    R.foot = q.querySelector('.sendfoot').textContent.replace(/\s+/g, ' ').trim();
     R.modalClosed = document.getElementById('scrim').hidden;
     // the run lands in that row's History tab
     document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="history"]').click();
@@ -190,15 +213,25 @@ const CFG = {
 
   const want = {
     // step 1
-    'kb.calledKeywordsThenRefine': [seq.slice(0, 2).join(','), '/api/keywords,/api/refine'],
+    // EXPAND ON FOCUS TERMS runs before the build and feeds it
+    'kb.expandsFirst': [seq.slice(0, 4).sort().join(','),
+      '/api/expand_services,/api/rank_seeds,/api/site_services,/api/suggest_regions'],
+    'kb.thenBuildsAndRefines': [seq.slice(4, 6).join(','), '/api/keywords,/api/refine'],
+    // a term they already rank for leads, then by volume
+    'kb.seedsGrew': [(kwCall.body.keywords || []).slice(3).join(','),
+      'root canal,invisalign,dental crowns,denture repair'],
+    'kb.regionsCarried': [(kwCall.body.phrase_geos || []).join(','), 'Palm Beach County'],
+    'kb.provenanceSent': [(refCall.body.ranked || []).join(','), 'root canal'],
+    'kb.businessDescSent': ['business_desc' in kwCall.body, true],
     'kb.seedsSent': [Array.isArray(kwCall.body.keywords) && kwCall.body.keywords.length > 0, true],
     'kb.countrySent': [kwCall.body.country, 'US'],
     'kb.refineGetsBuckets': [refCall.body.ultra && refCall.body.ultra.length, 1],
     'kb.refineGetsBand': [!!refCall.body.geo_scope, true],
-    // the pane opens on the row's own scope, and that scope is what prices
-    'kb.scopeFromRow': [kb.scope, 'single_city'],
+    // scope is read off the order, not picked in the builder
+    'kb.scopeRead': [kb.scopeNote, 'Geo scope: Single city · Boca Raton, FL'],
+    'kb.nationalToggle': [kb.nat, '0'],
     'kb.countryFromRow': [kb.country, 'United States'],
-    'kb.note': [kb.note, 'Built 3 terms.'],
+    'kb.note': [kb.note, 'Built 3 terms. · 4 terms added by expansion.'],
     'kb.head': [kb.head, 'Keyword list (3 terms)'],
     'kb.counts': [kb.counts.join(','), '1,1,1'],
     'kb.terms': [kb.terms.join(' / '),
@@ -207,7 +240,7 @@ const CFG = {
     'kb.widenText': [kb.widenText, 'One term is 77% of measured demand.'],
     'kb.srcTags': [srcTags.join(','), '[seed],[grid],[site]'],
     // steps 2-4
-    'run.order': [seq.slice(2).join(','), '/api/metrics,/api/rankings,/api/price'],
+    'run.order': [seq.slice(6).join(','), '/api/metrics,/api/rankings,/api/price'],
     'run.headTerms': [(metCall.body.head || []).join(','), 'dental implants'],
     'run.rankBatched': [rankCalls.length, 1],
     'run.rankBatchSize': [(rankCalls[0].body.batch || []).length, 3],
@@ -225,8 +258,19 @@ const CFG = {
       'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
     'res.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
     'res.folds': [res.folds.join(' / '),
-      'Sent to the IO — 3 fields / Keyword table — 3 terms'
-      + ' / Sent to the proposal — 3 fields'],
+      'What goes where / Line item payload — 3 fields / Keyword table — 3 terms'
+      + ' / Proposal payload — 3 fields'],
+    'send.sections': [res.sendSections.join(' / '),
+      'Order & scope / Client price / Add-on markets / Partner cost'
+      + ' / Keywords & measurement / List insights'],
+    'send.priceGoesBoth': [res.packageRow.join(' | '),
+      'Package — per tierpackage | Core SEO: $5,450 · Add-on markets: $1,200 | ● | ●'],
+    'send.brandProposalOnly': [res.brandRow.slice(2).join(' | '), '– | ●'],
+    'send.missingIsNamed': [res.serpRow[1], 'not captured'],
+    'send.missingIsFlagged': [res.serpIsGap, true],
+    'send.insightsAreScreenOnly': [res.insightRow.slice(2).join(' | '), '– | –'],
+    'send.insightIsNotAGap': [res.insightIsGap, false],
+    'send.counts': [/^Line item \d+ of \d+ · Proposal \d+ of \d+/.test(res.foot), true],
     'res.rankRows': [res.rankRows.join(' // '),
       'dental implants | 3,600 | 4 // dental implants boca raton | 880 | Not Found'
       + ' // affordable dental implants near me | 210 | Not Found'],
@@ -247,12 +291,18 @@ const CFG = {
     'cfg.tierRows': [cfg.tierRows, 4],
     'cfg.bracketRows': [cfg.bracketRows, 3],
     'cfg.openTopIsBlank': [cfg.openTopBlank, ''],
-    'cfg.postsNested': [(posted.body.geo_anchor || {}).single_city, '2400'],
-    'cfg.postsFlat': [posted.body.cpc_adder_cap, '1500'],
-    'cfg.postsTiers': [JSON.stringify(posted.body.zero_ranking_tiers),
-      '[[80,7],[65,4],[50,2],[0,0]]'],
-    'cfg.postsBrackets': [JSON.stringify(posted.body.volume_brackets),
-      '[[10000,20000,0.0702],[20000,35000,0.0439],[35000,null,0.0351]]'],
+    // AN EDIT PRICES THIS QUOTE, NOT THE SESSION: nothing is posted to
+    // /api/config, and only what moved rides along on the pipeline calls.
+    'cfg.nothingPostedToSession': [calls.filter(c => c.url === '/api/config'
+      && c.body && Object.keys(c.body).length).length, 0],
+    'cfg.overlayOnThePrice': [(priceCall.body.cfg || {}).cpc_adder_cap, '1500'],
+    'cfg.overlayKeepsTheGroupWhole': [JSON.stringify((priceCall.body.cfg || {}).geo_anchor),
+      JSON.stringify({single_city: '2400', contiguous_region: '1850',
+        non_contiguous_region: '2050', statewide: '2100', nationwide: '1800'})],
+    'cfg.overlayIsOnlyWhatMoved': [Object.keys(priceCall.body.cfg || {}).sort().join(','),
+      'cpc_adder_cap,geo_anchor'],
+    'cfg.overlayOnStepOne': [Object.keys(kwCall.body.cfg || {}).sort().join(','),
+      'cpc_adder_cap,geo_anchor'],
     // past-SEO fields follow the answer
     'past.count': [past.total, 3],
     'past.shownOnYes': [past.yes, 3],
