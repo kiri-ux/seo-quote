@@ -13,6 +13,7 @@ def _strip(name):
 
 HTML = _strip("index.html")
 REP = _strip("reputation.html")
+ADT = _strip("adtini.html")
 
 
 class H(http.server.SimpleHTTPRequestHandler):
@@ -20,8 +21,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
-        self.wfile.write((REP if self.path.startswith("/reputation")
-                          else HTML).encode())
+        page = (ADT if self.path.startswith("/adtini")
+                else REP if self.path.startswith("/reputation")
+                else HTML)
+        self.wfile.write(page.encode())
 
     def log_message(self, *a):
         pass

@@ -78,8 +78,8 @@ BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
 # to confirm from the header that the deploy had taken. rep_pricing/rep_scan
 # included for the same reason — they carry the rep quote's actual maths.
 FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html",
-                     "templates/reputation.html", "rep_pricing.py",
-                     "rep_scan.py", "rep_docx.py")
+                     "templates/reputation.html", "templates/adtini.html",
+                     "rep_pricing.py", "rep_scan.py", "rep_docx.py")
 
 def _source_fingerprint():
     import hashlib
@@ -17306,6 +17306,14 @@ def api_rep_reviews_collect():
 @app.route("/reputation")
 def reputation():
     return render_template("reputation.html", build=BUILD_STR)
+
+
+@app.route("/adtini")
+def adtini_form():
+    """THE FORM AS ADTINI WILL DRAW IT. A third tab so the shape can be agreed
+    against a screenshot before either working tool is touched. Nothing here
+    posts anywhere."""
+    return render_template("adtini.html", build=BUILD_STR)
 
 @app.route("/api/rep_config", methods=["GET"])
 @_json_error_guard
