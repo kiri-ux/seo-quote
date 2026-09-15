@@ -284,3 +284,39 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 .widen td:last-child{text-align:right;color:var(--muted)}
 .pill.pressed{background:var(--orange)}
 #paneCfg .grid{grid-template-columns:1fr 1fr}
+
+/* ---- quote results, inside a product row -------------------------------- */
+.legacy{margin-left:auto;align-self:center;font-size:11.5px;color:#9FB3CC;
+  letter-spacing:.02em;padding-right:4px}
+.legacy a{display:inline;padding:0 4px;color:#CFE0F2;text-decoration:underline}
+.rowmsg{font-size:12.5px;color:var(--muted)}
+.rowmsg.err{color:#B3261E}
+.qres{border-top:1px solid var(--line);font-size:13px}
+.qres > summary{list-style:none;cursor:pointer;padding:13px 18px;font-weight:600;
+  color:var(--navy);display:flex;align-items:center;gap:8px}
+.qres > summary::-webkit-details-marker{display:none}
+.qres > summary::before{content:"\25B8";color:var(--muted);font-size:11px;transition:transform .15s}
+.qres[open] > summary::before{transform:rotate(90deg)}
+.qbody{padding:0 18px 18px}
+.qtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.qtile{background:var(--fill);border-radius:12px;padding:12px 14px}
+.qtile small{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--muted)}
+.qtile b{font-family:'Barlow Condensed',system-ui,sans-serif;font-size:24px;
+  font-weight:700;color:var(--navy);line-height:1.2}
+.qfold{background:var(--fill);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.qfold > summary{list-style:none;cursor:pointer;padding:11px 14px;font-size:12.5px;font-weight:600}
+.qfold > summary::-webkit-details-marker{display:none}
+.qfold > summary::before{content:"\25B8";color:var(--muted);font-size:10px;
+  display:inline-block;width:14px;transition:transform .15s}
+.qfold[open] > summary::before{transform:rotate(90deg)}
+.qfold > *:not(summary){margin:0 14px 14px}
+table.kv{width:calc(100% - 28px);border-collapse:collapse;background:var(--card);
+  border-radius:10px;overflow:hidden;font-size:12.5px;min-width:0}
+table.kv th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--muted);padding:8px 12px;border-bottom:1px solid var(--line)}
+table.kv td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.kv tr:last-child td{border-bottom:0}
+table.kv td:first-child{color:var(--muted);width:42%;word-break:break-word}
+table.kv td:nth-child(2){color:var(--text);word-break:break-word}
+.shotimg{display:block;max-width:100%;border-radius:10px;border:1px solid var(--line)}

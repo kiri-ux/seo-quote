@@ -15,12 +15,12 @@
 <header class="app">
   <div class="bar">
     <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
-    <span class="sub">adtini form — preview</span>
+    <span class="sub">adtini</span>
   </div>
   <nav class="tabs">
-    <a href="/">SEO</a>
-    <a href="/reputation">Reputation Mgmt</a>
-    <a href="/adtini" class="on">adtini form</a>
+    <a href="/adtini">Quotes</a>
+    <a href="/adtini/forecast" class="on">Forecast</a>
+    <span class="legacy">legacy <a href="/">SEO</a> <a href="/reputation">Rep Mgmt</a></span>
   </nav>
 </header>
 
@@ -159,9 +159,11 @@
               </select></div>
             <div class="f"><label>Geo scope</label>
               <select id="kbScope">
-                <option>Single City</option><option>Contiguous region</option>
-                <option>Non-contiguous region</option><option>Statewide</option>
-                <option selected>Nationwide</option>
+                <option value="single_city">Single City</option>
+                <option value="contiguous_region">Contiguous region</option>
+                <option value="non_contiguous_region">Non-contiguous region</option>
+                <option value="statewide">Statewide</option>
+                <option value="nationwide">Nationwide</option>
               </select></div>
           </div>
           <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
@@ -196,59 +198,53 @@
   </div>
 </div>
 
-<p class="note">Preview only — nothing here is wired to the pricer. The SEO and Reputation tabs above are still the working tools.</p>
 
 <script>
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = v => (v == null || v === '') ? '—'
+  : '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify(body)});
+  const txt = await r.text();
+  let j = null;
+  try { j = JSON.parse(txt); } catch(e){ throw new Error('HTTP ' + r.status + ' — ' + txt.slice(0,160)); }
+  if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
 
 // A CLIENT'S SAVED QUOTES, ONE ROW EACH. Two products on one client are two
 // rows; two separately saved SEO quotes are also two rows. Versions of one
-// quote live in its History tab, not here.
+// quote live in its History tab.
 const ROWS = [
   {id:'137027', kind:'seo', name:'Search Engine Optimization', data:{
-    brand:"Sage Dental", site:'mysagedental.com',
+    brand:'Sage Dental', site:'mysagedental.com',
     focus:['emergency dentist','dental implants','teeth whitening'],
-    negatives:['orthodontist jobs'],
-    g_city:true, g_county:true, g_state:false, g_country:false,
-    city:'Boca Raton, FL 33487', county:'Palm Beach County',
-    industry:['Healthcare — Dental'], strategy:['Core SEO + AI Search'],
-    goals:['New patient acquisition'], past:1, past_details:'',
-    spend:'$6,200', expand:1, lock:0, national:0, addon:1,
-    markets:8, markup:'35%'}},
-  {id:'137031', kind:'seo', name:'Search Engine Optimization', data:{
-    brand:"Sage Dental", site:'mysagedental.com',
-    focus:['pediatric dentist','kids dental care'],
     negatives:[], g_city:true, g_county:false, g_state:false, g_country:false,
-    city:'Atlanta, GA 30309', county:'',
-    industry:['Healthcare — Dental'], strategy:['Core SEO'],
-    goals:['Open second location'], past:0, past_details:'',
-    spend:'', expand:1, lock:1, national:0, addon:0,
-    markets:3, markup:'35%'}},
+    city:'Boca Raton, FL', county:'',
+    industry:['Healthcare'], strategy:['Core SEO'], goals:['New patient acquisition'],
+    past:1, past_details:'', spend:'$6,200',
+    expand:1, lock:0, national:0, addon:1, markets:8, markup:'35'}},
+  {id:'137031', kind:'seo', name:'Search Engine Optimization', data:{
+    brand:'Sage Dental', site:'mysagedental.com',
+    focus:['pediatric dentist'], negatives:[],
+    g_city:true, g_county:false, g_state:false, g_country:false,
+    city:'Atlanta, GA', county:'',
+    industry:['Healthcare'], strategy:['Core SEO'], goals:[], past:0, past_details:'',
+    spend:'', expand:1, lock:1, national:0, addon:0, markets:3, markup:'35'}},
   {id:'137028', kind:'orm', name:'Online Reputation Management', data:{
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
     reviews:161, locations:3, std:2, prem:1, volume:8000,
-    country:'United States', autosuggest:1, markup:'35%',
-    ov_review:'', ov_monthly:'', ov_std:'', ov_prem:''}},
+    country:'United States', autosuggest:1, markup:'35'}},
 ];
 
-const HISTORY = [
-  ['Sep 14, 2026, 2:32:28 PM', '{ "role":…', '{ "CLIENT_TOTAL_ESTIMAT…', 'adtini', ''],
-  ['Sep 14, 2026, 2:30:49 PM', '{ "role":…', '{ "CLIENT_TOTAL_ESTIMAT…', 'Gemini', ''],
-  ['Sep 14, 2026, 2:28:01 PM', 'You are an e…', '{ "CLIENT_TOTAL_ESTIMAT…', 'Claude', ''],
-];
-
-function histTable(){
-  return '<div class="hist scroller"><table><thead><tr>'
-    + ['Date Forecasted','Forecast Prompt','Generated Response','Type','Error',''].map(h=>`<th>${h}</th>`).join('')
-    + '</tr></thead><tbody>'
-    + HISTORY.map(r => '<tr>' + r.map(c=>`<td>${esc(c)}</td>`).join('')
-        + '<td><button class="btn-pub" type="button">Publish To RZ</button> <span class="chev">&#9662;</span></td></tr>').join('')
-    + '</tbody></table></div>';
-}
-
-$('prods').innerHTML = ROWS.map((r, i) => `
+// ---------------------------------------------------------------- rows
+function rowHtml(r, i){
+  return `
   <div class="prod" data-row="${i}">
     <h4>${r.name} &ndash; <u>${r.id}</u> <span class="mag">&#9906;</span></h4>
     <div class="ptabs">
@@ -256,71 +252,125 @@ $('prods').innerHTML = ROWS.map((r, i) => `
       <button type="button" data-tab="history">History</button>
     </div>
     <div class="pbody">
-      <div class="prow" data-pane="details">
-        <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Preview</button>
-        <div class="right">
-          <span class="spark">&#10022;</span><button class="btn adtini" type="button" data-open="${i}" data-view="form">adtini Forecast</button>
+      <div data-pane="details">
+        <div class="prow">
+          <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Preview</button>
+          <span class="rowmsg" data-msg="${i}"></span>
+          <div class="right">
+            <span class="spark">&#10022;</span>
+            <button class="btn adtini" type="button" data-open="${i}" data-view="form">adtini Forecast</button>
+          </div>
         </div>
+        <div data-results="${i}">${resultsHtml(r)}</div>
       </div>
-      <div data-pane="history" hidden>${histTable()}</div>
+      <div data-pane="history" hidden>${histHtml(r)}</div>
     </div>
-  </div>`).join('');
+  </div>`;
+}
+function draw(){ $('prods').innerHTML = ROWS.map(rowHtml).join(''); }
 
-// Details / History
-$('prods').addEventListener('click', e => {
-  const t = e.target.closest('.ptabs button');
-  if (t) {
-    const prod = t.closest('.prod');
-    prod.querySelectorAll('.ptabs button').forEach(x => x.classList.toggle('on', x === t));
-    prod.querySelectorAll('[data-pane]').forEach(p =>
-      p.hidden = p.dataset.pane !== t.dataset.tab);
-    return;
-  }
-  const o = e.target.closest('[data-open]');
-  if (o) open(+o.dataset.open, o.dataset.view || 'form');
-});
-
-// ---- the form is real: it loads a row, edits it, and writes it back -------
-let ROW = null;
-
-function chipbox(box, list){
-  box.innerHTML = list.map(v =>
-    `<span class="chip">${esc(v)} <b>&times;</b></span>`).join('')
-    + '<input class="chipin" type="text" placeholder="add…" '
-    + 'style="flex:1;min-width:110px;background:none;border:0;outline:none;'
-    + 'font-family:inherit;font-size:13px;padding:2px;min-height:0">';
+function histHtml(r){
+  const h = r.history || [];
+  if (!h.length) return '<p class="hint" style="padding:16px 18px;margin:0">No runs yet.</p>';
+  return '<div class="hist scroller"><table><thead><tr>'
+    + ['Date Forecasted','Forecast Prompt','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
+    + '</tr></thead><tbody>'
+    + h.map(x => `<tr><td>${esc(x.when)}</td><td>${esc(x.prompt)}</td>`
+        + `<td>${esc(x.resp)}</td><td>adtini</td><td>${esc(x.error || '')}</td>`
+        + '<td><button class="btn-pub" type="button">Publish To RZ</button> <span class="chev">&#9662;</span></td></tr>').join('')
+    + '</tbody></table></div>';
 }
 
+// EVERYTHING THAT LEAVES THE QUOTE, ON THE QUOTE. Collapsed, because it is a
+// contract to check rather than a thing to read every time.
+function kvTable(obj, skip){
+  const rows = Object.keys(obj || {}).filter(k => !(skip || []).includes(k)).map(k => {
+    let v = obj[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      v = Object.keys(v).map(t => `${t}: ${typeof v[t] === 'number' ? money(v[t]) : esc(v[t])}`).join(' · ');
+    } else if (Array.isArray(v)) {
+      v = v.length ? v.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(', ') : '—';
+    } else if (typeof v === 'number' && /price|cost|budget|dollars|monthly|total/.test(k)) {
+      v = money(v);
+    }
+    return `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`;
+  });
+  return `<table class="kv">${rows.join('')}</table>`;
+}
+
+function resultsHtml(r){
+  if (!r.result) return '';
+  const p = r.result.pricing || {};
+  const h = p.handoff || {};
+  const kw = r.kw || {};
+  const all = kw.all || [];
+  const tiers = h.package || {};
+  // What the document prints, as the pricer returned it. The handoff is the
+  // IO's copy and has its own fold.
+  const prop = {};
+  Object.keys(p).forEach(k => {
+    const v = p[k];
+    if (k === 'handoff' || v === null || v === undefined || v === '') return;
+    prop[k] = v;
+  });
+  return `
+  <details class="qres" open>
+    <summary>Quote results &mdash; ${esc(r.result.headline || '')}</summary>
+    <div class="qbody">
+      <div class="qtiles">
+        ${Object.keys(tiers).map(t =>
+          `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b></div>`).join('')}
+      </div>
+
+      <details class="qfold"><summary>Sent to the IO &mdash; ${Object.keys(h).length} fields</summary>
+        ${kvTable(h)}</details>
+
+      <details class="qfold"><summary>Keyword table &mdash; ${all.length} terms</summary>
+        <table class="kv"><tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
+        ${all.map(x => {
+          const rk = (r.result.ranks || {})[String(x.kw || '').toLowerCase()];
+          return `<tr><td>${esc(x.kw)}</td><td>${(x.vol || 0).toLocaleString()}</td>`
+               + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
+        }).join('')}</table></details>
+
+      <details class="qfold">
+        <summary>Sent to the proposal &mdash; ${Object.keys(prop).length} fields</summary>
+        ${kvTable(prop)}
+        ${r.result.shot ? `<img class="shotimg" src="${r.result.shot}" alt="SERP capture">` : ''}
+      </details>
+    </div>
+  </details>`;
+}
+
+// ---------------------------------------------------------------- modal
+let ROW = null, VIEW = 'form';
+
+function chipbox(box, list){
+  box.innerHTML = list.map(v => `<span class="chip">${esc(v)} <b>&times;</b></span>`).join('')
+    + '<input class="chipin" type="text" placeholder="add…" style="flex:1;min-width:110px;'
+    + 'background:none;border:0;outline:none;font-family:inherit;font-size:13px;padding:2px;min-height:0">';
+}
 function load(form, data){
   form.querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k, v = data[k];
     if (el.classList.contains('yn')) {
       el.querySelectorAll('button').forEach(b =>
         b.classList.toggle('on', String(b.dataset.v) === String(v ? 1 : 0)));
-    } else if (el.type === 'checkbox') {
-      el.checked = !!v;
-    } else {
-      el.value = v === undefined || v === null ? '' : v;
-    }
+    } else if (el.type === 'checkbox') { el.checked = !!v; }
+    else { el.value = v == null ? '' : v; }
   });
   form.querySelectorAll('[data-chips]').forEach(box =>
     chipbox(box, (data[box.dataset.chips] || []).slice()));
 }
-
 function collect(form){
   const out = {};
   form.querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k;
     if (el.classList.contains('yn')) {
-      const on = el.querySelector('button.on');
-      out[k] = on ? +on.dataset.v : 0;
-    } else if (el.type === 'checkbox') {
-      out[k] = el.checked;
-    } else if (el.type === 'number') {
-      out[k] = el.value === '' ? '' : +el.value;
-    } else {
-      out[k] = el.value;
-    }
+      const on = el.querySelector('button.on'); out[k] = on ? +on.dataset.v : 0;
+    } else if (el.type === 'checkbox') { out[k] = el.checked; }
+    else if (el.type === 'number') { out[k] = el.value === '' ? '' : +el.value; }
+    else { out[k] = el.value; }
   });
   form.querySelectorAll('[data-chips]').forEach(box => {
     out[box.dataset.chips] = [...box.querySelectorAll('.chip')]
@@ -328,24 +378,20 @@ function collect(form){
   });
   return out;
 }
+const formOf = r => r.kind === 'seo' ? $('fseo') : $('form');
 
 function open(i, view){
   ROW = i;
   const r = ROWS[i];
   $('fseo').hidden = r.kind !== 'seo';
   $('form').hidden = r.kind !== 'orm';
-  load(r.kind === 'seo' ? $('fseo') : $('form'), r.data);
-  cfgLoad(r);
-  kbLoad(r);
+  load(formOf(r), r.data);
+  cfgLoad(r); kbLoad(r);
   $('saved').textContent = '';
   $('scrim').hidden = false;
   document.body.style.overflow = 'hidden';
   show(view || 'form');
 }
-
-// THREE VIEWS, ONE MODAL. Keyword Builder and the per-quote config are panes
-// here rather than pages of their own -- the way Category Mixer swaps the body
-// of the Regenerate Forecast sheet instead of navigating away.
 function show(view){
   VIEW = view;
   $('paneForm').hidden = view !== 'form';
@@ -354,153 +400,268 @@ function show(view){
   $('kwBuilder').classList.toggle('pressed', view === 'kw');
   $('gen').textContent = view === 'kw' ? 'Apply to forecast' : 'Generate Forecast';
 }
-let VIEW = 'form';
-function close(){
-  $('scrim').hidden = true;
-  document.body.style.overflow = '';
-}
+function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) close(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('scrim').hidden) close(); });
 
-// Yes / No
 document.addEventListener('click', e => {
   const b = e.target.closest('.yn button');
-  if (!b) return;
-  b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-});
-
-// chips: × removes, Enter adds
-document.addEventListener('click', e => {
+  if (b) b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
   const x = e.target.closest('.chip b');
   if (x) x.closest('.chip').remove();
+  const box = e.target.closest('.box');
+  if (box && !e.target.closest('.chip')) { const i = box.querySelector('.chipin'); if (i) i.focus(); }
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.classList.contains('chipin')) return;
   e.preventDefault();
   const v = e.target.value.trim();
   if (!v) return;
-  e.target.insertAdjacentHTML('beforebegin',
-    `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+  e.target.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
   e.target.value = '';
 });
-document.addEventListener('click', e => {
-  const box = e.target.closest('.box');
-  if (box && !e.target.closest('.chip')) {
-    const inp = box.querySelector('.chipin');
-    if (inp) inp.focus();
-  }
-});
 
-// save writes back to the row, so reopening shows the edit
-function saveRow(){
-  const r = ROWS[ROW];
-  r.data = collect(r.kind === 'seo' ? $('fseo') : $('form'));
-  if (VIEW === 'cfg') r.cfg = cfgCollect();
-  if (VIEW === 'kw') {
-    r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
-      .map(c => c.firstChild.textContent.trim());
-  }
-  return r;
-}
-$('save').onclick = () => {
-  const r = saveRow();
-  const n = Object.keys(r.data).length;
-  $('saved').textContent = `Saved ${n} fields to ${r.name} – ${r.id}.`;
-};
-$('gen').onclick = () => {
-  const r = saveRow();
-  if (VIEW === 'kw') {
-    $('saved').textContent = `Applied ${r.data.focus.length} focus terms.`;
-    show('form');
-    load(r.kind === 'seo' ? $('fseo') : $('form'), r.data);
+$('prods').addEventListener('click', e => {
+  const t = e.target.closest('.ptabs button');
+  if (t) {
+    const prod = t.closest('.prod');
+    prod.querySelectorAll('.ptabs button').forEach(x => x.classList.toggle('on', x === t));
+    prod.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
     return;
   }
-  $('saved').textContent = `Queued ${r.name} – ${r.id}.`;
-  setTimeout(close, 600);
-};
-$('revert').onclick = $('reset').onclick = () => {
-  const r = ROWS[ROW];
-  load(r.kind === 'seo' ? $('fseo') : $('form'), r.data);
-  $('saved').textContent = 'Reverted.';
-};
+  const o = e.target.closest('[data-open]');
+  if (o) open(+o.dataset.open, o.dataset.view || 'form');
+});
 
-$('kwBuilder').onclick = () => show(VIEW === 'kw' ? 'form' : 'kw');
-
-// ---- per-quote config ----------------------------------------------------
+// ---------------------------------------------------------------- config
 const CFG_SEO = [
-  ['markup', 'Markup %', 'text', ''],
-  ['min_term', 'Minimum term (months)', 'number', ''],
-  ['ov_core', 'Override partner Core SEO', 'number', 'formula'],
-  ['ov_ai', 'Override partner AI Search', 'number', 'formula'],
-  ['ov_addon', 'Override partner add-on market', 'number', 'formula'],
-  ['ov_reason', 'Reason for the override', 'text', 'required with any override'],
+  ['markup','Markup %','text',''], ['min_term','Minimum term (months)','number',''],
+  ['ov_core','Override partner Core SEO','number','formula'],
+  ['ov_ai','Override partner AI Search','number','formula'],
+  ['ov_addon','Override partner add-on market','number','formula'],
+  ['ov_reason','Reason for the override','text','required with any override'],
 ];
 const CFG_ORM = [
-  ['markup', 'Markup %', 'text', ''],
-  ['ov_review', 'Review removal — hard $/review', 'number', 'formula'],
-  ['ov_monthly', 'Monthly cost — hard $/mo', 'number', 'formula'],
-  ['ov_std', 'Standard site removal — hard $/page', 'number', 'formula'],
-  ['ov_prem', 'Premium site removal — hard $/page', 'number', 'formula'],
-  ['ov_reason', 'Reason for the override', 'text', 'required with any override'],
+  ['markup','Markup %','text',''],
+  ['ov_review','Review removal — hard $/review','number','formula'],
+  ['ov_monthly','Monthly cost — hard $/mo','number','formula'],
+  ['ov_std','Standard site removal — hard $/page','number','formula'],
+  ['ov_prem','Premium site removal — hard $/page','number','formula'],
+  ['ov_reason','Reason for the override','text','required with any override'],
 ];
 function cfgLoad(r){
-  const rows = r.kind === 'seo' ? CFG_SEO : CFG_ORM;
   r.cfg = r.cfg || {};
+  const rows = r.kind === 'seo' ? CFG_SEO : CFG_ORM;
   $('cfgGrid').innerHTML = rows.map(([k, label, type, ph]) => `
-    <div class="f${k === 'ov_reason' ? ' wide' : ''}">
-      <label>${label}</label>
+    <div class="f${k === 'ov_reason' ? ' wide' : ''}"><label>${label}</label>
       <input type="${type}" data-c="${k}" placeholder="${ph}"
-             value="${r.cfg[k] === undefined ? (k === 'markup' ? (r.data.markup || '') : '') : r.cfg[k]}">
-    </div>`).join('');
+        value="${esc(r.cfg[k] === undefined ? (k === 'markup' ? (r.data.markup || '') : '') : r.cfg[k])}"></div>`).join('');
 }
-function cfgCollect(){
+const cfgCollect = () => {
   const out = {};
-  $('cfgGrid').querySelectorAll('[data-c]').forEach(el => { out[el.dataset.c] = el.value; });
+  $('cfgGrid').querySelectorAll('[data-c]').forEach(el => out[el.dataset.c] = el.value);
   return out;
-}
-
-// ---- keyword builder, in the modal --------------------------------------
-const KB = {
-  ultra: [['emergency dentist boca raton', 880, 'geo'], ['dental implants boca raton', 720, 'geo'],
-          ['dentist near me', 480, 'ideas'], ['teeth whitening boca raton', 320, 'geo'],
-          ['cosmetic dentist boca raton', 210, 'geo'], ['same day crowns', 170, 'ideas']],
-  competitive: [['pediatric dentist boca raton', 140, 'geo'], ['invisalign boca raton', 110, 'geo'],
-                ['root canal cost', 90, 'ideas'], ['dental bridge', 70, 'suggest'],
-                ['tooth extraction', 70, 'ideas'], ['dentures boca raton', 50, 'geo'],
-                ['wisdom teeth removal', 40, 'ideas'], ['dental crown cost', 30, 'suggest']],
-  long_tail: [['how much do dental implants cost in florida', 40, 'suggest'],
-              ['best emergency dentist open saturday', 20, 'gen'],
-              ['does insurance cover teeth whitening', 10, 'gen']],
 };
-const KBL = {ultra: 'Ultra Competitive', competitive: 'Competitive', long_tail: 'Long Tail'};
+
+// ---------------------------------------------------------------- step 1
+const KBL = {ultra:'Ultra Competitive', competitive:'Competitive', long_tail:'Long Tail'};
+
+function geoOf(d){
+  const g = [];
+  if (d.g_city && d.city) g.push(d.city);
+  if (d.g_county && d.county) g.push(d.county);
+  return g;
+}
+// THE SCOPE ON SCREEN IS THE SCOPE THAT PRICES. The builder's dropdown used to
+// be decoration -- the band came off the form's checkboxes -- so the pane could
+// read Nationwide while the quote priced a single city.
+function bandOf(d){
+  if (d.scope) return d.scope;
+  if (d.national || d.g_country || !geoOf(d).length) return 'nationwide';
+  if (d.g_state) return 'statewide';
+  if (d.g_county) return 'contiguous_region';
+  return 'single_city';
+}
+function stateOf(d){
+  const m = String(d.city || '').match(/,\s*([A-Za-z]{2})\s*$/);
+  return m ? m[1].toUpperCase() : '';
+}
 
 function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
-  kbDraw();
+  $('kbScope').value = bandOf(r.data);
+  $('kbCountry').value = r.data.country || 'United States';
+  kbDraw(r);
 }
-function kbDraw(){
+function kbDraw(r){
+  r = r || ROWS[ROW];
+  const kw = r.kw;
+  if (!kw) { $('kbCols').innerHTML = ''; $('kbHead').textContent = 'Keyword list';
+             $('kbNote').textContent = 'Not built yet.'; $('kbWiden').hidden = true; return; }
   const src = $('kbSrc').checked;
-  $('kbCols').innerHTML = Object.keys(KB).map(k => `
-    <div class="col">
-      <h5>${KBL[k]}<span>${KB[k].length}</span></h5>
-      <ul>${KB[k].map(([t, v, s]) =>
-        `<li><span>${esc(t)}</span>${src ? `<span class="s">[${s}]</span>` : ''}<span class="v">${v.toLocaleString()}</span></li>`
-      ).join('')}</ul>
-    </div>`).join('');
-  const all = Object.values(KB).flat();
-  const total = all.reduce((s, x) => s + x[1], 0);
+  $('kbCols').innerHTML = ['ultra','competitive','long_tail'].map(k => `
+    <div class="col"><h5>${KBL[k]}<span>${(kw[k] || []).length}</span></h5>
+      <ul>${(kw[k] || []).map(x =>
+        `<li><span>${esc(x.kw)}</span>${src && x.src ? `<span class="s">[${esc(x.src)}]</span>` : ''}`
+        + `<span class="v">${(x.vol || 0).toLocaleString()}</span></li>`).join('')}</ul></div>`).join('');
+  const all = kw.all || [];
+  const total = all.reduce((s, x) => s + (x.vol || 0), 0);
   $('kbHead').textContent = `Keyword list (${all.length} terms)`;
   $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${$('kbCountry').value}`;
-  $('kbWiden').hidden = total >= 2000;
-  $('kbWiden').innerHTML = total >= 2000 ? ''
-    : `<b>${total.toLocaleString()}/mo across ${all.length} measured terms.</b>
-       <table><tr><td>dental marketing software</td><td>480</td></tr>
-       <tr><td>patient scheduling software</td><td>210</td></tr></table>`;
+  const w = kw.widen;
+  $('kbWiden').hidden = !(w && w.show);
+  $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';
 }
-$('kbSrc').onchange = kbDraw;
-$('kbCountry').onchange = kbDraw;
-$('kbBuild').onclick = () => { kbDraw(); $('saved').textContent = 'Built.'; };
+
+$('kbBuild').onclick = async () => {
+  const r = ROWS[ROW];
+  r.data = collect(formOf(r));
+  r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+    .map(c => c.firstChild.textContent.trim());
+  const d = r.data;
+  d.scope = $('kbScope').value;
+  d.country = $('kbCountry').value;
+  const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
+                brand: d.brand, domain: d.site, negatives: d.negatives || [],
+                national_demand: bandOf(d) === 'nationwide',
+                country: $('kbCountry').value === 'United States' ? 'US'
+                       : $('kbCountry').value === 'United Kingdom' ? 'GB'
+                       : $('kbCountry').value === 'Canada' ? 'CA'
+                       : $('kbCountry').value === 'Australia' ? 'AU'
+                       : $('kbCountry').value === 'Ireland' ? 'IE' : 'NZ'};
+  $('kbBuild').disabled = true;
+  $('saved').textContent = 'Building the list…';
+  try {
+    const kw = await post('/api/keywords', base);
+    $('saved').textContent = 'Refining…';
+    let ref = kw;
+    try {
+      ref = await post('/api/refine', Object.assign({}, base, {
+        ultra: kw.ultra, competitive: kw.competitive, long_tail: kw.long_tail,
+        site_terms: kw.site_terms || [], market_vocab: kw.market_vocab || [],
+        market_pool: kw.market_pool || [], geo_scope: bandOf(d),
+        industry: (d.industry || []).join(', '),
+        national_demand: bandOf(d) === 'nationwide'}));
+    } catch (e) { $('saved').textContent = 'Refine failed — raw list kept. ' + e.message; }
+    r.kw = ref && ref.all ? ref : kw;
+    kbDraw(r);
+    if (!$('saved').textContent.startsWith('Refine failed'))
+      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`;
+  } catch (e) {
+    $('saved').textContent = e.message;
+  }
+  $('kbBuild').disabled = false;
+};
+$('kbSrc').onchange = () => kbDraw();
+$('kbCountry').onchange = () => kbDraw();
+
+// ---------------------------------------------------------------- steps 2-4
+async function generate(){
+  const r = ROWS[ROW];
+  r.data = collect(formOf(r));
+  r.cfg = VIEW === 'cfg' ? cfgCollect() : (r.cfg || {});
+  const d = r.data;
+  if (!r.kw || !(r.kw.all || []).length) {
+    $('saved').textContent = 'Build the keyword list first — Keyword Builder.';
+    show('kw'); return;
+  }
+  const geo = geoOf(d), st = stateOf(d), band = bandOf(d);
+  const industry = (d.industry || []).join(', ');
+  const common = {geo_values: geo, state: st, industry, geo_scope: band,
+                  national_demand: band === 'nationwide', brand: d.brand, domain: d.site};
+  $('gen').disabled = true;
+  const say = t => { $('saved').textContent = t; };
+  try {
+    say('Step 2 — scoring competition…');
+    const met = await post('/api/metrics', Object.assign({}, common,
+      {head: (r.kw.head || r.kw.ultra || []).map(x => x.kw)}));
+
+    say('Step 3 — checking rankings…');
+    const all = r.kw.all || [];
+    const ranks = {};
+    let ranked = 0, errored = 0;
+    for (let i = 0; i < all.length; i += 10) {
+      const batch = all.slice(i, i + 10).map(x => ({kw: x.kw}));
+      const rk = await post('/api/rankings', Object.assign({}, common, {batch}));
+      (rk.results || []).forEach(x => {
+        ranks[String(x.kw).toLowerCase()] = x.pos;
+        if (x.ranked_top) ranked++;
+        if (x.error) errored++;
+      });
+      say(`Step 3 — checking rankings… ${Math.min(i + 10, all.length)}/${all.length}`);
+    }
+    // A FAILED SERP CALL IS NOT A KEYWORD THAT DOESN'T RANK. Errored rows leave
+    // the denominator, and a run where every call failed prices with no ranking
+    // adjustment at all rather than the maximum uplift.
+    const checkedOk = Math.max(all.length - errored, 0);
+    const unmeasured = all.length > 0 && checkedOk === 0;
+    const pct_not_ranking = checkedOk
+      ? Math.round((1 - ranked / checkedOk) * 100) : null;   // 0-100, not a fraction
+
+    say('Step 4 — pricing…');
+    const total_volume = r.kw.total_volume != null
+      ? Number(r.kw.total_volume)
+      : all.reduce((s, x) => s + (Number(x.vol) || 0), 0);
+    const price = await post('/api/price', {
+      band, adder: met.adder || 0,
+      zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10,
+      addon_markets: d.addon ? (+d.markets || 0) : 0,
+      markup_pct: parseFloat(String(r.cfg.markup || d.markup || 35)) / 100,
+      pct_not_ranking, total_volume, industry,
+      national_demand: band === 'nationwide',
+      base_override: r.cfg.ov_core || '', pageone_rank: met.pageone_rank});
+
+    const pkg = (price.handoff || {}).package || {};
+    const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';
+    r.result = {pricing: price, ranks, headline:
+      `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
+      + (pct_not_ranking == null ? 'ranking unmeasured' : `${100 - pct_not_ranking}% ranking`)};
+    r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,
+                  resp: JSON.stringify(price.handoff || {}).slice(0, 40) + '…'}]
+                .concat(r.history || []);
+    draw();
+    say('');
+    close();
+  } catch (e) {
+    say(e.message);
+  }
+  $('gen').disabled = false;
+}
+
+$('save').onclick = () => {
+  const r = ROWS[ROW];
+  r.data = collect(formOf(r));
+  if (VIEW === 'cfg') r.cfg = cfgCollect();
+  if (VIEW === 'kw') r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+    .map(c => c.firstChild.textContent.trim());
+  $('saved').textContent =
+    `Saved ${Object.keys(r.data).length} fields to ${r.name} – ${r.id}.`;
+};
+$('gen').onclick = () => {
+  if (VIEW === 'kw') {
+    const r = ROWS[ROW];
+    r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
+    if (r.kw) {
+      r.data.focus = (r.kw.all || []).map(x => x.kw).slice(0, 60);
+    }
+    load(formOf(r), r.data);
+    show('form');
+    $('saved').textContent = `Applied ${r.data.focus.length} focus terms.`;
+    return;
+  }
+  generate();
+};
+$('kwBuilder').onclick = () => show(VIEW === 'kw' ? 'form' : 'kw');
+$('revert').onclick = $('reset').onclick = () => {
+  const r = ROWS[ROW];
+  load(formOf(r), r.data);
+  cfgLoad(r);
+  $('saved').textContent = 'Reverted.';
+};
+
+draw();
 </script>
 </body>
 </html>
