@@ -43,12 +43,13 @@
       <h2>Regenerate Forecast</h2>
       <div class="toppills">
         <button class="pill icon" type="button" id="reset" title="Revert">&#8635;</button>
-        <button class="pill solid" type="button" id="kwBuilder">&#9998; Keyword Builder</button>
-        <span class="i" title="Keywords are generated on their own page">i</span>
+        <button class="pill solid" type="button" id="kwBuilder" data-view="kw">&#9998; Keyword Builder</button>
+        <span class="i" title="Keywords are built in this modal">i</span>
         <button class="pill ghost" type="button" id="revert">Revert to Default</button>
       </div>
     </div>
 
+    <div id="paneForm">
     <!-- ---------------- SEO ---------------- -->
     <form id="fseo">
       <div class="grid">
@@ -139,13 +140,52 @@
           <div class="yn" data-k="autosuggest"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
 
-        <div class="f wide"><div class="geohead">Manual hard-cost overrides</div></div>
-        <div class="f"><label>Review removal — hard $/review</label><input type="number" data-k="ov_review" placeholder="formula"></div>
-        <div class="f"><label>Monthly cost — hard $/mo</label><input type="number" data-k="ov_monthly" placeholder="formula"></div>
-        <div class="f"><label>Standard site removal — hard $/page</label><input type="number" data-k="ov_std" placeholder="formula"></div>
-        <div class="f"><label>Premium site removal — hard $/page</label><input type="number" data-k="ov_prem" placeholder="formula"></div>
       </div>
     </form>
+    </div>
+
+    <!-- ---------------- keyword builder, in the same modal --------------- -->
+    <div id="paneKw" hidden>
+      <div class="kbwrap">
+        <section class="kbside">
+          <h4>Seed terms</h4>
+          <p class="hint">What the client sells. Everything below is built from these.</p>
+          <div class="box" data-chips="seeds"></div>
+          <div class="kbrow">
+            <div class="f"><label>Country</label>
+              <select id="kbCountry">
+                <option>United States</option><option>United Kingdom</option><option>Canada</option>
+                <option>Australia</option><option>Ireland</option><option>New Zealand</option>
+              </select></div>
+            <div class="f"><label>Geo scope</label>
+              <select id="kbScope">
+                <option>Single City</option><option>Contiguous region</option>
+                <option>Non-contiguous region</option><option>Statewide</option>
+                <option selected>Nationwide</option>
+              </select></div>
+          </div>
+          <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
+        </section>
+        <section class="kbmain">
+          <div class="paneltop">
+            <h4 id="kbHead">Keyword list</h4>
+            <label class="srctog"><input type="checkbox" id="kbSrc"> sources</label>
+          </div>
+          <p class="hint" id="kbNote"></p>
+          <div class="cols" id="kbCols"></div>
+          <div class="widen" id="kbWiden" hidden></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------------- per-quote config -------------------------------- -->
+    <div id="paneCfg" hidden>
+      <form id="fcfg">
+        <p class="hint" style="padding:0 0 12px">Applies to this quote only. Every dollar here is
+          partner hard cost; client price is cost &divide; (1 &minus; markup).</p>
+        <div class="grid" id="cfgGrid"></div>
+      </form>
+    </div>
 
     <div class="foot">
       <span id="saved" style="color:var(--muted);font-size:12.5px;margin-right:auto;padding-left:22px"></span>
@@ -217,11 +257,9 @@ $('prods').innerHTML = ROWS.map((r, i) => `
     </div>
     <div class="pbody">
       <div class="prow" data-pane="details">
-        <button class="btn preview" type="button" data-open="${i}">Preview</button>
+        <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Preview</button>
         <div class="right">
-          <span class="spark">&#10022;</span><button class="btn gemini" type="button">Gemini Forecast</button>
-          <span class="spark">&#10022;</span><button class="btn claude" type="button">Claude Forecast</button>
-          <span class="spark">&#10022;</span><button class="btn adtini" type="button" data-open="${i}">adtini Forecast</button>
+          <span class="spark">&#10022;</span><button class="btn adtini" type="button" data-open="${i}" data-view="form">adtini Forecast</button>
         </div>
       </div>
       <div data-pane="history" hidden>${histTable()}</div>
@@ -239,7 +277,7 @@ $('prods').addEventListener('click', e => {
     return;
   }
   const o = e.target.closest('[data-open]');
-  if (o) open(+o.dataset.open);
+  if (o) open(+o.dataset.open, o.dataset.view || 'form');
 });
 
 // ---- the form is real: it loads a row, edits it, and writes it back -------
@@ -291,16 +329,32 @@ function collect(form){
   return out;
 }
 
-function open(i){
+function open(i, view){
   ROW = i;
   const r = ROWS[i];
   $('fseo').hidden = r.kind !== 'seo';
   $('form').hidden = r.kind !== 'orm';
   load(r.kind === 'seo' ? $('fseo') : $('form'), r.data);
+  cfgLoad(r);
+  kbLoad(r);
   $('saved').textContent = '';
   $('scrim').hidden = false;
   document.body.style.overflow = 'hidden';
+  show(view || 'form');
 }
+
+// THREE VIEWS, ONE MODAL. Keyword Builder and the per-quote config are panes
+// here rather than pages of their own -- the way Category Mixer swaps the body
+// of the Regenerate Forecast sheet instead of navigating away.
+function show(view){
+  VIEW = view;
+  $('paneForm').hidden = view !== 'form';
+  $('paneKw').hidden   = view !== 'kw';
+  $('paneCfg').hidden  = view !== 'cfg';
+  $('kwBuilder').classList.toggle('pressed', view === 'kw');
+  $('gen').textContent = view === 'kw' ? 'Apply to forecast' : 'Generate Forecast';
+}
+let VIEW = 'form';
 function close(){
   $('scrim').hidden = true;
   document.body.style.overflow = '';
@@ -342,6 +396,11 @@ document.addEventListener('click', e => {
 function saveRow(){
   const r = ROWS[ROW];
   r.data = collect(r.kind === 'seo' ? $('fseo') : $('form'));
+  if (VIEW === 'cfg') r.cfg = cfgCollect();
+  if (VIEW === 'kw') {
+    r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
+  }
   return r;
 }
 $('save').onclick = () => {
@@ -351,6 +410,12 @@ $('save').onclick = () => {
 };
 $('gen').onclick = () => {
   const r = saveRow();
+  if (VIEW === 'kw') {
+    $('saved').textContent = `Applied ${r.data.focus.length} focus terms.`;
+    show('form');
+    load(r.kind === 'seo' ? $('fseo') : $('form'), r.data);
+    return;
+  }
   $('saved').textContent = `Queued ${r.name} – ${r.id}.`;
   setTimeout(close, 600);
 };
@@ -360,11 +425,82 @@ $('revert').onclick = $('reset').onclick = () => {
   $('saved').textContent = 'Reverted.';
 };
 
-// KEYWORDS ARE BUILT ON THEIR OWN PAGE, the way Category Mixer opens its own.
-$('kwBuilder').onclick = () => {
-  const r = ROWS[ROW];
-  window.location.href = '/adtini/keywords?row=' + encodeURIComponent(r.id);
+$('kwBuilder').onclick = () => show(VIEW === 'kw' ? 'form' : 'kw');
+
+// ---- per-quote config ----------------------------------------------------
+const CFG_SEO = [
+  ['markup', 'Markup %', 'text', ''],
+  ['min_term', 'Minimum term (months)', 'number', ''],
+  ['ov_core', 'Override partner Core SEO', 'number', 'formula'],
+  ['ov_ai', 'Override partner AI Search', 'number', 'formula'],
+  ['ov_addon', 'Override partner add-on market', 'number', 'formula'],
+  ['ov_reason', 'Reason for the override', 'text', 'required with any override'],
+];
+const CFG_ORM = [
+  ['markup', 'Markup %', 'text', ''],
+  ['ov_review', 'Review removal — hard $/review', 'number', 'formula'],
+  ['ov_monthly', 'Monthly cost — hard $/mo', 'number', 'formula'],
+  ['ov_std', 'Standard site removal — hard $/page', 'number', 'formula'],
+  ['ov_prem', 'Premium site removal — hard $/page', 'number', 'formula'],
+  ['ov_reason', 'Reason for the override', 'text', 'required with any override'],
+];
+function cfgLoad(r){
+  const rows = r.kind === 'seo' ? CFG_SEO : CFG_ORM;
+  r.cfg = r.cfg || {};
+  $('cfgGrid').innerHTML = rows.map(([k, label, type, ph]) => `
+    <div class="f${k === 'ov_reason' ? ' wide' : ''}">
+      <label>${label}</label>
+      <input type="${type}" data-c="${k}" placeholder="${ph}"
+             value="${r.cfg[k] === undefined ? (k === 'markup' ? (r.data.markup || '') : '') : r.cfg[k]}">
+    </div>`).join('');
+}
+function cfgCollect(){
+  const out = {};
+  $('cfgGrid').querySelectorAll('[data-c]').forEach(el => { out[el.dataset.c] = el.value; });
+  return out;
+}
+
+// ---- keyword builder, in the modal --------------------------------------
+const KB = {
+  ultra: [['emergency dentist boca raton', 880, 'geo'], ['dental implants boca raton', 720, 'geo'],
+          ['dentist near me', 480, 'ideas'], ['teeth whitening boca raton', 320, 'geo'],
+          ['cosmetic dentist boca raton', 210, 'geo'], ['same day crowns', 170, 'ideas']],
+  competitive: [['pediatric dentist boca raton', 140, 'geo'], ['invisalign boca raton', 110, 'geo'],
+                ['root canal cost', 90, 'ideas'], ['dental bridge', 70, 'suggest'],
+                ['tooth extraction', 70, 'ideas'], ['dentures boca raton', 50, 'geo'],
+                ['wisdom teeth removal', 40, 'ideas'], ['dental crown cost', 30, 'suggest']],
+  long_tail: [['how much do dental implants cost in florida', 40, 'suggest'],
+              ['best emergency dentist open saturday', 20, 'gen'],
+              ['does insurance cover teeth whitening', 10, 'gen']],
 };
+const KBL = {ultra: 'Ultra Competitive', competitive: 'Competitive', long_tail: 'Long Tail'};
+
+function kbLoad(r){
+  chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
+  kbDraw();
+}
+function kbDraw(){
+  const src = $('kbSrc').checked;
+  $('kbCols').innerHTML = Object.keys(KB).map(k => `
+    <div class="col">
+      <h5>${KBL[k]}<span>${KB[k].length}</span></h5>
+      <ul>${KB[k].map(([t, v, s]) =>
+        `<li><span>${esc(t)}</span>${src ? `<span class="s">[${s}]</span>` : ''}<span class="v">${v.toLocaleString()}</span></li>`
+      ).join('')}</ul>
+    </div>`).join('');
+  const all = Object.values(KB).flat();
+  const total = all.reduce((s, x) => s + x[1], 0);
+  $('kbHead').textContent = `Keyword list (${all.length} terms)`;
+  $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${$('kbCountry').value}`;
+  $('kbWiden').hidden = total >= 2000;
+  $('kbWiden').innerHTML = total >= 2000 ? ''
+    : `<b>${total.toLocaleString()}/mo across ${all.length} measured terms.</b>
+       <table><tr><td>dental marketing software</td><td>480</td></tr>
+       <tr><td>patient scheduling software</td><td>210</td></tr></table>`;
+}
+$('kbSrc').onchange = kbDraw;
+$('kbCountry').onchange = kbDraw;
+$('kbBuild').onclick = () => { kbDraw(); $('saved').textContent = 'Built.'; };
 </script>
 </body>
 </html>

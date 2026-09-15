@@ -5,7 +5,7 @@
 // builder on its own page. The form is a working form -- an edit survives a
 // close and reopen. (2026-09-15, Kiri)
 const { chromium } = require('/root/work/node_modules/playwright-core');
-const BASE = 'http://127.0.0.1:5201';
+const BASE = 'http://127.0.0.1:5202';
 
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -91,24 +91,41 @@ const BASE = 'http://127.0.0.1:5201';
     return R;
   });
 
-  // ---------------- keyword builder is its own page ----------------
-  // Clicked from inside the modal, it NAVIGATES, the way Category Mixer does.
-  await p.evaluate(() => {
+  // ---------------- keyword builder is a pane of the same modal ----------
+  const kw = await p.evaluate(() => {
+    const R = {};
     document.getElementById('close').click();
-    document.querySelector('[data-open="0"]').click();
+    // Preview opens the per-quote config, not the form.
+    document.querySelector('[data-open="0"][data-view="cfg"]').click();
+    R.previewOpensConfig = !document.getElementById('paneCfg').hidden
+      && document.getElementById('paneForm').hidden;
+    R.cfgFields = [...document.querySelectorAll('#cfgGrid [data-c]')].map(x => x.dataset.c);
+    // adtini Forecast opens the form.
+    document.getElementById('close').click();
+    document.querySelector('[data-open="0"][data-view="form"]').click();
+    R.adtiniOpensForm = !document.getElementById('paneForm').hidden;
+    // Keyword Builder swaps the body, it does not navigate.
+    const before = location.href;
+    document.getElementById('kwBuilder').click();
+    R.stayedPut = location.href === before;
+    R.kwPane = !document.getElementById('paneKw').hidden
+      && document.getElementById('paneForm').hidden;
+    R.buckets = [...document.querySelectorAll('#paneKw .col h5')]
+      .map(h => h.childNodes[0].textContent.trim());
+    R.hasSourceToggle = !!document.getElementById('kbSrc');
+    R.seedsFromRow = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
+    R.generateBecomesApply = document.getElementById('gen').textContent.trim();
+    // applying returns to the form with the seeds carried over
+    const inp = document.querySelector('#paneKw [data-chips="seeds"] .chipin');
+    inp.value = 'veneers';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.getElementById('gen').click();
+    R.backOnForm = !document.getElementById('paneForm').hidden;
+    R.focusCarried = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
+      .some(c => c.textContent.includes('veneers'));
+    return R;
   });
-  await Promise.all([
-    p.waitForURL(/\/adtini\/keywords/, { timeout: 5000 }),
-    p.click('#kwBuilder'),
-  ]);
-  const kwHref = new URL(p.url()).pathname + new URL(p.url()).search;
-  await p.goto(BASE + '/adtini/keywords?row=137027', { waitUntil: 'domcontentloaded' });
-  const kw = await p.evaluate(() => ({
-    heading: document.querySelector('.pagehead h2').textContent.trim(),
-    buckets: [...document.querySelectorAll('.col h5')].map(h => h.childNodes[0].textContent.trim()),
-    hasSourceToggle: !!document.getElementById('showSrc'),
-    backToForecast: !!document.querySelector('a.back[href="/adtini/forecast"]'),
-  }));
 
   const want = {
     'home.heading': [home.heading, 'Quotes'],
@@ -123,7 +140,7 @@ const BASE = 'http://127.0.0.1:5201';
     'fc.products': [fc.products.map(t => t.replace(/\s*\S$/, '')).join(' / '),
       'Search Engine Optimization – 137027 / Search Engine Optimization – 137031 / Online Reputation Management – 137028'],
     'fc.tabs': [fc.tabs.join(','), 'Details,History'],
-    'fc.actions': [fc.actions.join(','), 'Preview,Gemini Forecast,Claude Forecast,adtini Forecast'],
+    'fc.actions': [fc.actions.join(','), 'Preview,adtini Forecast'],
     'fc.historyCols': [fc.historyCols.join('|'),
       'Date Forecasted|Forecast Prompt|Generated Response|Type|Error'],
     'fc.detailsHidden': [fc.detailsHidden, true],
@@ -139,11 +156,18 @@ const BASE = 'http://127.0.0.1:5201';
     'form.opensOrm': [form.opensOrm, true],
     'form.ormStrategy': [form.ormStrategy.join(','),
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
-    'kw.opensOwnPage': [kwHref, '/adtini/keywords?row=137027'],
-    'kw.heading': [kw.heading, 'Keyword Builder'],
+    'preview.opensConfig': [kw.previewOpensConfig, true],
+    'preview.cfgFields': [kw.cfgFields.join(','),
+      'markup,min_term,ov_core,ov_ai,ov_addon,ov_reason'],
+    'adtini.opensForm': [kw.adtiniOpensForm, true],
+    'kw.staysInModal': [kw.stayedPut, true],
+    'kw.pane': [kw.kwPane, true],
     'kw.buckets': [kw.buckets.join(','), 'Ultra Competitive,Competitive,Long Tail'],
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
-    'kw.backToForecast': [kw.backToForecast, true],
+    'kw.seedsFromRow': [kw.seedsFromRow.length > 0, true],
+    'kw.applyLabel': [kw.generateBecomesApply, 'Apply to forecast'],
+    'kw.backOnForm': [kw.backOnForm, true],
+    'kw.focusCarried': [kw.focusCarried, true],
   };
   let bad = 0;
   for (const k of Object.keys(want)) {

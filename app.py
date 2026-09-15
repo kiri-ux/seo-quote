@@ -79,7 +79,7 @@ BUILD_ID = (os.environ.get("RENDER_GIT_COMMIT", "")[:7]
 # included for the same reason — they carry the rep quote's actual maths.
 FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html",
                      "templates/reputation.html", "templates/adtini.html",
-                     "templates/adtini_home.html", "templates/adtini_keywords.html",
+                     "templates/adtini_home.html",
                      "static/adtini.css",
                      "rep_pricing.py", "rep_scan.py", "rep_docx.py")
 
@@ -17327,10 +17327,6 @@ def adtini_home():
 def adtini_form():
     return render_template("adtini.html", build=BUILD_STR)
 
-
-@app.route("/adtini/keywords")
-def adtini_keywords():
-    return render_template("adtini_keywords.html", build=BUILD_STR)
 
 @app.route("/api/rep_config", methods=["GET"])
 @_json_error_guard
