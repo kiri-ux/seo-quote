@@ -25,7 +25,8 @@ html,body{margin:0;padding:0}
 nav.rail{position:fixed;top:0;left:0;bottom:0;width:54px;background:var(--rail);
   display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;z-index:60}
 nav.rail a{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;
-  justify-content:center;color:#CFE0F7;text-decoration:none;font-size:16px}
+  justify-content:center;color:#E8F0FB;text-decoration:none;font-size:16px}
+nav.rail svg{width:20px;height:20px;fill:currentColor}
 nav.rail a:hover{background:rgba(255,255,255,.14);color:#fff}
 nav.rail a.mark{background:var(--gold);color:#3A2508}
 nav.rail a.mark.on{background:var(--orange);color:#fff}
@@ -427,7 +428,7 @@ input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background
 .pvserp img{width:100%;border-radius:8px;border:1px solid var(--line)}
 
 /* the legacy builder sits at the foot of the rail */
-nav.rail a.legacy{margin-top:auto;color:#9FB3CC;font-size:18px}
+nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 @media(max-width:700px){nav.rail a.legacy{margin-top:0;margin-left:auto}}
 
 /* the keyword list and the capture are one row, so they match height */

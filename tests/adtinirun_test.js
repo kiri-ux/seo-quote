@@ -323,7 +323,8 @@ const CFG = {
     'res.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
     // the settings the run was made with, snapshotted
     'run.settingsFocus': [res.runFocus[1],
-      '7 · emergency dentist, dental implants, teeth whitening…'],
+      '7 · emergency dentist, dental implants, teeth whitening, root canal,'
+      + ' invisalign, dental crowns, denture repair'],
     'run.settingsScope': [res.runScope[1], 'Single city'],
     'run.settingsExpand': [res.runExpand[1], 'Yes'],
     'run.settingsMarkup': [res.runMarkup[1], '35%'],

@@ -163,8 +163,7 @@ const QUOTE = {
     'quote.pagesCarried': [((quoteCall.body.articles || {}).pages || []).length, 3],
     'quote.marginIsFraction': [quoteCall.body.margin_pct, 0.35],
     'order.strategyTravels': [res.stratRow.join(' | '),
-      'StrategystrategyOrder form | 4 · Review Removals, Site/Article Removals, Reactive…']
-      .map(x => typeof x === 'string' ? x.replace('Order form', '') : x),
+      'Strategystrategy | 4 · Review Removals, Site/Article Removals, Reactive, Proactive'],
     'res.headline': [res.headline, 'Quote results — $3,100/mo · 2 lines · 4 workstreams'],
     'res.tiles': [res.tiles.join(' / '),
       'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],

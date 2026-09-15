@@ -13,9 +13,20 @@
 <body>
 
 <nav class="rail">
-  <a href="/adtini" title="Quotes" class="mark on">&#9776;</a>
-  <a href="/adtini/forecast?new=1" title="New quote" class="mark">&#43;</a>
-  <a href="/" title="Legacy quote builder" class="legacy">&#9881;</a>
+  <a href="/adtini" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 3 3 10v11h6v-6h6v6h6V10z"/></svg></a>
+  <a href="/adtini/forecast?new=1" title="New quote" aria-label="New quote">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M11 8h2v3h3v2h-3v3h-2v-3H8v-2h3z"/></svg></a>
+  <a href="/adtini" title="Quotes" aria-label="Quotes" class="mark on">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M6 3h10l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M9 9h8v2H9zm0 4h8v2H9zm0 4h5v2H9z"/></svg></a>
+  <a href="/" title="Legacy quote builder" aria-label="Legacy quote builder" class="legacy">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 8a4 4 0 100 8 4 4 0 000-8zm0 2a2 2 0 110 4 2 2 0 010-4z"/>
+    <path d="M11 2h2l.4 2.6 1.9.8 2.1-1.5 1.4 1.4-1.5 2.1.8 1.9L22 11v2l-2.6.4-.8 1.9 1.5 2.1-1.4 1.4-2.1-1.5-1.9.8L13 22h-2l-.4-2.6-1.9-.8-2.1 1.5-1.4-1.4 1.5-2.1-.8-1.9L2 13v-2l2.6-.4.8-1.9L3.9 6.6l1.4-1.4 2.1 1.5 1.9-.8z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></a>
 </nav>
 
 <div class="pagehead">
@@ -794,19 +805,22 @@ const MONEY_KEY = /price|cost|budget|monthly|dollars|_max|total|rate|package|anc
 function sendValue(v, key){
   const cash = MONEY_KEY.test(key || '');
   if (v === undefined || v === null || v === '') return null;
+  // NOTHING IS TRUNCATED. Twenty focus terms or sixteen targeted markets is
+  // what the run was made with, and a list cut at three hides the difference
+  // between a quote and a quote that was edited.
   if (Array.isArray(v)) {
     if (!v.length) return null;
     const named = v.map(x => typeof x === 'object'
       ? (x.kw || x.term || x.keyword || x.title || x.domain || '') : x);
     if (named.every(x => x !== ''))
-      return `${v.length} \u00b7 ${named.slice(0, 3).join(', ')}${v.length > 3 ? '…' : ''}`;
+      return `${v.length} \u00b7 ${named.join(', ')}`;
     return `${v.length} row${v.length === 1 ? '' : 's'}`;
   }
   if (typeof v === 'object') {
     const k = Object.keys(v);
     return k.length
       ? k.map(t => `${t}: ${cash && typeof v[t] === 'number' ? money(v[t]) : v[t]}`)
-         .slice(0, 3).join(' \u00b7 ') : null;
+         .join(' \u00b7 ') : null;
   }
   if (typeof v === 'number') return cash ? money(v) : v.toLocaleString();
   return String(v);
