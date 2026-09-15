@@ -102,7 +102,11 @@ const QUOTE = {
   await p.waitForSelector('.prod[data-row="2"] .qres', { timeout: 15000 });
   const res = await p.evaluate(() => {
     const R = {};
-    const q = document.querySelector('.prod[data-row="2"] .qres');
+    const prod = document.querySelector('.prod[data-row="2"]');
+    R.briefHasNoFolds = !prod.querySelector('[data-pane="details"] .qfold');
+    prod.querySelector('.ptabs button[data-tab="history"]').click();
+    prod.querySelector('.hist [data-hist]').click();
+    const q = document.querySelector('.prod[data-row="2"] [data-pane="history"] .qres');
     R.headline = q.querySelector('summary').textContent.trim();
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
@@ -164,10 +168,12 @@ const QUOTE = {
     'quote.marginIsFraction': [quoteCall.body.margin_pct, 0.35],
     'order.strategyTravels': [res.stratRow.join(' | '),
       'Strategystrategy | 4 · Review Removals, Site/Article Removals, Reactive, Proactive'],
-    'res.headline': [res.headline, 'Quote results — $3,100/mo · 2 lines · 4 workstreams'],
+    'res.runHeadline': [res.headline.replace(/^[^—]+—/, 'run —').trim(),
+      'run — $3,100/mo'],
     'res.tiles': [res.tiles.join(' / '),
       'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],
     'res.noKeywordFold': [res.folds.some(f => /Keyword table/.test(f)), false],
+    'details.overviewOnly': [res.briefHasNoFolds, true],
     'res.plannerView': [res.planner.slice(0, 3).join(' | '),
       'Reactive — Search Protection: $3,100/mo | Proactive — Brand Shield: $5,000/mo'
       + ' | Review removals: 14 × $100'],

@@ -414,7 +414,7 @@ function rowHtml(r, i){
       <div data-pane="details">
         <div class="prow">
           <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Config</button>
-          <span class="rowmsg" data-msg="${i}"></span>
+          <span class="rowmsg" data-msg="${i}">${esc(r.note || '')}</span>
           <div class="right">
             <span class="spark">&#10022;</span>
             <button class="btn adtini" type="button" data-open="${i}" data-view="form">adtini Forecast</button>
@@ -559,6 +559,7 @@ const STRAT_FROM = f => {
 let LIVE = false, CLIENT = '';
 async function loadClient(){
   const q = new URLSearchParams(location.search);
+  if (q.get('new')) return;              // a new quote has nothing to load yet
   CLIENT = q.get('client') || '';
   if (!CLIENT) return;
   let list = null;
@@ -595,6 +596,36 @@ async function loadClient(){
 function fromQuery(){
   const q = new URLSearchParams(location.search);
   const client = q.get('client'), order = q.get('order'), review = q.get('review');
+  // A NEW QUOTE OPENS ON ITS OWN ROW, with the form up and nothing filled in.
+  if (q.get('new')) {
+    const kind = q.get('product') === 'orm' ? 'orm' : 'seo';
+    const blank = {
+      id: '', qid: newQid(), kind,
+      name: kind === 'orm' ? 'Online Reputation Management' : 'Search Engine Optimization',
+      built: new Date().toLocaleDateString('en-US', {month: 'numeric', day: 'numeric',
+                                                     year: '2-digit'}),
+      data: kind === 'orm'
+        ? {brand: client || '', site: '', strategy: ['Reactive'], reviews: '', locations: 1,
+           std: '', prem: '', volume: '', g_city: false, g_county: false, g_state: false,
+           g_country: false, city: [], county: [], state: [], countries: [],
+           country: 'United States', autosuggest: 0, markup: '35'}
+        : {brand: client || '', site: '', business_desc: '', focus: [], negatives: [],
+           g_city: true, g_county: false, g_state: false, g_country: false,
+           city: [], county: [], state: [], countries: [],
+           industry: [], strategy: ['Core SEO'], goals: [], past: 0, past_details: '',
+           spend: '', expand: 1, lock: 0, national: 0, markup: '35',
+           country: 'United States'},
+      history: [],
+    };
+    ROWS.length = 0;                     // a new quote is a page of its own
+    ROWS.push(blank);
+    document.querySelector('.pagehead h2').innerHTML =
+      `New quote &ndash; ${kind === 'orm' ? 'Online Reputation Management'
+                                          : 'Search Engine Optimization'}`;
+    draw();
+    open(0, 'form');
+    return;
+  }
   if (client || order) {
     document.querySelector('.pagehead h2').innerHTML =
       `Forecast &ndash; Order <u>${esc(order || '—')}</u> &ndash; ${esc(client || '')}`;
@@ -625,7 +656,12 @@ function histRows(r){
 function histHtml(r){
   const h = histRows(r);
   if (!h.length) return '<p class="hint" style="padding:16px 18px;margin:0">No runs yet.</p>';
-  return '<div class="hist scroller"><table><thead><tr>'
+  const open = r.openRun == null ? null : h[r.openRun];
+  return (open ? `<details class="qres" open>
+      <summary>${esc(open.when)} &mdash; ${esc(open.resp || '')}</summary>
+      ${resultsHtml(Object.assign({}, r, {result: open.quote}), true)}
+    </details>` : '')
+    + '<div class="hist scroller"><table><thead><tr>'
     + ['Date Forecasted','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
     + '</tr></thead><tbody>'
     + h.map((x, j) => `<tr><td>${esc(x.when)}</td>`
@@ -851,7 +887,7 @@ function sendList(r, want){
 
 // WHAT THE QUOTE IS, IN THE PLANNER'S TERMS. Opening a run off History lands
 // here rather than in the field lists.
-function plannerView(r){
+function plannerView(r, brief){
   const h = H(r);
   const p = (r.result || {}).pricing || {};
   const q = (r.result || {}).quote || {};
@@ -910,8 +946,10 @@ function plannerView(r){
         }).join('')}
       </table></div>
     </div>`;
-  return `<div class="pview">${rows.map(([k, v]) =>
-      `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>
+  const cards = `<div class="pview">${rows.map(([k, v]) =>
+      `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>`;
+  if (brief) return cards;
+  return `${cards}
     <div class="pvsplit">
       ${list}
       <div class="pvserp">
@@ -991,7 +1029,7 @@ function runSettings(r){
     </tbody></table>`;
 }
 
-function resultsHtml(r){
+function resultsHtml(r, full){
   if (!r.result) return '';
   const p = r.result.pricing || {};
   const h = H(r);
@@ -1008,15 +1046,18 @@ function resultsHtml(r){
     ? {'Monthly': t.monthly, 'Removals — max': t.removals_max, 'Total': t.total}
     : ordered.reduce((z, k) => (z[TIER[k] || k] = pkg[k], z), {});
   const ord = sendList(r, 'order'), pro = sendList(r, 'prop');
-  return `
+  const tileRow = `<div class="qtiles">${Object.keys(tiers).map(t =>
+    `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b></div>`).join('')}</div>`;
+  // DETAILS IS THE OVERVIEW. The whole quote -- its keyword list, its capture,
+  // its settings and both payloads -- belongs to the run that made it, and runs
+  // live on History.
+  if (!full) return `
   <details class="qres" open>
     <summary>Quote results &mdash; ${esc(r.result.headline || '')}</summary>
-    <div class="qbody">
-      <div class="qtiles">
-        ${Object.keys(tiers).map(t =>
-          `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b></div>`).join('')}
-      </div>
-
+    <div class="qbody">${tileRow}${plannerView(r, true)}</div>
+  </details>`;
+  return `
+    <div class="qbody">${tileRow}
       ${plannerView(r)}
 
       <details class="qfold"><summary>Settings for this run</summary>
@@ -1027,8 +1068,7 @@ function resultsHtml(r){
 
       <details class="qfold"><summary>Proposal &mdash;
         ${pro.have} of ${pro.n} fields</summary>${pro.html}</details>
-    </div>
-  </details>`;
+    </div>`;
 }
 
 // ---------------------------------------------------------------- modal
@@ -1105,9 +1145,21 @@ function collect(form){
 }
 const formOf = r => r.kind === 'seo' ? $('fseo') : $('form');
 
+let LISTS_P = null;
+function listsReady(){
+  if (!LISTS_P) {
+    LISTS_P = fetch('/api/lists').then(r => r.json())
+      .then(j => { LISTS = Object.assign(LISTS, j); })
+      .catch(() => {});
+  }
+  return LISTS_P;
+}
+
 function open(i, view){
   ROW = i;
   const r = ROWS[i];
+  // A box that should offer the RZ list must not open as a free-text field.
+  if (!LISTS.industries.length) listsReady().then(() => { if (ROW === i) load(formOf(r), r.data); });
   $('fseo').hidden = r.kind !== 'seo';
   $('form').hidden = r.kind !== 'orm';
   load(formOf(r), r.data);
@@ -1190,13 +1242,12 @@ $('prods').addEventListener('click', e => {
   const hb = e.target.closest('[data-hist]');
   if (hb) {
     const i = +hb.closest('.prod').dataset.row, r = ROWS[i];
-    const entry = histRows(r)[+hb.dataset.hist];
-    r.result = entry.quote;
-    r.kw = entry.quote.kw;
+    const j = +hb.dataset.hist;
+    r.openRun = (r.openRun === j) ? null : j;
     draw();
     const prod = document.querySelector(`.prod[data-row="${i}"]`);
-    prod.scrollIntoView({block:'start', behavior:'smooth'});
-    prod.querySelector('.rowmsg').textContent = `Showing the quote built ${entry.when}.`;
+    prod.querySelector('.ptabs button[data-tab="history"]').click();
+    prod.scrollIntoView({block: 'start', behavior: 'smooth'});
     return;
   }
   const o = e.target.closest('[data-open]');
@@ -1880,8 +1931,11 @@ async function generate(){
     // The capture is a queued screenshot and takes up to two minutes, so the
     // quote is finished and on the row first. It lands on the row when it
     // arrives, reporting on the row rather than holding the modal.
-    const row = () => document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"] .rowmsg`);
-    const note = t => { const n = row(); if (n) n.textContent = t; };
+    const note = t => {
+      r.note = t;
+      const n = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"] .rowmsg`);
+      if (n) n.textContent = t;
+    };
     autoSerp(r, d, ranks, note).then(async shot => {
       if (!shot) { note('SERP capture — not captured.'); return; }
       r.result.serp = shot;
@@ -1947,13 +2001,12 @@ $('revert').onclick = $('reset').onclick = () => {
   $('saved').textContent = 'Back on the file defaults.';
 };
 
-(async () => {
-  try { LISTS = Object.assign(LISTS, await (await fetch('/api/lists')).json()); }
-  catch (e) { /* typed values still work */ }
-  draw();
-  fromQuery();
-  loadClient();
-})();
+// THE ROWS DRAW FIRST. The pick lists are only needed when the modal opens, so
+// waiting on them left the page blank until a fetch came back.
+draw();
+fromQuery();
+loadClient();
+listsReady();
 </script>
 </body>
 </html>

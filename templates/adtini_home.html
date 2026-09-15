@@ -33,7 +33,20 @@
   <span class="burger">&#9776;</span>
   <h2>Quotes</h2>
   <span class="build">{{ build }}</span>
-  <a class="btn-create" href="/adtini/forecast?new=1">&#43; New quote</a>
+  <div class="newq">
+    <button class="btn-create" type="button" id="newQ" aria-haspopup="true"
+      aria-expanded="false">&#43; New quote</button>
+    <div class="newmenu" id="newMenu" hidden role="menu">
+      <a href="/adtini/forecast?new=1&amp;product=seo" role="menuitem">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h10l4 4v14H6z" fill="none"
+          stroke="currentColor" stroke-width="2"/><path d="M9 11h8v2H9zm0 4h5v2H9z"/></svg>
+        Search Engine Optimization</a>
+      <a href="/adtini/forecast?new=1&amp;product=orm" role="menuitem">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7z"
+          fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        Online Reputation Management</a>
+    </div>
+  </div>
 </div>
 
 <div class="wrap">
@@ -209,6 +222,19 @@ async function loadClients(){
   draw();
 }
 loadClients();
+
+// A NEW QUOTE IS A PRODUCT FIRST. The two products ask for different things, so
+// the choice is made here rather than on a form that has to be both.
+const nq = document.getElementById('newQ'), nm = document.getElementById('newMenu');
+nq.addEventListener('click', e => {
+  e.stopPropagation();
+  nm.hidden = !nm.hidden;
+  nq.setAttribute('aria-expanded', String(!nm.hidden));
+});
+document.addEventListener('click', () => {
+  if (!nm.hidden) { nm.hidden = true; nq.setAttribute('aria-expanded', 'false'); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') nm.hidden = true; });
 
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button[data-f]');

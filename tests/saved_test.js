@@ -130,7 +130,12 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
     R.planner = [...q.querySelectorAll('.pview .pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
-    R.serp = !!q.querySelector('.pvserp img');
+    const row0 = () => document.querySelector('.prod[data-row="0"]');
+    row0().querySelector('.ptabs button[data-tab="history"]').click();
+    row0().querySelector('.hist [data-hist]').click();
+    row0().querySelector('.ptabs button[data-tab="history"]').click();
+    R.serp = !!row0().querySelector('[data-pane="history"] .pvserp img');
+    row0().querySelector('.ptabs button[data-tab="details"]').click();
     // the form carries what the quote was built on
     document.querySelector('[data-open="0"][data-view="form"]').click();
     R.brand = document.querySelector('#fseo [data-k="brand"]').value;
@@ -144,7 +149,11 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     R.markup = document.querySelector('#fseo [data-k="markup"]').value;
     document.getElementById('close').click();
     // the second quote on this client was saved before the handoff block
-    const q2 = document.querySelector('.prod[data-row="1"] .qres');
+    const row1 = () => document.querySelector('.prod[data-row="1"]');
+    row1().querySelector('.ptabs button[data-tab="history"]').click();
+    row1().querySelector('.hist [data-hist]').click();   // redraws the row
+    row1().querySelector('.ptabs button[data-tab="history"]').click();
+    const q2 = row1().querySelector('[data-pane="history"] .qres');
     q2.querySelectorAll('.qfold').forEach(f => f.open = true);
     const ordFold = [...q2.querySelectorAll('.qfold')]
       .find(f => /^Order form/.test(f.querySelector('summary').textContent));

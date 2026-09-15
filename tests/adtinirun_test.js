@@ -101,10 +101,16 @@ const CFG = {
     prod.querySelector('.ptabs button[data-tab="history"]').click();
     R.rows = prod.querySelectorAll('.hist tbody tr').length;
     R.openable = prod.querySelectorAll('.hist [data-hist]').length;
+    // the second run, opened where it lives
     prod.querySelectorAll('.hist tbody tr')[1].querySelector('[data-hist]').click();
-    const q = document.querySelector('.prod[data-row="0"] .qres');
+    const q = document.querySelector('.prod[data-row="0"] [data-pane="history"] .qres');
     R.headline = q.querySelector('summary').textContent.trim();
-    R.msg = document.querySelector('.prod[data-row="0"] .rowmsg').textContent.trim();
+    R.hasWholeQuote = !!q.querySelector('.qfold') && !!q.querySelector('.pvkw');
+    // and the Details overview is still the current quote
+    document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="details"]').click();
+    R.detailsStillCurrent = document
+      .querySelector('.prod[data-row="0"] [data-pane="details"] .qres summary')
+      .textContent.trim();
     return R;
   });
 
@@ -184,8 +190,18 @@ const CFG = {
 
   const res = await p.evaluate(() => {
     const R = {};
-    const q = document.querySelector('.prod[data-row="0"] .qres');
+    const prod = document.querySelector('.prod[data-row="0"]');
+    // Details carries the overview
+    const brief = prod.querySelector('.qres');
+    R.briefHeadline = brief.querySelector('summary').textContent.trim();
+    R.briefHasNoFolds = !brief.querySelector('.qfold');
+    R.briefHasNoKeywordList = !brief.querySelector('.pvkw');
+    // the run holds the whole quote
+    prod.querySelector('.ptabs button[data-tab="history"]').click();
+    prod.querySelector('.hist [data-hist]').click();
+    const q = document.querySelector('.prod[data-row="0"] [data-pane="history"] .qres');
     R.headline = q.querySelector('summary').textContent.trim();
+    R.openedFromHistory = true;
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
     R.folds = [...q.querySelectorAll('.qfold > summary')].map(s => s.textContent.trim());
@@ -226,11 +242,10 @@ const CFG = {
       .map(tr => [...tr.children].map(td => td.textContent.trim()).join(' | '));
     R.serpRow = rowIn(proFold, 'serp');
     R.modalClosed = document.getElementById('scrim').hidden;
-    // the run lands in that row's History tab
-    document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="history"]').click();
     R.historyCols = [...document.querySelectorAll('.prod[data-row="0"] .hist thead th')]
       .map(t => t.textContent.trim()).filter(Boolean);
     R.historyRows = document.querySelectorAll('.prod[data-row="0"] .hist tbody tr').length;
+    document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="details"]').click();
     return R;
   });
 
@@ -240,6 +255,9 @@ const CFG = {
     { timeout: 20000 });
   const serp = await p.evaluate(() => {
     const prod = document.querySelector('.prod[data-row="0"]');
+    prod.querySelector('.ptabs button[data-tab="history"]').click();
+    const openBtn = prod.querySelector('.hist [data-hist]');
+    if (!prod.querySelector('[data-pane="history"] .qres')) openBtn.click();
     prod.querySelectorAll('.qfold').forEach(f => f.open = true);
     const R = {msg: prod.querySelector('.rowmsg').textContent.trim(),
                onQuote: !!prod.querySelector('.pvserp img')};
@@ -312,15 +330,18 @@ const CFG = {
     'run.pageoneCarried': [priceCall.body.pageone_rank, 22],
     'run.markupIsFraction': [priceCall.body.markup_pct, 0.35],
     // the row opens to the quote
-    'res.headline': [res.headline,
+    'details.overviewOnly': [res.briefHeadline,
       'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
-    'res.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
-    'res.threeFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
+    'details.noFoldsOnDetails': [res.briefHasNoFolds, true],
+    'details.noKeywordListOnDetails': [res.briefHasNoKeywordList, true],
+    'history.opensTheWholeQuote': [res.openedFromHistory, true],
+    'history.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
+    'history.threeFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
       'Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
-    'res.foldsStartClosed': [res.closed, true],
-    'res.plannerViewFirst': [res.planner.slice(0, 2).join(' | '),
+    'history.foldsStartClosed': [res.closed, true],
+    'history.plannerView': [res.planner.slice(0, 2).join(' | '),
       'AI Search: not on this quote | Add-on markets: none'],
-    'res.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
+    'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
     // the settings the run was made with, snapshotted
     'run.settingsFocus': [res.runFocus[1],
       '7 · emergency dentist, dental implants, teeth whitening, root canal,'
@@ -396,9 +417,10 @@ const CFG = {
     'past.hiddenOnRowThatSaidNo': [past.otherRow, 0],
     // a saved quote reopens off History
     'hist.rows': [hist.rows, 2],
-    'hist.opensThatQuote': [hist.headline,
-      'Quote results — $6,050/mo · 4 terms · 7,100/mo · 100% ranking'],
-    'hist.says': [hist.msg, 'Showing the quote built 9/11/26 4:08 PM.'],
+    'hist.opensThatRun': [hist.headline, '9/11/26 4:08 PM — $6,050/mo · 4 terms'],
+    'hist.openIsTheWholeQuote': [hist.hasWholeQuote, true],
+    'hist.detailsUnchanged': [hist.detailsStillCurrent,
+      'Quote results — $6,650/mo · 6 terms · 7,700/mo · 50% ranking'],
   });
 
   let bad = 0;

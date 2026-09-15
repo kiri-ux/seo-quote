@@ -68,6 +68,32 @@ const BASE = "http://127.0.0.1:5203";
     return R;
   });
 
+  // ---------------- a new quote picks its product first ----------------
+  const nq = await p.evaluate(() => {
+    const R = {};
+    R.closed = document.getElementById('newMenu').hidden;
+    document.getElementById('newQ').click();
+    R.open = !document.getElementById('newMenu').hidden;
+    R.items = [...document.querySelectorAll('#newMenu a')].map(a => a.textContent.trim());
+    R.links = [...document.querySelectorAll('#newMenu a')].map(a => a.getAttribute('href'));
+    document.body.click();
+    R.closesAgain = document.getElementById('newMenu').hidden;
+    return R;
+  });
+
+  // a blank quote of that product, with the form up
+  await p.goto(BASE + '/adtini/forecast?new=1&product=orm', { waitUntil: 'domcontentloaded' });
+  const blank = await p.evaluate(() => ({
+    rows: document.querySelectorAll('.prod').length,
+    heading: document.querySelector('.pagehead h2').textContent.trim(),
+    name: document.querySelector('.prod > h4').textContent.replace(/\s+/g, ' ').trim(),
+    modalOpen: !document.getElementById('scrim').hidden,
+    ormForm: !document.getElementById('form').hidden,
+    brandEmpty: document.querySelector('#form [data-k="brand"]').value,
+    noResults: !document.querySelector('.qres'),
+    history: document.querySelector('[data-pane="history"]').textContent.trim(),
+  }));
+
   // ---------------- forecast rows ----------------
   await p.goto(BASE + '/adtini/forecast', { waitUntil: 'domcontentloaded' });
   const fc = await p.evaluate(() => {
@@ -211,6 +237,20 @@ const BASE = "http://127.0.0.1:5203";
       'Pending,In Progress,Ready for SSG Review,Complete'],
     'home.partnerEditable': [home.partnerEditable, true],
     'home.newQuoteButton': [home.hasCreate, true],
+    'new.menuStartsClosed': [nq.closed, true],
+    'new.menuOpens': [nq.open, true],
+    'new.twoProducts': [nq.items.join(' / '),
+      'Search Engine Optimization / Online Reputation Management'],
+    'new.linksCarryTheProduct': [nq.links.join(' | '),
+      '/adtini/forecast?new=1&product=seo | /adtini/forecast?new=1&product=orm'],
+    'new.closesOnOutsideClick': [nq.closesAgain, true],
+    'new.oneBlankRow': [blank.rows, 1],
+    'new.heading': [blank.heading, 'New quote – Online Reputation Management'],
+    'new.rowIsThatProduct': [/^Online Reputation Management/.test(blank.name), true],
+    'new.opensOnTheForm': [blank.modalOpen && blank.ormForm, true],
+    'new.nothingFilledIn': [blank.brandEmpty, ''],
+    'new.noQuoteYet': [blank.noResults, true],
+    'new.noRunsYet': [blank.history, 'No runs yet.'],
     'home.leftRail': [home.hasRail, true],
     'home.rowIcons': [home.icons.join(' | '),
       '/adtini/forecast?client=Sage%20Dental&order=56305'
