@@ -423,3 +423,19 @@ input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background
 .pvscroll{max-height:260px;overflow-y:auto}
 .pvkw table.kv{width:100%}
 .pvserp img{width:100%;border-radius:8px;border:1px solid var(--line)}
+
+/* the legacy builder sits at the foot of the rail */
+nav.rail a.legacy{margin-top:auto;color:#9FB3CC;font-size:18px}
+@media(max-width:700px){nav.rail a.legacy{margin-top:0;margin-left:auto}}
+
+/* the keyword list and the capture are one row, so they match height */
+.pvsplit{align-items:stretch}
+.pvkw,.pvserp{display:flex;flex-direction:column;min-height:0}
+.pvkw .pvscroll{flex:1;max-height:none;overflow-y:auto}
+.pvserp a,.pvserp img{display:block}
+.pvserp{overflow:hidden}
+.pvserp a{flex:1;overflow:hidden;border-radius:8px}
+.pvserp img{height:100%;object-fit:cover;object-position:top}
+.pagehead .build{margin-left:auto;font-size:11px;color:var(--muted);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+.pagehead .build + .btn-create{margin-left:14px}

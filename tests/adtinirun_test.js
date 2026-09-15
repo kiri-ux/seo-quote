@@ -369,7 +369,7 @@ const CFG = {
     // a saved quote reopens off History
     'hist.rows': [hist.rows, 2],
     'hist.opensThatQuote': [hist.headline,
-      'Quote results — $4,950/mo · 4 terms · 7,100/mo · 100% ranking'],
+      'Quote results — $6,050/mo · 4 terms · 7,100/mo · 100% ranking'],
     'hist.says': [hist.msg, 'Showing the quote built 9/11/26 4:08 PM.'],
   });
 

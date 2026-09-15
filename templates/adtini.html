@@ -15,11 +15,13 @@
 <nav class="rail">
   <a href="/adtini" title="Quotes" class="mark on">&#9776;</a>
   <a href="/adtini/forecast?new=1" title="New quote" class="mark">&#43;</a>
+  <a href="/" title="Legacy quote builder" class="legacy">&#9881;</a>
 </nav>
 
 <div class="pagehead">
   <span class="burger">&#9776;</span>
   <h2>Forecast – Order <u>56305</u> – Sage Dental</h2>
+  <span class="build">{{ build }}</span>
 </div>
 
 <div class="wrap">
@@ -69,8 +71,14 @@
             <label><input type="checkbox" data-k="g_country"> Country</label>
           </div>
         </div>
-        <div class="f"><label>City</label><input type="text" data-k="city"></div>
-        <div class="f"><label>County</label><input type="text" data-k="county"></div>
+        <div class="f" data-geo="g_city"><label>City</label>
+          <div class="box" data-chips="city"></div></div>
+        <div class="f" data-geo="g_county"><label>County</label>
+          <div class="box" data-chips="county"></div></div>
+        <div class="f" data-geo="g_state"><label>State</label>
+          <div class="box" data-chips="state"></div></div>
+        <div class="f" data-geo="g_country"><label>Country</label>
+          <div class="box" data-chips="countries"></div></div>
 
         <div class="f wide"><label>Industry <span class="i" title="Selects the pricing rules that apply">i</span></label>
           <div class="box" data-chips="industry"></div></div>
@@ -141,8 +149,14 @@
             <label><input type="checkbox" data-k="g_country"> Country</label>
           </div>
         </div>
-        <div class="f"><label>City</label><input type="text" data-k="city"></div>
-        <div class="f"><label>County</label><input type="text" data-k="county"></div>
+        <div class="f" data-geo="g_city"><label>City</label>
+          <div class="box" data-chips="city"></div></div>
+        <div class="f" data-geo="g_county"><label>County</label>
+          <div class="box" data-chips="county"></div></div>
+        <div class="f" data-geo="g_state"><label>State</label>
+          <div class="box" data-chips="state"></div></div>
+        <div class="f" data-geo="g_country"><label>Country</label>
+          <div class="box" data-chips="countries"></div></div>
 
         <div class="f"><label>Auto-Suggest / Related</label>
           <div class="yn" data-k="autosuggest"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
@@ -263,7 +277,7 @@ function savedQuote(o){
     (1 - o.terms.filter(t => typeof t[2] === 'number').length / o.terms.length) * 100);
   const tiers = t => ({base: t, intermediate: Math.round(t * 1.18 / 50) * 50,
                       advanced: Math.round(t * 1.42 / 50) * 50});
-  const core = tiers(o.package[Object.keys(o.package)[0]]);
+  const core = tiers(o.monthly);
   const addon = tiers(o.addon || 0);
   const hard = k => Object.keys(k).reduce((z, t) => (z[t] = Math.round(k[t] * 0.65), z), {});
   return {
@@ -273,7 +287,8 @@ function savedQuote(o){
       total_volume: vol, min_term_months: 6,
       client_addon_per_market: o.addon ? addon : null,
       handoff: {
-        package: o.package,
+        package: Object.keys(core).reduce(
+          (z, k) => (z[k] = core[k] + (o.addon ? addon[k] : 0), z), {}),
         core_seo_price: core, ai_search_price: {base: 0, intermediate: 0, advanced: 0},
         ai_search_pct: 0, ai_search_pct_effective: {},
         margin_pct: 0.35,
@@ -296,7 +311,7 @@ function savedQuote(o){
               kd_score: 62, pageone_rank: 22},
     table: o.terms.map(t => ({kw: t[0], pos: t[2],
                               ranked_top: typeof t[2] === 'number' && t[2] <= 10})),
-    headline: `$${o.package[Object.keys(o.package)[0]].toLocaleString()}/mo · ${all.length} terms`
+    headline: `${money(core.base + (o.addon ? addon.base : 0))}/mo · ${all.length} terms`
       + ` · ${vol.toLocaleString()}/mo · ${100 - notRanking}% ranking`,
     kw: {all, head: all.slice(0, 3),
       ultra: all.slice(0, 2).map(x => Object.assign({src: 'seed'}, x)),
@@ -307,19 +322,19 @@ function savedQuote(o){
 }
 const Q137027 = savedQuote({
   anchor: 4800, adder: 550, volume_add: 100, uplift: 4, partner: 4322, scope: 'single_city',
-  markets: ['Boca Raton, FL'], addon: 1200, markets_n: 8, package: {'Core SEO': 5450, 'Add-on markets': 1200, 'Total monthly': 6650},
+  markets: ['Boca Raton, FL'], addon: 1200, markets_n: 8, monthly: 5450,
   terms: [['dental implants boca raton', 3600, 4], ['emergency dentist boca raton', 1900, 12],
           ['teeth whitening boca raton', 880, 'Not Found'], ['dental implants delray beach', 720, 8],
           ['same day crowns boca raton', 390, 'Not Found'],
           ['affordable dental implants near me', 210, 'Not Found']]});
 const Q137027_PRIOR = savedQuote({
   anchor: 4800, adder: 400, volume_add: 60, uplift: 2, partner: 3987, scope: 'single_city',
-  markets: ['Boca Raton, FL'], addon: 1100, markets_n: 8, package: {'Core SEO': 4950, 'Add-on markets': 1100, 'Total monthly': 6050},
+  markets: ['Boca Raton, FL'], addon: 1100, markets_n: 8, monthly: 4950,
   terms: [['dental implants boca raton', 3600, 4], ['emergency dentist boca raton', 1900, 12],
           ['teeth whitening boca raton', 880, 6], ['dental implants delray beach', 720, 8]]});
 const Q137031 = savedQuote({
   anchor: 4800, adder: 250, volume_add: 0, uplift: 7, partner: 3543, scope: 'single_city',
-  markets: ['Atlanta, GA'], package: {'Core SEO': 4450, 'Total monthly': 4450},
+  markets: ['Atlanta, GA'], monthly: 4450,
   terms: [['pediatric dentist atlanta', 1600, 'Not Found'], ['kids dentist atlanta', 590, 'Not Found'],
           ['pediatric dental emergency atlanta', 170, 19]]});
 
@@ -337,7 +352,7 @@ const ROWS = [
     business_desc:'Multi-location dental group — implants, emergency dentistry, cosmetic.',
     focus:['emergency dentist','dental implants','teeth whitening'],
     negatives:[], g_city:true, g_county:false, g_state:false, g_country:false,
-    city:'Boca Raton, FL', county:'',
+    city:['Boca Raton, FL'], county:[], state:[], countries:[],
     industry:['Healthcare'], strategy:['Core SEO'], goals:['New patient acquisition'],
     past:1, past_details:'', spend:'$6,200',
     expand:1, lock:0, national:0, addon:1, markets:8, markup:'35'}},
@@ -350,7 +365,7 @@ const ROWS = [
     business_desc:'Pediatric arm of the same group.',
     focus:['pediatric dentist'], negatives:[],
     g_city:true, g_county:false, g_state:false, g_country:false,
-    city:'Atlanta, GA', county:'',
+    city:['Atlanta, GA'], county:[], state:[], countries:[],
     industry:['Healthcare'], strategy:['Core SEO'], goals:[], past:0, past_details:'',
     spend:'', expand:1, lock:1, national:0, addon:0, markets:3, markup:'35'}},
   {id:'137028', kind:'orm', name:'Online Reputation Management', built:'9/16/26', data:{
@@ -358,7 +373,7 @@ const ROWS = [
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
     reviews:161, locations:3, std:2, prem:1, volume:8000,
     g_city:true, g_county:false, g_state:false, g_country:false,
-    city:'Boca Raton, FL', county:'',
+    city:['Boca Raton, FL'], county:[], state:[], countries:[],
     country:'United States', autosuggest:1, markup:'35'}},
 ];
 
@@ -378,7 +393,7 @@ function rowHtml(r, i){
   return `
   <div class="prod" data-row="${i}">
     <h4>${r.name} &ndash; <u>${r.qid}</u>
-      <span class="when">${dateOf(r)}</span> <span class="mag">&#9906;</span></h4>
+      <span class="when">${dateOf(r)}</span></h4>
     <div class="ptabs">
       <button type="button" class="on" data-tab="details">Details</button>
       <button type="button" data-tab="history">History</button>
@@ -437,6 +452,20 @@ async function persist(r){
   } catch (e) { $('saved').textContent = 'Saved on screen only — ' + e.message; }
 }
 
+// THE HEADLINE IS THE BASE TIER, per month. Written after the row is built so
+// it reads the same mapped prices the tiles do -- an older saved quote has no
+// handoff block and printed "—/mo" off it.
+function headlineOf(r){
+  const p = (r.result || {}).pricing || {};
+  const pkg = H(r).package || {};
+  const lead = pkg.base != null ? pkg.base : pkg[Object.keys(pkg)[0]];
+  const n = ((r.kw || {}).all || []).length;
+  return `${money(lead)}/mo · ${n} term${n === 1 ? '' : 's'}`
+    + ` · ${(p.total_volume || 0).toLocaleString()}/mo`
+    + (p.pct_not_ranking == null ? ' · ranking unmeasured'
+                                 : ` · ${100 - p.pct_not_ranking}% ranking`);
+}
+
 // EVERY QUOTE WE HAVE IS ONE OF THESE ROWS. The saved quotes on the SEO and
 // Reputation tabs were written before this page existed, so they carry no
 // adtini block -- they are read off the shapes those tabs save and shown here
@@ -484,8 +513,9 @@ function adopt(got){
            industry: (i.industries || (i.industry ? String(i.industry).split(' | ') : [])),
            strategy: String(i.strategy || 'Core SEO').split(' + '),
            goals: i.goal ? [i.goal] : [],
-           g_city: !!geo.length, city: geo[0] || '', county: '',
-           g_county: false, g_state: false, g_country: i.geo_scope === 'nationwide',
+           g_city: !!geo.length, city: geo.slice(), county: [],
+           g_state: !!(i.state), state: i.state ? [i.state] : [], countries: [],
+           g_county: false, g_country: i.geo_scope === 'nationwide',
            national: i.geo_scope === 'nationwide' ? 1 : 0,
            addon: (i.addon_markets || 0) ? 1 : 0, markets: i.addon_markets || 0,
            markup: String(Math.round((i.markup_pct || 0.35) * 100)),
@@ -498,11 +528,7 @@ function adopt(got){
       ranks, table: pay.table || [],
       metrics: {cpc: pay.cpc || {}, kd_score: (pay.kd || {}).score, adder: pay.adder},
       shot: ((pay.serp || {}).img) || null,
-      headline: `${money((((pay.pricing || {}).handoff || {}).package || {})[
-        Object.keys((((pay.pricing || {}).handoff || {}).package || {}))[0]])}/mo`
-        + ` · ${kwAll.length} terms · ${(pay.totalVol || 0).toLocaleString()}/mo`
-        + (pay.pctNotRanking == null ? ' · ranking unmeasured'
-                                     : ` · ${100 - pay.pctNotRanking}% ranking`),
+      headline: '',
     } : null,
     history: [],
   };
@@ -534,7 +560,7 @@ async function loadClient(){
     try {
       const got = await (await fetch('/api/quotes/' + q2.id)).json();
       const a = adopt(got);
-      loaded.push({
+      const row = {
         saveId: q2.id, id: String(q2.id),
         kind: a.kind || (String(got.tool) === 'rep' ? 'orm' : 'seo'),
         name: a.kind === 'orm' ? 'Online Reputation Management' : 'Search Engine Optimization',
@@ -542,7 +568,9 @@ async function loadClient(){
         data: a.data || {}, cfg: a.cfg || {}, over: a.over || {},
         kw: a.kw || null, scan: a.scan || null, result: a.result || null,
         history: a.history || [],
-      });
+      };
+      if (row.result && !row.result.headline) row.result.headline = headlineOf(row);
+      loaded.push(row);
     } catch (e) { /* one unreadable quote must not empty the page */ }
   }
   if (loaded.length) { ROWS.length = 0; loaded.forEach(x => ROWS.push(x)); }
@@ -572,8 +600,18 @@ function fromQuery(){
   prod.querySelector('.rowmsg').textContent = `${ROWS[i].qid} · ${dateOf(ROWS[i])}`;
 }
 
+// A QUOTE THAT HAS RUN HAS A HISTORY. A saved quote is its own first row --
+// it was generated once, whatever wrote it -- and every Generate adds another.
+function histRows(r){
+  const h = (r.history || []).slice();
+  if (!h.length && r.result) {
+    h.push({when: r.built || dateOf(r), resp: r.result.headline || '',
+            quote: r.result, first: true});
+  }
+  return h;
+}
 function histHtml(r){
-  const h = r.history || [];
+  const h = histRows(r);
   if (!h.length) return '<p class="hint" style="padding:16px 18px;margin:0">No runs yet.</p>';
   return '<div class="hist scroller"><table><thead><tr>'
     + ['Date Forecasted','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
@@ -799,7 +837,7 @@ function sendList(r, want){
 // WHAT THE QUOTE IS, IN THE PLANNER'S TERMS. Opening a run off History lands
 // here rather than in the field lists.
 function plannerView(r){
-  const h = ((r.result || {}).pricing || {}).handoff || {};
+  const h = H(r);
   const p = (r.result || {}).pricing || {};
   const q = (r.result || {}).quote || {};
   const t = q.totals || {};
@@ -833,12 +871,10 @@ function plannerView(r){
       ? `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
         + (h.addon_market_discount_pct ? ` · ${h.addon_market_discount_pct}% off` : '')
       : 'none');
-    add('Minimum term', p.min_term_months ? p.min_term_months + ' months' : '');
     add('Keywords', `${(kw.all || []).length} terms · `
       + `${(p.total_volume || 0).toLocaleString()}/mo · `
       + (p.pct_not_ranking == null ? 'ranking unmeasured'
                                    : `${100 - p.pct_not_ranking}% ranking`));
-    add('Competition', p.competitive_adder ? money(p.competitive_adder) + ' adder' : 'no adder');
     add('Margin', `${Math.round((h.margin_pct || 0) * 100)}% · `
       + Object.keys(h.margin_dollars || {}).map(k => money(h.margin_dollars[k])).join(' / '));
   }
@@ -875,14 +911,16 @@ function plannerView(r){
 function resultsHtml(r){
   if (!r.result) return '';
   const p = r.result.pricing || {};
-  const h = p.handoff || {};
+  const h = H(r);
   const kw = r.kw || {};
   const all = kw.all || [];
   const q = r.result.quote || {};
   const t = q.totals || {};
+  const TIER = {base: 'Base', intermediate: 'Intermediate', advanced: 'Advanced'};
   const tiers = r.kind === 'orm'
     ? {'Monthly': t.monthly, 'Removals — max': t.removals_max, 'Total': t.total}
-    : (h.package || {});
+    : Object.keys(h.package || {}).reduce(
+        (z, k) => (z[TIER[k] || k] = h.package[k], z), {});
   const ord = sendList(r, 'order'), pro = sendList(r, 'prop');
   return `
   <details class="qres" open>
@@ -924,7 +962,17 @@ function load(form, data){
   form.querySelectorAll('[data-chips]').forEach(box =>
     chipbox(box, (data[box.dataset.chips] || []).slice()));
   pastFields();
+  geoFields(form);
 }
+// A CHILD FIELD FOLLOWS ITS CHECKBOX. City is a question only once City is
+// ticked, and the same for the other three.
+function geoFields(form){
+  form.querySelectorAll('[data-geo]').forEach(el => {
+    const box = form.querySelector(`[data-k="${el.dataset.geo}"]`);
+    el.hidden = !(box && box.checked);
+  });
+}
+
 // What they did before is only a question once the answer is yes.
 function pastFields(){
   const on = !!$('fseo').querySelector('.yn[data-k="past"] button[data-v="1"].on');
@@ -981,6 +1029,10 @@ $('close').onclick = close;
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) close(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('scrim').hidden) close(); });
 
+document.addEventListener('change', e => {
+  const c = e.target.closest('[data-k^="g_"]');
+  if (c && c.type === 'checkbox') geoFields(c.closest('form'));
+});
 document.addEventListener('click', e => {
   const b = e.target.closest('.yn button');
   if (b) {
@@ -997,13 +1049,25 @@ document.addEventListener('click', e => {
   const box = e.target.closest('.box');
   if (box && !e.target.closest('.chip')) { const i = box.querySelector('.chipin'); if (i) i.focus(); }
 });
+// ENTER, OR A COMMA. The exception is City: a city carries its state after a
+// comma -- "Boca Raton, FL" is one value, not two -- so that box takes Enter.
+const chipCommit = inp => {
+  const v = inp.value.trim().replace(/,$/, '').trim();
+  if (!v) { inp.value = ''; return; }
+  inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+  inp.value = '';
+};
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.classList.contains('chipin')) return;
   e.preventDefault();
-  const v = e.target.value.trim();
-  if (!v) return;
-  e.target.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
-  e.target.value = '';
+  chipCommit(e.target);
+});
+document.addEventListener('input', e => {
+  const inp = e.target;
+  if (!inp.classList.contains('chipin') || !inp.value.includes(',')) return;
+  const box = inp.closest('.box');
+  if (box && box.dataset.chips === 'city') return;
+  chipCommit(inp);
 });
 
 $('prods').addEventListener('click', e => {
@@ -1017,7 +1081,7 @@ $('prods').addEventListener('click', e => {
   const hb = e.target.closest('[data-hist]');
   if (hb) {
     const i = +hb.closest('.prod').dataset.row, r = ROWS[i];
-    const entry = r.history[+hb.dataset.hist];
+    const entry = histRows(r)[+hb.dataset.hist];
     r.result = entry.quote;
     r.kw = entry.quote.kw;
     draw();
@@ -1254,10 +1318,15 @@ function cfgOverride(){
 // ---------------------------------------------------------------- step 1
 const KBL = {ultra:'Ultra Competitive', competitive:'Competitive', long_tail:'Long Tail'};
 
+// EVERY TICKED LEVEL IS A TARGETING AREA. City, county and state each carry
+// their own pills; Country means nationwide and carries no areas.
+const asList = v => Array.isArray(v) ? v.filter(Boolean)
+  : (v ? [String(v)] : []);
 function geoOf(d){
   const g = [];
-  if (d.g_city && d.city) g.push(d.city);
-  if (d.g_county && d.county) g.push(d.county);
+  if (d.g_city) g.push(...asList(d.city));
+  if (d.g_county) g.push(...asList(d.county));
+  if (d.g_state) g.push(...asList(d.state));
   return g;
 }
 // SCOPE IS READ, NOT PICKED. It follows the targeting on the order -- the
@@ -1269,13 +1338,15 @@ const BANDS = {single_city:'Single city', contiguous_region:'Contiguous region',
                statewide:'Statewide', nationwide:'Nationwide'};
 function bandOf(d){
   if (d.national || d.g_country || !geoOf(d).length) return 'nationwide';
-  if (d.g_state) return 'statewide';
-  if (d.g_county) return 'contiguous_region';
+  if (d.g_state && asList(d.state).length) return 'statewide';
+  if (d.g_county && asList(d.county).length) return 'contiguous_region';
   return 'single_city';
 }
 function stateOf(d){
-  const m = String(d.city || '').match(/,\s*([A-Za-z]{2})\s*$/);
-  return m ? m[1].toUpperCase() : '';
+  const st = asList(d.state)[0] || '';
+  if (/^[A-Za-z]{2}$/.test(st.trim())) return st.trim().toUpperCase();
+  const m = (asList(d.city)[0] || '').match(/,\s*([A-Za-z]{2})\s*$/);
+  return m ? m[1].toUpperCase() : (st || '');
 }
 
 function kbLoad(r){

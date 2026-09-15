@@ -134,7 +134,10 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     // the form carries what the quote was built on
     document.querySelector('[data-open="0"][data-view="form"]').click();
     R.brand = document.querySelector('#fseo [data-k="brand"]').value;
-    R.city = document.querySelector('#fseo [data-k="city"]').value;
+    R.city = [...document.querySelectorAll('#fseo [data-chips="city"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
+    R.cityShown = !document.querySelector('#fseo [data-geo="g_city"]').hidden;
+    R.countryHidden = document.querySelector('#fseo [data-geo="g_country"]').hidden;
     R.focus = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
       .map(c => c.firstChild.textContent.trim());
     R.pastShown = [...document.querySelectorAll('#fseo [data-past]')].filter(x => !x.hidden).length;
@@ -193,12 +196,14 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'seo.legacyQuotePriced': [seo.headline,
       'Quote results — $3,800/mo · 2 terms · 2,680/mo · 50% ranking'],
     'seo.tiersFromTheSavedQuote': [seo.tiles.join(' / '),
-      'base $3,800 / intermediate $5,250 / advanced $6,700'],
+      'Base $3,800 / Intermediate $5,250 / Advanced $6,700'],
     'seo.aiSearchRead': [seo.planner.some(x => /AI Search: base \$2,166 · 57% of Core SEO/.test(x)), true],
     'seo.addOnMarketsRead': [seo.planner.some(x => /Add-on markets: 3 × \$900/.test(x)), true],
     'seo.serpCarried': [seo.serp, true],
     'seo.formBrand': [seo.brand, 'Drainify'],
-    'seo.formCity': [seo.city, 'Manchester, UK'],
+    'seo.formCity': [seo.city.join(','), 'Manchester, UK'],
+    'seo.cityFieldShownBecauseTicked': [seo.cityShown, true],
+    'seo.countryFieldHiddenBecauseNot': [seo.countryHidden, true],
     'seo.formFocus': [seo.focus.join(','), 'drain unblocking,cctv survey'],
     'seo.pastSeoFieldsOpen': [seo.pastShown, 3],
     'seo.addOnMarketCount': [seo.markets, '3'],

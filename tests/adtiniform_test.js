@@ -80,6 +80,13 @@ const BASE = "http://127.0.0.1:5203";
     // History is empty until a forecast has run -- adtinirun_test covers the
     // populated table.
     R.historyRows = document.querySelectorAll('.prod:first-child .hist tbody tr').length;
+    // a quote that has run always has a row, even one saved elsewhere
+    const orm = document.querySelectorAll('.prod')[2];
+    orm.querySelector('.ptabs button[data-tab="history"]').click();
+    R.ormHistoryEmpty = orm.querySelector('[data-pane="history"]').textContent.trim();
+    const seo2 = document.querySelectorAll('.prod')[1];
+    seo2.querySelector('.ptabs button[data-tab="history"]').click();
+    R.seo2HistoryRows = seo2.querySelectorAll('.hist tbody tr').length;
     R.historyCols = [...document.querySelectorAll('.prod:first-child .hist thead th')]
       .map(t => t.textContent.trim()).filter(Boolean);
     R.detailsHidden = document.querySelector('.prod:first-child [data-pane="details"]').hidden;
@@ -99,6 +106,25 @@ const BASE = "http://127.0.0.1:5203";
     inp.value = 'sedation dentistry';
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     document.querySelector('#fseo .yn[data-k="lock"] button[data-v="1"]').click();
+    // City takes Enter, because "Boca Raton, FL" is one value
+    const cityIn = document.querySelector('#fseo [data-chips="city"] .chipin');
+    cityIn.value = 'Delray Beach, FL';
+    cityIn.dispatchEvent(new Event('input', {bubbles: true}));
+    R.cityNotSplitOnComma =
+      document.querySelectorAll('#fseo [data-chips="city"] .chip').length;
+    cityIn.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    R.cityPills = [...document.querySelectorAll('#fseo [data-chips="city"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
+    // County commits on a comma
+    document.querySelector('#fseo [data-k="g_county"]').checked = true;
+    document.querySelector('#fseo [data-k="g_county"]')
+      .dispatchEvent(new Event('change', {bubbles: true}));
+    R.countyShown = !document.querySelector('#fseo [data-geo="g_county"]').hidden;
+    const cIn = document.querySelector('#fseo [data-chips="county"] .chipin');
+    cIn.value = 'Palm Beach County,';
+    cIn.dispatchEvent(new Event('input', {bubbles: true}));
+    R.countyPills = [...document.querySelectorAll('#fseo [data-chips="county"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
     document.getElementById('save').click();
     R.savedMsg = /^Saved \d+ fields to Search Engine Optimization – 9\/16\/26\./
       .test(document.getElementById('saved').textContent);
@@ -187,18 +213,24 @@ const BASE = "http://127.0.0.1:5203";
     'home.ormOnly': [home.ormOnly, 4],
     'home.searched': [home.searched, 1],
     // every quote carries its own id, and the date beside it
-    'fc.products': [fc.products.map(t => t.replace(/\s*\S$/, '')).join(' / '),
+    'fc.products': [fc.products.join(' / '),
       'Search Engine Optimization – Q-100241 9/16/26'
       + ' / Search Engine Optimization – Q-100242 9/12/26'
       + ' / Online Reputation Management – Q-100243 9/16/26'],
     'fc.tabs': [fc.tabs.join(','), 'Details,History'],
     'fc.actions': [fc.actions.join(','), 'Config,adtini Forecast'],
     'fc.historyRows': [fc.historyRows, 2],
+    'fc.aRunIsAlwaysARow': [fc.seo2HistoryRows, 1],
+    'fc.noRunNoRows': [fc.ormHistoryEmpty, 'No runs yet.'],
     'fc.historyCols': [fc.historyCols.join('|'),
       'Date Forecasted|Generated Response|Type|Error'],
     'fc.detailsHidden': [fc.detailsHidden, true],
     'form.opensSeo': [form.opensSeo, true],
     'form.loaded': [form.loaded, 'Sage Dental'],
+    'geo.cityKeepsItsComma': [form.cityNotSplitOnComma, 1],
+    'geo.cityPills': [form.cityPills.join(' | '), 'Boca Raton, FL | Delray Beach, FL'],
+    'geo.childFollowsItsCheckbox': [form.countyShown, true],
+    'geo.countyCommitsOnComma': [form.countyPills.join(','), 'Palm Beach County'],
     'form.savedMsg': [form.savedMsg, true],
     'form.closed': [form.closed, true],
     'form.brandKept': [form.brandKept, 'EDITED'],
