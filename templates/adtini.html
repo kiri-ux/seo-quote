@@ -47,19 +47,19 @@
     <!-- ---------------- SEO ---------------- -->
     <form id="fseo">
       <div class="grid">
-        <div class="f"><label>Brand Name <span class="i" title="Pulled from the order">i</span></label>
+        <div class="f"><label>Brand Name <span class="i" data-tip="Pulled from the order" aria-label="Pulled from the order">i</span></label>
           <input type="text" data-k="brand"></div>
-        <div class="f"><label>Website Needing SEO <span class="i" title="Pulled from the order">i</span></label>
+        <div class="f"><label>Website Needing SEO <span class="i" data-tip="Pulled from the order" aria-label="Pulled from the order">i</span></label>
           <input type="text" data-k="site"></div>
 
-        <div class="f wide"><label>Product/Vertical Focus <span class="i" title="Built on the Keyword Builder page">i</span></label>
+        <div class="f wide"><label>Product/Vertical Focus <span class="i" data-tip="Built on the Keyword Builder page" aria-label="Built on the Keyword Builder page">i</span></label>
           <div class="box" data-chips="focus"></div></div>
 
-        <div class="f wide"><label>Negative Terms <span class="i" title="What the client does not offer">i</span></label>
+        <div class="f wide"><label>Negative Terms <span class="i" data-tip="What the client does not offer" aria-label="What the client does not offer">i</span></label>
           <div class="box" data-chips="negatives"></div></div>
 
         <div class="f wide"><label>What the client does
-          <span class="i" title="Read by the term expansion, the refine pass and the proposal">i</span></label>
+          <span class="i" data-tip="Read by the term expansion, the refine pass and the proposal" aria-label="Read by the term expansion, the refine pass and the proposal">i</span></label>
           <textarea data-k="business_desc"></textarea></div>
 
         <div class="f wide">
@@ -80,10 +80,10 @@
         <div class="f" data-geo="g_country"><label>Country</label>
           <div class="box" data-chips="countries"></div></div>
 
-        <div class="f wide"><label>Industry <span class="i" title="Selects the pricing rules that apply">i</span></label>
+        <div class="f wide"><label>Industry <span class="i" data-tip="Selects the pricing rules that apply" aria-label="Selects the pricing rules that apply">i</span></label>
           <div class="box" data-chips="industry"></div></div>
 
-        <div class="f wide"><label>Strategy <span class="i" title="Core SEO is the priced product">i</span></label>
+        <div class="f wide"><label>Strategy <span class="i" data-tip="Core SEO is the priced product" aria-label="Core SEO is the priced product">i</span></label>
           <div class="box" data-chips="strategy"></div></div>
 
         <div class="f wide"><label>Campaign Goals</label>
@@ -96,18 +96,6 @@
         <div class="f" data-past><label>Current Spend / Month</label><input type="text" data-k="spend"></div>
         <div class="f" data-past><a class="dl" href="#">&#11015; Current SEO Report</a></div>
 
-        <div class="quad">
-          <div class="f"><label>Expand on Focus Terms</label>
-            <div class="yn" data-k="expand"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-          <div class="f"><label>Lock Keyword List</label>
-            <div class="yn" data-k="lock"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-          <div class="f"><label>Price on National Demand</label>
-            <div class="yn" data-k="national"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-          <div class="f"><label>Add-On Markets</label>
-            <div class="yn" data-k="addon"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-        </div>
-
-        <div class="f"><label># of Markets</label><input type="number" data-k="markets"></div>
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
       </div>
     </form>
@@ -115,24 +103,24 @@
     <!-- ---------------- ORM ---------------- -->
     <form id="form" hidden>
       <div class="grid">
-        <div class="f"><label>Brand Name <span class="i" title="Every lookup is built from it">i</span></label>
+        <div class="f"><label>Brand Name <span class="i" data-tip="Every lookup is built from it" aria-label="Every lookup is built from it">i</span></label>
           <input type="text" data-k="brand"></div>
-        <div class="f"><label>Client Website <span class="i" title="Tags a result as owned">i</span></label>
+        <div class="f"><label>Client Website <span class="i" data-tip="Tags a result as owned" aria-label="Tags a result as owned">i</span></label>
           <input type="text" data-k="site"></div>
 
-        <div class="f wide"><label>Strategy <span class="i" title="Every workstream this quote carries">i</span></label>
+        <div class="f wide"><label>Strategy <span class="i" data-tip="Every workstream this quote carries" aria-label="Every workstream this quote carries">i</span></label>
           <div class="box" data-chips="strategy"></div></div>
 
-        <div class="f"><label>Flagged Reviews <span class="i" title="1 and 2 star, from the review pull">i</span></label>
+        <div class="f"><label>Flagged Reviews <span class="i" data-tip="1 and 2 star, from the review pull" aria-label="1 and 2 star, from the review pull">i</span></label>
           <input type="number" data-k="reviews"></div>
-        <div class="f"><label># of Locations <span class="i" title="Drives the Brand Shield per-location add">i</span></label>
+        <div class="f"><label># of Locations <span class="i" data-tip="Drives the Brand Shield per-location add" aria-label="Drives the Brand Shield per-location add">i</span></label>
           <input type="number" data-k="locations"></div>
 
         <div class="f"><label># of Standard Sites</label><input type="number" data-k="std"></div>
-        <div class="f"><label># of Premium Sites <span class="i" title="News and high-authority — its own rate">i</span></label>
+        <div class="f"><label># of Premium Sites <span class="i" data-tip="News and high-authority — its own rate" aria-label="News and high-authority — its own rate">i</span></label>
           <input type="number" data-k="prem"></div>
 
-        <div class="f"><label>Search Volume <span class="i" title="What the Search Protection rate is priced off">i</span></label>
+        <div class="f"><label>Search Volume <span class="i" data-tip="What the Search Protection rate is priced off" aria-label="What the Search Protection rate is priced off">i</span></label>
           <input type="number" data-k="volume"></div>
         <div class="f"><label>Country</label>
           <select data-k="country">
@@ -182,6 +170,10 @@
               </select></div>
             <div class="f"><label>Price on national demand</label>
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
+            <div class="f"><label>Expand on focus terms</label>
+              <div class="yn" id="kbExpand"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
+            <div class="f"><label>Lock keyword list</label>
+              <div class="yn" id="kbLock"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
           </div>
           <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
         </section>
@@ -238,7 +230,7 @@
       <span id="saved" style="color:var(--muted);font-size:12.5px;margin-right:auto;padding-left:22px"></span>
       <button class="btn save" type="button" id="save">Save But Don't Generate</button>
       <span class="spark">&#10022;</span>
-      <button class="btn go" type="button" id="gen">Generate Forecast</button>
+      <button class="btn go" type="button" id="gen">Generate Quote</button>
     </div>
   </div>
 </div>
@@ -246,10 +238,19 @@
 
 <script>
 const $ = id => document.getElementById(id);
+let LISTS = {industries: [], goals: [], strategies: [], rep_strategies: []};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money = v => (v == null || v === '') ? '—'
   : '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+// A MARGIN IS 35% OR 0.35 DEPENDING ON WHO SAVED IT. Read as one thing, or a
+// quote saved by the older tab prints 3500%.
+const frac = v => {
+  const n = Number(v);
+  if (!isFinite(n) || !n) return 0;
+  return n > 1 ? n / 100 : n;
+};
+const pct = v => Math.round(frac(v) * 100) + '%';
 
 async function post(url, body, method){
   const r = await fetch(url, {method: method || 'POST',
@@ -483,7 +484,7 @@ function adopt(got){
              strategy: STRAT_FROM(f),
              reviews: +f.nReviews || 0, locations: +f.nLocations || 1,
              std: +f.nArtStd || 0, prem: +f.nArtPrem || 0, volume: +f.volume || 0,
-             markup: String(Math.round((parseFloat(f.clientMargin) || 0.35) * 100)),
+             markup: String(Math.round(frac(parseFloat(f.clientMargin) || 0.35) * 100)),
              country: 'United States', autosuggest: 1},
       scan: {terms: sc.terms || null, serp: sc.serp || null,
              locations: sc.locations || null, autocomplete: sc.autocomplete || null,
@@ -518,7 +519,7 @@ function adopt(got){
            g_county: false, g_country: i.geo_scope === 'nationwide',
            national: i.geo_scope === 'nationwide' ? 1 : 0,
            addon: (i.addon_markets || 0) ? 1 : 0, markets: i.addon_markets || 0,
-           markup: String(Math.round((i.markup_pct || 0.35) * 100)),
+           markup: String(Math.round(frac(i.markup_pct != null ? i.markup_pct : 0.35) * 100)),
            past: i.past_seo ? 1 : 0, past_details: i.past_seo_detail || '',
            spend: i.client_budget ? '$' + Number(i.client_budget).toLocaleString() : '',
            country: 'United States', expand: 1, lock: 0},
@@ -858,24 +859,26 @@ function plannerView(r){
       : 'none');
     add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
     add('Locations', rh.locations);
-    add('Margin', `${Math.round((rh.margin_pct || 0) * 100)}% · `
-      + money(rh.margin_dollars_monthly) + '/mo');
+    add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
   } else {
-    add('Core SEO', Object.keys(h.core_seo_price || {})
-      .map(k => `${k} ${money(h.core_seo_price[k])}`).join(' · '));
+    const inTier = o => ['base', 'intermediate', 'advanced'].filter(k => (o || {})[k] != null)
+      .map(k => `${k} ${money(o[k])}`).join(' · ');
+    add('Core SEO', inTier(h.core_seo_price));
     add('AI Search', h.ai_search_pct
-      ? Object.keys(h.ai_search_price || {}).map(k => `${k} ${money(h.ai_search_price[k])}`).join(' · ')
-        + ` · ${h.ai_search_pct}% of Core SEO`
+      ? inTier(h.ai_search_price) + ` · ${pct(h.ai_search_pct)} of Core SEO`
       : 'not on this quote');
+    const sug = (r.result || {}).addon || {};
     add('Add-on markets', h.addon_markets
       ? `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
-        + (h.addon_market_discount_pct ? ` · ${h.addon_market_discount_pct}% off` : '')
-      : 'none');
+        + (h.addon_market_discount_pct ? ` · ${pct(h.addon_market_discount_pct)} off` : '')
+        + ((r.cfg || {}).addon_markets ? ' · set in Config'
+           : (sug.basis ? ` · ${sug.basis}` : ''))
+      : (sug.basis ? `none · ${sug.basis}` : 'none'));
     add('Keywords', `${(kw.all || []).length} terms · `
       + `${(p.total_volume || 0).toLocaleString()}/mo · `
       + (p.pct_not_ranking == null ? 'ranking unmeasured'
                                    : `${100 - p.pct_not_ranking}% ranking`));
-    add('Margin', `${Math.round((h.margin_pct || 0) * 100)}% · `
+    add('Margin', `${pct(h.margin_pct)} · `
       + Object.keys(h.margin_dollars || {}).map(k => money(h.margin_dollars[k])).join(' / '));
   }
   const shot = (r.result || {}).shot;
@@ -917,10 +920,13 @@ function resultsHtml(r){
   const q = r.result.quote || {};
   const t = q.totals || {};
   const TIER = {base: 'Base', intermediate: 'Intermediate', advanced: 'Advanced'};
+  const pkg = h.package || {};
+  const ordered = ['base', 'intermediate', 'advanced']
+    .filter(k => pkg[k] != null)
+    .concat(Object.keys(pkg).filter(k => !TIER[k]));
   const tiers = r.kind === 'orm'
     ? {'Monthly': t.monthly, 'Removals — max': t.removals_max, 'Total': t.total}
-    : Object.keys(h.package || {}).reduce(
-        (z, k) => (z[TIER[k] || k] = h.package[k], z), {});
+    : ordered.reduce((z, k) => (z[TIER[k] || k] = pkg[k], z), {});
   const ord = sendList(r, 'order'), pro = sendList(r, 'prop');
   return `
   <details class="qres" open>
@@ -945,11 +951,31 @@ function resultsHtml(r){
 // ---------------------------------------------------------------- modal
 let ROW = null, VIEW = 'form';
 
+// A PICK LIST WHERE ONE EXISTS. Industry, Strategy and Campaign Goals are the
+// same options the legacy tab offers -- typed values drift, and Industry has to
+// match an RZ category exactly or the pricing rule never fires.
+const CHIP_LIST = {industry: 'industries', goals: 'goals', strategy: 'strategies'};
 function chipbox(box, list){
+  const key = box.dataset.chips;
+  const src = (box.closest('#form') && key === 'strategy') ? 'rep_strategies'
+            : CHIP_LIST[key];
+  const opts = src ? (LISTS[src] || []) : null;
   box.innerHTML = list.map(v => `<span class="chip">${esc(v)} <b>&times;</b></span>`).join('')
-    + '<input class="chipin" type="text" placeholder="add…" style="flex:1;min-width:110px;'
-    + 'background:none;border:0;outline:none;font-family:inherit;font-size:13px;padding:2px;min-height:0">';
+    + (opts && opts.length
+       ? `<select class="chipsel"><option value="">add…</option>`
+         + opts.map(v => `<option>${esc(v)}</option>`).join('') + '</select>'
+       : '<input class="chipin" type="text" placeholder="add…" style="flex:1;min-width:110px;'
+         + 'background:none;border:0;outline:none;font-family:inherit;font-size:13px;padding:2px;min-height:0">');
 }
+document.addEventListener('change', e => {
+  const sel = e.target.closest('.chipsel');
+  if (!sel || !sel.value) return;
+  const v = sel.value;
+  sel.value = '';
+  if ([...sel.closest('.box').querySelectorAll('.chip')]
+      .some(c => c.firstChild.textContent.trim() === v)) return;
+  sel.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+});
 function load(form, data){
   form.querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k, v = data[k];
@@ -1021,8 +1047,7 @@ function show(view){
   $('kwBuilder').classList.toggle('pressed', view === 'kw' || view === 'scan');
   const orm = ROW != null && ROWS[ROW].kind === 'orm';
   $('kwBuilder').innerHTML = orm ? '&#9906; Brand Scan' : '&#9998; Keyword Builder';
-  $('gen').textContent = view === 'kw' ? 'Apply to forecast'
-    : (orm ? 'Generate Quote' : 'Generate Forecast');
+  $('gen').textContent = view === 'kw' ? 'Apply to the quote' : 'Generate Quote';
 }
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
@@ -1039,9 +1064,10 @@ document.addEventListener('click', e => {
     b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     if (b.parentNode.dataset.k === 'past') pastFields();
     // National demand is a scope decision, so the builder's line follows it.
-    if (b.parentNode.id === 'kbNat' && ROW != null) {
-      ROWS[ROW].data.national = b.dataset.v === '1' ? 1 : 0;
-      kbScopeNote(ROWS[ROW]);
+    const kbk = {kbNat: 'national', kbExpand: 'expand', kbLock: 'lock'}[b.parentNode.id];
+    if (kbk && ROW != null) {
+      ROWS[ROW].data[kbk] = b.dataset.v === '1' ? 1 : 0;
+      if (kbk === 'national') kbScopeNote(ROWS[ROW]);
     }
   }
   const x = e.target.closest('.chip b');
@@ -1097,6 +1123,7 @@ $('prods').addEventListener('click', e => {
 // ---------------------------------------------------------------- config
 const CFG_SEO = [
   ['markup','Markup %','text',''], ['min_term','Minimum term (months)','number',''],
+  ['addon_markets','Add-on markets — override the recommendation','number','recommended'],
   ['ov_core','Override partner Core SEO','number','formula'],
   ['ov_ai','Override partner AI Search','number','formula'],
   ['ov_addon','Override partner add-on market','number','formula'],
@@ -1352,8 +1379,9 @@ function stateOf(d){
 function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   $('kbCountry').value = r.data.country || 'United States';
-  $('kbNat').querySelectorAll('button').forEach(b =>
-    b.classList.toggle('on', String(b.dataset.v) === String(r.data.national ? 1 : 0)));
+  [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock']].forEach(([id, k]) =>
+    $(id).querySelectorAll('button').forEach(b =>
+      b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
   kbScopeNote(r);
   kbDraw(r);
 }
@@ -1429,11 +1457,13 @@ async function expandSeeds(r, d){
 
 $('kbBuild').onclick = async () => {
   const r = ROWS[ROW];
-  r.data = collect(formOf(r));
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
   r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
     .map(c => c.firstChild.textContent.trim());
   const d = r.data;
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
+  d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
+  d.lock = $('kbLock').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.country = $('kbCountry').value;
   kbScopeNote(r);
   const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
@@ -1533,7 +1563,7 @@ function scanDraw(r){
 
 $('scRun').onclick = async () => {
   const r = ROWS[ROW];
-  r.data = collect(formOf(r));
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
   const brand = $('scBrand').value.trim(), domain = $('scDomain').value.trim();
   if (!brand) { $('scProg').textContent = 'Brand name first.'; return; }
   r.data.brand = brand; r.data.site = domain;
@@ -1601,7 +1631,7 @@ $('scRun').onclick = async () => {
 // ---------------------------------------------------------------- ORM quote
 async function generateOrm(){
   const r = ROWS[ROW];
-  r.data = collect(formOf(r));
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
   if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
   const d = r.data, strat = d.strategy || [];
   const sc = r.scan || {};
@@ -1676,7 +1706,7 @@ async function autoSerp(r, d, ranks, say){
 // ---------------------------------------------------------------- steps 2-4
 async function generate(){
   const r = ROWS[ROW];
-  r.data = collect(formOf(r));
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
   if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
   r.cfg = r.cfg || {};
   r.over = r.over || {};
@@ -1722,6 +1752,20 @@ async function generate(){
     const pct_not_ranking = checkedOk
       ? Math.round((1 - ranked / checkedOk) * 100) : null;   // 0-100, not a fraction
 
+    // ADD-ON MARKETS ARE A RECOMMENDATION, NOT A TYPED NUMBER. The quote knows
+    // how many markets are new to the client -- a location page, a Google
+    // profile or a ranking answers it per market -- so it proposes the count
+    // and Config overrides it.
+    let addon = {suggested: 0, basis: ''};
+    if (geo.length > 1) {
+      try {
+        addon = await post('/api/addon_suggestion',
+          {geo_values: geo, state: st, table, cfg: r.over});
+      } catch (e) { addon = {suggested: 0, basis: ''}; }
+    }
+    const addonOv = String((r.cfg || {}).addon_markets || '').trim();
+    const addonN = addonOv === '' ? (+addon.suggested || 0) : (+addonOv || 0);
+
     say('Step 4 — pricing…');
     const total_volume = r.kw.total_volume != null
       ? Number(r.kw.total_volume)
@@ -1729,7 +1773,7 @@ async function generate(){
     const price = await post('/api/price', {
       band, adder: met.adder || 0,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10,
-      addon_markets: d.addon ? (+d.markets || 0) : 0,
+      addon_markets: addonN,
       markup_pct: parseFloat(String(r.cfg.markup || d.markup || 35)) / 100,
       pct_not_ranking, total_volume, industry,
       national_demand: band === 'nationwide', cfg: r.over,
@@ -1737,7 +1781,7 @@ async function generate(){
 
     const pkg = (price.handoff || {}).package || {};
     const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';
-    r.result = {pricing: price, ranks, table, metrics: met, headline:
+    r.result = {pricing: price, ranks, table, metrics: met, addon, headline:
       `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
       + (pct_not_ranking == null ? 'ranking unmeasured' : `${100 - pct_not_ranking}% ranking`)};
     r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,
@@ -1768,7 +1812,7 @@ async function generate(){
 
 $('save').onclick = () => {
   const r = ROWS[ROW];
-  r.data = collect(formOf(r));
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
   if (VIEW === 'kw') r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
     .map(c => c.firstChild.textContent.trim());
   const msg = `Saved ${Object.keys(r.data).length} fields to ${r.name} – ${dateOf(r)}.`;
@@ -1817,9 +1861,13 @@ $('revert').onclick = $('reset').onclick = () => {
   $('saved').textContent = 'Back on the file defaults.';
 };
 
-draw();
-fromQuery();
-loadClient();
+(async () => {
+  try { LISTS = Object.assign(LISTS, await (await fetch('/api/lists')).json()); }
+  catch (e) { /* typed values still work */ }
+  draw();
+  fromQuery();
+  loadClient();
+})();
 </script>
 </body>
 </html>

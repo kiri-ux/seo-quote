@@ -18,6 +18,7 @@
   --rail:#1B5FC1;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 html,body{margin:0;padding:0}
 
 /* ---- adtini's own left rail -------------------------------------------- */
@@ -416,6 +417,7 @@ input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background
 
 /* the keyword list and the capture, side by side under the quote */
 .pvsplit{display:grid;grid-template-columns:3fr 1fr;gap:12px;align-items:start;margin-bottom:12px}
+.pvsplit{align-items:start}
 @media(max-width:900px){.pvsplit{grid-template-columns:1fr}}
 .pvkw,.pvserp{background:var(--fill);border-radius:12px;padding:12px 14px}
 .pvkw h5,.pvserp h5{margin:0 0 8px;font-size:10.5px;font-weight:700;text-transform:uppercase;
@@ -431,11 +433,31 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC;font-size:18px}
 /* the keyword list and the capture are one row, so they match height */
 .pvsplit{align-items:stretch}
 .pvkw,.pvserp{display:flex;flex-direction:column;min-height:0}
-.pvkw .pvscroll{flex:1;max-height:none;overflow-y:auto}
+.pvkw .pvscroll{flex:1;min-height:0;overflow-y:auto}
 .pvserp a,.pvserp img{display:block}
 .pvserp{overflow:hidden}
-.pvserp a{flex:1;overflow:hidden;border-radius:8px}
-.pvserp img{height:100%;object-fit:cover;object-position:top}
+.pvserp a{border-radius:8px;display:block}
+.pvserp img{width:100%;height:auto;display:block}
 .pagehead .build{margin-left:auto;font-size:11px;color:var(--muted);
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
 .pagehead .build + .btn-create{margin-left:14px}
+
+/* the keyword list is as tall as the capture beside it, and scrolls */
+.pvsplit{align-items:stretch}
+.pvkw{max-height:none}
+.pvkw .pvscroll{overflow-y:auto}
+
+/* a hover that says what a field is for */
+.i{position:relative}
+.i:hover::after{
+  content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 8px);
+  transform:translateX(-50%);z-index:80;width:max-content;max-width:280px;
+  background:var(--navy-2);color:#fff;font-family:Poppins,sans-serif;font-style:normal;
+  font-size:12px;font-weight:400;line-height:1.45;padding:8px 10px;border-radius:8px;
+  box-shadow:0 6px 18px rgba(10,35,60,.22);white-space:normal;text-align:left}
+.i:hover::before{
+  content:"";position:absolute;left:50%;top:calc(100% + 3px);transform:translateX(-50%);
+  border:5px solid transparent;border-bottom-color:var(--navy-2);z-index:80}
+select.chipsel{border:0;background:none;font-family:inherit;font-size:13px;color:var(--muted);
+  padding:2px 4px;min-height:0;cursor:pointer;flex:1;min-width:110px}
+select.chipsel:focus{outline:none}

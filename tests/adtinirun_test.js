@@ -68,6 +68,9 @@ const CFG = {
     }
     if (url === '/api/price') return json(route, PRICE);
     if (url === '/api/config') return json(route, CFG);
+    if (url === '/api/addon_suggestion')
+      return json(route, {suggested: 4, basis: '4 of 5 markets are new to them',
+                          confident: true});
     if (url === '/api/serp_recommend')
       return json(route, {recommended: 'dental implants boca raton',
                           basis: 'measured, and they are not there'});
@@ -244,7 +247,7 @@ const CFG = {
     return R;
   });
 
-  const seq = calls.map(c => c.url);
+  const seq = calls.map(c => c.url).filter(u => u !== '/api/lists');
   const kwCall = calls.find(c => c.url === '/api/keywords') || { body: {} };
   const refCall = calls.find(c => c.url === '/api/refine') || { body: {} };
   const metCall = calls.find(c => c.url === '/api/metrics') || { body: {} };
@@ -286,6 +289,9 @@ const CFG = {
     'run.rankBatchSize': [(rankCalls[0].body.batch || []).length, 3],
     // one of three ranked in the top set -> 67% not ranking, as a percentage
     'run.bandIsRowScope': [priceCall.body.band, 'single_city'],
+    // one city on this row, so no add-on recommendation is asked for
+    'addon.notAskedForOneMarket': [seq.includes('/api/addon_suggestion'), false],
+    'addon.zeroWhenOneMarket': [priceCall.body.addon_markets, 0],
     'run.nationalOffForCity': [priceCall.body.national_demand, false],
     'run.pctIsPercent': [priceCall.body.pct_not_ranking, 67],
     'run.zeroRankingOff': [priceCall.body.zero_ranking, false],

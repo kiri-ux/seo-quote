@@ -101,11 +101,11 @@ const BASE = "http://127.0.0.1:5203";
     R.opensSeo = !document.getElementById('fseo').hidden && document.getElementById('form').hidden;
     R.loaded = document.querySelector('#fseo [data-k="brand"]').value;
     document.querySelector('#fseo [data-k="brand"]').value = 'EDITED';
-    document.querySelector('#fseo [data-k="markets"]').value = 12;
+    document.querySelector('#fseo [data-k="markup"]').value = 12;
     const inp = document.querySelector('#fseo [data-chips="focus"] .chipin');
     inp.value = 'sedation dentistry';
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    document.querySelector('#fseo .yn[data-k="lock"] button[data-v="1"]').click();
+    document.querySelector('#fseo .yn[data-k="past"] button[data-v="1"]').click();
     // City takes Enter, because "Boca Raton, FL" is one value
     const cityIn = document.querySelector('#fseo [data-chips="city"] .chipin');
     cityIn.value = 'Delray Beach, FL';
@@ -132,13 +132,22 @@ const BASE = "http://127.0.0.1:5203";
     R.closed = document.getElementById('scrim').hidden;
     document.querySelector('[data-open="0"]').click();
     R.brandKept = document.querySelector('#fseo [data-k="brand"]').value;
-    R.marketsKept = document.querySelector('#fseo [data-k="markets"]').value;
+    R.markupKept = document.querySelector('#fseo [data-k="markup"]').value;
     R.chipKept = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
       .some(c => c.textContent.includes('sedation dentistry'));
-    R.toggleKept = document.querySelector('#fseo .yn[data-k="lock"] button.on').dataset.v;
+    R.toggleKept = document.querySelector('#fseo .yn[data-k="past"] button.on').dataset.v;
     // a chip comes off again
     document.querySelector('#fseo [data-chips="focus"] .chip b').click();
     R.chipRemoved = document.querySelectorAll('#fseo [data-chips="focus"] .chip').length;
+    const indSel = document.querySelector('#fseo [data-chips="industry"] .chipsel');
+    R.industryIsAList = !!indSel && indSel.options.length > 100;
+    R.stratOptions = [...document.querySelector('#fseo [data-chips="strategy"] .chipsel').options]
+      .map(o => o.textContent).slice(1);
+    R.goalOptions = [...document.querySelector('#fseo [data-chips="goals"] .chipsel').options].length - 1;
+    indSel.value = 'Plumbing';
+    indSel.dispatchEvent(new Event('change', {bubbles: true}));
+    R.industryPicked = [...document.querySelectorAll('#fseo [data-chips="industry"] .chip')]
+      .map(c => c.firstChild.textContent.trim());
     document.getElementById('close').click();
     // an ORM row opens the ORM form
     document.querySelector('[data-open="2"]').click();
@@ -172,6 +181,11 @@ const BASE = "http://127.0.0.1:5203";
     R.builtNote = document.getElementById('kbNote').textContent.trim();
     R.hasBuild = !!document.getElementById('kbBuild');
     R.hasSourceToggle = !!document.getElementById('kbSrc');
+    R.builderToggles = ['kbNat', 'kbExpand', 'kbLock'].every(id => !!document.getElementById(id));
+    R.formHasNoToggles = !document.querySelector('#fseo .yn[data-k="expand"]')
+      && !document.querySelector('#fseo .yn[data-k="lock"]')
+      && !document.querySelector('#fseo .yn[data-k="national"]')
+      && !document.querySelector('#fseo [data-k="markets"]');
     R.seedsFromRow = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
       .map(c => c.firstChild.textContent.trim());
     R.generateBecomesApply = document.getElementById('gen').textContent.trim();
@@ -234,24 +248,31 @@ const BASE = "http://127.0.0.1:5203";
     'form.savedMsg': [form.savedMsg, true],
     'form.closed': [form.closed, true],
     'form.brandKept': [form.brandKept, 'EDITED'],
-    'form.marketsKept': [form.marketsKept, '12'],
+    'form.markupKept': [form.markupKept, '12'],
     'form.chipKept': [form.chipKept, true],
     'form.toggleKept': [form.toggleKept, '1'],
     'form.chipRemoved': [form.chipRemoved, 3],
+    'lists.industryIsTheRzList': [form.industryIsAList, true],
+    'lists.strategyOptions': [form.stratOptions.join(','),
+      'Core SEO,Core SEO + AI Search,Website Audit'],
+    'lists.goalOptions': [form.goalOptions, 11],
+    'lists.pickAddsAChip': [form.industryPicked.join(','), 'Healthcare,Plumbing'],
     'form.opensOrm': [form.opensOrm, true],
     'form.ormStrategy': [form.ormStrategy.join(','),
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
     'preview.opensConfig': [kw.previewOpensConfig, true],
     'preview.cfgFields': [kw.cfgFields.join(','),
-      'markup,min_term,ov_core,ov_ai,ov_addon,ov_reason'],
+      'markup,min_term,addon_markets,ov_core,ov_ai,ov_addon,ov_reason'],
     'adtini.opensForm': [kw.adtiniOpensForm, true],
     'kw.staysInModal': [kw.stayedPut, true],
     'kw.pane': [kw.kwPane, true],
     'kw.savedListShown': [kw.builtNote, '7,700/mo measured · United States'],
     'kw.hasBuild': [kw.hasBuild, true],
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
+    'kw.ownsTheThreeToggles': [kw.builderToggles, true],
+    'form.keepsNoneOfThem': [kw.formHasNoToggles, true],
     'kw.seedsFromRow': [kw.seedsFromRow.length > 0, true],
-    'kw.applyLabel': [kw.generateBecomesApply, 'Apply to forecast'],
+    'kw.applyLabel': [kw.generateBecomesApply, 'Apply to the quote'],
     'kw.backOnForm': [kw.backOnForm, true],
     'kw.focusCarried': [kw.focusCarried, true],
   };

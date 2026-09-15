@@ -14565,6 +14565,35 @@ def api_perf_quote():
     })
 
 
+# THE PICK LISTS, FROM THE ONE PLACE THEY LIVE. Industry is the RZ category
+# datalist in the SEO template, so the adtini form reads that rather than
+# carrying a second copy that can drift.
+def _rz_industries():
+    try:
+        t = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "templates", "index.html"), encoding="utf-8").read()
+        i = t.index('id="rz_industries"')
+        seg = t[i:t.index("</datalist>", i)]
+        return [html.unescape(v) for v in re.findall(r'<option value="([^"]+)"', seg)]
+    except Exception:                                            # noqa: BLE001
+        return []
+
+
+STRATEGY_OPTIONS = ["Core SEO", "Core SEO + AI Search", "Website Audit"]
+REP_STRATEGY_OPTIONS = ["Review Removals", "Site/Article Removals",
+                        "Reactive", "Proactive"]
+
+
+@app.route("/api/lists")
+@_json_error_guard
+def api_lists():
+    """Option lists the adtini form picks from."""
+    return jsonify({"industries": _rz_industries(),
+                    "goals": GOAL_OPTIONS,
+                    "strategies": STRATEGY_OPTIONS,
+                    "rep_strategies": REP_STRATEGY_OPTIONS})
+
+
 @app.route("/api/config", methods=["GET"])
 @_json_error_guard
 def api_config_get():

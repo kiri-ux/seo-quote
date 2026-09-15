@@ -141,7 +141,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     R.focus = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
       .map(c => c.firstChild.textContent.trim());
     R.pastShown = [...document.querySelectorAll('#fseo [data-past]')].filter(x => !x.hidden).length;
-    R.markets = document.querySelector('#fseo [data-k="markets"]').value;
+    R.markup = document.querySelector('#fseo [data-k="markup"]').value;
     document.getElementById('close').click();
     // the second quote on this client was saved before the handoff block
     const q2 = document.querySelector('.prod[data-row="1"] .qres');
@@ -206,7 +206,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'seo.countryFieldHiddenBecauseNot': [seo.countryHidden, true],
     'seo.formFocus': [seo.focus.join(','), 'drain unblocking,cctv survey'],
     'seo.pastSeoFieldsOpen': [seo.pastShown, 3],
-    'seo.addOnMarketCount': [seo.markets, '3'],
+    'seo.markupFromTheQuote': [seo.markup, '35'],
     // a quote saved before the handoff block still reads
     'older.packageRead': [seo.olderPackage.join(' | '),
       'Package $ (Core + AI) — per tierpackage'
