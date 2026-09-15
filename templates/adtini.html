@@ -12,6 +12,17 @@
 </head>
 <body>
 
+<nav class="rail">
+  <a href="/adtini" title="Quotes">&#9873;</a>
+  <a href="/adtini/forecast?new=1" title="New quote" class="mark">&#43;</a>
+  <a href="/adtini" title="Quote list" class="mark on">&#9776;</a>
+  <a href="#" title="Clients">&#9787;</a>
+  <a href="#" title="Partners">&#9962;</a>
+  <a href="#" title="Reporting">&#9650;</a>
+  <a href="/" title="Legacy SEO">S</a>
+  <a href="/reputation" title="Legacy Rep Mgmt">R</a>
+</nav>
+
 <header class="app">
   <div class="bar">
     <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
@@ -19,8 +30,6 @@
   </div>
   <nav class="tabs">
     <a href="/adtini">Quotes</a>
-    <a href="/adtini/forecast" class="on">Forecast</a>
-    <span class="legacy">legacy <a href="/">SEO</a> <a href="/reputation">Rep Mgmt</a></span>
   </nav>
 </header>
 
@@ -44,7 +53,6 @@
       <div class="toppills">
         <button class="pill icon" type="button" id="reset" title="Revert">&#8635;</button>
         <button class="pill solid" type="button" id="kwBuilder" data-view="kw">&#9998; Keyword Builder</button>
-        <span class="i" title="Keywords are built in this modal">i</span>
         <button class="pill ghost" type="button" id="revert">Revert to Default</button>
       </div>
     </div>
@@ -175,6 +183,26 @@
           <p class="hint" id="kbNote"></p>
           <div class="cols" id="kbCols"></div>
           <div class="widen" id="kbWiden" hidden></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------------- brand scan, the ORM row's step 1 ---------------- -->
+    <div id="paneScan" hidden>
+      <div class="kbwrap">
+        <section class="kbside">
+          <h4>Brand</h4>
+          <p class="hint">What Google is asked about. Everything below is read off it.</p>
+          <div class="kbrow">
+            <div class="f"><label>Brand name</label><input type="text" id="scBrand"></div>
+            <div class="f"><label>Client website</label><input type="text" id="scDomain"></div>
+          </div>
+          <button class="btn build" type="button" id="scRun">Run brand scan</button>
+          <p class="hint" id="scProg" style="margin:12px 0 0"></p>
+        </section>
+        <section class="kbmain">
+          <div class="paneltop"><h4 id="scHead">Reputation snapshot</h4></div>
+          <div class="cols" id="scCols"></div>
         </section>
       </div>
     </div>
@@ -340,10 +368,18 @@ const ROWS = [
 // apart by when they were built.
 const dateOf = r => r.built || (r.history && r.history[0] && r.history[0].when.split(' ')[0]) || 'New';
 
+// EVERY QUOTE HAS AN ID OF ITS OWN. The line-item number belongs to the order
+// and repeats across products; this is the handle for one quote, and it travels
+// with it to the order form and the proposal.
+let QSEQ = 100240;
+const newQid = () => 'Q-' + (++QSEQ);
+ROWS.forEach(r => { r.qid = r.qid || newQid(); });
+
 function rowHtml(r, i){
   return `
   <div class="prod" data-row="${i}">
-    <h4>${r.name} &ndash; <u>${dateOf(r)}</u> <span class="mag">&#9906;</span></h4>
+    <h4>${r.name} &ndash; <u>${r.qid}</u>
+      <span class="when">${dateOf(r)}</span> <span class="mag">&#9906;</span></h4>
     <div class="ptabs">
       <button type="button" class="on" data-tab="details">Details</button>
       <button type="button" data-tab="history">History</button>
@@ -365,6 +401,28 @@ function rowHtml(r, i){
   </div>`;
 }
 function draw(){ $('prods').innerHTML = ROWS.map(rowHtml).join(''); }
+
+// THE GRID IS HOW YOU GET HERE. It names the client and, from the two review
+// icons, the product to open.
+function fromQuery(){
+  const q = new URLSearchParams(location.search);
+  const client = q.get('client'), order = q.get('order'), review = q.get('review');
+  if (client || order) {
+    document.querySelector('.pagehead h2').innerHTML =
+      `Forecast &ndash; Order <u>${esc(order || '—')}</u> &ndash; ${esc(client || '')}`;
+    document.querySelector('.crumbs').innerHTML =
+      `<a href="/adtini">Quotes</a> &rsaquo; <a href="/adtini">${esc(order || '')}</a> &rsaquo; Forecast`;
+  }
+  if (!review) return;
+  const i = ROWS.findIndex(r => r.kind === review);
+  if (i < 0) return;
+  const prod = document.querySelector(`.prod[data-row="${i}"]`);
+  if (!prod) return;
+  const fold = prod.querySelector('.qres');
+  if (fold) fold.open = true;
+  prod.scrollIntoView({block: 'start'});
+  prod.querySelector('.rowmsg').textContent = `${ROWS[i].qid} · ${dateOf(ROWS[i])}`;
+}
 
 function histHtml(r){
   const h = r.history || [];
@@ -401,57 +459,110 @@ function kvTable(obj, skip){
 // proposal read, what this quote has in it, and which of the two it travels to.
 // A field a destination needs and the quote has not got reads "not captured",
 // because a silent gap is how a proposal ships without its rank table.
+const H = r => ((r.result || {}).pricing || {}).handoff || {};
+const P = r => (r.result || {}).pricing || {};
+const Q = r => (r.result || {}).quote || {};          // ORM: /api/rep_quote
+const RH = r => (Q(r).handoff) || {};
+const SC = r => r.scan || {};
+// A workstream this quote did not buy has nothing to send, so it reads as off
+// rather than as a gap.
+const OFF = 'not on this quote';
+const ifAddon = (r, v) => H(r).addon_markets ? v : OFF;
+const ifAi = (r, v) => H(r).ai_search_pct ? v : OFF;
+const tierCounts = r => {
+  const k = r.kw || {};
+  return (k.ultra || k.competitive || k.long_tail)
+    ? {ultra: (k.ultra || []).length, competitive: (k.competitive || []).length,
+       'long tail': (k.long_tail || []).length}
+    : undefined;
+};
+
+// SEO -- the adtini order form's SEO+ product block, and the SEO+ proposal
+// slides. Anything marked `manual` is typed on the order form by the planner,
+// so an empty one is not a gap in the quote.
 const SEND_SEO = [
-  ['Order & scope', [
-    ['brand', 'Brand name', 'prop', r => r.data.brand],
+  ['This quote', [
+    ['quote_id', 'Internal quote ID', 'both', r => r.qid],
+    ['built', 'Date built', 'both', r => dateOf(r)],
+  ]],
+  ['Order form · campaign & budget', [
+    ['seo_version', 'SEO version', 'order', r => (r.data.strategy || []).join(', ')],
+    ['package', 'SEO package — per tier', 'both', r => H(r).package],
+    ['selected_tier', 'Tier selected', 'order', r => r.tier, 'manual'],
+    ['monthly_budget', 'Monthly budget', 'both', r => (H(r).package || {})[r.tier || 'base']],
+    ['months_running', 'Months running', 'both', r => P(r).min_term_months],
+    ['total_budget', 'Total budget', 'both', r => {
+      const m = (H(r).package || {})[r.tier || 'base'], n = P(r).min_term_months;
+      return m && n ? m * n : undefined; }],
+    ['add_on_markets', 'Add-on markets', 'both', r => H(r).addon_markets ? 'Yes' : 'No'],
+    ['n_add_on_markets', '# of add-on markets', 'both', r => H(r).addon_markets],
+    ['add_on_price', 'Add-on price', 'both',
+     r => ifAddon(r, (H(r).addon_market_price || {})[r.tier || 'base'])],
+    ['margin_pct', 'Margin %', 'order', r => H(r).margin_pct],
+    ['discount_pct', 'Multi-site / multi-location discount', 'order',
+     r => ifAddon(r, H(r).addon_market_discount_pct)],
+    ['auto_renewal', 'Auto-renewal', 'order', r => r.data.auto_renewal, 'manual'],
+    ['flights', 'Flights — dates and budget', 'order', r => r.data.flights, 'manual'],
+    ['billing_frequency', 'Billing frequency', 'order', r => r.data.billing_frequency, 'manual'],
+  ]],
+  ['Order form · product details', [
+    ['brand', 'Brand name', 'both', r => r.data.brand],
     ['business_desc', 'What the client does', 'prop', r => r.data.business_desc],
-    ['geo_values', 'Targeting areas', 'prop', r => geoOf(r.data)],
+    ['website', 'Website needing SEO', 'both', r => r.data.site],
+    ['website_cms', 'Website CMS', 'order', r => r.data.cms, 'manual'],
+    ['additional_profiles', 'Additional profiles', 'order', r => r.data.profiles, 'manual'],
+    ['metric_goals', 'Metric goals', 'order', r => (r.data.goals || [])[0]],
+    ['geo_targeting', 'Geographic targeting areas', 'both', r => geoOf(r.data)],
     ['state', 'State', 'prop', r => stateOf(r.data)],
-    ['strategy', 'Strategy', 'prop', r => r.data.strategy],
-    ['goal', 'Campaign goal', 'prop', r => (r.data.goals || [])[0]],
-    ['site_rebuild', 'Site rebuild', 'prop', r => r.data.site_rebuild],
+    ['geo_scope', 'Geo scope', 'both', r => BANDS[bandOf(r.data)]],
+    ['additional_instructions', 'Additional instructions', 'order',
+     r => r.data.instructions, 'manual'],
   ]],
-  ['Client price', [
-    ['package', 'Package — per tier', 'both', r => H(r).package],
-    ['core_seo_price', 'Core SEO — per tier', 'io', r => H(r).core_seo_price],
-    ['ai_search_price', 'AI Search — per tier', 'io', r => H(r).ai_search_price],
-    ['ai_search_pct', 'AI Search % of Core', 'io', r => H(r).ai_search_pct],
-    ['ai_search_pct_effective', 'AI Search % — effective', 'io',
-     r => H(r).ai_search_pct_effective],
-    ['margin_pct', 'Margin %', 'io', r => H(r).margin_pct],
-    ['min_term_months', 'Minimum term', 'screen', r => P(r).min_term_months],
+  ['Order form · forecast request', [
+    ['client_budget', "Client's estimated budget", 'order', r => r.data.spend],
+    ['past_seo', 'Has done SEO in the past', 'order', r => r.data.past ? 'Yes' : 'No'],
+    ['past_seo_details', 'Past SEO details', 'order', r => r.data.past_details],
+    ['past_seo_report', 'Past SEO report', 'order', r => r.data.past_report, 'manual'],
   ]],
-  ['Add-on markets', [
-    ['addon_markets', 'Add-on market count', 'both', r => H(r).addon_markets],
-    ['addon_market_price', 'Add-on market — per tier', 'io', r => H(r).addon_market_price],
-    ['addon_market_discount_pct', 'Add-On Market %', 'io',
-     r => H(r).addon_market_discount_pct],
-    ['addon_market_price_by_bracket', 'Every bracket the deck can move to', 'io',
-     r => H(r).addon_market_price_by_bracket],
-    ['client_addon_per_market', 'Add-on market — for the deck', 'prop',
-     r => P(r).client_addon_per_market],
+  ['Order form · strategies', [
+    ['strategy', 'Strategies', 'both', r => r.data.strategy],
+    ['ai_search_price', 'AI Search — per tier', 'both', r => ifAi(r, H(r).ai_search_price)],
+    ['core_seo_price', 'Core SEO — per tier', 'both', r => H(r).core_seo_price],
+    ['ai_search_pct', 'AI Search % of Core SEO', 'order', r => ifAi(r, H(r).ai_search_pct)],
   ]],
-  ['Partner cost', [
-    ['partner_hard_cost', 'Partner hard cost', 'io', r => H(r).partner_hard_cost],
-    ['partner_core_seo_cost', 'Partner Core SEO', 'io', r => H(r).partner_core_seo_cost],
-    ['partner_ai_search_cost', 'Partner AI Search', 'io', r => H(r).partner_ai_search_cost],
-    ['partner_addon_market_cost', 'Partner add-on market', 'io',
-     r => H(r).partner_addon_market_cost],
-    ['margin_dollars', 'Margin $', 'io', r => H(r).margin_dollars],
+  ['Proposal · keyword details', [
+    ['keywords', 'Keyword table', 'prop', r => (r.kw && r.kw.all) || undefined],
+    ['google_rank', 'Google rank per keyword', 'prop', r => (r.result || {}).table],
+    ['competitiveness', 'Competitiveness per keyword', 'prop', r => tierCounts(r)],
+    ['keyword_distribution', 'Keyword distribution — chart', 'prop', r => tierCounts(r)],
+    ['tier_keyword_counts', 'Keywords per tier on the slide', 'prop',
+     r => (r.result || {}).tier_keywords],
   ]],
-  ['Keywords & measurement', [
-    ['kw', 'Keyword list', 'prop', r => (r.kw && r.kw.all) || undefined],
-    ['table', 'Rank table', 'prop', r => (r.result || {}).table],
+  ['Proposal · measurement', [
+    ['total_volume', 'Measured demand', 'prop', r => P(r).total_volume],
+    ['pct_not_ranking', '% of terms not ranking', 'prop', r => P(r).pct_not_ranking],
     ['cpc', 'Top-of-page bids', 'prop', r => ((r.result || {}).metrics || {}).cpc],
     ['kd_score', 'Keyword difficulty', 'prop', r => ((r.result || {}).metrics || {}).kd_score],
     ['signals', 'Competitor signals', 'prop', r => (r.result || {}).signals],
     ['perf_rows', 'Performance table', 'prop', r => (r.result || {}).perf_rows],
     ['serp', 'SERP capture', 'prop', r => (r.result || {}).shot],
+    ['ranking_window', 'Ranking improvement window', 'prop',
+     r => (r.result || {}).ranking_window],
+  ]],
+  ['Partner cost', [
+    ['partner_hard_cost', 'Partner hard cost', 'order', r => H(r).partner_hard_cost],
+    ['partner_core_seo_cost', 'Partner Core SEO', 'order', r => H(r).partner_core_seo_cost],
+    ['partner_ai_search_cost', 'Partner AI Search', 'order',
+     r => ifAi(r, H(r).partner_ai_search_cost)],
+    ['partner_addon_market_cost', 'Partner add-on market', 'order',
+     r => ifAddon(r, H(r).partner_addon_market_cost)],
+    ['addon_market_price_by_bracket', 'Every add-on bracket the deck can move to',
+     'order', r => ifAddon(r, H(r).addon_market_price_by_bracket)],
+    ['margin_dollars', 'Margin $', 'order', r => H(r).margin_dollars],
   ]],
   ['List insights', [
     ['widen', 'Widen the offer', 'screen', r => ((r.kw || {}).widen || {}).fact],
-    ['expansion', 'Terms added by expansion', 'screen',
-     r => (r.expandNote || {}).added],
+    ['expansion', 'Terms added by expansion', 'screen', r => (r.expandNote || {}).added],
     ['site_dropped', 'Dropped as off-topic', 'screen', r => (r.kw || {}).site_dropped],
     ['fragments_dropped', 'Dropped as fragments', 'screen',
      r => (r.kw || {}).fragments_dropped],
@@ -459,11 +570,110 @@ const SEND_SEO = [
      r => r.natReason || (bandOf(r.data) === 'nationwide' ? 'priced nationally' : '')],
   ]],
 ];
-const H = r => ((r.result || {}).pricing || {}).handoff || {};
-const P = r => (r.result || {}).pricing || {};
-const DEST = {io: [1, 0], prop: [0, 1], both: [1, 1], screen: [0, 0]};
 
-function sendValue(v){
+// ORM -- the order form's Online Reputation Management block, and the ORM
+// proposal slides (Reputation Snapshot and Product Details).
+const SEND_ORM = [
+  ['This quote', [
+    ['quote_id', 'Internal quote ID', 'both', r => r.qid],
+    ['built', 'Date built', 'both', r => dateOf(r)],
+  ]],
+  ['Order form · campaign & budget', [
+    ['monthly_budget', 'Monthly budget', 'both', r => RH(r).monthly_budget],
+    ['review_removals', 'Review removals', 'both',
+     r => RH(r).review_removals === undefined ? undefined
+        : (RH(r).review_removals ? 'Yes' : 'No')],
+    ['reviews_count', '# of reviews', 'both', r => RH(r).reviews_count],
+    ['price_per_review_removal', 'Price per review removal', 'both',
+     r => RH(r).price_per_review_removal],
+    ['site_article_removals', 'Site / article removals', 'both',
+     r => RH(r).site_article_removals === undefined ? undefined
+        : (RH(r).site_article_removals ? 'Yes' : 'No')],
+    ['standard_sites', '# of standard sites', 'both', r => RH(r).standard_sites],
+    ['price_per_standard_site_removal', 'Price per standard site', 'both',
+     r => RH(r).price_per_standard_site_removal],
+    ['premium_sites', '# of premium sites', 'both', r => RH(r).premium_sites],
+    ['price_per_premium_site_removal', 'Price per premium site', 'both',
+     r => RH(r).price_per_premium_site_removal],
+    ['max_removal_cost', 'Max removal cost', 'both', r => (Q(r).totals || {}).removals_max],
+    ['months_running', 'Months running', 'both', r => r.data.months],
+    ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
+    ['auto_renewal', 'Auto-renewal', 'order', r => r.data.auto_renewal, 'manual'],
+    ['flights', 'Flights — dates and budget', 'order', r => r.data.flights, 'manual'],
+    ['billing_frequency', 'Billing frequency', 'order', r => r.data.billing_frequency, 'manual'],
+  ]],
+  ['Order form · strategies', [
+    ['strategy', 'Strategies', 'both', r => RH(r).strategy || r.data.strategy],
+    ['search_protection_monthly', 'Reactive — Search Protection / month', 'both',
+     r => RH(r).search_protection_monthly],
+    ['brand_shield_monthly', 'Proactive — Brand Shield / month', 'both',
+     r => RH(r).brand_shield_monthly],
+    ['search_volume', 'Brand search volume', 'both', r => RH(r).search_volume],
+    ['locations', '# of locations', 'both', r => RH(r).locations],
+  ]],
+  ['Order form · product details', [
+    ['brand', 'Brand name', 'both', r => r.data.brand],
+    ['website', 'Client website', 'both', r => r.data.site],
+    ['geo_targeting', 'Geographic targeting areas', 'order', r => r.data.geo, 'manual'],
+    ['additional_instructions', 'Additional instructions', 'order',
+     r => r.data.instructions, 'manual'],
+    ['client_budget', "Client's estimated budget", 'order', r => r.data.spend],
+    ['past_orm', 'Has done ORM in the past', 'order',
+     r => r.data.past === undefined ? undefined : (r.data.past ? 'Yes' : 'No')],
+    ['past_orm_details', 'Past ORM details', 'order', r => r.data.past_details],
+  ]],
+  ['Proposal · reputation snapshot', [
+    ['negative_terms', 'Negative terms — term, class, vol/mo', 'prop',
+     r => (SC(r).terms || {}).rows],
+    ['page_one', 'Top Google results', 'prop', r => (SC(r).serp || {}).rows],
+    ['location_reviews', 'Top location Google reviews', 'prop',
+     r => (SC(r).locations || {}).locations],
+    ['star_breakdown', 'Star reviews breakdown', 'prop', r => SC(r).stars],
+    ['to_remove', '1–2 star reviews to remove', 'prop', r => RH(r).reviews_count],
+    ['autocomplete', 'Auto-suggest findings', 'prop', r => (SC(r).autocomplete || {}).rows],
+    ['serp_shots', 'SERP captures', 'prop', r => SC(r).shots],
+  ]],
+  ['Proposal · product details', [
+    ['removal_pages', 'Pages quoted for removal', 'both', r => RH(r).removal_pages],
+    ['suppression_pages', 'Pages quoted for suppression', 'both',
+     r => RH(r).suppression_pages],
+    ['review_rate', 'Review removal rate', 'prop', r => RH(r).price_per_review_removal],
+    ['site_rate_card', 'Site removal rate card', 'prop', r => (Q(r).lines || []).length],
+    ['success_rates', 'Success rates and timeframes', 'prop', r => (Q(r).warnings || []).length],
+    ['total_budget', 'Total budget', 'both', r => (Q(r).totals || {}).total],
+  ]],
+  ['Partner cost', [
+    ['partner_monthly_cost', 'Partner monthly cost', 'order', r => RH(r).partner_monthly_cost],
+    ['partner_search_protection_monthly', 'Partner Search Protection', 'order',
+     r => RH(r).partner_search_protection_monthly],
+    ['partner_brand_shield_monthly', 'Partner Brand Shield', 'order',
+     r => RH(r).partner_brand_shield_monthly],
+    ['partner_hard_cost_per_review', 'Partner cost per review', 'order',
+     r => RH(r).partner_hard_cost_per_review],
+    ['partner_hard_cost_per_standard_site', 'Partner cost per standard site', 'order',
+     r => RH(r).partner_hard_cost_per_standard_site],
+    ['partner_hard_cost_per_premium_site', 'Partner cost per premium site', 'order',
+     r => RH(r).partner_hard_cost_per_premium_site],
+    ['partner_review_removals_total', 'Partner review removals — total', 'order',
+     r => RH(r).partner_review_removals_total],
+    ['partner_standard_sites_total', 'Partner standard sites — total', 'order',
+     r => RH(r).partner_standard_sites_total],
+    ['partner_premium_sites_total', 'Partner premium sites — total', 'order',
+     r => RH(r).partner_premium_sites_total],
+    ['margin_dollars_monthly', 'Margin $ — monthly', 'order',
+     r => RH(r).margin_dollars_monthly],
+  ]],
+  ['Scan insights', [
+    ['scan_name', 'Name Google lists them under', 'screen', r => (SC(r).locations || {}).listed],
+    ['scan_warnings', 'Quote warnings', 'screen', r => Q(r).warnings],
+  ]],
+];
+
+const DEST = {order: [1, 0], prop: [0, 1], both: [1, 1], screen: [0, 0]};
+
+const MONEY_KEY = /price|cost|budget|monthly|dollars|_max|total|rate|package|anchor/;
+function sendValue(v, key){
+  const cash = MONEY_KEY.test(key || '');
   if (v === undefined || v === null || v === '') return null;
   if (Array.isArray(v)) {
     if (!v.length) return null;
@@ -474,35 +684,37 @@ function sendValue(v){
   }
   if (typeof v === 'object') {
     const k = Object.keys(v);
-    return k.length ? k.map(t => `${t}: ${typeof v[t] === 'number' ? money(v[t]) : v[t]}`)
-      .slice(0, 3).join(' \u00b7 ') : null;
+    return k.length
+      ? k.map(t => `${t}: ${cash && typeof v[t] === 'number' ? money(v[t]) : v[t]}`)
+         .slice(0, 3).join(' \u00b7 ') : null;
   }
-  if (typeof v === 'number') return v.toLocaleString();
+  if (typeof v === 'number') return cash ? money(v) : v.toLocaleString();
   return String(v);
 }
 function sendMatrix(r){
-  let io = 0, ioHave = 0, pr = 0, prHave = 0;
-  const secs = SEND_SEO.map(([h, rows]) => {
-    const body = rows.map(([k, label, dest, get]) => {
+  let ord = 0, ordHave = 0, pr = 0, prHave = 0;
+  const secs = (r.kind === 'orm' ? SEND_ORM : SEND_SEO).map(([h, rows]) => {
+    const body = rows.map(([k, label, dest, get, manual]) => {
       let v = null;
-      try { v = sendValue(get(r)); } catch (e) { v = null; }
-      const [toIo, toPr] = DEST[dest];
-      if (toIo) { io++; if (v) ioHave++; }
-      if (toPr) { pr++; if (v) prHave++; }
-      const gap = !v && (toIo || toPr);
+      try { v = sendValue(get(r), k); } catch (e) { v = null; }
+      const [toOrd, toPr] = DEST[dest];
+      if (toOrd && !manual) { ord++; if (v) ordHave++; }
+      if (toPr && !manual) { pr++; if (v) prHave++; }
+      const gap = !v && !manual && (toOrd || toPr);
       return `<tr class="${gap ? 'gap' : ''}">
         <td>${label}<span>${k}</span></td>
-        <td>${v ? esc(v) : (gap ? 'not captured' : '\u2014')}</td>
-        <td>${toIo ? '&#9679;' : '&#8211;'}</td>
+        <td>${v ? esc(v) : (manual ? 'typed on the order form'
+                                   : (gap ? 'not captured' : '\u2014'))}</td>
+        <td>${toOrd ? '&#9679;' : '&#8211;'}</td>
         <td>${toPr ? '&#9679;' : '&#8211;'}</td></tr>`;
     }).join('');
     return `<tr class="sec"><th colspan="4">${h}</th></tr>${body}`;
   }).join('');
   return `<table class="send"><thead><tr>
-      <th>Field</th><th>This quote</th><th>Line item</th><th>Proposal</th>
+      <th>Field</th><th>This quote</th><th>Order form</th><th>Proposal</th>
     </tr></thead><tbody>${secs}</tbody></table>
-    <p class="hint sendfoot">Line item ${ioHave} of ${io} \u00b7 Proposal ${prHave} of ${pr}
-      \u00b7 insights stay on this screen</p>`;
+    <p class="hint sendfoot">Order form ${ordHave} of ${ord}
+      \u00b7 Proposal ${prHave} of ${pr}</p>`;
 }
 
 function resultsHtml(r){
@@ -511,12 +723,16 @@ function resultsHtml(r){
   const h = p.handoff || {};
   const kw = r.kw || {};
   const all = kw.all || [];
-  const tiers = h.package || {};
+  const q = r.result.quote || {};
+  const t = q.totals || {};
+  const tiers = r.kind === 'orm'
+    ? {'Monthly': t.monthly, 'Removals — max': t.removals_max, 'Total': t.total}
+    : (h.package || {});
   // What the document prints, as the pricer returned it. The handoff is the
   // IO's copy and has its own fold.
   const prop = {};
-  Object.keys(p).forEach(k => {
-    const v = p[k];
+  Object.keys(r.kind === 'orm' ? q : p).forEach(k => {
+    const v = (r.kind === 'orm' ? q : p)[k];
     if (k === 'handoff' || v === null || v === undefined || v === '') return;
     prop[k] = v;
   });
@@ -532,16 +748,18 @@ function resultsHtml(r){
       <details class="qfold" open><summary>What goes where</summary>
         ${sendMatrix(r)}</details>
 
-      <details class="qfold"><summary>Line item payload &mdash; ${Object.keys(h).length} fields</summary>
-        ${kvTable(h)}</details>
+      <details class="qfold"><summary>Order form payload &mdash;
+        ${Object.keys(r.kind === 'orm' ? (q.handoff || {}) : h).length} fields</summary>
+        ${kvTable(r.kind === 'orm' ? (q.handoff || {}) : h)}</details>
 
+      ${r.kind === 'orm' ? '' : `
       <details class="qfold"><summary>Keyword table &mdash; ${all.length} terms</summary>
         <table class="kv"><tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
         ${all.map(x => {
           const rk = (r.result.ranks || {})[String(x.kw || '').toLowerCase()];
           return `<tr><td>${esc(x.kw)}</td><td>${(x.vol || 0).toLocaleString()}</td>`
                + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
-        }).join('')}</table></details>
+        }).join('')}</table></details>`}
 
       <details class="qfold">
         <summary>Proposal payload &mdash; ${Object.keys(prop).length} fields</summary>
@@ -602,21 +820,27 @@ function open(i, view){
   $('fseo').hidden = r.kind !== 'seo';
   $('form').hidden = r.kind !== 'orm';
   load(formOf(r), r.data);
-  cfgLoad(r); kbLoad(r); cfgGlobalLoad();
+  cfgLoad(r); cfgGlobalLoad();
+  if (r.kind === 'orm') scanLoad(r); else kbLoad(r);
   $('saved').textContent = '';
   $('scrim').hidden = false;
   document.body.style.overflow = 'hidden';
   show(view || 'form');
 }
-const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder', cfg:'Pricing Config'};
+const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder',
+                    scan:'Brand Scan', cfg:'Pricing Config'};
 function show(view){
   VIEW = view;
   document.querySelector('.sheet .top h2').textContent = PANE_TITLE[view] || PANE_TITLE.form;
   $('paneForm').hidden = view !== 'form';
   $('paneKw').hidden   = view !== 'kw';
+  $('paneScan').hidden = view !== 'scan';
   $('paneCfg').hidden  = view !== 'cfg';
-  $('kwBuilder').classList.toggle('pressed', view === 'kw');
-  $('gen').textContent = view === 'kw' ? 'Apply to forecast' : 'Generate Forecast';
+  $('kwBuilder').classList.toggle('pressed', view === 'kw' || view === 'scan');
+  const orm = ROW != null && ROWS[ROW].kind === 'orm';
+  $('kwBuilder').innerHTML = orm ? '&#9906; Brand Scan' : '&#9998; Keyword Builder';
+  $('gen').textContent = view === 'kw' ? 'Apply to forecast'
+    : (orm ? 'Generate Quote' : 'Generate Forecast');
 }
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
@@ -1073,6 +1297,147 @@ $('kbSrc').onchange = () => kbDraw();
 $('kbCountry').onchange = () => kbDraw();
 
 
+// ---------------------------------------------------------------- ORM step 1
+// RUN BRAND SCAN, THEN GENERATE QUOTE. The scan is what the Reputation
+// Snapshot slide is made of and what the counts on the order form are read
+// from; the quote is the pricing pass over those counts.
+function scanLoad(r){
+  $('scBrand').value = r.data.brand || '';
+  $('scDomain').value = r.data.site || '';
+  scanDraw(r);
+}
+function scanDraw(r){
+  const sc = r.scan;
+  if (!sc) { $('scCols').innerHTML = ''; $('scHead').textContent = 'Reputation snapshot'; return; }
+  const terms = ((sc.terms || {}).rows || []).slice(0, 8);
+  const serp = ((sc.serp || {}).rows || []).slice(0, 8);
+  const locs = ((sc.locations || {}).locations || []).slice(0, 8);
+  const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5><ul>${body}</ul></div>`;
+  $('scHead').textContent = `Reputation snapshot — ${r.data.brand || ''}`;
+  $('scCols').innerHTML =
+    col('Negative terms', ((sc.terms || {}).rows || []).length,
+      terms.map(t => `<li><span>${esc(t.keyword || t.term || '')}</span>`
+        + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
+    + col('Page one', ((sc.serp || {}).rows || []).length,
+      serp.map(x => `<li><span>${esc(x.domain || x.url || '')}</span>`
+        + `<span class="v">${x.pos == null ? '' : '#' + x.pos}</span></li>`).join(''))
+    + col('Locations', ((sc.locations || {}).locations || []).length,
+      locs.map(x => `<li><span>${esc(x.title || '')}</span>`
+        + `<span class="v">${x.reviews || 0} reviews</span></li>`).join(''));
+}
+
+$('scRun').onclick = async () => {
+  const r = ROWS[ROW];
+  r.data = collect(formOf(r));
+  const brand = $('scBrand').value.trim(), domain = $('scDomain').value.trim();
+  if (!brand) { $('scProg').textContent = 'Brand name first.'; return; }
+  r.data.brand = brand; r.data.site = domain;
+  const sc = r.scan = {};
+  $('scRun').disabled = true;
+  const say = t => { $('scProg').textContent = t; };
+  const step = async (label, fn) => {
+    say(label);
+    try { await fn(); } catch (e) { say(label + ' failed — ' + e.message); }
+    scanDraw(r);
+  };
+  // Locations first: Google may list them under another name, and every later
+  // call should spend on the name people actually search.
+  await step('1/4 — Google locations…', async () => {
+    sc.locations = await post('/api/rep_scan_locations', {brand, domain});
+    const best = (sc.locations.locations || []).slice()
+      .sort((a, b) => (b.reviews || 0) - (a.reviews || 0))[0];
+    const listed = ((best || {}).title || '').trim();
+    if (listed && listed.toLowerCase() !== brand.toLowerCase()) sc.locations.listed = listed;
+  });
+  await step('2/4 — brand term universe…', async () => {
+    sc.terms = await post('/api/rep_scan_terms', {brand});
+  });
+  await step('3/4 — "' + brand + ' reviews" SERP…', async () => {
+    sc.serp = await post('/api/rep_scan_serp', {brand, domain});
+  });
+  await step('4/4 — auto-suggest…', async () => {
+    sc.autocomplete = await post('/api/rep_scan_autocomplete', {brand});
+  });
+  // Star breakdown: the review pull is queued and collected, so it is polled.
+  const pids = ((sc.locations || {}).locations || [])
+    .map(x => x.place_id).filter(Boolean).slice(0, 10);
+  if (pids.length) {
+    try {
+      say('Counting 1–2 star reviews…');
+      const sub = await post('/api/rep_reviews_submit', {place_ids: pids});
+      let pending = (sub.tasks || []).filter(t => t.ok).map(t => t.id);
+      const done = [];
+      for (let n = 0; pending.length && n < 12; n++) {
+        await new Promise(z => setTimeout(z, 5000));
+        const got = await post('/api/rep_reviews_collect', {task_ids: pending});
+        (got.done || []).forEach(x => done.push(x));
+        pending = got.pending || [];
+        say(`Counting 1–2 star reviews… ${done.length} done · ${pending.length} pending`);
+      }
+      sc.stars = {locations: ((sc.locations || {}).locations || []).length,
+                  flagged: done.reduce((z, x) => z + (x.neg_1_2 || 0), 0),
+                  one_star: done.reduce((z, x) => z + (x.neg_1 || 0), 0)};
+    } catch (e) { say('Review count failed — ' + e.message); }
+  }
+  // The form follows the scan: the counts are what the quote prices.
+  const d = r.data;
+  if (sc.stars) { d.reviews = sc.stars.flagged; d.locations = sc.stars.locations; }
+  else if ((sc.locations || {}).locations) d.locations = sc.locations.locations.length;
+  const vol = ((sc.terms || {}).rows || []).reduce((z, x) => z + (x.volume || 0), 0);
+  if (vol) d.volume = vol;
+  load(formOf(r), d);
+  scanDraw(r);
+  say(`Scan complete · ${d.reviews || 0} flagged reviews · ${d.locations || 0} locations`
+      + ` · ${(d.volume || 0).toLocaleString()}/mo brand volume`
+      + ((sc.locations || {}).listed ? ` · Google lists them as “${sc.locations.listed}”` : ''));
+  $('scRun').disabled = false;
+};
+
+// ---------------------------------------------------------------- ORM quote
+async function generateOrm(){
+  const r = ROWS[ROW];
+  r.data = collect(formOf(r));
+  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  const d = r.data, strat = d.strategy || [];
+  const sc = r.scan || {};
+  const pages = ((sc.serp || {}).rows || []);
+  const payload = {
+    campaign: strat.includes('Proactive') && strat.includes('Reactive') ? 'bundle'
+            : strat.includes('Proactive') ? 'proactive' : 'reactive',
+    margin_pct: parseFloat(String(r.cfg && r.cfg.markup || d.markup || 35)) / 100,
+    reviews: strat.includes('Review Removals') ? {count: +d.reviews || 0} : {count: 0},
+    articles: strat.includes('Site/Article Removals')
+      ? {standard: +d.std || 0, premium: +d.prem || 0,
+         pages: pages.slice(0, (+d.std || 0) + (+d.prem || 0)).map((x, n) => ({
+           pos: x.pos, domain: x.domain, url: x.url || '', title: x.title || '',
+           tier: n < (+d.prem || 0) ? 'premium' : 'standard'}))}
+      : {standard: 0, premium: 0, pages: []},
+    search: {volume: +d.volume || 0, suppression: strat.includes('Reactive'),
+             autosuggest: !!d.autosuggest, term_sets: 1,
+             pages: pages.slice(0, 10).map(x => ({pos: x.pos, domain: x.domain,
+                                                  url: x.url || '', title: x.title || ''}))},
+    shield: {locations: +d.locations || 1},
+    overrides: {},
+  };
+  $('gen').disabled = true;
+  $('saved').textContent = 'Pricing…';
+  try {
+    const q = await post('/api/rep_quote', payload);
+    const tot = q.totals || {};
+    r.result = {quote: q,
+      headline: `${money(tot.monthly || 0)}/mo · ${(q.lines || []).length} lines`
+        + ` · ${strat.length} workstream${strat.length === 1 ? '' : 's'}`};
+    r.history = [{when: new Date().toLocaleString(),
+                  prompt: `{ ${payload.campaign}, ${payload.reviews.count} reviews }`,
+                  resp: `${money(tot.monthly || 0)}/mo`, quote: r.result}]
+                .concat(r.history || []);
+    draw();
+    $('saved').textContent = '';
+    close();
+  } catch (e) { $('saved').textContent = e.message; }
+  $('gen').disabled = false;
+}
+
 // ---------------------------------------------------------------- steps 2-4
 async function generate(){
   const r = ROWS[ROW];
@@ -1170,6 +1535,8 @@ $('save').onclick = () => {
   $('saved').textContent = msg;
 };
 $('gen').onclick = () => {
+  if (ROWS[ROW].kind === 'orm' && VIEW === 'scan') { show('form'); return; }
+  if (ROWS[ROW].kind === 'orm') { generateOrm(); return; }
   if (VIEW === 'kw') {
     const r = ROWS[ROW];
     r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -1188,7 +1555,10 @@ $('gen').onclick = () => {
   generate();
 };
 
-$('kwBuilder').onclick = () => show(VIEW === 'kw' ? 'form' : 'kw');
+$('kwBuilder').onclick = () => {
+  const step1 = ROWS[ROW].kind === 'orm' ? 'scan' : 'kw';
+  show(VIEW === step1 ? 'form' : step1);
+};
 $('revert').onclick = $('reset').onclick = () => {
   const r = ROWS[ROW];
   r.over = {};
@@ -1199,6 +1569,7 @@ $('revert').onclick = $('reset').onclick = () => {
 };
 
 draw();
+fromQuery();
 </script>
 </body>
 </html>

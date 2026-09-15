@@ -19,6 +19,21 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
+
+/* ---- adtini's own left rail -------------------------------------------- */
+nav.rail{position:fixed;top:0;left:0;bottom:0;width:54px;background:var(--rail);
+  display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;z-index:60}
+nav.rail a{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;color:#CFE0F7;text-decoration:none;font-size:16px}
+nav.rail a:hover{background:rgba(255,255,255,.14);color:#fff}
+nav.rail a.mark{background:var(--gold);color:#3A2508}
+nav.rail a.mark.on{background:var(--orange);color:#fff}
+body{padding-left:54px}
+@media (max-width:700px){
+  nav.rail{flex-direction:row;width:100%;height:46px;bottom:auto;padding:4px 8px;gap:4px;
+    overflow-x:auto}
+  body{padding-left:0;padding-top:46px}
+}
 body{
   background:var(--page);
   color:var(--text);
@@ -49,7 +64,7 @@ nav.tabs a.on{background:var(--page);color:var(--navy)}
 }
 .pagehead h2{margin:0;font-size:21px;font-weight:600;letter-spacing:-.01em}
 .burger{font-size:19px;color:var(--muted);cursor:pointer;line-height:1}
-.wrap{max-width:1760px;margin:0 auto;padding:20px 26px 70px}
+.wrap{max-width:none;margin:0;padding:20px 26px 70px}
 .crumbs{font-size:12.5px;color:var(--muted);margin:0 0 14px}
 .crumbs a{color:var(--navy);font-weight:600}
 
@@ -377,3 +392,14 @@ input.cell:hover{border-color:var(--line);background:var(--card)}
 input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background:var(--card)}
 .strat{display:inline-block;background:var(--fill);color:var(--navy);font-size:11px;
   font-weight:600;border-radius:999px;padding:3px 9px}
+
+/* row icons on the quote list */
+.rowicons a{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+  border-radius:7px;text-decoration:none;font-size:12px;font-weight:700;
+  background:var(--fill);color:var(--blue)}
+.rowicons a:hover{background:var(--blue);color:#fff}
+.rowicons a.spark{background:#FDF0DB;color:var(--orange);font-size:14px}
+.rowicons a.spark:hover{background:var(--orange);color:#fff}
+.rowicons .off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+  border-radius:7px;font-size:12px;font-weight:700;color:#C3CAD4;background:var(--fill)}
+.prod h4 .when{font-size:12.5px;font-weight:500;color:var(--muted);margin-left:6px}

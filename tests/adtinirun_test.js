@@ -99,6 +99,7 @@ const CFG = {
 
   // ---------------- pricing config ----------------
   await p.click('[data-open="0"][data-view="cfg"]');
+  await p.waitForSelector('#cfgGlobal [data-g="geo_anchor.single_city"]');
   const cfg = await p.evaluate(() => {
     const R = {};
     R.title = document.querySelector('.sheet .top h2').textContent.trim();
@@ -177,16 +178,19 @@ const CFG = {
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
     R.folds = [...q.querySelectorAll('.qfold > summary')].map(s => s.textContent.trim());
-    const kwFold = [...q.querySelectorAll('.qfold')].find(f => /Keyword table/.test(f.textContent));
+    const foldBy = re => [...q.querySelectorAll('.qfold')]
+      .find(f => re.test(f.querySelector('summary').textContent));
+    const kwFold = foldBy(/Keyword table/);
     R.rankRows = [...kwFold.querySelectorAll('table.kv tr')].slice(1)
       .map(tr => [...tr.children].map(td => td.textContent.trim()).join(' | '));
-    const io = [...q.querySelectorAll('.qfold')].find(f => /Line item payload/.test(f.textContent));
+    const io = foldBy(/Order form payload/);
     R.ioKeys = [...io.querySelectorAll('table.kv td:first-child')].map(td => td.textContent.trim());
     // the matrix: what leaves this quote, and for which destination
     const send = q.querySelector('table.send');
     R.sendSections = [...send.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
     const rowOf = k => [...send.querySelectorAll('tbody tr')]
       .find(tr => (tr.querySelector('td span') || {}).textContent === k);
+    R.quoteIdRow = [...rowOf('quote_id').children].map(td => td.textContent.trim());
     const cells = tr => [...tr.children].map(td => td.textContent.trim());
     R.packageRow = cells(rowOf('package'));
     R.brandRow = cells(rowOf('brand'));
@@ -257,20 +261,24 @@ const CFG = {
     'res.headline': [res.headline,
       'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
     'res.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
-    'res.folds': [res.folds.join(' / '),
-      'What goes where / Line item payload — 3 fields / Keyword table — 3 terms'
+    'res.folds': [res.folds.map(f => f.replace(/\s+/g, ' ')).join(' / '),
+      'What goes where / Order form payload — 3 fields / Keyword table — 3 terms'
       + ' / Proposal payload — 3 fields'],
     'send.sections': [res.sendSections.join(' / '),
-      'Order & scope / Client price / Add-on markets / Partner cost'
-      + ' / Keywords & measurement / List insights'],
+      'This quote / Order form · campaign & budget / Order form · product details'
+      + ' / Order form · forecast request / Order form · strategies'
+      + ' / Proposal · keyword details / Proposal · measurement / Partner cost'
+      + ' / List insights'],
     'send.priceGoesBoth': [res.packageRow.join(' | '),
-      'Package — per tierpackage | Core SEO: $5,450 · Add-on markets: $1,200 | ● | ●'],
-    'send.brandProposalOnly': [res.brandRow.slice(2).join(' | '), '– | ●'],
+      'SEO package — per tierpackage | Core SEO: $5,450 · Add-on markets: $1,200 | ● | ●'],
+    'send.brandGoesBoth': [res.brandRow.slice(2).join(' | '), '● | ●'],
     'send.missingIsNamed': [res.serpRow[1], 'not captured'],
     'send.missingIsFlagged': [res.serpIsGap, true],
     'send.insightsAreScreenOnly': [res.insightRow.slice(2).join(' | '), '– | –'],
     'send.insightIsNotAGap': [res.insightIsGap, false],
-    'send.counts': [/^Line item \d+ of \d+ · Proposal \d+ of \d+/.test(res.foot), true],
+    'send.counts': [/^Order form \d+ of \d+ · Proposal \d+ of \d+/.test(res.foot), true],
+    'send.quoteIdTravels': [res.quoteIdRow.join(' | '),
+      'Internal quote IDquote_id | Q-100241 | ● | ●'],
     'res.rankRows': [res.rankRows.join(' // '),
       'dental implants | 3,600 | 4 // dental implants boca raton | 880 | Not Found'
       + ' // affordable dental implants near me | 210 | Not Found'],

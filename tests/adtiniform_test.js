@@ -27,6 +27,12 @@ const BASE = "http://127.0.0.1:5203";
       ? [...document.querySelectorAll('tbody select.stat')[0].options].map(o => o.textContent) : [];
     R.partnerEditable = !!document.querySelector('tbody input.cell[data-f="partner"]');
     R.hasCreate = !!document.querySelector('.btn-create');
+    R.hasRail = document.querySelectorAll('nav.rail a').length > 0;
+    const icons = document.querySelectorAll('tbody tr')[2].querySelectorAll('.rowicons a, .rowicons .off');
+    R.icons = [...icons].map(x => x.getAttribute('href') || 'none');
+    const skiRow = [...document.querySelectorAll('tbody tr')]
+      .find(t => t.textContent.includes('Ski Barn'));
+    R.seoOffWhenNoSeo = !!skiRow.querySelector('.rowicons .off');
     // an edit sticks on that client
     const inp = document.querySelector('tbody input.cell[data-f="partner"]');
     inp.value = 'Edited Partner';
@@ -157,7 +163,7 @@ const BASE = "http://127.0.0.1:5203";
   const want = {
     'home.heading': [home.heading, 'Quotes'],
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Client|Order|Products|Strategies|Partner|Status'],
+      'Planner|Built|Client|Products|Strategies|Partner|Status'],
     'home.rows': [home.rows, 8],
     'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
     'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],
@@ -165,6 +171,12 @@ const BASE = "http://127.0.0.1:5203";
       'Pending,In Progress,Ready for SSG Review,Complete'],
     'home.partnerEditable': [home.partnerEditable, true],
     'home.newQuoteButton': [home.hasCreate, true],
+    'home.leftRail': [home.hasRail, true],
+    'home.rowIcons': [home.icons.join(' | '),
+      '/adtini/forecast?client=Sage%20Dental&order=56305'
+      + ' | /adtini/forecast?client=Sage%20Dental&order=56305&review=seo'
+      + ' | /adtini/forecast?client=Sage%20Dental&order=56305&review=orm'],
+    'home.iconOffWithoutThatProduct': [home.seoOffWhenNoSeo, true],
     'home.partnerEditSticks': [home.partnerKept, 'Edited Partner'],
     'home.statusEditSticks': [home.statusKept, 'Complete'],
     'home.strategiesPerProduct': [home.strategies.join(','),
@@ -174,9 +186,11 @@ const BASE = "http://127.0.0.1:5203";
     'home.bothOnly': [home.bothOnly, 2],
     'home.ormOnly': [home.ormOnly, 4],
     'home.searched': [home.searched, 1],
+    // every quote carries its own id, and the date beside it
     'fc.products': [fc.products.map(t => t.replace(/\s*\S$/, '')).join(' / '),
-      'Search Engine Optimization – 9/16/26 / Search Engine Optimization – 9/12/26'
-      + ' / Online Reputation Management – 9/16/26'],
+      'Search Engine Optimization – Q-100241 9/16/26'
+      + ' / Search Engine Optimization – Q-100242 9/12/26'
+      + ' / Online Reputation Management – Q-100243 9/16/26'],
     'fc.tabs': [fc.tabs.join(','), 'Details,History'],
     'fc.actions': [fc.actions.join(','), 'Preview,adtini Forecast'],
     'fc.historyRows': [fc.historyRows, 2],

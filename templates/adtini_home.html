@@ -12,6 +12,17 @@
 </head>
 <body>
 
+<nav class="rail">
+  <a href="/adtini" title="Quotes">&#9873;</a>
+  <a href="/adtini/forecast?new=1" title="New quote" class="mark">&#43;</a>
+  <a href="/adtini" title="Quote list" class="mark on">&#9776;</a>
+  <a href="#" title="Clients">&#9787;</a>
+  <a href="#" title="Partners">&#9962;</a>
+  <a href="#" title="Reporting">&#9650;</a>
+  <a href="/" title="Legacy SEO">S</a>
+  <a href="/reputation" title="Legacy Rep Mgmt">R</a>
+</nav>
+
 <header class="app">
   <div class="bar">
     <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
@@ -19,8 +30,6 @@
   </div>
   <nav class="tabs">
     <a href="/adtini" class="on">Quotes</a>
-    <a href="/adtini/forecast">Forecast</a>
-    <span class="legacy">legacy <a href="/">SEO</a> <a href="/reputation">Rep Mgmt</a></span>
   </nav>
 </header>
 
@@ -55,7 +64,6 @@
             <th>Planner</th>
             <th>Built</th>
             <th>Client</th>
-            <th>Order</th>
             <th>Products</th>
             <th>Strategies</th>
             <th>Partner</th>
@@ -126,6 +134,11 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const tag = (cls, label, n) =>
   `<span class="tag ${cls}">${label}${n > 1 ? '<sup>' + n + '</sup>' : ''}</span>`;
 
+// The sparkle opens the client's quote builder; the two letters open that
+// product's quote for review.
+const fcUrl = (r, product) => '/adtini/forecast?client=' + encodeURIComponent(r.client)
+  + '&order=' + encodeURIComponent(r.order) + (product ? '&review=' + product : '');
+
 function pick(list, val, cls, i, field){
   return `<select class="${cls}" data-i="${i}" data-f="${field}">`
     + list.map(v => `<option${v === val ? ' selected' : ''}>${esc(v)}</option>`).join('')
@@ -148,12 +161,17 @@ function draw(){
     const strat = [...new Set((r.seoStrat || []).concat(r.ormStrat || []))]
       .map(v => `<span class="strat">${esc(v)}</span>`).join('') || '—';
     return `<tr>
-      <td><div class="rowicons"><span title="Open">&#9906;</span><span title="Duplicate">&#9646;</span><span title="Regenerate">&#10022;</span></div></td>
+      <td><div class="rowicons">
+        <a href="${fcUrl(r)}" title="Quote builder — ${esc(r.client)}" class="spark">&#10022;</a>
+        ${r.seo ? `<a href="${fcUrl(r, 'seo')}" title="SEO review">S</a>`
+                : '<span class="off" title="No SEO quote">S</span>'}
+        ${r.orm ? `<a href="${fcUrl(r, 'orm')}" title="ORM review">R</a>`
+                : '<span class="off" title="No ORM quote">R</span>'}
+      </div></td>
       <td>${pick(PLANNERS, r.planner, 'who sel', i, 'planner')
         .replace('class="who sel"', `class="who sel" style="color:${fg};background:${bg}"`)}</td>
       <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${r.built}</span></td>
       <td class="lnk"><a href="/adtini/forecast">${esc(r.client)}</a></td>
-      <td class="lnk"><a href="/adtini/forecast">${r.order}</a></td>
       <td><div class="tags">${chips}</div></td>
       <td><div class="tags">${strat}</div></td>
       <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
