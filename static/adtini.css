@@ -269,7 +269,7 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 
 /* ---- keyword builder + config, inside the modal ------------------------- */
 #paneKw,#paneCfg{padding:18px 22px 6px}
-.kbwrap{display:grid;grid-template-columns:330px 1fr;gap:20px;align-items:start}
+.kbwrap{display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start}
 @media(max-width:900px){.kbwrap{grid-template-columns:1fr}}
 .kbside,.kbmain{background:var(--fill);border-radius:14px;padding:16px}
 .kbside h4,.kbmain h4{margin:0 0 4px;font-size:14px;font-weight:600}
@@ -279,7 +279,9 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 .srctog{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer}
 .srctog input{accent-color:var(--blue)}
 .hint{margin:0 0 12px;color:var(--muted);font-size:12.5px}
-.kbrow{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.kbrow{display:grid;grid-template-columns:1fr;gap:10px;margin:14px 0}
+.kbrow .f{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+.kbrow label{margin:0;white-space:nowrap}
 .kbrow .f{display:flex;flex-direction:column;gap:6px}
 .kbrow label{font-size:12.5px;font-weight:600}
 .kbrow select{background:var(--card);border:0;border-radius:10px;padding:10px 12px;
@@ -473,3 +475,8 @@ select.chipsel:focus{outline:none}
   color:var(--text);text-decoration:none;font-size:13.5px;font-weight:600}
 .newmenu a svg{width:20px;height:20px;fill:currentColor;flex:0 0 20px}
 .newmenu a:hover,.newmenu a:focus{background:var(--gold);color:#3A2508;outline:none}
+
+/* the builder's toggles read as label + choice on one line */
+.kbrow .f{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:14px}
+.kbrow .f label{margin:0;white-space:normal;text-align:left;flex:1}
+.kbrow .yn{flex:0 0 auto}

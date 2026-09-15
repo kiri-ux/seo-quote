@@ -174,11 +174,6 @@
           <div class="box" data-chips="seeds"></div>
           <p class="hint" id="kbScopeNote" style="margin:10px 0 0"></p>
           <div class="kbrow">
-            <div class="f"><label>Country</label>
-              <select id="kbCountry">
-                <option>United States</option><option>United Kingdom</option><option>Canada</option>
-                <option>Australia</option><option>Ireland</option><option>New Zealand</option>
-              </select></div>
             <div class="f"><label>Price on national demand</label>
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
             <div class="f"><label>Expand on focus terms</label>
@@ -1510,9 +1505,15 @@ function stateOf(d){
   return m ? m[1].toUpperCase() : (st || '');
 }
 
+// THE MEASUREMENT COUNTRY IS THE ORDER'S COUNTRY. A second picker in the
+// builder was one more place for it to disagree with the order.
+const COUNTRY_CODE = {'United States': 'US', 'United Kingdom': 'GB', 'Canada': 'CA',
+                      'Australia': 'AU', 'Ireland': 'IE', 'New Zealand': 'NZ'};
+const countryOf = d => (asList(d.countries)[0] || d.country || 'United States');
+const codeOf = d => COUNTRY_CODE[countryOf(d)] || 'US';
+
 function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
-  $('kbCountry').value = r.data.country || 'United States';
   [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
@@ -1538,7 +1539,7 @@ function kbDraw(r){
   const all = kw.all || [];
   const total = all.reduce((s, x) => s + (x.vol || 0), 0);
   $('kbHead').textContent = `Keyword list (${all.length} terms)`;
-  $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${$('kbCountry').value}`;
+  $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${countryOf(r.data)}`;
   const w = kw.widen;
   $('kbWiden').hidden = !(w && w.show);
   $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';
@@ -1598,7 +1599,6 @@ $('kbBuild').onclick = async () => {
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.lock = $('kbLock').querySelector('button[data-v="1"].on') ? 1 : 0;
-  d.country = $('kbCountry').value;
   kbScopeNote(r);
   const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
                 brand: d.brand, domain: d.site, negatives: d.negatives || [],
@@ -1606,11 +1606,20 @@ $('kbBuild').onclick = async () => {
                 goal: (d.goals || [])[0] || '',
                 phrase_geos: r.phrase_geos || [],
                 national_demand: bandOf(d) === 'nationwide', cfg: r.over || {},
-                country: $('kbCountry').value === 'United States' ? 'US'
-                       : $('kbCountry').value === 'United Kingdom' ? 'GB'
-                       : $('kbCountry').value === 'Canada' ? 'CA'
-                       : $('kbCountry').value === 'Australia' ? 'AU'
-                       : $('kbCountry').value === 'Ireland' ? 'IE' : 'NZ'};
+                country: codeOf(d)};
+  // NO SEEDS IS NOT A BUILD. The server answers "At least one keyword/vertical
+  // is required", which is a 400 the planner should never have to read -- and
+  // when Expand is on and a website is known, their site can propose the seeds.
+  if (!d.focus.length) {
+    if (!d.expand || !d.site) {
+      $('saved').textContent = d.site
+        ? 'Add a seed term, or turn Expand on focus terms to Yes to read their site.'
+        : 'Add a seed term first.';
+      document.querySelector('#paneKw [data-chips="seeds"] .chipin, '
+        + '#paneKw [data-chips="seeds"] .chipsel').focus();
+      return;
+    }
+  }
   $('kbBuild').disabled = true;
   try {
     if (d.expand) {
@@ -1625,6 +1634,12 @@ $('kbBuild').onclick = async () => {
       r.expandNote = got;
     } else {
       r.expandNote = null;
+    }
+    if (!base.keywords.length) {
+      $('saved').textContent = 'Nothing to build on — their site and the industry '
+        + 'proposed no terms. Add a seed term.';
+      $('kbBuild').disabled = false;
+      return;
     }
     $('saved').textContent = 'Building the list…';
     const kw = await post('/api/keywords', base);
@@ -1663,7 +1678,6 @@ $('kbBuild').onclick = async () => {
   $('kbBuild').disabled = false;
 };
 $('kbSrc').onchange = () => kbDraw();
-$('kbCountry').onchange = () => kbDraw();
 
 
 // ---------------------------------------------------------------- ORM step 1

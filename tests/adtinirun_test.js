@@ -171,7 +171,7 @@ const CFG = {
   const kb = await p.evaluate(() => ({
     scopeNote: document.getElementById('kbScopeNote').textContent,
     nat: document.querySelector('#kbNat button.on').dataset.v,
-    country: document.getElementById('kbCountry').value,
+
     note: document.getElementById('saved').textContent,
     head: document.getElementById('kbHead').textContent,
     counts: [...document.querySelectorAll('#paneKw .col h5 span')].map(s => s.textContent),
@@ -303,7 +303,7 @@ const CFG = {
     // scope is read off the order, not picked in the builder
     'kb.scopeRead': [kb.scopeNote, 'Geo scope: Single city · Boca Raton, FL'],
     'kb.nationalToggle': [kb.nat, '0'],
-    'kb.countryFromRow': [kb.country, 'United States'],
+
     'kb.note': [kb.note, 'Built 3 terms. · 4 terms added by expansion.'],
     'kb.head': [kb.head, 'Keyword list (3 terms)'],
     'kb.counts': [kb.counts.join(','), '1,1,1'],

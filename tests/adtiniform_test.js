@@ -207,6 +207,7 @@ const BASE = "http://127.0.0.1:5203";
     R.builtNote = document.getElementById('kbNote').textContent.trim();
     R.hasBuild = !!document.getElementById('kbBuild');
     R.hasSourceToggle = !!document.getElementById('kbSrc');
+    R.noCountryPicker = !document.getElementById('kbCountry');
     R.builderToggles = ['kbNat', 'kbExpand', 'kbLock'].every(id => !!document.getElementById(id));
     R.formHasNoToggles = !document.querySelector('#fseo .yn[data-k="expand"]')
       && !document.querySelector('#fseo .yn[data-k="lock"]')
@@ -223,6 +224,13 @@ const BASE = "http://127.0.0.1:5203";
     R.backOnForm = !document.getElementById('paneForm').hidden;
     R.focusCarried = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
       .some(c => c.textContent.includes('veneers'));
+    // an empty seed box is refused, and says what to do
+    document.getElementById('kwBuilder').click();
+    document.querySelectorAll('#paneKw [data-chips="seeds"] .chip b').forEach(x => x.click());
+    document.querySelector('#kbExpand button[data-v="0"]').click();
+    document.getElementById('kbBuild').click();
+    R.emptyBuild = document.getElementById('saved').textContent;
+    R.buildStillEnabled = !document.getElementById('kbBuild').disabled;
     return R;
   });
 
@@ -309,6 +317,10 @@ const BASE = "http://127.0.0.1:5203";
     'kw.savedListShown': [kw.builtNote, '7,700/mo measured · United States'],
     'kw.hasBuild': [kw.hasBuild, true],
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
+    'kw.noSecondCountryPicker': [kw.noCountryPicker, true],
+    'kw.emptySeedsRefused': [kw.emptyBuild,
+      'Add a seed term, or turn Expand on focus terms to Yes to read their site.'],
+    'kw.buildStaysAvailable': [kw.buildStillEnabled, true],
     'kw.ownsTheThreeToggles': [kw.builderToggles, true],
     'form.keepsNoneOfThem': [kw.formHasNoToggles, true],
     'kw.seedsFromRow': [kw.seedsFromRow.length > 0, true],
