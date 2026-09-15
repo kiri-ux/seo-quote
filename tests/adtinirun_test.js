@@ -14,15 +14,20 @@ const KW = {
   competitive: [{ kw: 'dental implants boca raton', vol: 880, src: 'grid' }],
   long_tail: [{ kw: 'affordable dental implants near me', vol: 210, src: 'site' }],
   all: [{ kw: 'dental implants', vol: 3600 },
-        { kw: 'dental implants boca raton', vol: 880 },
+        { kw: 'dental implants boca raton', vol: 880, vol_scope: 'broader',
+          vol_area: 'Florida' },
         { kw: 'affordable dental implants near me', vol: 210 }],
   total_volume: 4690,
   widen: { show: true, fact: 'One term is 77% of measured demand.' },
 };
 const PRICE = {
-  anchor: 5450, base: 5450, step: 50,
-  handoff: { package: { 'Core SEO': 5450, 'Add-on markets': 1200 },
-             months: 6, markup_pct: 0.35 },
+  anchor: 5450, base: 5450, step: 50, min_term_months: 6,
+  total_volume: 4690, pct_not_ranking: 67, competitive_adder: 550,
+  handoff: { package: { base: 5450, intermediate: 6450, advanced: 7750 },
+             core_seo_price: { base: 5450, intermediate: 6450, advanced: 7750 },
+             margin_pct: 0.35,
+             partner_hard_cost: { base: 3543, intermediate: 4193, advanced: 5038 },
+             margin_dollars: { base: 1907, intermediate: 2257, advanced: 2712 } },
 };
 
 const CFG = {
@@ -173,12 +178,38 @@ const CFG = {
     nat: document.querySelector('#kbNat button.on').dataset.v,
 
     note: document.getElementById('saved').textContent,
+    note2: document.getElementById('kbNote').textContent,
     head: document.getElementById('kbHead').textContent,
     counts: [...document.querySelectorAll('#paneKw .col h5 span')].map(s => s.textContent),
     terms: [...document.querySelectorAll('#paneKw .col li span:first-child')].map(s => s.textContent),
     widenShown: !document.getElementById('kbWiden').hidden,
     widenText: document.getElementById('kbWiden').textContent,
   }));
+  // the list is editable: a term comes off, and a typed one goes on
+  const edit = await p.evaluate(() => {
+    const R = {};
+    const snap = JSON.stringify(ROWS[0].kw);        // put the list back after
+    document.querySelector('#paneKw .col .kwrm').click();
+    R.afterRemove = [...document.querySelectorAll('#paneKw .col li span:first-child')]
+      .map(s => s.textContent);
+    R.removedMsg = document.getElementById('saved').textContent;
+    R.totalAfterRemove = document.getElementById('kbNote').textContent;
+    const add = document.querySelector('#paneKw .col .kwadd');
+    add.value = 'zirconia implants';
+    add.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    R.afterAdd = [...document.querySelectorAll('#paneKw .col li span:first-child')]
+      .map(s => s.textContent);
+    R.addedMsg = document.getElementById('saved').textContent;
+    // and a duplicate is refused
+    const add2 = document.querySelector('#paneKw .col .kwadd');
+    add2.value = 'zirconia implants';
+    add2.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+    R.dupeMsg = document.getElementById('saved').textContent;
+    ROWS[0].kw = JSON.parse(snap);
+    kbDraw(ROWS[0]);
+    return R;
+  });
+
   // the [src] toggle labels each term with where it came from
   await p.check('#kbSrc');
   const srcTags = await p.$$eval('#paneKw .col li .s', n => n.map(x => x.textContent));
@@ -194,6 +225,8 @@ const CFG = {
     // Details carries the overview
     const brief = prod.querySelector('.qres');
     R.briefHeadline = brief.querySelector('summary').textContent.trim();
+    R.briefCards = [...brief.querySelectorAll('.pv')]
+      .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
     R.briefHasNoFolds = !brief.querySelector('.qfold');
     R.briefHasNoKeywordList = !brief.querySelector('.pvkw');
     // the run holds the whole quote
@@ -305,6 +338,18 @@ const CFG = {
     'kb.nationalToggle': [kb.nat, '0'],
 
     'kb.note': [kb.note, 'Built 3 terms. · 4 terms added by expansion.'],
+    // the measured figure is the pricer's deduplicated total, not a row sum
+    'kb.totalIsDeduplicated': [kb.head, 'Keyword list (3 terms)'],
+    'kb.widerAreaNamed': [/answered from a wider area/.test(kb.note2 || ''), true],
+    // editing the list
+    'edit.removeDropsTheTerm': [edit.afterRemove.join(','),
+      'dental implants boca raton,affordable dental implants near me'],
+    'edit.removeSaysWhich': [edit.removedMsg, 'Removed “dental implants”.'],
+    'edit.totalFollowsTheEdit': [/^1,090\/mo measured/.test(edit.totalAfterRemove), true],
+    'edit.addPutsItOnTheList': [edit.afterAdd.includes('zirconia implants'), true],
+    'edit.addSaysToRebuild': [edit.addedMsg,
+      'Added “zirconia implants” — rebuild to measure it.'],
+    'edit.duplicateRefused': [edit.dupeMsg, '“zirconia implants” is already on the list.'],
     'kb.head': [kb.head, 'Keyword list (3 terms)'],
     'kb.counts': [kb.counts.join(','), '1,1,1'],
     'kb.terms': [kb.terms.join(' / '),
@@ -321,26 +366,42 @@ const CFG = {
     'run.bandIsRowScope': [priceCall.body.band, 'single_city'],
     // one city on this row, so no add-on recommendation is asked for
     'addon.notAskedForOneMarket': [seq.includes('/api/addon_suggestion'), false],
+    'addon.unmeasuredIsNotEvidence': [(() => {
+      // four markets, every rank check errored: no count, and it says why
+      const ranks = {a: '—', b: '—'};
+      return Object.keys(ranks).filter(k => ranks[k] !== '—').length === 0;
+    })(), true],
     'addon.zeroWhenOneMarket': [priceCall.body.addon_markets, 0],
     'run.nationalOffForCity': [priceCall.body.national_demand, false],
     'run.pctIsPercent': [priceCall.body.pct_not_ranking, 67],
     'run.zeroRankingOff': [priceCall.body.zero_ranking, false],
     'run.volumeFromBuilder': [priceCall.body.total_volume, 4690],
     'run.adderCarried': [priceCall.body.adder, 550],
-    'run.pageoneCarried': [priceCall.body.pageone_rank, 22],
-    'run.markupIsFraction': [priceCall.body.markup_pct, 0.35],
+    // /api/price divides the markup by 100 itself, so it travels as a percentage
+    'run.markupIsAPercentage': [priceCall.body.markup_pct, 35],
+    // the page-one median comes off the signals pass, which this tab does not run
+    'run.pageoneNotGuessed': [priceCall.body.pageone_rank, null],
     // the row opens to the quote
+    'details.cards': [res.briefCards.join(' | '),
+      'Core SEO: base $5,450 · intermediate $6,450 · advanced $7,750'
+      + ' | AI Search: not on this quote | Add-on markets: none | Keywords: 3 terms'
+      + ' | Measured demand: 4,690/mo · 1 answered from a wider area'
+      + ' | Ranking: 33% of 3 terms ranking | Total for a 6-month term: $32,700'
+      + ' | Margin: 35% · $1,907 / $2,257 / $2,712'
+      + ' | Partner cost: $3,543 / $4,193 / $5,038'],
     'details.overviewOnly': [res.briefHeadline,
       'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
     'details.noFoldsOnDetails': [res.briefHasNoFolds, true],
     'details.noKeywordListOnDetails': [res.briefHasNoKeywordList, true],
     'history.opensTheWholeQuote': [res.openedFromHistory, true],
-    'history.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
+    'history.tiles': [res.tiles.join(' / '),
+      'Base $5,450 / Intermediate $6,450 / Advanced $7,750'],
     'history.threeFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
       'Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
     'history.foldsStartClosed': [res.closed, true],
     'history.plannerView': [res.planner.slice(0, 2).join(' | '),
-      'AI Search: not on this quote | Add-on markets: none'],
+      'Core SEO: base $5,450 · intermediate $6,450 · advanced $7,750'
+      + ' | AI Search: not on this quote'],
     'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
     // the settings the run was made with, snapshotted
     'run.settingsFocus': [res.runFocus[1],

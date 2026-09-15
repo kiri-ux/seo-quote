@@ -717,6 +717,27 @@ function H(r){
     margin_dollars: p.agency_profit_tiers || null,
   };
 }
+
+// MARGIN $ IS CLIENT LESS PARTNER. The quote sends it, but an older one does
+// not -- and "$0 / $0 / $0" reads as no margin rather than as not sent.
+function marginDollars(r){
+  const h = H(r);
+  const have = h.margin_dollars || {};
+  if (Object.keys(have).some(k => have[k])) return have;
+  const pkg = h.package || {}, hard = h.partner_hard_cost || {};
+  const out = {};
+  ['base', 'intermediate', 'advanced'].forEach(k => {
+    if (pkg[k] != null && hard[k] != null) out[k] = pkg[k] - hard[k];
+  });
+  if (Object.keys(out).length) return out;
+  // Nothing to subtract: the rate itself is all the quote knows.
+  const m = frac(h.margin_pct);
+  if (!m) return {};
+  ['base', 'intermediate', 'advanced'].forEach(k => {
+    if (pkg[k] != null) out[k] = Math.round(pkg[k] * m);
+  });
+  return out;
+}
 const P = r => (r.result || {}).pricing || {};
 const Q = r => (r.result || {}).quote || {};          // ORM: /api/rep_quote
 const RH = r => (Q(r).handoff) || {};
@@ -919,12 +940,27 @@ function plannerView(r, brief){
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
            : (sug.basis ? ` · ${sug.basis}` : ''))
       : (sug.basis ? `none · ${sug.basis}` : 'none'));
-    add('Keywords', `${(kw.all || []).length} terms · `
-      + `${(p.total_volume || 0).toLocaleString()}/mo · `
-      + (p.pct_not_ranking == null ? 'ranking unmeasured'
-                                   : `${100 - p.pct_not_ranking}% ranking`));
-    add('Margin', `${pct(h.margin_pct)} · `
-      + Object.keys(h.margin_dollars || {}).map(k => money(h.margin_dollars[k])).join(' / '));
+    const rk = (r.result || {}).ranks || {};
+    const checked = Object.keys(rk).length;
+    const errored = Object.keys(rk).filter(k => rk[k] === '—').length;
+    const wide = ((r.kw || {}).all || []).filter(x => x.vol_scope === 'broader').length;
+    add('Keywords', `${(kw.all || []).length} terms`);
+    add('Measured demand', `${(p.total_volume || 0).toLocaleString()}/mo`
+      + (wide ? ` · ${wide} answered from a wider area` : ''));
+    add('Ranking', p.pct_not_ranking == null
+      ? (errored ? `unmeasured — ${errored} of ${checked} rank checks errored`
+                 : 'unmeasured')
+      : `${100 - p.pct_not_ranking}% of ${checked} terms ranking`);
+    if (p.min_term_months && (h.package || {}).base)
+      add('Total for a ' + p.min_term_months + '-month term',
+          money(h.package.base * p.min_term_months));
+    const md = marginDollars(r);
+    const mdText = ['base', 'intermediate', 'advanced'].filter(k => md[k] != null)
+      .map(k => money(md[k])).join(' / ');
+    add('Margin', pct(h.margin_pct) + (mdText ? ` · ${mdText}` : ''));
+    const ph = h.partner_hard_cost || {};
+    add('Partner cost', ['base', 'intermediate', 'advanced'].filter(k => ph[k] != null)
+      .map(k => money(ph[k])).join(' / '));
   }
   const shot = (r.result || {}).shot;
   const all = (r.kw || {}).all || [];
@@ -1531,15 +1567,36 @@ function kbDraw(r){
   if (!kw) { $('kbCols').innerHTML = ''; $('kbHead').textContent = 'Keyword list';
              $('kbNote').textContent = 'Not built yet.'; $('kbWiden').hidden = true; return; }
   const src = $('kbSrc').checked;
+  // THE NUMBER BESIDE A TERM IS THAT MARKET'S DEMAND FOR THE SERVICE, not the
+  // volume of the geo-modified phrase -- local phrasings mostly report zero.
+  // A figure Google answered from a wider area says so, because four counties
+  // reading the same 40,500 is one national number repeated, not four measures.
+  const vol = x => {
+    if (!x.vol) return '<span class="v">—</span>';
+    const wide = x.vol_scope === 'broader';
+    return `<span class="v${wide ? ' wide' : ''}"`
+      + (wide ? ` title="${esc(x.vol_area || 'a wider area')} — no figure for this market"` : '')
+      + `>${(x.vol || 0).toLocaleString()}${wide ? ' ·' : ''}</span>`;
+  };
   $('kbCols').innerHTML = ['ultra','competitive','long_tail'].map(k => `
     <div class="col"><h5>${KBL[k]}<span>${(kw[k] || []).length}</span></h5>
-      <ul>${(kw[k] || []).map(x =>
+      <ul>${(kw[k] || []).map((x, i) =>
         `<li><span>${esc(x.kw)}</span>${src && x.src ? `<span class="s">[${esc(x.src)}]</span>` : ''}`
-        + `<span class="v">${(x.vol || 0).toLocaleString()}</span></li>`).join('')}</ul></div>`).join('');
+        + vol(x)
+        + `<b class="kwrm" data-bucket="${k}" data-i="${i}" title="Remove">&times;</b></li>`).join('')}
+      </ul>
+      <input class="kwadd" data-bucket="${k}" type="text" placeholder="add a term…">
+    </div>`).join('');
   const all = kw.all || [];
-  const total = all.reduce((s, x) => s + (x.vol || 0), 0);
+  // The deduplicated figure the pricer uses. Summing the rows multiplies one
+  // service's demand by the number of markets it appears in.
+  const total = kw.total_volume != null
+    ? Number(kw.total_volume)
+    : all.reduce((s, x) => s + (x.vol || 0), 0);
+  const wideN = all.filter(x => x.vol_scope === 'broader').length;
   $('kbHead').textContent = `Keyword list (${all.length} terms)`;
-  $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${countryOf(r.data)}`;
+  $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${countryOf(r.data)}`
+    + (wideN ? ` · ${wideN} answered from a wider area` : '');
   const w = kw.widen;
   $('kbWiden').hidden = !(w && w.show);
   $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';
@@ -1678,6 +1735,45 @@ $('kbBuild').onclick = async () => {
   $('kbBuild').disabled = false;
 };
 $('kbSrc').onchange = () => kbDraw();
+
+// REMOVE AN OFF-TARGET TERM, ADD ONE THEY ASKED FOR. The edit is the list the
+// quote prices, so it comes out of every bucket the term is in -- head too, or
+// a removed term still reaches the competition scoring.
+$('kbCols').addEventListener('click', e => {
+  const b = e.target.closest('.kwrm');
+  if (!b) return;
+  const r = ROWS[ROW], bk = b.dataset.bucket, i = +b.dataset.i;
+  const gone = (r.kw[bk] || [])[i];
+  if (!gone) return;
+  r.kw[bk].splice(i, 1);
+  const same = x => String(x.kw).toLowerCase() !== String(gone.kw).toLowerCase();
+  r.kw.all = (r.kw.all || []).filter(same);
+  if (r.kw.head) r.kw.head = r.kw.head.filter(same);
+  if (r.kw.total_volume != null && gone.vol_scope !== 'broader')
+    r.kw.total_volume = Math.max(0, Number(r.kw.total_volume) - (gone.vol || 0));
+  kbDraw(r);
+  $('saved').textContent = `Removed “${gone.kw}”.`;
+});
+$('kbCols').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.classList.contains('kwadd')) return;
+  e.preventDefault();
+  const r = ROWS[ROW], bk = e.target.dataset.bucket;
+  const v = e.target.value.trim();
+  if (!v) return;
+  if ((r.kw.all || []).some(x => String(x.kw).toLowerCase() === v.toLowerCase())) {
+    $('saved').textContent = `“${v}” is already on the list.`;
+    e.target.value = '';
+    return;
+  }
+  // A typed term has no measured volume until the next build measures it.
+  const row = {kw: v, vol: 0, src: 'typed'};
+  (r.kw[bk] = r.kw[bk] || []).push(row);
+  (r.kw.all = r.kw.all || []).push(row);
+  if ((bk === 'ultra' || bk === 'competitive') && r.kw.head) r.kw.head.push(row);
+  e.target.value = '';
+  kbDraw(r);
+  $('saved').textContent = `Added “${v}” — rebuild to measure it.`;
+});
 
 
 // ---------------------------------------------------------------- ORM step 1
@@ -1906,12 +2002,23 @@ async function generate(){
     // profile or a ranking answers it per market -- so it proposes the count
     // and Config overrides it.
     let addon = {suggested: 0, basis: ''};
-    if (geo.length > 1) {
+    const measured = Object.keys(ranks).filter(k => ranks[k] !== '—').length;
+    if (geo.length > 1 && measured) {
       try {
         addon = await post('/api/addon_suggestion',
           {geo_values: geo, state: st, table, cfg: r.over});
       } catch (e) { addon = {suggested: 0, basis: ''}; }
+    } else if (geo.length > 1) {
+      // AN UNMEASURED RANK CHECK IS NOT A CLIENT WITH NO PRESENCE. "Ranking in
+      // 0 of 4 markets" off a table where every check errored would charge for
+      // a campaign per market on no evidence at all.
+      addon = {suggested: 0,
+               basis: 'no market count — every rank check errored, so nothing '
+                    + 'says whether these markets are new to them'};
     }
+    if (addon.suggested && band === 'contiguous_region')
+      addon.basis = (addon.basis ? addon.basis + ' · ' : '')
+        + 'contiguous region — adjacent markets are already in the anchor';
     const addonOv = String((r.cfg || {}).addon_markets || '').trim();
     const addonN = addonOv === '' ? (+addon.suggested || 0) : (+addonOv || 0);
 
@@ -1923,10 +2030,16 @@ async function generate(){
       band, adder: met.adder || 0,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10,
       addon_markets: addonN,
-      markup_pct: parseFloat(String(r.cfg.markup || d.markup || 35)) / 100,
+      // MARKUP IS A PERCENTAGE HERE. /api/price divides by 100 itself, so
+      // sending 0.35 priced the quote at 0.0035 margin -- a quote that read
+      // "35%" and carried none.
+      markup_pct: parseFloat(String(r.cfg.markup || d.markup || 35)),
       pct_not_ranking, total_volume, industry,
       national_demand: band === 'nationwide', cfg: r.over,
-      base_override: r.cfg.ov_core || '', pageone_rank: met.pageone_rank});
+      base_override: r.cfg.ov_core || '',
+      // The page-one median comes off the market signals pass, which this tab
+      // does not run yet. Null, not a guess -- the SEO tab sends null too.
+      pageone_rank: null});
 
     const pkg = (price.handoff || {}).package || {};
     const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';

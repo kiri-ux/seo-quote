@@ -480,3 +480,13 @@ select.chipsel:focus{outline:none}
 .kbrow .f{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:14px}
 .kbrow .f label{margin:0;white-space:normal;text-align:left;flex:1}
 .kbrow .yn{flex:0 0 auto}
+
+/* the built list is editable */
+.col li{position:relative;padding-right:14px}
+.col li .kwrm{position:absolute;right:0;top:0;color:#B3261E;font-weight:700;cursor:pointer;
+  opacity:0;font-size:13px;line-height:1.2}
+.col li:hover .kwrm,.col li .kwrm:focus{opacity:1}
+.col li .v.wide{color:var(--orange);cursor:help}
+input.kwadd{width:100%;margin-top:10px;background:var(--fill);border:0;border-radius:9px;
+  padding:7px 10px;font-family:inherit;font-size:12.5px}
+input.kwadd:focus{outline:2px solid var(--blue-lt);outline-offset:-1px}
