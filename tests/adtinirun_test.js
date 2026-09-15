@@ -25,6 +25,24 @@ const PRICE = {
              months: 6, markup_pct: 0.35 },
 };
 
+const CFG = {
+  grid_target_keywords: 32, grid_min_services: 7, grid_max_services: 20, grid_max_cities: 5,
+  grid_state_suffix: 'auto', service_min_volume: 30, service_upgrade_ratio: 10,
+  service_max_swaps: 3, store_intent_tier_boost: 3,
+  cpc_adder_mult: 2.6, cpc_adder_cap: 1300, cpc_adder_knee: 62, cpc_adder_mult_high: 12.3,
+  tier_step_pct_of_base: 0.24, cpc_adder_free_below: 5,
+  bid_score_breaks: [5, 15], competitive_adder: {0: 0, 1: 150, 2: 250},
+  zero_ranking_tiers: [[80, 7], [65, 4], [50, 2], [0, 0]], zero_ranking_top_n: 100,
+  vol_free_below: 10000, vol_add_ramp: [40, 60],
+  volume_brackets: [[10000, 20000, 0.0702], [20000, 35000, 0.0439], [35000, null, 0.0351]],
+  geo_anchor: {single_city: 2250, contiguous_region: 1850, non_contiguous_region: 2050,
+               statewide: 2100, nationwide: 1800},
+  tier_step_flat: 650, step_ratio: 0.38, volume_add_cap: 450, client_floor: 2950,
+  default_markup_pct: 35, nationwide_service_extras: 1,
+  geo_pct_tiers: [[90, 74], [70, 66], [40, 59], [0, 48]], geo_pct_default: 57,
+  min_term_months: 6, pin_head_terms: 3, pin_min_volume: 300,
+};
+
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const p = await b.newPage();
@@ -49,10 +67,73 @@ const PRICE = {
       return json(route, { results, paa: [] });
     }
     if (url === '/api/price') return json(route, PRICE);
+    if (url === '/api/config') return json(route, CFG);
     return json(route, {});
   });
 
   await p.goto(BASE + '/adtini/forecast', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('.prod[data-row="0"] .qres');   // a saved quote is on the row
+
+  // ---------------- a past quote reopens ----------------
+  const hist = await p.evaluate(() => {
+    const R = {};
+    const prod = document.querySelector('.prod[data-row="0"]');
+    prod.querySelector('.ptabs button[data-tab="history"]').click();
+    R.rows = prod.querySelectorAll('.hist tbody tr').length;
+    R.openable = prod.querySelectorAll('.hist [data-hist]').length;
+    prod.querySelectorAll('.hist tbody tr')[1].querySelector('[data-hist]').click();
+    const q = document.querySelector('.prod[data-row="0"] .qres');
+    R.headline = q.querySelector('summary').textContent.trim();
+    R.msg = document.querySelector('.prod[data-row="0"] .rowmsg').textContent.trim();
+    return R;
+  });
+
+  // ---------------- pricing config ----------------
+  await p.click('[data-open="0"][data-view="cfg"]');
+  const cfg = await p.evaluate(() => {
+    const R = {};
+    R.title = document.querySelector('.sheet .top h2').textContent.trim();
+    R.groups = [...document.querySelectorAll('#cfgGlobal .cfggrp > summary')]
+      .map(x => x.childNodes[0].textContent.trim());
+    R.anchor = document.querySelector('#cfgGlobal [data-g="geo_anchor.single_city"]').value;
+    R.break1 = document.querySelector('#cfgGlobal [data-g="bid_score_breaks.0"]').value;
+    R.tierRows = document.querySelectorAll('#cfgGlobal [data-t="zero_ranking_tiers"]').length;
+    R.bracketRows = document.querySelectorAll('#cfgGlobal [data-b="volume_brackets"]').length;
+    R.openTopBlank = document.querySelectorAll('#cfgGlobal [data-b="volume_brackets"]')[2]
+      .querySelectorAll('input')[1].value;
+    document.querySelector('#cfgGlobal [data-g="geo_anchor.single_city"]').value = '2400';
+    document.querySelector('#cfgGlobal [data-g="cpc_adder_cap"]').value = '1500';
+    document.getElementById('save').click();
+    return R;
+  });
+  await p.waitForFunction(() => /constants/.test(document.getElementById('saved').textContent));
+  const posted = calls.filter(c => c.url === '/api/config').pop() || { body: {} };
+
+  // ---------------- past-SEO fields ----------------
+  const past = await p.evaluate(() => {
+    const R = {};
+    document.getElementById('close').click();
+    document.querySelector('[data-open="0"][data-view="form"]').click();
+    const shown = () => [...document.querySelectorAll('#fseo [data-past]')].filter(x => !x.hidden).length;
+    R.total = document.querySelectorAll('#fseo [data-past]').length;
+    R.yes = shown();                                   // row 0 answered Yes
+    document.querySelector('#fseo .yn[data-k="past"] button[data-v="0"]').click();
+    R.no = shown();
+    document.querySelector('#fseo .yn[data-k="past"] button[data-v="1"]').click();
+    R.backOn = shown();
+    document.getElementById('close').click();
+    document.querySelector('[data-open="1"][data-view="form"]').click();
+    R.otherRow = shown();                              // row 1 answered No
+    document.getElementById('close').click();
+    return R;
+  });
+
+  // ---------------- the pipeline, on a row with nothing saved ----------------
+  await p.evaluate(() => {
+    ROWS.forEach(r => { delete r.result; delete r.kw; r.history = []; });
+    draw();
+  });
+  calls.length = 0;
 
   // ---------------- step 1: the keyword builder ----------------
   await p.click('[data-open="0"][data-view="form"]');
@@ -155,6 +236,35 @@ const PRICE = {
       'Date Forecasted|Forecast Prompt|Generated Response|Type|Error'],
     'res.historyRows': [res.historyRows, 1],
   };
+
+  Object.assign(want, {
+    'cfg.title': [cfg.title, 'Pricing Config'],
+    'cfg.groups': [cfg.groups.join(' / '),
+      'Step 1 · Keyword grid / Step 2 · Competition / Step 3 · Zero-ranking uplift'
+      + ' / Step 4 · Volume / Step 4 · Anchors / AI Search / Keyword list consistency'],
+    'cfg.anchorLoaded': [cfg.anchor, '2250'],
+    'cfg.nestedLoaded': [cfg.break1, '5'],
+    'cfg.tierRows': [cfg.tierRows, 4],
+    'cfg.bracketRows': [cfg.bracketRows, 3],
+    'cfg.openTopIsBlank': [cfg.openTopBlank, ''],
+    'cfg.postsNested': [(posted.body.geo_anchor || {}).single_city, '2400'],
+    'cfg.postsFlat': [posted.body.cpc_adder_cap, '1500'],
+    'cfg.postsTiers': [JSON.stringify(posted.body.zero_ranking_tiers),
+      '[[80,7],[65,4],[50,2],[0,0]]'],
+    'cfg.postsBrackets': [JSON.stringify(posted.body.volume_brackets),
+      '[[10000,20000,0.0702],[20000,35000,0.0439],[35000,null,0.0351]]'],
+    // past-SEO fields follow the answer
+    'past.count': [past.total, 3],
+    'past.shownOnYes': [past.yes, 3],
+    'past.hiddenOnNo': [past.no, 0],
+    'past.backOnYes': [past.backOn, 3],
+    'past.hiddenOnRowThatSaidNo': [past.otherRow, 0],
+    // a saved quote reopens off History
+    'hist.rows': [hist.rows, 2],
+    'hist.opensThatQuote': [hist.headline,
+      'Quote results — $4,950/mo · 4 terms · 7,100/mo · 100% ranking'],
+    'hist.says': [hist.msg, 'Showing the quote built 9/11/26 4:08 PM.'],
+  });
 
   let bad = 0;
   for (const k of Object.keys(want)) {

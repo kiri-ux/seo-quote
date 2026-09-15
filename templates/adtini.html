@@ -87,10 +87,10 @@
 
         <div class="f"><label>Has done SEO in the past?</label>
           <div class="yn" data-k="past"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-        <div class="f"><label>Past SEO Details</label><textarea data-k="past_details"></textarea></div>
+        <div class="f" data-past><label>Past SEO Details</label><textarea data-k="past_details"></textarea></div>
 
-        <div class="f"><label>Current Spend / Month</label><input type="text" data-k="spend"></div>
-        <div class="f"><a class="dl" href="#">&#11015; Current SEO Report</a></div>
+        <div class="f" data-past><label>Current Spend / Month</label><input type="text" data-k="spend"></div>
+        <div class="f" data-past><a class="dl" href="#">&#11015; Current SEO Report</a></div>
 
         <div class="quad">
           <div class="f"><label>Expand on Focus Terms</label>
@@ -183,9 +183,17 @@
     <!-- ---------------- per-quote config -------------------------------- -->
     <div id="paneCfg" hidden>
       <form id="fcfg">
-        <p class="hint" style="padding:0 0 12px">Applies to this quote only. Every dollar here is
-          partner hard cost; client price is cost &divide; (1 &minus; markup).</p>
-        <div class="grid" id="cfgGrid"></div>
+        <div class="cfgsec">
+          <h4>This quote only</h4>
+          <p class="hint">Every dollar here is partner hard cost; client price is cost
+            &divide; (1 &minus; markup).</p>
+          <div class="grid" id="cfgGrid"></div>
+        </div>
+        <div class="cfgsec">
+          <h4>Every quote &mdash; this session</h4>
+          <p class="hint">A redeploy reverts to the file defaults. Re-run the quote after applying.</p>
+          <div id="cfgGlobal"></div>
+        </div>
       </form>
     </div>
 
@@ -219,8 +227,62 @@ async function post(url, body){
 // A CLIENT'S SAVED QUOTES, ONE ROW EACH. Two products on one client are two
 // rows; two separately saved SEO quotes are also two rows. Versions of one
 // quote live in its History tab.
+// A saved quote keeps what it was priced on: the keyword list, the ranks and
+// the pricer's answer. History holds the earlier ones, and opening one puts it
+// back on the row exactly as it went out.
+function savedQuote(o){
+  const all = o.terms.map(t => ({kw: t[0], vol: t[1]}));
+  const ranks = {};
+  o.terms.forEach(t => { ranks[t[0].toLowerCase()] = t[2]; });
+  const vol = all.reduce((s, x) => s + x.vol, 0);
+  const notRanking = Math.round(
+    (1 - o.terms.filter(t => typeof t[2] === 'number').length / o.terms.length) * 100);
+  return {
+    pricing: {anchor: o.anchor, base: o.anchor, step: 650,
+      competitive_adder: o.adder, volume_add: o.volume_add,
+      zero_ranking_uplift_pct: o.uplift, pct_not_ranking: notRanking,
+      total_volume: vol, min_term_months: 6,
+      handoff: {package: o.package, months: 6, markup_pct: 0.35,
+        partner_monthly: o.partner, geo_scope: o.scope, keywords: all.length,
+        total_volume: vol, markets: o.markets}},
+    ranks,
+    headline: `$${o.package[Object.keys(o.package)[0]].toLocaleString()}/mo · ${all.length} terms`
+      + ` · ${vol.toLocaleString()}/mo · ${100 - notRanking}% ranking`,
+    kw: {all, head: all.slice(0, 3),
+      ultra: all.slice(0, 2).map(x => Object.assign({src: 'seed'}, x)),
+      competitive: all.slice(2, 4).map(x => Object.assign({src: 'grid'}, x)),
+      long_tail: all.slice(4).map(x => Object.assign({src: 'site'}, x)),
+      total_volume: vol},
+  };
+}
+const Q137027 = savedQuote({
+  anchor: 4800, adder: 550, volume_add: 100, uplift: 4, partner: 4322, scope: 'single_city',
+  markets: ['Boca Raton, FL'], package: {'Core SEO': 5450, 'Add-on markets': 1200, 'Total monthly': 6650},
+  terms: [['dental implants boca raton', 3600, 4], ['emergency dentist boca raton', 1900, 12],
+          ['teeth whitening boca raton', 880, 'Not Found'], ['dental implants delray beach', 720, 8],
+          ['same day crowns boca raton', 390, 'Not Found'],
+          ['affordable dental implants near me', 210, 'Not Found']]});
+const Q137027_PRIOR = savedQuote({
+  anchor: 4800, adder: 400, volume_add: 60, uplift: 2, partner: 3987, scope: 'single_city',
+  markets: ['Boca Raton, FL'], package: {'Core SEO': 4950, 'Add-on markets': 1100, 'Total monthly': 6050},
+  terms: [['dental implants boca raton', 3600, 4], ['emergency dentist boca raton', 1900, 12],
+          ['teeth whitening boca raton', 880, 6], ['dental implants delray beach', 720, 8]]});
+const Q137031 = savedQuote({
+  anchor: 4800, adder: 250, volume_add: 0, uplift: 7, partner: 3543, scope: 'single_city',
+  markets: ['Atlanta, GA'], package: {'Core SEO': 4450, 'Total monthly': 4450},
+  terms: [['pediatric dentist atlanta', 1600, 'Not Found'], ['kids dentist atlanta', 590, 'Not Found'],
+          ['pediatric dental emergency atlanta', 170, 19]]});
+
 const ROWS = [
-  {id:'137027', kind:'seo', name:'Search Engine Optimization', data:{
+  {id:'137027', kind:'seo', name:'Search Engine Optimization', built:'9/16/26',
+   result: Q137027, kw: Q137027.kw,
+   history:[
+     {when:'9/16/26 10:42 AM', prompt:'{ band: single_city, adder: 550 }',
+      resp:'$6,650/mo · 6 terms', quote: Q137027},
+     {when:'9/11/26 4:08 PM', prompt:'{ band: single_city, adder: 400 }',
+      resp:'$6,050/mo · 4 terms', quote: Q137027_PRIOR},
+   ],
+   data:{
     brand:'Sage Dental', site:'mysagedental.com',
     focus:['emergency dentist','dental implants','teeth whitening'],
     negatives:[], g_city:true, g_county:false, g_state:false, g_country:false,
@@ -228,14 +290,18 @@ const ROWS = [
     industry:['Healthcare'], strategy:['Core SEO'], goals:['New patient acquisition'],
     past:1, past_details:'', spend:'$6,200',
     expand:1, lock:0, national:0, addon:1, markets:8, markup:'35'}},
-  {id:'137031', kind:'seo', name:'Search Engine Optimization', data:{
+  {id:'137031', kind:'seo', name:'Search Engine Optimization', built:'9/12/26',
+   result: Q137031, kw: Q137031.kw,
+   history:[{when:'9/12/26 9:15 AM', prompt:'{ band: single_city, adder: 250 }',
+             resp:'$4,450/mo · 3 terms', quote: Q137031}],
+   data:{
     brand:'Sage Dental', site:'mysagedental.com',
     focus:['pediatric dentist'], negatives:[],
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:'Atlanta, GA', county:'',
     industry:['Healthcare'], strategy:['Core SEO'], goals:[], past:0, past_details:'',
     spend:'', expand:1, lock:1, national:0, addon:0, markets:3, markup:'35'}},
-  {id:'137028', kind:'orm', name:'Online Reputation Management', data:{
+  {id:'137028', kind:'orm', name:'Online Reputation Management', built:'9/16/26', data:{
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
     reviews:161, locations:3, std:2, prem:1, volume:8000,
@@ -243,10 +309,14 @@ const ROWS = [
 ];
 
 // ---------------------------------------------------------------- rows
+// The row is dated, not numbered: two quotes on the same product are told
+// apart by when they were built.
+const dateOf = r => r.built || (r.history && r.history[0] && r.history[0].when.split(' ')[0]) || 'New';
+
 function rowHtml(r, i){
   return `
   <div class="prod" data-row="${i}">
-    <h4>${r.name} &ndash; <u>${r.id}</u> <span class="mag">&#9906;</span></h4>
+    <h4>${r.name} &ndash; <u>${dateOf(r)}</u> <span class="mag">&#9906;</span></h4>
     <div class="ptabs">
       <button type="button" class="on" data-tab="details">Details</button>
       <button type="button" data-tab="history">History</button>
@@ -275,9 +345,10 @@ function histHtml(r){
   return '<div class="hist scroller"><table><thead><tr>'
     + ['Date Forecasted','Forecast Prompt','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
     + '</tr></thead><tbody>'
-    + h.map(x => `<tr><td>${esc(x.when)}</td><td>${esc(x.prompt)}</td>`
+    + h.map((x, j) => `<tr><td>${esc(x.when)}</td><td>${esc(x.prompt)}</td>`
         + `<td>${esc(x.resp)}</td><td>adtini</td><td>${esc(x.error || '')}</td>`
-        + '<td><button class="btn-pub" type="button">Publish To RZ</button> <span class="chev">&#9662;</span></td></tr>').join('')
+        + `<td>${x.quote ? `<button class="btn-open" type="button" data-hist="${j}">Open</button> ` : ''}`
+        + '<button class="btn-pub" type="button">Publish To RZ</button> <span class="chev">&#9662;</span></td></tr>').join('')
     + '</tbody></table></div>';
 }
 
@@ -361,6 +432,12 @@ function load(form, data){
   });
   form.querySelectorAll('[data-chips]').forEach(box =>
     chipbox(box, (data[box.dataset.chips] || []).slice()));
+  pastFields();
+}
+// What they did before is only a question once the answer is yes.
+function pastFields(){
+  const on = !!$('fseo').querySelector('.yn[data-k="past"] button[data-v="1"].on');
+  $('fseo').querySelectorAll('[data-past]').forEach(el => { el.hidden = !on; });
 }
 function collect(form){
   const out = {};
@@ -386,14 +463,16 @@ function open(i, view){
   $('fseo').hidden = r.kind !== 'seo';
   $('form').hidden = r.kind !== 'orm';
   load(formOf(r), r.data);
-  cfgLoad(r); kbLoad(r);
+  cfgLoad(r); kbLoad(r); cfgGlobalLoad();
   $('saved').textContent = '';
   $('scrim').hidden = false;
   document.body.style.overflow = 'hidden';
   show(view || 'form');
 }
+const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder', cfg:'Pricing Config'};
 function show(view){
   VIEW = view;
+  document.querySelector('.sheet .top h2').textContent = PANE_TITLE[view] || PANE_TITLE.form;
   $('paneForm').hidden = view !== 'form';
   $('paneKw').hidden   = view !== 'kw';
   $('paneCfg').hidden  = view !== 'cfg';
@@ -407,7 +486,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('scrim'
 
 document.addEventListener('click', e => {
   const b = e.target.closest('.yn button');
-  if (b) b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  if (b) {
+    b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    if (b.parentNode.dataset.k === 'past') pastFields();
+  }
   const x = e.target.closest('.chip b');
   if (x) x.closest('.chip').remove();
   const box = e.target.closest('.box');
@@ -428,6 +510,18 @@ $('prods').addEventListener('click', e => {
     const prod = t.closest('.prod');
     prod.querySelectorAll('.ptabs button').forEach(x => x.classList.toggle('on', x === t));
     prod.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
+    return;
+  }
+  const hb = e.target.closest('[data-hist]');
+  if (hb) {
+    const i = +hb.closest('.prod').dataset.row, r = ROWS[i];
+    const entry = r.history[+hb.dataset.hist];
+    r.result = entry.quote;
+    r.kw = entry.quote.kw;
+    draw();
+    const prod = document.querySelector(`.prod[data-row="${i}"]`);
+    prod.scrollIntoView({block:'start', behavior:'smooth'});
+    prod.querySelector('.rowmsg').textContent = `Showing the quote built ${entry.when}.`;
     return;
   }
   const o = e.target.closest('[data-open]');
@@ -463,6 +557,170 @@ const cfgCollect = () => {
   $('cfgGrid').querySelectorAll('[data-c]').forEach(el => out[el.dataset.c] = el.value);
   return out;
 };
+
+// ---------------------------------------------------------------- pricing config
+// THE SAME CONSTANTS THE PRICER READS, on the quote they price. Groups mirror
+// the steps they act on; a path with a dot writes into the nested object the
+// API expects.
+const CFGSPEC = [
+  {h:'Step 1 · Keyword grid', note:'List shape — not a pricing decision',
+   text:'Builds the list as a SERVICE × CITY grid: each service gets a tier and every city '
+      + 'inherits it. Services scale inversely with cities to hit the target.',
+   rows:[
+    ['grid_target_keywords','Target keywords','services × cities aims for this total'],
+    ['grid_min_services','Min services','floor, used when there are many cities'],
+    ['grid_max_services','Max services','ceiling, used when there are few/no cities'],
+    ['grid_max_cities','Max cities','cities crossed against every service'],
+    ['grid_state_suffix','State suffix','auto, 1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"'],
+    ['service_min_volume','Service min volume','a service under this many searches/mo is replaced by a stronger term in the same topic; 0 = off'],
+    ['service_upgrade_ratio','Service upgrade ratio','replace a service when an unused term in the same topic measures this many × more; 0 = off'],
+    ['service_max_swaps','Max service swaps','ceiling across both checks'],
+    ['store_intent_tier_boost','Store-intent tier boost','how much a shop term outweighs a product term of the same size; 1 = raw volume only'],
+   ]},
+  {h:'Step 2 · Competition', note:'Partner hard cost',
+   text:'adder = median CPC × multiplier, capped. High-CPC verticals price higher because '
+      + 'ranking replaces ad spend. With no bid data the flat score buckets are used.',
+   rows:[
+    ['cpc_adder_mult','CPC multiplier','$ of adder per $1 of median CPC'],
+    ['cpc_adder_cap','CPC adder cap ($)','max adder, so a freak CPC cannot explode the price'],
+    ['cpc_adder_knee','CPC knee ($)','CPC above this earns the premium rate'],
+    ['cpc_adder_mult_high','CPC premium $/CPC','$/CPC above the knee'],
+    ['tier_step_pct_of_base','Step % of base (floor)','step = max(flat $, this % of partner hard cost)'],
+    ['cpc_adder_free_below','CPC free-below ($)','CPC at or below this adds nothing'],
+    ['bid_score_breaks.0','Bid break — low/mid ($)','flat fallback: under this → +$0'],
+    ['bid_score_breaks.1','Bid break — mid/high ($)','flat fallback: over this → top adder'],
+    ['competitive_adder.1','Adder · score 1','flat fallback'],
+    ['competitive_adder.2','Adder · score 2','flat fallback'],
+   ]},
+  {h:'Step 3 · Zero-ranking uplift',
+   text:'A share of the keywords not ranking adds a percentage to the price.',
+   tiers:{key:'zero_ranking_tiers', lead:'If at least', mid:'% of terms aren\u2019t ranking → add', tail:'% to price'},
+   rows:[
+    ['zero_ranking_top_n','Positions checked (top-N)','a term ranks if it appears in the top N results'],
+   ]},
+  {h:'Step 4 · Volume',
+   text:'Above the baseline, add $ per additional monthly search at a declining rate per band. '
+      + 'Volume prices opportunity: the add ramps down as visibility improves.',
+   rows:[
+    ['vol_free_below','Normalized baseline (searches)','volume at or below this adds nothing'],
+   ],
+   brackets:'volume_brackets',
+   rows2:[
+    ['vol_add_ramp.0','Ramp — no opportunity (% not ranking)','at or below this the volume add is $0'],
+    ['vol_add_ramp.1','Ramp — full opportunity (%)','at or above this the full volume add applies'],
+   ]},
+  {h:'Step 4 · Anchors', note:'Partner hard cost',
+   tiers:{key:'addon_volume_discount_tiers', lead:'From', mid:'add-on markets → Add-On Market % is', tail:'% off'},
+   rows:[
+    ['geo_anchor.single_city','Single City'],
+    ['geo_anchor.contiguous_region','Contiguous region'],
+    ['geo_anchor.non_contiguous_region','Non-contiguous region'],
+    ['geo_anchor.statewide','Statewide'],
+    ['geo_anchor.nationwide','Nationwide'],
+    ['tier_step_flat','Tier step — flat $','blank = use the ratio below'],
+    ['step_ratio','Step ratio (fallback)','0.38 = 38%'],
+    ['volume_add_cap','Volume add cap ($)','blank = uncapped'],
+    ['client_floor','Client floor ($)','minimum client base'],
+    ['default_markup_pct','Default markup (%)'],
+    ['nationwide_service_extras','Nationwide extras multiplier','1 = volume and visibility apply at national scope; 0 mutes both'],
+   ]},
+  {h:'AI Search',
+   text:'AI Search is a percentage of the client\u2019s own Core SEO price, climbing toward '
+      + 'parity when there is little existing visibility.',
+   tiers:{key:'geo_pct_tiers', lead:'If at least', mid:'% of terms aren\u2019t ranking → AI Search is', tail:'% of Core SEO'},
+   rows:[
+    ['geo_pct_default','Default AI Search %','used when there is no ranking data yet'],
+    ['min_term_months','Minimum term (months)','standard for both strategies'],
+   ]},
+  {h:'Keyword list consistency', note:'Stability control',
+   text:'Pinning forces the highest-volume terms the search data returned into the list, so the '
+      + 'same client prices the same way twice.',
+   rows:[
+    ['pin_head_terms','Head terms pinned','0 turns pinning off'],
+    ['pin_min_volume','Minimum volume to pin','ignore terms thinner than this'],
+   ]},
+];
+
+let CFGVALS = null;
+const cfgGet = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
+
+function cfgRowsHtml(rows){
+  return (rows || []).map(([k, label, hint]) => `
+    <div class="cfgrow">
+      <label>${label}${hint ? `<span>${hint}</span>` : ''}</label>
+      <input type="text" data-g="${k}" value="${esc(cfgGet(CFGVALS, k))}">
+    </div>`).join('');
+}
+function cfgTiersHtml(t){
+  return (cfgGet(CFGVALS, t.key) || []).map((row, i) => `
+    <div class="tierrow" data-t="${t.key}">
+      <span>${t.lead}</span><input type="number" value="${row[0]}">
+      <span>${t.mid}</span><input type="number" value="${row[1]}">
+      <span>${t.tail}</span>
+    </div>`).join('');
+}
+function cfgBracketsHtml(key){
+  return (cfgGet(CFGVALS, key) || []).map(b => `
+    <div class="tierrow" data-b="${key}">
+      <span>From</span><input type="number" value="${b[0]}">
+      <span>to</span><input type="number" value="${b[1] == null ? '' : b[1]}" placeholder="top">
+      <span>searches → add $</span><input type="number" step="0.0001" value="${b[2]}">
+      <span>per search</span>
+    </div>`).join('');
+}
+async function cfgGlobalLoad(){
+  if (!CFGVALS) {
+    try { CFGVALS = await (await fetch('/api/config')).json(); }
+    catch (e) { $('cfgGlobal').innerHTML = `<p class="hint">${esc(e.message)}</p>`; return; }
+  }
+  $('cfgGlobal').innerHTML = CFGSPEC.map(g => `
+    <details class="cfggrp" open>
+      <summary>${g.h}${g.note ? `<i>${g.note}</i>` : ''}</summary>
+      ${g.text ? `<p class="hint">${g.text}</p>` : ''}
+      ${cfgRowsHtml(g.rows)}
+      ${g.brackets ? cfgBracketsHtml(g.brackets) : ''}
+      ${cfgRowsHtml(g.rows2)}
+      ${g.tiers ? cfgTiersHtml(g.tiers) : ''}
+    </details>`).join('');
+}
+// A blank stays blank -- tier_step_flat and volume_add_cap both mean "off" when
+// empty, and sending 0 instead turns the step to nothing.
+function cfgGlobalCollect(){
+  const out = {};
+  $('cfgGlobal').querySelectorAll('[data-g]').forEach(el => {
+    const path = el.dataset.g.split('.');
+    let o = out;
+    path.slice(0, -1).forEach(k => { o[k] = o[k] || {}; o = o[k]; });
+    o[path[path.length - 1]] = el.value.trim();
+  });
+  ['bid_score_breaks', 'vol_add_ramp'].forEach(k => {
+    if (out[k]) out[k] = [out[k][0], out[k][1]];
+  });
+  $('cfgGlobal').querySelectorAll('[data-t]').forEach(row => {
+    const k = row.dataset.t, n = row.querySelectorAll('input');
+    (out[k] = out[k] || []).push([parseFloat(n[0].value), parseFloat(n[1].value)]);
+  });
+  Object.keys(out).forEach(k => {
+    if (Array.isArray(out[k]) && Array.isArray(out[k][0]))
+      out[k].sort((a, b) => b[0] - a[0]);
+  });
+  $('cfgGlobal').querySelectorAll('[data-b]').forEach(row => {
+    const k = row.dataset.b, n = row.querySelectorAll('input');
+    (out[k] = out[k] || []).push([parseFloat(n[0].value),
+      n[1].value.trim() === '' ? null : parseFloat(n[1].value), parseFloat(n[2].value)]);
+  });
+  if (out.volume_brackets) out.volume_brackets.sort((a, b) => a[0] - b[0]);
+  return out;
+}
+async function cfgApply(){
+  const payload = cfgGlobalCollect();
+  const r = await fetch('/api/config', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+  CFGVALS = null;
+  return Object.keys(payload).length;
+}
 
 // ---------------------------------------------------------------- step 1
 const KBL = {ultra:'Ultra Competitive', competitive:'Competitive', long_tail:'Long Tail'};
@@ -560,7 +818,14 @@ $('kbCountry').onchange = () => kbDraw();
 async function generate(){
   const r = ROWS[ROW];
   r.data = collect(formOf(r));
-  r.cfg = VIEW === 'cfg' ? cfgCollect() : (r.cfg || {});
+  if (VIEW === 'cfg') {
+    r.cfg = cfgCollect();
+    // Generating from the config pane prices on what is on screen, so the
+    // constants go up before the pipeline reads them.
+    try { await cfgApply(); }
+    catch (e) { $('saved').textContent = e.message; return; }
+  }
+  r.cfg = r.cfg || {};
   const d = r.data;
   if (!r.kw || !(r.kw.all || []).length) {
     $('saved').textContent = 'Build the keyword list first — Keyword Builder.';
@@ -629,30 +894,42 @@ async function generate(){
   $('gen').disabled = false;
 }
 
-$('save').onclick = () => {
+$('save').onclick = async () => {
   const r = ROWS[ROW];
   r.data = collect(formOf(r));
-  if (VIEW === 'cfg') r.cfg = cfgCollect();
   if (VIEW === 'kw') r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
     .map(c => c.firstChild.textContent.trim());
-  $('saved').textContent =
-    `Saved ${Object.keys(r.data).length} fields to ${r.name} – ${r.id}.`;
+  const msg = `Saved ${Object.keys(r.data).length} fields to ${r.name} – ${dateOf(r)}.`;
+  if (VIEW === 'cfg') {
+    r.cfg = cfgCollect();
+    $('saved').textContent = `${msg} Applying…`;
+    try {
+      const n = await cfgApply();
+      $('saved').textContent = `${msg} Applied ${n} constants.`;
+    } catch (e) { $('saved').textContent = `${msg} ${e.message}`; }
+    return;
+  }
+  $('saved').textContent = msg;
 };
 $('gen').onclick = () => {
   if (VIEW === 'kw') {
     const r = ROWS[ROW];
     r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
       .map(c => c.firstChild.textContent.trim());
-    if (r.kw) {
-      r.data.focus = (r.kw.all || []).map(x => x.kw).slice(0, 60);
-    }
     load(formOf(r), r.data);
     show('form');
-    $('saved').textContent = `Applied ${r.data.focus.length} focus terms.`;
+    // FOCUS IS WHAT THE CLIENT SELLS, NOT THE LIST BUILT FROM IT. Writing the
+    // built list back over the seeds made the next build seed itself on its own
+    // output, and a seed typed just before Apply vanished.
+    const n = (r.kw && (r.kw.all || []).length) || 0;
+    $('saved').textContent = n
+      ? `${n} terms on this quote · ${r.data.focus.length} seed terms.`
+      : `${r.data.focus.length} seed terms.`;
     return;
   }
   generate();
 };
+
 $('kwBuilder').onclick = () => show(VIEW === 'kw' ? 'form' : 'kw');
 $('revert').onclick = $('reset').onclick = () => {
   const r = ROWS[ROW];

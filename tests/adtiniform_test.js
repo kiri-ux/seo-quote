@@ -51,8 +51,9 @@ const BASE = 'http://127.0.0.1:5202';
     document.querySelector('.prod:first-child .ptabs button[data-tab="history"]').click();
     // History is empty until a forecast has run -- adtinirun_test covers the
     // populated table.
-    R.historyEmpty = document.querySelector('.prod:first-child [data-pane="history"]')
-      .textContent.trim();
+    R.historyRows = document.querySelectorAll('.prod:first-child .hist tbody tr').length;
+    R.historyCols = [...document.querySelectorAll('.prod:first-child .hist thead th')]
+      .map(t => t.textContent.trim()).filter(Boolean);
     R.detailsHidden = document.querySelector('.prod:first-child [data-pane="details"]').hidden;
     return R;
   });
@@ -71,7 +72,7 @@ const BASE = 'http://127.0.0.1:5202';
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     document.querySelector('#fseo .yn[data-k="lock"] button[data-v="1"]').click();
     document.getElementById('save').click();
-    R.savedMsg = /^Saved \d+ fields to Search Engine Optimization – 137027\.$/
+    R.savedMsg = /^Saved \d+ fields to Search Engine Optimization – 9\/16\/26\./
       .test(document.getElementById('saved').textContent);
     document.getElementById('close').click();
     R.closed = document.getElementById('scrim').hidden;
@@ -114,7 +115,7 @@ const BASE = 'http://127.0.0.1:5202';
       && document.getElementById('paneForm').hidden;
     // The buckets are empty until Build keyword list runs -- adtinirun_test
     // covers the built list.
-    R.notBuilt = document.getElementById('kbNote').textContent.trim();
+    R.builtNote = document.getElementById('kbNote').textContent.trim();
     R.hasBuild = !!document.getElementById('kbBuild');
     R.hasSourceToggle = !!document.getElementById('kbSrc');
     R.seedsFromRow = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -142,10 +143,13 @@ const BASE = 'http://127.0.0.1:5202';
     'home.ormOnly': [home.ormOnly, 4],
     'home.searched': [home.searched, 1],
     'fc.products': [fc.products.map(t => t.replace(/\s*\S$/, '')).join(' / '),
-      'Search Engine Optimization – 137027 / Search Engine Optimization – 137031 / Online Reputation Management – 137028'],
+      'Search Engine Optimization – 9/16/26 / Search Engine Optimization – 9/12/26'
+      + ' / Online Reputation Management – 9/16/26'],
     'fc.tabs': [fc.tabs.join(','), 'Details,History'],
     'fc.actions': [fc.actions.join(','), 'Preview,adtini Forecast'],
-    'fc.historyEmpty': [fc.historyEmpty, 'No runs yet.'],
+    'fc.historyRows': [fc.historyRows, 2],
+    'fc.historyCols': [fc.historyCols.join('|'),
+      'Date Forecasted|Forecast Prompt|Generated Response|Type|Error'],
     'fc.detailsHidden': [fc.detailsHidden, true],
     'form.opensSeo': [form.opensSeo, true],
     'form.loaded': [form.loaded, 'Sage Dental'],
@@ -165,7 +169,7 @@ const BASE = 'http://127.0.0.1:5202';
     'adtini.opensForm': [kw.adtiniOpensForm, true],
     'kw.staysInModal': [kw.stayedPut, true],
     'kw.pane': [kw.kwPane, true],
-    'kw.notBuilt': [kw.notBuilt, 'Not built yet.'],
+    'kw.savedListShown': [kw.builtNote, '7,700/mo measured · United States'],
     'kw.hasBuild': [kw.hasBuild, true],
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
     'kw.seedsFromRow': [kw.seedsFromRow.length > 0, true],

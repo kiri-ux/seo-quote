@@ -320,3 +320,26 @@ table.kv tr:last-child td{border-bottom:0}
 table.kv td:first-child{color:var(--muted);width:42%;word-break:break-word}
 table.kv td:nth-child(2){color:var(--text);word-break:break-word}
 .shotimg{display:block;max-width:100%;border-radius:10px;border:1px solid var(--line)}
+
+/* ---- pricing config, inside the modal ----------------------------------- */
+#paneCfg{max-height:62vh;overflow-y:auto;padding-bottom:26px}
+.cfgsec{margin-bottom:18px}
+.cfgsec > h4{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--navy)}
+.cfgsec > .hint{margin:0 0 12px}
+.cfggrp{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.cfggrp > summary{list-style:none;cursor:pointer;font-family:'Barlow Condensed',system-ui,sans-serif;
+  font-size:15px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--navy);display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cfggrp > summary::-webkit-details-marker{display:none}
+.cfggrp > summary i{font-style:normal;background:var(--fill);color:var(--muted);
+  font-size:10px;font-weight:600;letter-spacing:.06em;padding:3px 8px;border-radius:999px}
+.cfgrow{display:flex;align-items:center;gap:12px;margin:6px 0}
+.cfgrow label{flex:1;margin:0;font-size:12.5px;font-weight:600;display:block}
+.cfgrow label span{display:block;font-weight:400;color:var(--muted);font-size:11.5px}
+form .cfgrow input[type=text]{flex:0 0 112px;width:112px;min-height:36px;padding:8px 12px}
+.cfgrow label{max-width:none}
+.tierrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0;
+  font-size:12.5px;color:var(--muted)}
+form .tierrow input[type=number]{flex:0 0 84px;width:84px;min-height:34px;padding:6px 10px}
+.btn-open{background:var(--blue);color:#fff;border:0;border-radius:999px;
+  padding:5px 12px;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer}
