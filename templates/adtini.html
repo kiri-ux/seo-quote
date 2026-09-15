@@ -13,25 +13,9 @@
 <body>
 
 <nav class="rail">
-  <a href="/adtini" title="Quotes">&#9873;</a>
+  <a href="/adtini" title="Quotes" class="mark on">&#9776;</a>
   <a href="/adtini/forecast?new=1" title="New quote" class="mark">&#43;</a>
-  <a href="/adtini" title="Quote list" class="mark on">&#9776;</a>
-  <a href="#" title="Clients">&#9787;</a>
-  <a href="#" title="Partners">&#9962;</a>
-  <a href="#" title="Reporting">&#9650;</a>
-  <a href="/" title="Legacy SEO">S</a>
-  <a href="/reputation" title="Legacy Rep Mgmt">R</a>
 </nav>
-
-<header class="app">
-  <div class="bar">
-    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
-    <span class="sub">adtini</span>
-  </div>
-  <nav class="tabs">
-    <a href="/adtini">Quotes</a>
-  </nav>
-</header>
 
 <div class="pagehead">
   <span class="burger">&#9776;</span>
@@ -39,7 +23,7 @@
 </div>
 
 <div class="wrap">
-  <p class="crumbs"><a href="/adtini">Quotes</a> &rsaquo; <a href="/adtini">56305</a> &rsaquo; Forecast</p>
+  <p class="crumbs"><a href="/adtini">Workflow Page</a> &rsaquo; <a href="/adtini">56305</a> &rsaquo; Forecast</p>
   <h3 class="products">Products</h3>
   <div id="prods"></div>
 </div>
@@ -241,8 +225,9 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
 const money = v => (v == null || v === '') ? '—'
   : '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
 
-async function post(url, body){
-  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+async function post(url, body, method){
+  const r = await fetch(url, {method: method || 'POST',
+                              headers:{'Content-Type':'application/json'},
                               body: JSON.stringify(body)});
   const txt = await r.text();
   let j = null;
@@ -387,7 +372,7 @@ function rowHtml(r, i){
     <div class="pbody">
       <div data-pane="details">
         <div class="prow">
-          <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Preview</button>
+          <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Config</button>
           <span class="rowmsg" data-msg="${i}"></span>
           <div class="right">
             <span class="spark">&#10022;</span>
@@ -402,6 +387,154 @@ function rowHtml(r, i){
 }
 function draw(){ $('prods').innerHTML = ROWS.map(rowHtml).join(''); }
 
+// SAVING. A quote is stored under its client with the shape the store already
+// uses -- inputs/pricing/rep_totals so the list columns and strategy tag read
+// correctly -- plus the adtini block that rebuilds this page exactly.
+function savePayload(r){
+  const p = {
+    adtini: {kind: r.kind, qid: r.qid, built: dateOf(r), data: r.data,
+             cfg: r.cfg || {}, over: r.over || {}, kw: r.kw || null,
+             scan: r.scan || null, result: r.result || null,
+             history: (r.history || []).slice(0, 20)},
+    inputs: {strategy: (r.data.strategy || []).join(' + '),
+             brand: r.data.brand, geo_values: geoOf(r.data),
+             state: stateOf(r.data), geo_scope: bandOf(r.data)},
+  };
+  if (r.kind === 'orm') {
+    const t = ((r.result || {}).quote || {}).totals || {};
+    p.rep_totals = {one_time: t.removals_max || 0, monthly: t.monthly || 0};
+    p.inputs.campaign_type = (r.data.strategy || []).join(' + ');
+  } else {
+    p.pricing = (r.result || {}).pricing || {};
+  }
+  return p;
+}
+async function persist(r){
+  if (!LIVE) return;
+  const body = {name: `${r.name} — ${r.qid}`, client: CLIENT || r.data.brand || '',
+                payload: savePayload(r), tool: r.kind === 'orm' ? 'rep' : 'seo'};
+  try {
+    if (r.saveId) {
+      await post('/api/quotes/' + r.saveId, body, 'PUT');
+    } else {
+      const got = await post('/api/quotes', body);
+      r.saveId = got.id;
+    }
+  } catch (e) { $('saved').textContent = 'Saved on screen only — ' + e.message; }
+}
+
+// EVERY QUOTE WE HAVE IS ONE OF THESE ROWS. The saved quotes on the SEO and
+// Reputation tabs were written before this page existed, so they carry no
+// adtini block -- they are read off the shapes those tabs save and shown here
+// as themselves, priced numbers and all.
+function adopt(got){
+  const pay = got.payload || {};
+  if (pay.adtini) return pay.adtini;
+  const rep = String(got.tool || '') === 'rep' || !!pay.rep_totals || !!pay.form;
+  if (rep) {
+    const f = pay.form || {};
+    const sc = (pay.scan || {}).data || {};
+    return {
+      kind: 'orm', qid: null, built: (got.updated_at || '').slice(0, 10),
+      data: {brand: f.brand || got.client || '', site: f.domain || '',
+             strategy: STRAT_FROM(f),
+             reviews: +f.nReviews || 0, locations: +f.nLocations || 1,
+             std: +f.nArtStd || 0, prem: +f.nArtPrem || 0, volume: +f.volume || 0,
+             markup: String(Math.round((parseFloat(f.clientMargin) || 0.35) * 100)),
+             country: 'United States', autosuggest: 1},
+      scan: {terms: sc.terms || null, serp: sc.serp || null,
+             locations: sc.locations || null, autocomplete: sc.autocomplete || null,
+             stars: ((pay.scan || {}).negDone || []).length
+               ? {locations: ((sc.locations || {}).locations || []).length,
+                  flagged: ((pay.scan || {}).negDone || [])
+                    .reduce((z, x) => z + (x.neg_1_2 || 0), 0),
+                  one_star: ((pay.scan || {}).negDone || [])
+                    .reduce((z, x) => z + (x.neg_1 || 0), 0)}
+               : null},
+      result: pay.quote ? {quote: pay.quote, headline:
+        `${money((pay.rep_totals || {}).monthly || 0)}/mo · `
+        + `${(pay.quote.lines || []).length} lines`} : null,
+      history: [],
+    };
+  }
+  const i = pay.inputs || {};
+  const geo = (i.geo_values || []);
+  const ranks = {};
+  (pay.table || []).forEach(x => { ranks[String(x.kw || '').toLowerCase()] = x.pos; });
+  const kwAll = ((pay.kw || {}).all || []);
+  return {
+    kind: 'seo', qid: null, built: (got.updated_at || '').slice(0, 10),
+    data: {brand: i.brand || got.client || '', site: i.domain || (i.sites || [])[0] || '',
+           business_desc: i.business_desc || '',
+           focus: (i.keywords || []).slice(), negatives: (i.negatives || []).slice(),
+           industry: (i.industries || (i.industry ? String(i.industry).split(' | ') : [])),
+           strategy: String(i.strategy || 'Core SEO').split(' + '),
+           goals: i.goal ? [i.goal] : [],
+           g_city: !!geo.length, city: geo[0] || '', county: '',
+           g_county: false, g_state: false, g_country: i.geo_scope === 'nationwide',
+           national: i.geo_scope === 'nationwide' ? 1 : 0,
+           addon: (i.addon_markets || 0) ? 1 : 0, markets: i.addon_markets || 0,
+           markup: String(Math.round((i.markup_pct || 0.35) * 100)),
+           past: i.past_seo ? 1 : 0, past_details: i.past_seo_detail || '',
+           spend: i.client_budget ? '$' + Number(i.client_budget).toLocaleString() : '',
+           country: 'United States', expand: 1, lock: 0},
+    kw: pay.kw || null,
+    result: pay.pricing ? {
+      pricing: pay.pricing, ranks, table: pay.table || [],
+      metrics: {cpc: pay.cpc || {}, kd_score: (pay.kd || {}).score, adder: pay.adder},
+      shot: ((pay.serp || {}).img) || null,
+      headline: `${money((((pay.pricing || {}).handoff || {}).package || {})[
+        Object.keys((((pay.pricing || {}).handoff || {}).package || {}))[0]])}/mo`
+        + ` · ${kwAll.length} terms · ${(pay.totalVol || 0).toLocaleString()}/mo`
+        + (pay.pctNotRanking == null ? ' · ranking unmeasured'
+                                     : ` · ${100 - pay.pctNotRanking}% ranking`),
+    } : null,
+    history: [],
+  };
+}
+const STRAT_FROM = f => {
+  const on = [];
+  if (f.useReviews) on.push('Review Removals');
+  if (f.useArticles) on.push('Site/Article Removals');
+  if (f.useSearchBundle || f.campaign === 'reactive' || f.campaign === 'bundle') on.push('Reactive');
+  if (f.useGeo || f.campaign === 'proactive' || f.campaign === 'bundle') on.push('Proactive');
+  return on.length ? on : ['Reactive'];
+};
+
+// THE STORE IS THE PAGE WHEN THERE IS ONE. Every saved quote on this client is
+// a row, however many of each product it has; the sample rows are the fallback.
+let LIVE = false, CLIENT = '';
+async function loadClient(){
+  const q = new URLSearchParams(location.search);
+  CLIENT = q.get('client') || '';
+  if (!CLIENT) return;
+  let list = null;
+  try { list = await (await fetch('/api/adtini/clients')).json(); } catch (e) { return; }
+  if (!list || !list.enabled) return;
+  LIVE = true;
+  const c = (list.clients || []).find(x => x.client === CLIENT);
+  if (!c || !(c.quotes || []).length) { ROWS.length = 0; draw(); return; }
+  const loaded = [];
+  for (const q2 of c.quotes) {
+    try {
+      const got = await (await fetch('/api/quotes/' + q2.id)).json();
+      const a = adopt(got);
+      loaded.push({
+        saveId: q2.id, id: String(q2.id),
+        kind: a.kind || (String(got.tool) === 'rep' ? 'orm' : 'seo'),
+        name: a.kind === 'orm' ? 'Online Reputation Management' : 'Search Engine Optimization',
+        qid: a.qid || newQid(), built: a.built || (q2.updated_at || '').slice(0, 10),
+        data: a.data || {}, cfg: a.cfg || {}, over: a.over || {},
+        kw: a.kw || null, scan: a.scan || null, result: a.result || null,
+        history: a.history || [],
+      });
+    } catch (e) { /* one unreadable quote must not empty the page */ }
+  }
+  if (loaded.length) { ROWS.length = 0; loaded.forEach(x => ROWS.push(x)); }
+  draw();
+  fromQuery();
+}
+
 // THE GRID IS HOW YOU GET HERE. It names the client and, from the two review
 // icons, the product to open.
 function fromQuery(){
@@ -411,7 +544,7 @@ function fromQuery(){
     document.querySelector('.pagehead h2').innerHTML =
       `Forecast &ndash; Order <u>${esc(order || '—')}</u> &ndash; ${esc(client || '')}`;
     document.querySelector('.crumbs').innerHTML =
-      `<a href="/adtini">Quotes</a> &rsaquo; <a href="/adtini">${esc(order || '')}</a> &rsaquo; Forecast`;
+      `<a href="/adtini">Workflow Page</a> &rsaquo; <a href="/adtini">${esc(order || '')}</a> &rsaquo; Forecast`;
   }
   if (!review) return;
   const i = ROWS.findIndex(r => r.kind === review);
@@ -428,9 +561,9 @@ function histHtml(r){
   const h = r.history || [];
   if (!h.length) return '<p class="hint" style="padding:16px 18px;margin:0">No runs yet.</p>';
   return '<div class="hist scroller"><table><thead><tr>'
-    + ['Date Forecasted','Forecast Prompt','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
+    + ['Date Forecasted','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
     + '</tr></thead><tbody>'
-    + h.map((x, j) => `<tr><td>${esc(x.when)}</td><td>${esc(x.prompt)}</td>`
+    + h.map((x, j) => `<tr><td>${esc(x.when)}</td>`
         + `<td>${esc(x.resp)}</td><td>adtini</td><td>${esc(x.error || '')}</td>`
         + `<td>${x.quote ? `<button class="btn-open" type="button" data-hist="${j}">Open</button> ` : ''}`
         + '<button class="btn-pub" type="button">Publish To RZ</button> <span class="chev">&#9662;</span></td></tr>').join('')
@@ -677,7 +810,8 @@ function sendValue(v, key){
   if (v === undefined || v === null || v === '') return null;
   if (Array.isArray(v)) {
     if (!v.length) return null;
-    const named = v.map(x => typeof x === 'object' ? (x.kw || x.term || '') : x);
+    const named = v.map(x => typeof x === 'object'
+      ? (x.kw || x.term || x.keyword || x.title || x.domain || '') : x);
     if (named.every(x => x !== ''))
       return `${v.length} \u00b7 ${named.slice(0, 3).join(', ')}${v.length > 3 ? '…' : ''}`;
     return `${v.length} row${v.length === 1 ? '' : 's'}`;
@@ -691,30 +825,82 @@ function sendValue(v, key){
   if (typeof v === 'number') return cash ? money(v) : v.toLocaleString();
   return String(v);
 }
-function sendMatrix(r){
-  let ord = 0, ordHave = 0, pr = 0, prHave = 0;
+// ONE LIST PER DESTINATION. The fields are the same fields; splitting them by
+// where they go is what a planner checking a quote actually needs -- everything
+// the order form gets, then everything the proposal gets.
+function sendList(r, want){
+  let n = 0, have = 0;
   const secs = (r.kind === 'orm' ? SEND_ORM : SEND_SEO).map(([h, rows]) => {
     const body = rows.map(([k, label, dest, get, manual]) => {
+      const [toOrd, toPr] = DEST[dest];
+      if (!(want === 'order' ? toOrd : toPr)) return '';
       let v = null;
       try { v = sendValue(get(r), k); } catch (e) { v = null; }
-      const [toOrd, toPr] = DEST[dest];
-      if (toOrd && !manual) { ord++; if (v) ordHave++; }
-      if (toPr && !manual) { pr++; if (v) prHave++; }
-      const gap = !v && !manual && (toOrd || toPr);
+      if (!manual) { n++; if (v) have++; }
+      const gap = !v && !manual;
       return `<tr class="${gap ? 'gap' : ''}">
         <td>${label}<span>${k}</span></td>
-        <td>${v ? esc(v) : (manual ? 'typed on the order form'
-                                   : (gap ? 'not captured' : '\u2014'))}</td>
-        <td>${toOrd ? '&#9679;' : '&#8211;'}</td>
-        <td>${toPr ? '&#9679;' : '&#8211;'}</td></tr>`;
+        <td>${v ? esc(v) : (manual ? 'typed on the order form' : 'not captured')}</td></tr>`;
     }).join('');
-    return `<tr class="sec"><th colspan="4">${h}</th></tr>${body}`;
+    return body ? `<tr class="sec"><th colspan="2">${h}</th></tr>${body}` : '';
   }).join('');
-  return `<table class="send"><thead><tr>
-      <th>Field</th><th>This quote</th><th>Order form</th><th>Proposal</th>
-    </tr></thead><tbody>${secs}</tbody></table>
-    <p class="hint sendfoot">Order form ${ordHave} of ${ord}
-      \u00b7 Proposal ${prHave} of ${pr}</p>`;
+  return {n, have, html: `<table class="send"><thead><tr>
+      <th>Field</th><th>This quote</th>
+    </tr></thead><tbody>${secs}</tbody></table>`};
+}
+
+// WHAT THE QUOTE IS, IN THE PLANNER'S TERMS. Opening a run off History lands
+// here rather than in the field lists.
+function plannerView(r){
+  const h = ((r.result || {}).pricing || {}).handoff || {};
+  const p = (r.result || {}).pricing || {};
+  const q = (r.result || {}).quote || {};
+  const t = q.totals || {};
+  const rh = q.handoff || {};
+  const kw = r.kw || {};
+  const rows = [];
+  const add = (k, v) => { if (v) rows.push([k, v]); };
+  if (r.kind === 'orm') {
+    add('Reactive — Search Protection', rh.search_protection_monthly
+      ? money(rh.search_protection_monthly) + '/mo' : 'not on this quote');
+    add('Proactive — Brand Shield', rh.brand_shield_monthly
+      ? money(rh.brand_shield_monthly) + '/mo' : 'not on this quote');
+    add('Review removals', rh.reviews_count
+      ? `${rh.reviews_count} × ${money(rh.price_per_review_removal)}` : 'none');
+    add('Site removals', (rh.standard_sites || rh.premium_sites)
+      ? `${rh.standard_sites || 0} standard × ${money(rh.price_per_standard_site_removal)}`
+        + ` · ${rh.premium_sites || 0} premium × ${money(rh.price_per_premium_site_removal)}`
+      : 'none');
+    add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
+    add('Locations', rh.locations);
+    add('Margin', `${Math.round((rh.margin_pct || 0) * 100)}% · `
+      + money(rh.margin_dollars_monthly) + '/mo');
+  } else {
+    add('Core SEO', Object.keys(h.core_seo_price || {})
+      .map(k => `${k} ${money(h.core_seo_price[k])}`).join(' · '));
+    add('AI Search', h.ai_search_pct
+      ? Object.keys(h.ai_search_price || {}).map(k => `${k} ${money(h.ai_search_price[k])}`).join(' · ')
+        + ` · ${h.ai_search_pct}% of Core SEO`
+      : 'not on this quote');
+    add('Add-on markets', h.addon_markets
+      ? `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
+        + (h.addon_market_discount_pct ? ` · ${h.addon_market_discount_pct}% off` : '')
+      : 'none');
+    add('Minimum term', p.min_term_months ? p.min_term_months + ' months' : '');
+    add('Keywords', `${(kw.all || []).length} terms · `
+      + `${(p.total_volume || 0).toLocaleString()}/mo · `
+      + (p.pct_not_ranking == null ? 'ranking unmeasured'
+                                   : `${100 - p.pct_not_ranking}% ranking`));
+    add('Competition', p.competitive_adder ? money(p.competitive_adder) + ' adder' : 'no adder');
+    add('Margin', `${Math.round((h.margin_pct || 0) * 100)}% · `
+      + Object.keys(h.margin_dollars || {}).map(k => money(h.margin_dollars[k])).join(' / '));
+  }
+  const shot = (r.result || {}).shot;
+  return `<div class="pview">${rows.map(([k, v]) =>
+      `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>
+    <div class="pvserp">${shot
+      ? `<img class="shotimg" src="${shot}" alt="SERP capture">`
+      : '<p class="hint" style="margin:0">SERP capture — not captured</p>'}</div>`;
 }
 
 function resultsHtml(r){
@@ -728,14 +914,7 @@ function resultsHtml(r){
   const tiers = r.kind === 'orm'
     ? {'Monthly': t.monthly, 'Removals — max': t.removals_max, 'Total': t.total}
     : (h.package || {});
-  // What the document prints, as the pricer returned it. The handoff is the
-  // IO's copy and has its own fold.
-  const prop = {};
-  Object.keys(r.kind === 'orm' ? q : p).forEach(k => {
-    const v = (r.kind === 'orm' ? q : p)[k];
-    if (k === 'handoff' || v === null || v === undefined || v === '') return;
-    prop[k] = v;
-  });
+  const ord = sendList(r, 'order'), pro = sendList(r, 'prop');
   return `
   <details class="qres" open>
     <summary>Quote results &mdash; ${esc(r.result.headline || '')}</summary>
@@ -745,26 +924,21 @@ function resultsHtml(r){
           `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b></div>`).join('')}
       </div>
 
-      <details class="qfold" open><summary>What goes where</summary>
-        ${sendMatrix(r)}</details>
+      ${plannerView(r)}
 
-      <details class="qfold"><summary>Order form payload &mdash;
-        ${Object.keys(r.kind === 'orm' ? (q.handoff || {}) : h).length} fields</summary>
-        ${kvTable(r.kind === 'orm' ? (q.handoff || {}) : h)}</details>
+      <details class="qfold"><summary>Order form &mdash;
+        ${ord.have} of ${ord.n} fields</summary>${ord.html}</details>
 
-      ${r.kind === 'orm' ? '' : `
-      <details class="qfold"><summary>Keyword table &mdash; ${all.length} terms</summary>
+      <details class="qfold"><summary>Proposal &mdash;
+        ${pro.have} of ${pro.n} fields</summary>
+        ${pro.html}
+        ${r.kind === 'orm' ? '' : `
         <table class="kv"><tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
         ${all.map(x => {
           const rk = (r.result.ranks || {})[String(x.kw || '').toLowerCase()];
           return `<tr><td>${esc(x.kw)}</td><td>${(x.vol || 0).toLocaleString()}</td>`
                + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
-        }).join('')}</table></details>`}
-
-      <details class="qfold">
-        <summary>Proposal payload &mdash; ${Object.keys(prop).length} fields</summary>
-        ${kvTable(prop)}
-        ${r.result.shot ? `<img class="shotimg" src="${r.result.shot}" alt="SERP capture">` : ''}
+        }).join('')}</table>`}
       </details>
     </div>
   </details>`;
@@ -1431,6 +1605,7 @@ async function generateOrm(){
                   prompt: `{ ${payload.campaign}, ${payload.reviews.count} reviews }`,
                   resp: `${money(tot.monthly || 0)}/mo`, quote: r.result}]
                 .concat(r.history || []);
+    await persist(r);
     draw();
     $('saved').textContent = '';
     close();
@@ -1570,6 +1745,7 @@ $('revert').onclick = $('reset').onclick = () => {
 
 draw();
 fromQuery();
+loadClient();
 </script>
 </body>
 </html>

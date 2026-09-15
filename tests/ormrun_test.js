@@ -107,16 +107,26 @@ const QUOTE = {
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
     R.folds = [...q.querySelectorAll('.qfold > summary')].map(s => s.textContent.replace(/\s+/g, ' ').trim());
-    const send = q.querySelector('table.send');
-    R.sections = [...send.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
-    const rowOf = k => [...send.querySelectorAll('tbody tr')]
-      .find(tr => (tr.querySelector('td span') || {}).textContent === k);
-    const cells = tr => [...tr.children].map(td => td.textContent.trim());
-    R.reviewsRow = cells(rowOf('reviews_count'));
-    R.snapshotRow = cells(rowOf('negative_terms'));
-    R.starsRow = cells(rowOf('star_breakdown'));
-    R.partnerRow = cells(rowOf('partner_monthly_cost'));
-    R.foot = q.querySelector('.sendfoot').textContent.replace(/\s+/g, ' ').trim();
+    R.planner = [...q.querySelectorAll('.pview .pv')]
+      .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
+    R.closed = [...q.querySelectorAll('.qfold')].every(f => !f.open);
+    const foldBy = re => [...q.querySelectorAll('.qfold')]
+      .find(f => re.test(f.querySelector('summary').textContent));
+    const ordFold = foldBy(/^Order form/), proFold = foldBy(/^Proposal/);
+    ordFold.open = true; proFold.open = true;
+    const rowIn = (fold, k) => {
+      const tr = [...fold.querySelectorAll('tbody tr')]
+        .find(t => (t.querySelector('td span') || {}).textContent === k);
+      return tr ? [...tr.children].map(td => td.textContent.trim()) : null;
+    };
+    R.ordSections = [...ordFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
+    R.proSections = [...proFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
+    R.reviewsRow = rowIn(ordFold, 'reviews_count');
+    R.snapshotRow = rowIn(proFold, 'negative_terms');
+    R.starsRow = rowIn(proFold, 'star_breakdown');
+    R.partnerRow = rowIn(ordFold, 'partner_monthly_cost');
+    R.partnerNotOnProposal = rowIn(proFold, 'partner_monthly_cost');
+    R.noKeywordTable = !proFold.querySelector('table.kv');
     return R;
   });
 
@@ -154,15 +164,25 @@ const QUOTE = {
     'res.tiles': [res.tiles.join(' / '),
       'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],
     'res.noKeywordFold': [res.folds.some(f => /Keyword table/.test(f)), false],
-    'res.sections': [res.sections.join(' / '),
+    'res.plannerView': [res.planner.slice(0, 3).join(' | '),
+      'Reactive — Search Protection: $3,100/mo | Proactive — Brand Shield: $5,000/mo'
+      + ' | Review removals: 14 × $100'],
+    'res.foldsStartClosed': [res.closed, true],
+    'order.sections': [res.ordSections.join(' / '),
+      'This quote / Order form · campaign & budget / Order form · strategies'
+      + ' / Order form · product details / Proposal · product details / Partner cost'],
+    'proposal.sections': [res.proSections.join(' / '),
       'This quote / Order form · campaign & budget / Order form · strategies'
       + ' / Order form · product details / Proposal · reputation snapshot'
-      + ' / Proposal · product details / Partner cost / Scan insights'],
-    'res.reviewsBothWays': [res.reviewsRow.join(' | '), '# of reviewsreviews_count | 14 | ● | ●'],
-    'res.snapshotToProposal': [res.snapshotRow.slice(2).join(' | '), '– | ●'],
-    'res.starsCaptured': [res.starsRow[1], 'locations: 3 · flagged: 14 · one_star: 9'],
-    'res.partnerToOrderForm': [res.partnerRow.slice(1).join(' | '), '$2,015 | ● | –'],
-    'res.counts': [/^Order form \d+ of \d+ · Proposal \d+ of \d+/.test(res.foot), true],
+      + ' / Proposal · product details'],
+    'order.reviewsCounted': [res.reviewsRow.join(' | '), '# of reviewsreviews_count | 14'],
+    'proposal.snapshotTerms': [res.snapshotRow[1],
+      '3 · sage dental reviews, sage dental lawsuit, sage dental complaints'],
+    'proposal.starsCaptured': [res.starsRow[1], 'locations: 3 · flagged: 14 · one_star: 9'],
+    'order.partnerCost': [res.partnerRow.join(' | '),
+      'Partner monthly costpartner_monthly_cost | $2,015'],
+    'proposal.noPartnerCost': [res.partnerNotOnProposal, null],
+    'proposal.noKeywordTable': [res.noKeywordTable, true],
   };
 
   let bad = 0;

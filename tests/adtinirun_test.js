@@ -180,25 +180,28 @@ const CFG = {
     R.folds = [...q.querySelectorAll('.qfold > summary')].map(s => s.textContent.trim());
     const foldBy = re => [...q.querySelectorAll('.qfold')]
       .find(f => re.test(f.querySelector('summary').textContent));
-    const kwFold = foldBy(/Keyword table/);
-    R.rankRows = [...kwFold.querySelectorAll('table.kv tr')].slice(1)
+    // the planner's view is what the row opens to
+    R.planner = [...q.querySelectorAll('.pview .pv')]
+      .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
+    R.serpLine = q.querySelector('.pvserp').textContent.trim();
+    // and the two destination lists are closed until asked for
+    R.closed = [...q.querySelectorAll('.qfold')].every(f => !f.open);
+    const ordFold = foldBy(/^Order form/), proFold = foldBy(/^Proposal/);
+    ordFold.open = true; proFold.open = true;
+    const rowIn = (fold, k) => {
+      const tr = [...fold.querySelectorAll('tbody tr')]
+        .find(t => (t.querySelector('td span') || {}).textContent === k);
+      return tr ? [...tr.children].map(td => td.textContent.trim()) : null;
+    };
+    R.ordSections = [...ordFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
+    R.proSections = [...proFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
+    R.ordHasPartner = !!rowIn(ordFold, 'partner_hard_cost');
+    R.proHasPartner = !!rowIn(proFold, 'partner_hard_cost');
+    R.proHasKeywordTable = !!proFold.querySelector('table.kv');
+    R.rankRows = [...proFold.querySelectorAll('table.kv tr')].slice(1)
       .map(tr => [...tr.children].map(td => td.textContent.trim()).join(' | '));
-    const io = foldBy(/Order form payload/);
-    R.ioKeys = [...io.querySelectorAll('table.kv td:first-child')].map(td => td.textContent.trim());
-    // the matrix: what leaves this quote, and for which destination
-    const send = q.querySelector('table.send');
-    R.sendSections = [...send.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
-    const rowOf = k => [...send.querySelectorAll('tbody tr')]
-      .find(tr => (tr.querySelector('td span') || {}).textContent === k);
-    R.quoteIdRow = [...rowOf('quote_id').children].map(td => td.textContent.trim());
-    const cells = tr => [...tr.children].map(td => td.textContent.trim());
-    R.packageRow = cells(rowOf('package'));
-    R.brandRow = cells(rowOf('brand'));
-    R.serpRow = cells(rowOf('serp'));
-    R.serpIsGap = rowOf('serp').classList.contains('gap');
-    R.insightRow = cells(rowOf('widen'));
-    R.insightIsGap = rowOf('widen').classList.contains('gap');
-    R.foot = q.querySelector('.sendfoot').textContent.replace(/\s+/g, ' ').trim();
+    R.serpRow = rowIn(proFold, 'serp');
+    R.quoteIdRow = rowIn(ordFold, 'quote_id');
     R.modalClosed = document.getElementById('scrim').hidden;
     // the run lands in that row's History tab
     document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="history"]').click();
@@ -261,31 +264,32 @@ const CFG = {
     'res.headline': [res.headline,
       'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
     'res.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
-    'res.folds': [res.folds.map(f => f.replace(/\s+/g, ' ')).join(' / '),
-      'What goes where / Order form payload — 3 fields / Keyword table — 3 terms'
-      + ' / Proposal payload — 3 fields'],
-    'send.sections': [res.sendSections.join(' / '),
+    'res.twoFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
+      'Order form — n of n fields / Proposal — n of n fields'],
+    'res.foldsStartClosed': [res.closed, true],
+    'res.plannerViewFirst': [res.planner.slice(0, 2).join(' | '),
+      'AI Search: not on this quote | Add-on markets: none'],
+    'res.serpNamed': [res.serpLine, 'SERP capture — not captured'],
+    'order.sections': [res.ordSections.join(' / '),
       'This quote / Order form · campaign & budget / Order form · product details'
-      + ' / Order form · forecast request / Order form · strategies'
-      + ' / Proposal · keyword details / Proposal · measurement / Partner cost'
-      + ' / List insights'],
-    'send.priceGoesBoth': [res.packageRow.join(' | '),
-      'SEO package — per tierpackage | Core SEO: $5,450 · Add-on markets: $1,200 | ● | ●'],
-    'send.brandGoesBoth': [res.brandRow.slice(2).join(' | '), '● | ●'],
-    'send.missingIsNamed': [res.serpRow[1], 'not captured'],
-    'send.missingIsFlagged': [res.serpIsGap, true],
-    'send.insightsAreScreenOnly': [res.insightRow.slice(2).join(' | '), '– | –'],
-    'send.insightIsNotAGap': [res.insightIsGap, false],
-    'send.counts': [/^Order form \d+ of \d+ · Proposal \d+ of \d+/.test(res.foot), true],
-    'send.quoteIdTravels': [res.quoteIdRow.join(' | '),
-      'Internal quote IDquote_id | Q-100241 | ● | ●'],
+      + ' / Order form · forecast request / Order form · strategies / Partner cost'],
+    'proposal.sections': [res.proSections.join(' / '),
+      'This quote / Order form · campaign & budget / Order form · product details'
+      + ' / Order form · strategies / Proposal · keyword details / Proposal · measurement'],
+    'order.keepsPartnerCost': [res.ordHasPartner, true],
+    'proposal.noPartnerCost': [res.proHasPartner, false],
+    'proposal.carriesTheKeywordTable': [res.proHasKeywordTable, true],
+
+    'proposal.namesWhatIsMissing': [res.serpRow.join(' | '), 'SERP captureserp | not captured'],
+    'order.quoteIdTravels': [res.quoteIdRow.join(' | '),
+      'Internal quote IDquote_id | Q-100241'],
     'res.rankRows': [res.rankRows.join(' // '),
       'dental implants | 3,600 | 4 // dental implants boca raton | 880 | Not Found'
       + ' // affordable dental implants near me | 210 | Not Found'],
-    'res.ioKeys': [res.ioKeys.join(','), 'package,months,markup_pct'],
+
     'res.modalClosed': [res.modalClosed, true],
     'res.historyCols': [res.historyCols.join('|'),
-      'Date Forecasted|Forecast Prompt|Generated Response|Type|Error'],
+      'Date Forecasted|Generated Response|Type|Error'],
     'res.historyRows': [res.historyRows, 1],
   };
 

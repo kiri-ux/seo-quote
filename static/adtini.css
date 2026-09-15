@@ -60,8 +60,9 @@ nav.tabs a.on{background:var(--page);color:var(--navy)}
 /* ---- adtini page head --------------------------------------------------- */
 .pagehead{
   background:var(--card);border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:14px;padding:14px 26px;
+  display:flex;align-items:center;gap:14px;padding:16px 26px;
 }
+.pagehead h2{font-size:21px;font-weight:600;margin:0}
 .pagehead h2{margin:0;font-size:21px;font-weight:600;letter-spacing:-.01em}
 .burger{font-size:19px;color:var(--muted);cursor:pointer;line-height:1}
 .wrap{max-width:none;margin:0;padding:20px 26px 70px}
@@ -403,3 +404,12 @@ input.cell:focus{outline:2px solid var(--blue-lt);outline-offset:-1px;background
 .rowicons .off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
   border-radius:7px;font-size:12px;font-weight:700;color:#C3CAD4;background:var(--fill)}
 .prod h4 .when{font-size:12.5px;font-weight:500;color:var(--muted);margin-left:6px}
+
+/* ---- the planner's view of a quote -------------------------------------- */
+.pview{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;
+  margin-bottom:12px}
+.pv{background:var(--fill);border-radius:12px;padding:11px 14px}
+.pv small{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--muted)}
+.pv b{font-size:13.5px;font-weight:600;color:var(--navy)}
+.pvserp{margin-bottom:12px}

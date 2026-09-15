@@ -17129,6 +17129,74 @@ def api_quotes_status():
         "detail": storage.status_detail(),
     })
 
+def group_by_client(seo_rows, rep_rows, meta=None):
+    """ONE CLIENT IS ONE ROW, WHATEVER IT BOUGHT. The quote list is a client
+    list: two products on one client merge, and a client with four saved SEO
+    quotes is still one row carrying four of them. Planner, partner and status
+    belong to the client, so they are read from client_meta rather than from
+    whichever quote was saved last."""
+    meta = meta or {}
+    out = {}
+    for tool, rows in (("seo", seo_rows or []), ("orm", rep_rows or [])):
+        for r in rows:
+            name = (r.get("client") or r.get("name") or "").strip() or "(no client)"
+            c = out.setdefault(name, {"client": name, "seo": [], "orm": [],
+                                      "seo_strat": [], "orm_strat": []})
+            c[tool].append({"id": r.get("id"), "name": r.get("name"),
+                            "updated_at": r.get("updated_at"),
+                            "created_at": r.get("created_at"),
+                            "base": r.get("base"), "strategy": r.get("strategy") or ""})
+            for part in str(r.get("strategy") or "").split("+"):
+                part = part.strip()
+                if part and part not in c[tool + "_strat"]:
+                    c[tool + "_strat"].append(part)
+    rows = []
+    for name, c in out.items():
+        m = meta.get(name, {})
+        newest = max([q.get("updated_at") or "" for q in c["seo"] + c["orm"]] or [""])
+        rows.append({
+            "client": name,
+            "order": m.get("order_no", ""),
+            "planner": m.get("planner", "") or "Kiri",
+            "partner": m.get("partner", ""),
+            "status": m.get("status", "") or "Pending",
+            "built": (newest or "")[:10],
+            "seo": len(c["seo"]), "orm": len(c["orm"]),
+            "seoStrat": c["seo_strat"], "ormStrat": c["orm_strat"],
+            "quotes": c["seo"] + c["orm"],
+        })
+    rows.sort(key=lambda r: r["built"], reverse=True)
+    return rows
+
+
+@app.route("/api/adtini/clients", methods=["GET"])
+@_json_error_guard
+def api_adtini_clients():
+    """The quote list, grouped the way the page shows it."""
+    if not storage.enabled():
+        return jsonify({"enabled": False, "clients": []})
+    search = (request.args.get("q") or "").strip()
+    return jsonify({"enabled": True,
+                    "clients": group_by_client(storage.list_quotes(search, "seo"),
+                                               storage.list_quotes(search, "rep"),
+                                               storage.client_meta())})
+
+
+@app.route("/api/adtini/client_meta", methods=["POST"])
+@_json_error_guard
+def api_adtini_client_meta():
+    """Planner, partner, status or order number for one client."""
+    if not storage.enabled():
+        return jsonify({"error": "Saving isn't enabled — attach a Postgres database."}), 400
+    d = request.get_json(force=True)
+    client = (d.get("client") or "").strip()
+    if not client:
+        return jsonify({"error": "Which client?"}), 400
+    storage.set_client_meta(client, **{k: d.get(k) for k in storage.CLIENT_META_KEYS
+                                       if k in d})
+    return jsonify({"ok": True})
+
+
 @app.route("/api/quotes", methods=["GET"])
 @_json_error_guard
 def api_quotes_list():
@@ -17570,6 +17638,7 @@ def api_rep_volume():
 # initialize the DB tables on startup (no-op when saving isn't enabled)
 try:
     storage.init_db()
+    storage.init_client_meta()
 except Exception as _e:
     print(f"[storage] init skipped: {_e}")
 

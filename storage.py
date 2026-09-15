@@ -107,6 +107,56 @@ def init_db():
         conn.commit()
 
 
+CLIENT_META_KEYS = ("planner", "partner", "status", "order_no")
+
+
+def init_client_meta():
+    """One row per client for the things that belong to the client rather than
+    to a quote: who is planning it, which partner, and where it stands."""
+    if not enabled():
+        return
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS client_meta (
+                client      TEXT PRIMARY KEY,
+                planner     TEXT DEFAULT '',
+                partner     TEXT DEFAULT '',
+                status      TEXT DEFAULT '',
+                order_no    TEXT DEFAULT '',
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+        """)
+        conn.commit()
+
+
+def client_meta():
+    """{client: {planner, partner, status, order_no}} for every client on record."""
+    if not enabled():
+        return {}
+    with _conn() as conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT client, planner, partner, status, order_no FROM client_meta")
+        return {r["client"]: {k: r[k] or "" for k in CLIENT_META_KEYS} for r in cur.fetchall()}
+
+
+def set_client_meta(client, **fields):
+    """Upsert one client's row. Unknown keys are ignored."""
+    client = (client or "").strip()
+    if not client or not enabled():
+        return
+    use = {k: str(v or "") for k, v in fields.items() if k in CLIENT_META_KEYS}
+    if not use:
+        return
+    cols = ", ".join(use)
+    ph = ", ".join(["%s"] * len(use))
+    upd = ", ".join(f"{k}=EXCLUDED.{k}" for k in use)
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"INSERT INTO client_meta (client, {cols}) VALUES (%s, {ph}) "
+            f"ON CONFLICT (client) DO UPDATE SET {upd}, updated_at=now()",
+            (client, *use.values()))
+        conn.commit()
+
+
 def get_or_create_share_token(quote_id):
     """Return the quote's share token, minting one on first request. The token
     is the whole credential — anyone with the link can VIEW (never edit), so

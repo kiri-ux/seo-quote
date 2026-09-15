@@ -192,10 +192,10 @@ const BASE = "http://127.0.0.1:5203";
       + ' / Search Engine Optimization – Q-100242 9/12/26'
       + ' / Online Reputation Management – Q-100243 9/16/26'],
     'fc.tabs': [fc.tabs.join(','), 'Details,History'],
-    'fc.actions': [fc.actions.join(','), 'Preview,adtini Forecast'],
+    'fc.actions': [fc.actions.join(','), 'Config,adtini Forecast'],
     'fc.historyRows': [fc.historyRows, 2],
     'fc.historyCols': [fc.historyCols.join('|'),
-      'Date Forecasted|Forecast Prompt|Generated Response|Type|Error'],
+      'Date Forecasted|Generated Response|Type|Error'],
     'fc.detailsHidden': [fc.detailsHidden, true],
     'form.opensSeo': [form.opensSeo, true],
     'form.loaded': [form.loaded, 'Sage Dental'],

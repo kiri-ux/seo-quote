@@ -13,25 +13,9 @@
 <body>
 
 <nav class="rail">
-  <a href="/adtini" title="Quotes">&#9873;</a>
+  <a href="/adtini" title="Quotes" class="mark on">&#9776;</a>
   <a href="/adtini/forecast?new=1" title="New quote" class="mark">&#43;</a>
-  <a href="/adtini" title="Quote list" class="mark on">&#9776;</a>
-  <a href="#" title="Clients">&#9787;</a>
-  <a href="#" title="Partners">&#9962;</a>
-  <a href="#" title="Reporting">&#9650;</a>
-  <a href="/" title="Legacy SEO">S</a>
-  <a href="/reputation" title="Legacy Rep Mgmt">R</a>
 </nav>
-
-<header class="app">
-  <div class="bar">
-    <h1>adtini · SEO &amp; Rep Mgmt Quote Builder</h1>
-    <span class="sub">adtini</span>
-  </div>
-  <nav class="tabs">
-    <a href="/adtini" class="on">Quotes</a>
-  </nav>
-</header>
 
 <div class="pagehead">
   <span class="burger">&#9776;</span>
@@ -183,12 +167,35 @@ function draw(){
 
 // An edit belongs to the client and sticks -- the same planner, partner and
 // status show on every quote that client has.
-document.getElementById('rows').addEventListener('change', e => {
+// An edit belongs to the client and sticks -- the same planner, partner and
+// status show on every quote that client has.
+document.getElementById('rows').addEventListener('change', async e => {
   const el = e.target.closest('[data-f]');
   if (!el) return;
-  QUOTES[+el.dataset.i][el.dataset.f] = el.value;
+  const r = QUOTES[+el.dataset.i];
+  r[el.dataset.f] = el.value;
   if (el.dataset.f === 'planner') draw();
+  if (!LIVE) return;
+  try {
+    await fetch('/api/adtini/client_meta', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({client: r.client, [el.dataset.f]: el.value})});
+  } catch (err) { /* the row keeps the edit; the next load will show the truth */ }
 });
+
+// THE SAMPLE ROWS ARE A FALLBACK, NOT THE PAGE. With a database attached the
+// list is the clients that have saved quotes.
+let LIVE = false;
+async function loadClients(){
+  let d = null;
+  try { d = await (await fetch('/api/adtini/clients')).json(); } catch (e) { return; }
+  if (!d || !d.enabled || !(d.clients || []).length) return;
+  LIVE = true;
+  QUOTES.length = 0;
+  d.clients.forEach(c => QUOTES.push(Object.assign({due: 'ok'}, c)));
+  draw();
+}
+loadClients();
 
 document.getElementById('seg').addEventListener('click', e => {
   const b = e.target.closest('button[data-f]');
