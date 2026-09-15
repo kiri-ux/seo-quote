@@ -911,6 +911,72 @@ function plannerView(r){
     </div>`;
 }
 
+// THE SETTINGS THE RUN WAS MADE WITH, snapshotted when it ran. The modal is
+// editable, so reading the live form would show what someone has typed since
+// rather than what produced these numbers.
+const RUN_SEO = [
+  ['brand', 'Brand name'], ['site', 'Website needing SEO'],
+  ['business_desc', 'What the client does'],
+  ['focus', 'Product / vertical focus'], ['negatives', 'Negative terms'],
+  ['geo', 'Geographic targeting'], ['scope', 'Geo scope'],
+  ['country', 'Measurement country'], ['national', 'Price on national demand'],
+  ['expand', 'Expand on focus terms'], ['lock', 'Lock keyword list'],
+  ['industry', 'Industry'], ['strategy', 'Strategy'], ['goals', 'Campaign goals'],
+  ['past', 'Has done SEO in the past'], ['past_details', 'Past SEO details'],
+  ['spend', "Client's estimated budget"], ['markup', 'Markup %'],
+  ['addon_markets', 'Add-on markets'], ['overrides', 'Pricing overrides'],
+];
+const RUN_ORM = [
+  ['brand', 'Brand name'], ['site', 'Client website'],
+  ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
+  ['locations', '# of locations'], ['std', '# of standard sites'],
+  ['prem', '# of premium sites'], ['volume', 'Brand search volume'],
+  ['geo', 'Geographic targeting'], ['country', 'Country'],
+  ['autosuggest', 'Auto-suggest / related'], ['markup', 'Markup %'],
+  ['overrides', 'Pricing overrides'],
+];
+const YN = v => v ? 'Yes' : 'No';
+
+function runSettings(r){
+  const d = ((r.result || {}).settings) || r.data || {};
+  const cfg = ((r.result || {}).cfg) || r.cfg || {};
+  const over = ((r.result || {}).over) || r.over || {};
+  const val = {
+    brand: d.brand, site: d.site, business_desc: d.business_desc,
+    focus: d.focus, negatives: d.negatives,
+    geo: geoOf(d), scope: BANDS[bandOf(d)], country: d.country,
+    national: YN(d.national), expand: YN(d.expand), lock: YN(d.lock),
+    industry: d.industry, strategy: d.strategy, goals: d.goals,
+    past: YN(d.past), past_details: d.past_details, spend: d.spend,
+    markup: d.markup ? d.markup + '%' : '',
+    reviews: d.reviews, locations: d.locations, std: d.std, prem: d.prem,
+    volume: d.volume, autosuggest: YN(d.autosuggest),
+    addon_markets: cfg.addon_markets
+      ? `${cfg.addon_markets} — set in Config`
+      : (((r.result || {}).addon || {}).suggested != null
+         ? `${r.result.addon.suggested} — recommended` : ''),
+    overrides: [cfg.ov_core && `Core SEO ${money(cfg.ov_core)}`,
+                cfg.ov_ai && `AI Search ${money(cfg.ov_ai)}`,
+                cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,
+                cfg.ov_review && `Review removal ${money(cfg.ov_review)}`,
+                cfg.ov_monthly && `Monthly ${money(cfg.ov_monthly)}`,
+                cfg.ov_std && `Standard site ${money(cfg.ov_std)}`,
+                cfg.ov_prem && `Premium site ${money(cfg.ov_prem)}`,
+                cfg.ov_reason && `— ${cfg.ov_reason}`].filter(Boolean),
+  };
+  const rows = (r.kind === 'orm' ? RUN_ORM : RUN_SEO).map(([k, label]) => {
+    const v = sendValue(val[k], k);
+    return `<tr><td>${label}<span>${k}</span></td><td>${v ? esc(v) : '—'}</td></tr>`;
+  }).join('');
+  const n = Object.keys(over).length;
+  return `<table class="send"><thead><tr><th>Setting</th><th>This run</th></tr></thead>
+    <tbody>${rows}
+    <tr><td>Pricing constants<span>cfg</span></td>
+      <td>${n ? `${n} changed on this quote: ` + esc(Object.keys(over).join(', '))
+              : 'file defaults'}</td></tr>
+    </tbody></table>`;
+}
+
 function resultsHtml(r){
   if (!r.result) return '';
   const p = r.result.pricing || {};
@@ -938,6 +1004,9 @@ function resultsHtml(r){
       </div>
 
       ${plannerView(r)}
+
+      <details class="qfold"><summary>Settings for this run</summary>
+        ${runSettings(r)}</details>
 
       <details class="qfold"><summary>Order form &mdash;
         ${ord.have} of ${ord.n} fields</summary>${ord.html}</details>
@@ -1660,6 +1729,7 @@ async function generateOrm(){
     const q = await post('/api/rep_quote', payload);
     const tot = q.totals || {};
     r.result = {quote: q,
+      settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {},
       headline: `${money(tot.monthly || 0)}/mo · ${(q.lines || []).length} lines`
         + ` · ${strat.length} workstream${strat.length === 1 ? '' : 's'}`};
     r.history = [{when: new Date().toLocaleString(),
@@ -1781,7 +1851,9 @@ async function generate(){
 
     const pkg = (price.handoff || {}).package || {};
     const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';
-    r.result = {pricing: price, ranks, table, metrics: met, addon, headline:
+    r.result = {pricing: price, ranks, table, metrics: met, addon,
+      settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {},
+      headline:
       `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
       + (pct_not_ranking == null ? 'ranking unmeasured' : `${100 - pct_not_ranking}% ranking`)};
     r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,

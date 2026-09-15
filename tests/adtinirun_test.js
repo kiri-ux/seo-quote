@@ -198,7 +198,19 @@ const CFG = {
     // and the two destination lists are closed until asked for
     R.closed = [...q.querySelectorAll('.qfold')].every(f => !f.open);
     const ordFold = foldBy(/^Order form/), proFold = foldBy(/^Proposal/);
-    ordFold.open = true; proFold.open = true;
+    const setFold = foldBy(/^Settings/);
+    ordFold.open = true; proFold.open = true; setFold.open = true;
+    const setRow = k => {
+      const tr = [...setFold.querySelectorAll('tbody tr')]
+        .find(t => (t.querySelector('td span') || {}).textContent === k);
+      return tr ? [...tr.children].map(td => td.textContent.trim()) : null;
+    };
+    R.runFocus = setRow('focus');
+    R.runScope = setRow('scope');
+    R.runExpand = setRow('expand');
+    R.runMarkup = setRow('markup');
+    R.runAddon = setRow('addon_markets');
+    R.runConstants = setRow('cfg');
     const rowIn = (fold, k) => {
       const tr = [...fold.querySelectorAll('tbody tr')]
         .find(t => (t.querySelector('td span') || {}).textContent === k);
@@ -303,12 +315,21 @@ const CFG = {
     'res.headline': [res.headline,
       'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
     'res.tiles': [res.tiles.join(' / '), 'Core SEO $5,450 / Add-on markets $1,200'],
-    'res.twoFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
-      'Order form — n of n fields / Proposal — n of n fields'],
+    'res.threeFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
+      'Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
     'res.foldsStartClosed': [res.closed, true],
     'res.plannerViewFirst': [res.planner.slice(0, 2).join(' | '),
       'AI Search: not on this quote | Add-on markets: none'],
     'res.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
+    // the settings the run was made with, snapshotted
+    'run.settingsFocus': [res.runFocus[1],
+      '7 · emergency dentist, dental implants, teeth whitening…'],
+    'run.settingsScope': [res.runScope[1], 'Single city'],
+    'run.settingsExpand': [res.runExpand[1], 'Yes'],
+    'run.settingsMarkup': [res.runMarkup[1], '35%'],
+    'run.settingsAddon': [res.runAddon[1], '0 — recommended'],
+    'run.settingsConstants': [res.runConstants[1],
+      '2 changed on this quote: cpc_adder_cap, geo_anchor'],
     'order.sections': [res.ordSections.join(' / '),
       'Product card / Split — Core SEO and AI Search / Add-on market brackets'
       + ' / Partner cost and margin'],
