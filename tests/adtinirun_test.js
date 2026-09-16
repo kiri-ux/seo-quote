@@ -351,7 +351,11 @@ const CFG = {
     'kb.scopeRead': [kb.scopeNote, 'Geo scope: Single city · Boca Raton, FL'],
     'kb.nationalToggle': [kb.nat, '0'],
 
-    'kb.note': [kb.note, 'Built 3 terms. · 4 terms added by expansion.'],
+    // The build reports what it waited on, so the note is checked by its
+    // meaning rather than character for character.
+    'kb.note': [kb.note.split(' · ').slice(0, 2).join(' · '),
+      'Built 3 terms. · 4 terms added by expansion.'],
+    'kb.noteCarriesTiming': [/\d+\.\d+s — /.test(kb.note), true],
     // the measured figure is the pricer's deduplicated total, not a row sum
     'kb.totalIsDeduplicated': [kb.head, 'Keyword list (3 terms)'],
     'kb.widerAreaNamed': [/answered from a wider area/.test(kb.note2 || ''), true],

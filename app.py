@@ -28,6 +28,70 @@ import storage
 
 app = Flask(__name__)
 
+# ---------------------------------------------------------------------------
+# WHERE THE TIME GOES.
+#
+# A build is six rounds of API calls and every one of them waits on a paid
+# service, so "it takes too long" cannot be acted on from a guess -- it needs a
+# number per step, off a real run, with real keywords and a real market list.
+# Every /api/ response carries its own server-side duration, and the timing of
+# the provider calls it made, so the builder can print the breakdown. (Kiri,
+# 2026-09-16)
+_T = threading.local()
+
+
+def _t_start():
+    _T.t0 = time.time()
+    _T.marks = []
+
+
+def t_mark(label, t0):
+    """Record one provider call's duration against the request being served."""
+    try:
+        _T.marks.append((label, int((time.time() - t0) * 1000)))
+    except Exception:
+        pass
+
+
+@app.before_request
+def _timing_begin():
+    if request.path.startswith("/api/"):
+        _t_start()
+
+
+@app.after_request
+def _timing_end(resp):
+    try:
+        if not request.path.startswith("/api/"):
+            return resp
+        t0 = getattr(_T, "t0", None)
+        if t0 is None:
+            return resp
+        ms = int((time.time() - t0) * 1000)
+        resp.headers["X-Elapsed-Ms"] = str(ms)
+        marks = getattr(_T, "marks", []) or []
+        if marks:
+            # Slowest first: the one worth attacking is the one at the front.
+            top = sorted(marks, key=lambda x: -x[1])[:6]
+            resp.headers["X-Elapsed-Steps"] = ascii_header(
+                "; ".join(f"{k}={v}" for k, v in top)) or ""
+        # The same numbers in the body, where the panel can read them without
+        # CORS-exposing headers.
+        if resp.is_json:
+            try:
+                body = resp.get_json()
+                if isinstance(body, dict):
+                    body["_ms"] = ms
+                    if marks:
+                        body["_steps"] = [{"step": k, "ms": v} for k, v in marks]
+                    resp.set_data(json.dumps(body))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return resp
+
+
 def _json_error_guard(fn):
     """Any unhandled exception in an API route produces Flask's HTML error page,
     which the frontend can only report as the opaque 'Server 500 (timeout or
@@ -766,7 +830,10 @@ CFG = {
     # BE's lists run 20-99 terms (median 25). A flat cap of 20 was his FLOOR
     # applied as a ceiling — it would have truncated Rockingham by 79 terms.
     "list_cap": 60,
-    "rank_check_workers": 8,   # parallel SERP calls — avoids timeout on free Render
+    # Parallel SERP calls. DataForSEO allows 30 live requests at once; these wait
+    # on Google rather than on this CPU, so the number that matters is how many
+    # keywords clear one request budget.
+    "rank_check_workers": 12,
     # Long-tail sourcing
     # HOW MANY SEEDS keyword_suggestions is asked about. It is one request each,
     # so this is a real cost — but it was ALREADY capped, by a hardcoded
@@ -819,10 +886,14 @@ CFG = {
     # usually enough to find three misses, and what it does not spend is what
     # the cross-market check needs. (2026-08-21)
     "unranked_probe_max": 4,
-    # DataForSEO allows 12 calls a minute. Pacing at 10 leaves headroom for the
-    # calls made outside the build (signals, the SERP screenshot poll) without
-    # anyone tripping the cap — see _dfs_take_slot(). 0 disables the pacing.
+    # Google Ads LIVE endpoints — the keyword volume lookups — allow 12 calls a
+    # minute per account. Pacing at 10 leaves headroom without tripping the cap.
+    # This cap governs those endpoints only; see _dfs_take_slot(). 0 disables it.
     "dfs_calls_per_minute": 10,
+    # Every other endpoint — SERP, on-page, screenshots — is capped at 2000 a
+    # minute. Paced well under that so a runaway loop still cannot flood the
+    # account, and high enough that a rank check never queues behind itself.
+    "dfs_calls_per_minute_other": 300,
     # A throttled call is retried on its own budget, so a bad minute cannot
     # spend the retries meant for timeouts and 5xx.
     "dfs_rate_limit_retries": 4,
@@ -1688,23 +1759,51 @@ _DFS_RATE_CODES = {40202, 40203, 40204, 40205}
 # same total wall-clock — the calls were always going to take a minute — but
 # they come back with data. (2026-08-20)
 _DFS_BUCKET_LOCK = threading.Lock()
-_DFS_BUCKET = []          # timestamps of recent sends, newest last
+_DFS_BUCKETS = {}         # family -> timestamps of recent sends, newest last
 
 
-def _dfs_take_slot():
-    """Block until sending now keeps us under the per-minute cap."""
-    cap = int(CFG.get("dfs_calls_per_minute", 10) or 0)
+# THE 12-A-MINUTE CAP BELONGS TO ONE FAMILY OF ENDPOINTS, NOT TO DATAFORSEO.
+#
+# DataForSEO caps Google Ads LIVE endpoints — the keyword volume lookups — at
+# 12 requests a minute per account. Every other endpoint, SERP included, is
+# capped at 2000 a minute. One shared bucket applied the strictest of those to
+# all of them, and a rank check is one SERP call per keyword: eleven keywords
+# could not clear a ten-a-minute bucket inside a request budget, so the tail of
+# every batch timed out and came back as failures. Pressing Recheck ran the
+# survivors through the same bucket and failed a smaller tail the same way,
+# which is why the button had to be pressed over and over.
+#
+# A bucket per family. Volume keeps its pacing; SERP runs at its own limit.
+_DFS_FAMILY_CAPS = {
+    "ads_live": "dfs_calls_per_minute",
+    "other":    "dfs_calls_per_minute_other",
+}
+
+
+def _dfs_family(path):
+    """Which per-minute cap governs this endpoint."""
+    p = str(path or "").lower()
+    if "/keywords_data/google_ads/" in p and "/live" in p:
+        return "ads_live"
+    return "other"
+
+
+def _dfs_take_slot(path=""):
+    """Block until sending now keeps us under the per-minute cap for this family."""
+    fam = _dfs_family(path)
+    cap = int(CFG.get(_DFS_FAMILY_CAPS[fam], 10) or 0)
     if cap <= 0:
         return
     while True:
         with _DFS_BUCKET_LOCK:
             now = _time.monotonic()
-            while _DFS_BUCKET and now - _DFS_BUCKET[0] >= 60.0:
-                _DFS_BUCKET.pop(0)
-            if len(_DFS_BUCKET) < cap:
-                _DFS_BUCKET.append(now)
+            buck = _DFS_BUCKETS.setdefault(fam, [])
+            while buck and now - buck[0] >= 60.0:
+                buck.pop(0)
+            if len(buck) < cap:
+                buck.append(now)
                 return
-            wait = 60.0 - (now - _DFS_BUCKET[0]) + 0.05
+            wait = 60.0 - (now - buck[0]) + 0.05
         time.sleep(max(0.05, min(wait, 60.0)))
 
 
@@ -1722,6 +1821,10 @@ def _dfs_rate_limited(data):
 
 def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     """One DataForSEO call, retried once on a TRANSIENT failure.
+
+    TIMED. Every call records its own duration against the request being served,
+    keyed by endpoint, so a slow build can be read as a list of what it waited
+    on rather than one number. (2026-09-16, Kiri)
 
     There was no retry at all, so a single read timeout was fatal to whatever
     depended on it. On a Ski Barn quote the volume lookup timed out once and
@@ -1741,6 +1844,16 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     retrying immediately just spends another slot on the same refusal.
     (2026-08-12)
     """
+    _t0 = time.time()
+    try:
+        return _dfs_post_inner(path, payload, timeout=timeout, method=method,
+                               retries=retries)
+    finally:
+        t_mark(str(path).strip("/").replace("/", "."), _t0)
+
+
+def _dfs_post_inner(path, payload, timeout=None, method="POST", retries=1):
+    """The call itself."""
     if timeout is None:
         timeout = DFS_TIMEOUT
     login = os.environ.get("DFS_LOGIN", "")
@@ -1762,7 +1875,7 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     total = int(retries)
     while attempt <= total:
         try:
-            _dfs_take_slot()
+            _dfs_take_slot(path)
             if method == "GET":
                 resp = requests.get(BASE + path, headers=hdrs, timeout=timeout)
             else:
@@ -2783,6 +2896,15 @@ def fetch_site_pages(domain, limit=30, collect_urls=None):
     strong SEO keyword fuel. Tries sitemap.xml first (fast, standard); falls back
     to the DataForSEO On-Page API if there's no usable sitemap. Returns a list of
     short topic strings. Non-fatal: [] on any failure."""
+    _t0 = time.time()
+    try:
+        return _fetch_site_pages_inner(domain, limit, collect_urls)
+    finally:
+        t_mark("fetch_site_pages", _t0)
+
+
+def _fetch_site_pages_inner(domain, limit=30, collect_urls=None):
+    """The call itself."""
     if not domain:
         return []
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
@@ -15601,6 +15723,16 @@ def claude_industry_services(brand="", domain="", industry="", business_desc="",
     grounding check, so a term the operator accepts is trusted, and one they
     ignore costs nothing.
     """
+    _t0 = time.time()
+    try:
+        return _claude_industry_services_inner(brand, domain, industry, business_desc, site_pages, seeds, geo, n)
+    finally:
+        t_mark("claude_industry_services", _t0)
+
+
+def _claude_industry_services_inner(brand="", domain="", industry="", business_desc="",
+                             site_pages=None, seeds=None, geo="", n=None):
+    """The call itself."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return []

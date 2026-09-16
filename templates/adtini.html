@@ -255,6 +255,7 @@
 
     <div class="foot">
       <span id="saved" style="color:var(--muted);font-size:12.5px;margin-right:auto;padding-left:22px"></span>
+      <button class="btn2" type="button" id="back" hidden>Back</button>
       <button class="btn save" type="button" id="save">Save But Don't Generate</button>
       <span class="spark">&#10022;</span>
       <button class="btn go" type="button" id="gen">Generate Quote</button>
@@ -315,13 +316,30 @@ async function postWait(url, body, method, say){
   }
   throw last;
 }
+// WHERE THE TIME GOES. Every call records what it cost, and the server hands
+// back its own duration plus the provider calls it waited on -- so a slow build
+// can be read as a list of what it waited for rather than one long spinner.
+let TIMING = [];
+function timingReset(){ TIMING = []; }
+function timingLine(){
+  if (!TIMING.length) return '';
+  const total = TIMING.reduce((z, x) => z + x.ms, 0);
+  const worst = TIMING.slice().sort((a, b) => b.ms - a.ms).slice(0, 3)
+    .map(x => `${x.url.replace('/api/', '')} ${(x.ms / 1000).toFixed(1)}s`);
+  return ` \u00b7 ${(total / 1000).toFixed(1)}s \u2014 ${worst.join(', ')}`;
+}
 async function post(url, body, method){
+  const t0 = Date.now();
   const r = await fetch(url, {method: method || 'POST',
                               headers:{'Content-Type':'application/json'},
                               body: JSON.stringify(body)});
   const txt = await r.text();
   let j = null;
   try { j = JSON.parse(txt); } catch(e){ throw new Error(httpSays(r.status, txt)); }
+  try {
+    TIMING.push({url, ms: Date.now() - t0, server: Number(j && j._ms) || 0,
+                 steps: (j && j._steps) || []});
+  } catch (e) {}
   if (!r.ok || j.error) throw new Error(j.error || httpSays(r.status, ''));
   return j;
 }
@@ -1623,10 +1641,19 @@ function show(view){
   $('kwBuilder').classList.toggle('pressed', view === 'kw' || view === 'scan');
   const orm = ROW != null && ROWS[ROW].kind === 'orm';
   $('kwBuilder').innerHTML = orm ? '&#9906; Brand Scan' : '&#9998; Keyword Builder';
-  $('gen').textContent = view === 'kw' ? 'Apply to the quote' : 'Generate Quote';
+  // A QUOTE THAT EXISTS IS REGENERATED, NOT GENERATED. The button read the same
+  // before and after a run, so there was nothing to say the next press replaces
+  // what is on screen.
+  const ran = ROW != null && !!(ROWS[ROW] || {}).result;
+  $('gen').textContent = view === 'kw' ? 'Apply to the quote'
+    : (ran ? 'Regenerate Quote' : 'Generate Quote');
   // The keyword builder produces a LIST, not a quote, so there is nothing to
   // save without generating -- "Apply to the quote" is the whole action.
   $('save').hidden = view === 'kw';
+  // A WAY OUT THAT IS NOT "APPLY". The builder and the brand scan are side
+  // panes of the form, and the only button on them committed the work -- so
+  // looking at a list you did not want meant closing the whole modal.
+  $('back').hidden = !(view === 'kw' || view === 'scan' || view === 'cfg');
 }
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
@@ -2314,6 +2341,7 @@ $('kbBuild').onclick = async () => {
     }
   }
   $('kbBuild').disabled = true;
+  timingReset();
   // The list is built for the band it will be priced in.
   await resolveBand(r);
   try {
@@ -2367,7 +2395,7 @@ $('kbBuild').onclick = async () => {
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
       $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
-        + expandWhy(r.expandNote);
+        + expandWhy(r.expandNote) + timingLine();
   } catch (e) {
     $('saved').textContent = e.message;
   }
@@ -3013,7 +3041,10 @@ async function recheckRanks(i){
     return;
   }
   if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
-  const BATCH = 5;
+  // Ten a request. The batch was halved when every rank check queued behind a
+  // ten-a-minute pacing bucket meant for the volume endpoints; SERP has its
+  // own limit, so a batch is bounded by the request budget again.
+  const BATCH = 10;
   const common = Object.assign({
     geo_values: geoOf(d), state: stateOf(d),
     industry: (d.industry || []).join(', '), geo_scope: band,
@@ -3239,6 +3270,10 @@ function siteLink(){
   a.title = href;
   head.insertAdjacentElement('afterend', a);
 }
+
+// Back to the form, changing nothing. The list stays on the row either way --
+// Apply is what carries it into the quote's own fields.
+$('back').onclick = () => { show('form'); };
 </script>
 </body>
 </html>

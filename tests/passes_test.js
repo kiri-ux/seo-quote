@@ -56,7 +56,9 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     await p.waitForTimeout(500);
   await p.waitForTimeout(800);
 
-  say('batchesAreSmall', sizes.every(n => n <= 5), JSON.stringify(sizes));
+  // Bounded, so one request cannot outrun the budget. Ten a request: SERP has
+  // its own per-minute limit and no longer queues behind the volume pacing.
+  say('batchesAreBounded', sizes.every(n => n <= 10), JSON.stringify(sizes));
   say('repeatedItself', sizes.length > 3, sizes.length + ' batches on one press');
   const ranks = await p.evaluate(() => Object.values(ROWS[0].result.ranks));
   const stillBad = ranks.filter(v => v === '—').length;
