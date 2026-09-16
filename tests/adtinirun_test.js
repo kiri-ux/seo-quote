@@ -104,13 +104,22 @@ const CFG = {
     const R = {};
     const prod = document.querySelector('.prod[data-row="0"]');
     prod.querySelector('.ptabs button[data-tab="history"]').click();
-    R.rows = prod.querySelectorAll('.hist tbody tr').length;
-    R.openable = prod.querySelectorAll('.hist [data-hist]').length;
-    // the second run, opened where it lives
-    prod.querySelectorAll('.hist tbody tr')[1].querySelector('[data-hist]').click();
-    const q = document.querySelector('.prod[data-row="0"] [data-pane="history"] .qres');
-    R.headline = q.querySelector('summary').textContent.trim();
+    R.rows = prod.querySelectorAll('.hist tbody tr.histrow').length;
+    R.openable = prod.querySelectorAll('.hist tr.histrow[data-hist]').length;
+    // THE RUN IS THE EXPAND. The second run opens underneath its own row --
+    // there is no separate collapsed header above the table any more.
+    prod.querySelectorAll('.hist tbody tr.histrow')[1]
+      .querySelector('.btn-open').click();
+    const q = document.querySelector(
+      '.prod[data-row="0"] [data-pane="history"] tr.histopen');
+    R.headline = document.querySelectorAll(
+      '.prod[data-row="0"] [data-pane="history"] tr.histrow')[1]
+      .textContent.replace(/\s+/g, ' ').trim();
     R.hasWholeQuote = !!q.querySelector('.qfold') && !!q.querySelector('.pvkw');
+    R.openedRowMarked = document.querySelectorAll(
+      '.prod[data-row="0"] [data-pane="history"] tr.histrow.on').length === 1;
+    R.noSecondHeader = document.querySelectorAll(
+      '.prod[data-row="0"] [data-pane="history"] > .qres').length === 0;
     // and the Details overview is still the current quote
     document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="details"]').click();
     R.detailsStillCurrent = document
@@ -231,9 +240,12 @@ const CFG = {
     R.briefHasNoKeywordList = !brief.querySelector('.pvkw');
     // the run holds the whole quote
     prod.querySelector('.ptabs button[data-tab="history"]').click();
-    prod.querySelector('.hist [data-hist]').click();
-    const q = document.querySelector('.prod[data-row="0"] [data-pane="history"] .qres');
-    R.headline = q.querySelector('summary').textContent.trim();
+    prod.querySelector('.hist tr.histrow .btn-open').click();
+    const q = document.querySelector(
+      '.prod[data-row="0"] [data-pane="history"] tr.histopen');
+    R.headline = document.querySelector(
+      '.prod[data-row="0"] [data-pane="history"] tr.histrow')
+      .textContent.replace(/\s+/g, ' ').trim();
     R.openedFromHistory = true;
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
@@ -275,9 +287,9 @@ const CFG = {
       .map(tr => [...tr.children].map(td => td.textContent.trim()).join(' | '));
     R.serpRow = rowIn(proFold, 'serp');
     R.modalClosed = document.getElementById('scrim').hidden;
-    R.historyCols = [...document.querySelectorAll('.prod[data-row="0"] .hist thead th')]
+    R.historyCols = [...document.querySelectorAll('.prod[data-row="0"] [data-pane="history"] .hist > table > thead th')]
       .map(t => t.textContent.trim()).filter(Boolean);
-    R.historyRows = document.querySelectorAll('.prod[data-row="0"] .hist tbody tr').length;
+    R.historyRows = document.querySelectorAll('.prod[data-row="0"] [data-pane="history"] .hist > table > tbody > tr.histrow').length;
     document.querySelector('.prod[data-row="0"] .ptabs button[data-tab="details"]').click();
     return R;
   });
@@ -386,7 +398,7 @@ const CFG = {
     // workstream that is off, and an add-on count of zero, have no card at all.
     'details.cards': [res.briefCards.join(' | '),
       'Strategy: Core SEO | Keywords: 3 terms'
-      + ' | Measured demand: 4,690/mo · 1 answered from a wider area'
+      + ' | Measured demand: 4,690/mo · 1 answered from Florida'
       + ' | Ranking: 1 of 3 measured terms ranking'],
     'details.overviewOnly': [res.briefHeadline,
       'Quote results$5,450/mo · 3 terms · 4,690/mo · 1 of 3 rankingCore SEO'],
@@ -400,7 +412,8 @@ const CFG = {
     'history.foldsStartClosed': [res.closed, true],
     'history.plannerView': [res.planner.slice(0, 2).join(' | '),
       'Strategy: Core SEO | Keywords: 3 terms'],
-    'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
+    // The panel offers a capture, because one that failed had no way to retry.
+    'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERPCapture Not captured'],
     // the settings the run was made with, snapshotted
     'run.settingsFocus': [res.runFocus[1],
       '7 · emergency dentist, dental implants, teeth whitening, root canal,'
@@ -440,7 +453,8 @@ const CFG = {
     'lists.onlyWhatIsSent': [serp.noTypedFields, true],
 
     'res.rankRows': [res.rankRows.join(' // '),
-      'dental implants | 3,600 | 4 // dental implants boca raton | 880 | Not Found'
+      // A volume answered from a wider area names the area on the row.
+      'dental implants | 3,600 | 4 // dental implants boca raton | 880 Florida | Not Found'
       + ' // affordable dental implants near me | 210 | Not Found'],
 
     'res.modalClosed': [res.modalClosed, true],
@@ -479,7 +493,11 @@ const CFG = {
     'past.hiddenOnRowThatSaidNo': [past.otherRow, 0],
     // a saved quote reopens off History
     'hist.rows': [hist.rows, 2],
-    'hist.opensThatRun': [hist.headline, '9/11/26 4:08 PM — $6,050/mo · 4 terms'],
+    // The row itself is the expander, and it says so.
+    'hist.opensThatRun': [hist.headline,
+      '▾ 9/11/26 4:08 PM$6,050/mo · 4 termsadtiniClose Publish To RZ ▾'],
+    'hist.openRowMarked': [hist.openedRowMarked, true],
+    'hist.noSecondHeader': [hist.noSecondHeader, true],
     'hist.openIsTheWholeQuote': [hist.hasWholeQuote, true],
     'hist.detailsUnchanged': [hist.detailsStillCurrent,
       'Quote results$6,650/mo · 6 terms · 7,700/mo · 3 of 6 rankingCore SEO'],

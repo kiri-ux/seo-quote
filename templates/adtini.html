@@ -438,7 +438,10 @@ function rowHtml(r, i){
     </div>
   </div>`;
 }
-function draw(){ $('prods').innerHTML = ROWS.map(rowHtml).join(''); }
+function draw(){
+  ROWS.forEach((r, i) => { r.i = i; });
+  $('prods').innerHTML = ROWS.map(rowHtml).join('');
+}
 
 // SAVING. A quote is stored under its client with the shape the store already
 // uses -- inputs/pricing/rep_totals so the list columns and strategy tag read
@@ -489,6 +492,14 @@ async function persist(r){
       }
     }
     r.saveNote = `Saved to ${client} · ${r.qid}.`;
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('new') || q.get('client') !== client) {
+        q.delete('new'); q.delete('product');
+        q.set('client', client);
+        history.replaceState(null, '', location.pathname + '?' + q.toString());
+      }
+    } catch (e) { /* the quote is saved either way */ }
     return true;
   } catch (e) {
     r.saveNote = 'Not saved — ' + e.message;
@@ -714,18 +725,27 @@ function histRows(r){
 function histHtml(r){
   const h = histRows(r);
   if (!h.length) return '<p class="hint" style="padding:16px 18px;margin:0">No runs yet.</p>';
-  const open = r.openRun == null ? null : h[r.openRun];
-  return (open ? `<details class="qres" open>
-      <summary>${esc(open.when)} &mdash; ${esc(open.resp || '')}</summary>
-      ${resultsHtml(Object.assign({}, r, {result: open.quote}), true)}
-    </details>` : '')
-    + '<div class="hist scroller"><table><thead><tr>'
-    + ['Date Forecasted','Generated Response','Type','Error',''].map(x=>`<th>${x}</th>`).join('')
+  // THE RUN IS THE EXPAND. A second collapsed header above the table repeated
+  // the date and the headline the row already carries, so the same run was on
+  // screen twice with two different ways to open it.
+  const open = r.openRun == null ? null : r.openRun;
+  const cols = ['Date Forecasted', 'Generated Response', 'Type', 'Error', ''];
+  return '<div class="hist scroller"><table><thead><tr>'
+    + cols.map(x => `<th>${x}</th>`).join('')
     + '</tr></thead><tbody>'
-    + h.map((x, j) => `<tr><td>${esc(x.when)}</td>`
-        + `<td>${esc(x.resp)}</td><td>adtini</td><td>${esc(x.error || '')}</td>`
-        + `<td>${x.quote ? `<button class="btn-open" type="button" data-hist="${j}">Open</button> ` : ''}`
-        + '<button class="btn-pub" type="button">Publish To RZ</button> <span class="chev">&#9662;</span></td></tr>').join('')
+    + h.map((x, j) => {
+        const on = open === j && x.quote;
+        return `<tr class="histrow${on ? ' on' : ''}" data-hist="${j}">`
+          + `<td><span class="histx">${on ? '&#9662;' : '&#9656;'}</span> ${esc(x.when)}</td>`
+          + `<td>${esc(x.resp)}</td><td>adtini</td><td>${esc(x.error || '')}</td>`
+          + `<td>${x.quote ? `<button class="btn-open" type="button" data-hist="${j}">`
+                             + `${on ? 'Close' : 'Open'}</button> ` : ''}`
+          + '<button class="btn-pub" type="button">Publish To RZ</button>'
+          + ' <span class="chev">&#9662;</span></td></tr>'
+          + (on ? `<tr class="histopen"><td colspan="${cols.length}">`
+                  + resultsHtml(Object.assign({}, r, {result: x.quote}), true)
+                  + '</td></tr>' : '');
+      }).join('')
     + '</tbody></table></div>';
 }
 
@@ -1013,10 +1033,17 @@ function plannerView(r, brief){
     const checked = Object.keys(rk).length;
     const errored = Object.keys(rk).filter(k => rk[k] === '—').length;
     const okChecks = Math.max(checked - errored, 0);
-    const wide = ((r.kw || {}).all || []).filter(x => x.vol_scope === 'broader').length;
+    // NAME THE WIDER AREA. Which area answered is what decides whether the
+    // figure is usable at all, and vol_area already carries it.
+    const wideRows = ((r.kw || {}).all || []).filter(x => x.vol_scope === 'broader');
+    const wide = wideRows.length;
+    const areas = [...new Set(wideRows.map(x => String(x.vol_area || '').trim())
+                                      .filter(Boolean))];
     add('Keywords', `${nTerms} terms`);
     add('Measured demand', `${(p.total_volume || 0).toLocaleString()}/mo`
-      + (wide ? ` · ${wide} answered from a wider area` : ''));
+      + (wide ? ` · ${wide} answered from ${areas.length
+          ? areas.slice(0, 3).join(', ') + (areas.length > 3 ? ` +${areas.length - 3}` : '')
+          : 'a wider area'}` : ''));
     // THE DENOMINATOR IS WHAT WAS MEASURED, NOT THE WHOLE LIST. One term
     // checked, one term ranking and eleven failed checks printed "100% of 12
     // terms ranking" -- a figure that reads as a client already at the top.
@@ -1032,12 +1059,19 @@ function plannerView(r, brief){
   const ranks = (r.result || {}).ranks || {};
   const list = r.kind === 'orm' ? '' : `
     <div class="pvkw">
-      <h5>Keywords <span>${all.length}</span></h5>
+      <h5>Keywords<button class="pvmini" type="button" data-recheck="${r.i}">${
+        Object.keys(ranks).filter(k => ranks[k] === '\u2014').length
+          ? 'Recheck ranks' : 'Check ranks'}</button>
+        <span>${all.length}<span class="rkmsg" data-rkmsg="${r.i}"></span></span></h5>
       <div class="pvscroll"><table class="kv">
         <tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
         ${all.map(x => {
           const rk = ranks[String(x.kw || '').toLowerCase()];
-          return `<tr><td>${esc(x.kw)}</td><td>${(x.vol || 0).toLocaleString()}</td>`
+          const from = x.vol_scope === 'broader'
+            ? ` <i class="volwide" title="Not this market's own figure">${
+                esc(x.vol_area || 'wider area')}</i>` : '';
+          return `<tr><td>${esc(x.kw)}</td>`
+               + `<td>${(x.vol || 0).toLocaleString()}${from}</td>`
                + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
         }).join('')}
       </table></div>
@@ -1049,12 +1083,14 @@ function plannerView(r, brief){
     <div class="pvsplit">
       ${list}
       <div class="pvserp">
-        <h5>SERP</h5>
+        <h5>SERP<button class="pvmini" type="button" data-serp="${r.i}">${
+          shot ? 'Recapture' : 'Capture'}</button></h5>
         ${shot ? `<a href="${shot}" target="_blank" rel="noopener" class="shotwrap">`
                  + `<img class="shotimg" src="${shot}" alt="SERP capture"></a>`
                : '<p class="hint" style="margin:0">Not captured</p>'}
         ${((r.result || {}).serp || {}).kw
           ? `<p class="hint" style="margin:6px 0 0">“${esc(r.result.serp.kw)}”</p>` : ''}
+        <p class="hint serpmsg" data-serpmsg="${r.i}" style="margin:6px 0 0"></p>
       </div>
     </div>`;
 }
@@ -1170,7 +1206,11 @@ function resultsHtml(r, full){
         ${ord.have} of ${ord.n} fields</summary>${ord.html}</details>
 
       <details class="qfold"><summary>Proposal &mdash;
-        ${pro.have} of ${pro.n} fields</summary>${pro.html}</details>
+        ${pro.have} of ${pro.n} fields</summary>
+        <div class="qdl"><button class="btn" type="button" data-prop="${r.i}">
+          Download proposal</button>
+          <span class="hint" data-propmsg="${r.i}"></span></div>
+        ${pro.html}</details>
     </div>`;
 }
 
@@ -1558,7 +1598,7 @@ $('prods').addEventListener('click', e => {
     return;
   }
   const hb = e.target.closest('[data-hist]');
-  if (hb) {
+  if (hb && !e.target.closest('.btn-pub')) {
     const i = +hb.closest('.prod').dataset.row, r = ROWS[i];
     const j = +hb.dataset.hist;
     r.openRun = (r.openRun === j) ? null : j;
@@ -2424,7 +2464,7 @@ async function generate(){
     const total_volume = r.kw.total_volume != null
       ? Number(r.kw.total_volume)
       : all.reduce((s, x) => s + (Number(x.vol) || 0), 0);
-    const price = await post('/api/price', {
+    const priceReq = {
       band, adder: met.adder || 0,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10,
       addon_markets: addonN,
@@ -2437,11 +2477,13 @@ async function generate(){
       base_override: r.cfg.ov_core || '',
       // The page-one median comes off the market signals pass, which this tab
       // does not run yet. Null, not a guess -- the SEO tab sends null too.
-      pageone_rank: null});
+      pageone_rank: null};
+    const price = await post('/api/price', priceReq);
 
     const pkg = (price.handoff || {}).package || {};
     const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';
-    r.result = {pricing: price, ranks, table, metrics: met, addon,
+    r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
+      rankReq: {common, geo, st, band},
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {},
       headline:
       `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
@@ -2559,6 +2601,157 @@ listsReady();
     if (e.key === 'Escape' && !m.hidden) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); }
   });
 })();
+
+// RECAPTURE THE SERP. A capture that failed left "Not captured" and no way to
+// ask again short of regenerating the whole quote.
+async function recaptureSerp(i){
+  const r = ROWS[i];
+  if (!r || !r.result) return;
+  const btn = document.querySelector(`[data-serp="${i}"]`);
+  const msg = document.querySelector(`[data-serpmsg="${i}"]`);
+  const say = t => { const m = document.querySelector(`[data-serpmsg="${i}"]`);
+                     if (m) m.textContent = t; };
+  if (btn) { btn.disabled = true; btn.textContent = 'Capturing\u2026'; }
+  say('Asking Google\u2026');
+  try {
+    const got = await autoSerp(r, r.data, (r.result || {}).ranks || {}, say);
+    if (got && got.img) {
+      r.result.shot = got.img;
+      r.result.serp = {kw: got.kw, basis: got.basis};
+      await persist(r);
+      draw();
+      return;
+    }
+    say('No capture came back. Try again in a moment.');
+  } catch (e) {
+    say('Capture failed \u2014 ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Capture'; }
+}
+
+// THE PROPOSAL DOCUMENT. Built from the same quote the fold lists, so what
+// downloads and what is on screen cannot drift.
+async function downloadProposal(i){
+  const r = ROWS[i];
+  if (!r || !r.result) return;
+  const btn = document.querySelector(`[data-prop="${i}"]`);
+  const say = t => { const m = document.querySelector(`[data-propmsg="${i}"]`);
+                     if (m) m.textContent = t; };
+  if (btn) { btn.disabled = true; btn.textContent = 'Building\u2026'; }
+  say('');
+  const d = r.data || {};
+  const body = JSON.stringify({
+    brand: d.brand || '', business_desc: d.business_desc || '',
+    geo_values: geoOf(d), state: stateOf(d),
+    strategy: asList(d.strategy).join(', '),
+    kw: r.kw || {}, table: (r.result || {}).table || [],
+    signals: (r.result || {}).signals || null,
+    pricing: (r.result || {}).pricing || {},
+    perf_on: false,
+    inputs: {geo_values: geoOf(d)},
+    serp: (r.result || {}).shot
+      ? {img: r.result.shot, kw: ((r.result || {}).serp || {}).kw || ''} : null});
+  try {
+    // A 502/503/504 is the host waking up, not the document.
+    let res = null;
+    for (const wait of [0, 5000, 15000]) {
+      if (wait) {
+        say(`Server waking up \u2014 retrying in ${wait / 1000}s\u2026`);
+        await new Promise(z => setTimeout(z, wait));
+      }
+      res = await fetch('/api/proposal.docx',
+        {method: 'POST', headers: {'Content-Type': 'application/json'}, body});
+      if (res.ok || ![502, 503, 504].includes(res.status)) break;
+    }
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error || `Request failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(d.brand || 'proposal').replace(/[^\w.-]+/g, '_')}-${r.qid}.docx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    say('Downloaded.');
+  } catch (e) {
+    say(e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Download proposal'; }
+}
+
+$('prods').addEventListener('click', e => {
+  const sb = e.target.closest('[data-serp]');
+  if (sb) { e.preventDefault(); recaptureSerp(+sb.dataset.serp); return; }
+  const pb = e.target.closest('[data-prop]');
+  if (pb) { e.preventDefault(); downloadProposal(+pb.dataset.prop); return; }
+});
+
+// RERUN THE CHECKS THAT FAILED. Nineteen of twenty-one came back "\u2014" and the
+// only way to ask again was to regenerate the whole quote, which rebuilds the
+// list and reprices from scratch. A failed SERP call is a failed call: retrying
+// it is the right response, and it moves the price honestly when it succeeds.
+async function recheckRanks(i){
+  const r = ROWS[i];
+  if (!r || !r.result || !r.result.rankReq) return;
+  const btn = document.querySelector(`[data-recheck="${i}"]`);
+  const say = t => { const m = document.querySelector(`[data-rkmsg="${i}"]`);
+                     if (m) m.textContent = t ? ' \u00b7 ' + t : ''; };
+  const all = (r.kw || {}).all || [];
+  const ranks = r.result.ranks || {};
+  const todo = all.map(x => x.kw).filter(k => {
+    const v = ranks[String(k).toLowerCase()];
+    return v === '\u2014' || v == null;
+  });
+  if (!todo.length) { say('nothing to recheck'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+  const common = r.result.rankReq.common || {};
+  let done = 0, stillBad = 0;
+  try {
+    for (let n = 0; n < todo.length; n += 10) {
+      say(`${done}/${todo.length}`);
+      const batch = todo.slice(n, n + 10).map(kw => ({kw}));
+      const rk = await post('/api/rankings', Object.assign({}, common, {batch}));
+      (rk.results || []).forEach(x => {
+        const key = String(x.kw).toLowerCase();
+        ranks[key] = x.pos;
+        const at = (r.result.table || []).findIndex(
+          t => String(t.kw).toLowerCase() === key);
+        if (at >= 0) r.result.table[at] = x; else (r.result.table = r.result.table || []).push(x);
+        if (x.error) stillBad++;
+        done++;
+      });
+    }
+    // The denominator moved, so the price moves with it.
+    const tbl = r.result.table || [];
+    const errored = tbl.filter(x => x.error).length;
+    const checkedOk = Math.max(tbl.length - errored, 0);
+    const ranked = tbl.filter(x => x.ranked_top).length;
+    const unmeasured = tbl.length > 0 && checkedOk === 0;
+    const pct = checkedOk ? Math.round((1 - ranked / checkedOk) * 100) : null;
+    const req = Object.assign({}, r.result.priceReq, {
+      pct_not_ranking: pct,
+      zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
+    say('repricing\u2026');
+    const price = await post('/api/price', req);
+    r.result.pricing = price;
+    r.result.priceReq = req;
+    r.result.headline = headlineOf(r);
+    if (r.history && r.history[0]) r.history[0].quote = r.result;
+    await persist(r);
+    draw();
+    const m = document.querySelector(`[data-rkmsg="${i}"]`);
+    if (m) m.textContent = stillBad ? ` \u00b7 ${stillBad} still failing` : '';
+    return;
+  } catch (e) {
+    say(e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Recheck ranks'; }
+}
+$('prods').addEventListener('click', e => {
+  const rb = e.target.closest('[data-recheck]');
+  if (rb) { e.preventDefault(); e.stopPropagation(); recheckRanks(+rb.dataset.recheck); }
+});
 </script>
 </body>
 </html>

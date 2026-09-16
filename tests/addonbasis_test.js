@@ -107,7 +107,11 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     'measured.pricedOnTheRecommendation': [measured.priced, 3],
     'measured.namesTheRegionCaveat': [/contiguous region — adjacent markets are already/
       .test(measured.addon || ''), true],
-    'both.widerAreaNamedOnDemand': [/answered from a wider area/.test(measured.demand || ''), true],
+    // THE AREA IS NAMED. "a wider area" does not say whether the figure is
+    // usable; the state or country that answered does.
+    'both.widerAreaNamedOnDemand': [/answered from \S/.test(measured.demand || ''), true],
+    'both.widerAreaIsNotAPlaceholder':
+      [/answered from a wider area/.test(measured.demand || ''), false],
     'counties.nothingMeasuredIsFlagged':
       [/No demand measured/.test(measured.widen || ''), true],
     'counties.offersTheSeats': [measured.offersSeats, true],

@@ -121,6 +121,9 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
   // ---------------- a client's quotes are its rows ----------------
   await p.goto(BASE + '/adtini/forecast?client=Drainify&order=56310', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => document.querySelectorAll('.prod').length === 2);
+  // The rows are drawn before the saved quotes are adopted onto them, so wait
+  // for the quote itself rather than for the row that will hold it.
+  await p.waitForSelector('.prod[data-row="0"] .qres', {timeout: 15000});
   const seo = await p.evaluate(() => {
     const R = {};
     R.rows = [...document.querySelectorAll('.prod > h4')].map(h => h.textContent.replace(/\s+/g, ' ').trim());
@@ -132,7 +135,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
     const row0 = () => document.querySelector('.prod[data-row="0"]');
     row0().querySelector('.ptabs button[data-tab="history"]').click();
-    row0().querySelector('.hist [data-hist]').click();
+    row0().querySelector('.hist tr.histrow .btn-open').click();
     row0().querySelector('.ptabs button[data-tab="history"]').click();
     R.serp = !!row0().querySelector('[data-pane="history"] .pvserp img');
     row0().querySelector('.ptabs button[data-tab="details"]').click();
@@ -151,9 +154,10 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     // the second quote on this client was saved before the handoff block
     const row1 = () => document.querySelector('.prod[data-row="1"]');
     row1().querySelector('.ptabs button[data-tab="history"]').click();
-    row1().querySelector('.hist [data-hist]').click();   // redraws the row
+    row1().querySelector('.hist tr.histrow .btn-open').click();   // redraws the row
     row1().querySelector('.ptabs button[data-tab="history"]').click();
-    const q2 = row1().querySelector('[data-pane="history"] .qres');
+    // The run expands in place, so the quote is the row that follows it.
+    const q2 = row1().querySelector('[data-pane="history"] tr.histopen');
     q2.querySelectorAll('.qfold').forEach(f => f.open = true);
     const ordFold = [...q2.querySelectorAll('.qfold')]
       .find(f => /^Order form/.test(f.querySelector('summary').textContent));

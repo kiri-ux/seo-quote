@@ -487,6 +487,27 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 }
 .pvkw .pvscroll{max-height:none}
 
+/* a run expands in place: the row IS the expander, no second header above it */
+.histrow{cursor:pointer}
+.histrow:hover{background:var(--fill)}
+.histrow.on{background:var(--fill);font-weight:600}
+.histx{color:var(--muted);font-size:10px;margin-right:6px;display:inline-block;width:8px}
+.histopen > td{padding:0 0 14px !important;background:var(--card)}
+.histopen .qbody{padding:0 18px}
+
+/* recapture sits on the panel heading; the download sits in the fold */
+.pvmini{
+  font-family:inherit;font-size:10.5px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;border:0;background:none;color:var(--blue);
+  cursor:pointer;padding:0 0 0 10px;
+}
+.pvmini:hover{text-decoration:underline}
+.pvmini:disabled{color:var(--muted);cursor:default;text-decoration:none}
+.qdl{display:flex;align-items:center;gap:12px;margin:0 0 12px;flex-wrap:wrap}
+.serpmsg:empty{display:none}
+.volwide{font-style:normal;font-size:11px;color:var(--muted);margin-left:7px}
+.rkmsg{font-weight:500;color:var(--muted)}
+
 /* a hover that says what a field is for */
 .i{position:relative}
 .i:hover::after{

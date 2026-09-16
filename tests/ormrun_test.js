@@ -105,9 +105,13 @@ const QUOTE = {
     const prod = document.querySelector('.prod[data-row="2"]');
     R.briefHasNoFolds = !prod.querySelector('[data-pane="details"] .qfold');
     prod.querySelector('.ptabs button[data-tab="history"]').click();
-    prod.querySelector('.hist [data-hist]').click();
-    const q = document.querySelector('.prod[data-row="2"] [data-pane="history"] .qres');
-    R.headline = q.querySelector('summary').textContent.trim();
+    // The run IS the expander -- no separate collapsed header above the table.
+    prod.querySelector('.hist tr.histrow .btn-open').click();
+    const q = document.querySelector(
+      '.prod[data-row="2"] [data-pane="history"] tr.histopen');
+    R.headline = document.querySelector(
+      '.prod[data-row="2"] [data-pane="history"] tr.histrow')
+      .textContent.replace(/\s+/g, ' ').trim();
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
     R.folds = [...q.querySelectorAll('.qfold > summary')].map(s => s.textContent.replace(/\s+/g, ' ').trim());
@@ -168,8 +172,9 @@ const QUOTE = {
     'quote.marginIsFraction': [quoteCall.body.margin_pct, 0.35],
     'order.strategyTravels': [res.stratRow.join(' | '),
       'Strategystrategy | 4 · Review Removals, Site/Article Removals, Reactive, Proactive'],
-    'res.runHeadline': [res.headline.replace(/^[^—]+—/, 'run —').trim(),
-      'run — $3,100/mo'],
+    // The row carries the date, the response and its own open control.
+    'res.runHeadline': [res.headline.replace(/^▾ [^$]+/, 'run ').trim(),
+      'run $3,100/moadtiniClose Publish To RZ ▾'],
     'res.tiles': [res.tiles.join(' / '),
       'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],
     'res.noKeywordFold': [res.folds.some(f => /Keyword table/.test(f)), false],
