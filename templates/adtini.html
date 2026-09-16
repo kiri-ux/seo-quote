@@ -1801,6 +1801,22 @@ function open(i, view){
 const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder',
                     scan:'Brand Scan', cfg:'Pricing Config'};
 function show(view){
+  // SEED TERMS ARE PRODUCT/VERTICAL FOCUS, WHICHEVER PANE THEY WERE TYPED ON.
+  // They were copied from the form once, when the modal opened, so a focus
+  // term added on the form after that never reached the seed box, and a seed
+  // added on the builder reached the form only through Apply. Carried across
+  // on every switch, from the pane being left to the pane being shown.
+  if (ROW != null && (ROWS[ROW] || {}).kind !== 'orm' && view !== VIEW) {
+    const r = ROWS[ROW];
+    const fbox = formOf(r).querySelector('[data-chips="focus"]');
+    const sbox = document.querySelector('#paneKw [data-chips="seeds"]');
+    if (fbox && sbox && (view === 'kw' || VIEW === 'kw')) {
+      r.data.focus = chipsOf(view === 'kw' ? fbox : sbox);
+      chipbox(view === 'kw' ? sbox : fbox, r.data.focus.slice());
+      const sh = document.querySelector('#paneKw .seedhint');
+      if (sh) sh.innerHTML = seedLegend(r);
+    }
+  }
   VIEW = view;
   document.querySelector('.sheet .top h2').textContent = PANE_TITLE[view] || PANE_TITLE.form;
   $('paneForm').hidden = view !== 'form';
