@@ -24,6 +24,7 @@ from html.parser import HTMLParser
 import requests
 from flask import Flask, render_template, request, jsonify, send_file, g
 import time as _time
+import sys as _sys
 import storage
 
 app = Flask(__name__)
@@ -51,6 +52,34 @@ def t_mark(label, t0):
         _T.marks.append((label, int((time.time() - t0) * 1000)))
     except Exception:
         pass
+
+
+# EVERY MODEL CALL IS TIMED, UNDER THE NAME OF THE PASS THAT MADE IT.
+# A 133s build reported "refine 129.6s (search_volume.live 18.5s)" and nothing
+# about the other 110s, because the nine functions that post to the model each
+# call requests.post directly and none of them marked the time. Rather than
+# wrap nine sites, the one URL they all share is wrapped here: anything else
+# passes straight through, and the label is the calling function, so a new
+# pass is timed the day it is written. (2026-09-16)
+_requests_post = requests.post
+
+
+def _post(url, *a, **kw):
+    if "api.anthropic.com" not in str(url):
+        return _requests_post(url, *a, **kw)
+    t0 = time.time()
+    try:
+        return _requests_post(url, *a, **kw)
+    finally:
+        try:
+            name = _sys._getframe(1).f_code.co_name
+        except Exception:
+            name = "model"
+        # _claude_industry_services_inner -> claude_industry_services
+        t_mark(re.sub(r"^_|_inner$", "", name), t0)
+
+
+requests.post = _post
 
 
 @app.before_request
@@ -15945,11 +15974,7 @@ def claude_industry_services(brand="", domain="", industry="", business_desc="",
     grounding check, so a term the operator accepts is trusted, and one they
     ignore costs nothing.
     """
-    _t0 = time.time()
-    try:
-        return _claude_industry_services_inner(brand, domain, industry, business_desc, site_pages, seeds, geo, n)
-    finally:
-        t_mark("claude_industry_services", _t0)
+    return _claude_industry_services_inner(brand, domain, industry, business_desc, site_pages, seeds, geo, n)
 
 
 def _claude_industry_services_inner(brand="", domain="", industry="", business_desc="",

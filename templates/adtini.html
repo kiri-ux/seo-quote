@@ -340,11 +340,14 @@ function timingLine(){
   const worst = TIMING.slice().sort((a, b) => b.ms - a.ms).slice(0, 3).map(x => {
     const name = x.url.replace('/api/', '');
     const secs = (x.ms / 1000).toFixed(1) + 's';
-    const sub = (x.steps || []).slice()
-      .sort((a, b) => (b.ms || 0) - (a.ms || 0))[0];
-    return sub && sub.ms >= 1000
-      ? `${name} ${secs} (${sub.step} ${(sub.ms / 1000).toFixed(1)}s)`
-      : `${name} ${secs}`;
+    // THE TOP FEW, NOT THE TOP ONE. With every model pass now timed, the
+    // slowest single step of a 130s refine is one of nine; naming only it
+    // leaves the other 100s unexplained on the line.
+    const subs = (x.steps || []).slice()
+      .sort((a, b) => (b.ms || 0) - (a.ms || 0))
+      .filter(st => st.ms >= 1000).slice(0, 4)
+      .map(st => `${st.step} ${(st.ms / 1000).toFixed(1)}s`);
+    return subs.length ? `${name} ${secs} (${subs.join(', ')})` : `${name} ${secs}`;
   });
   return ` \u00b7 ${(total / 1000).toFixed(1)}s \u2014 ${worst.join(', ')}`;
 }
@@ -1801,6 +1804,22 @@ function open(i, view){
 const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder',
                     scan:'Brand Scan', cfg:'Pricing Config'};
 function show(view){
+  // SEED TERMS ARE PRODUCT/VERTICAL FOCUS, WHICHEVER PANE THEY WERE TYPED ON.
+  // They were copied from the form once, when the modal opened, so a focus
+  // term added on the form after that never reached the seed box, and a seed
+  // added on the builder reached the form only through Apply. Carried across
+  // on every switch, from the pane being left to the pane being shown.
+  if (ROW != null && (ROWS[ROW] || {}).kind !== 'orm' && view !== VIEW) {
+    const r = ROWS[ROW];
+    const fbox = formOf(r).querySelector('[data-chips="focus"]');
+    const sbox = document.querySelector('#paneKw [data-chips="seeds"]');
+    if (fbox && sbox && (view === 'kw' || VIEW === 'kw')) {
+      r.data.focus = chipsOf(view === 'kw' ? fbox : sbox);
+      chipbox(view === 'kw' ? sbox : fbox, r.data.focus.slice());
+      const sh = document.querySelector('#paneKw .seedhint');
+      if (sh) sh.innerHTML = seedLegend(r);
+    }
+  }
   VIEW = view;
   document.querySelector('.sheet .top h2').textContent = PANE_TITLE[view] || PANE_TITLE.form;
   $('paneForm').hidden = view !== 'form';
@@ -2576,6 +2595,12 @@ $('kbBuild').onclick = async () => {
       r.expandDone = seedSig(d.focus);
     } else if (!d.expand) {
       r.expandNote = null;
+    } else {
+      // SKIPPED, AND SAID SO. expandDone rides in the saved payload and the
+      // note does not, so a reopened quote rebuilt on the same seeds ran no
+      // expansion and printed nothing about it -- which reads as Expand
+      // doing nothing. (2026-09-16)
+      r.expandNote = {skipped: true, dropped: (r.seedDrop || []).length};
     }
     if (!base.keywords.length) {
       $('saved').textContent = 'Nothing to build on — their site and the industry '
@@ -3459,6 +3484,9 @@ $('prods').addEventListener('click', e => {
 // part the planner can act on.
 function expandWhy(note){
   if (!note) return '';
+  if (note.skipped)
+    return ' \u00b7 Expansion already ran on these seeds'
+         + (note.dropped ? ` \u00b7 ${note.dropped} removed.` : '.');
   if (note.added && note.added.length)
     return ` \u00b7 ${note.added.length} terms added by expansion.`;
   const f = note.found || {}, bad = note.fails || {};
