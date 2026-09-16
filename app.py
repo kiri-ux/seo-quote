@@ -16210,7 +16210,8 @@ def mine_acronyms(html, brand="", limit=14):
 
 
 def claude_industry_services(brand="", domain="", industry="", business_desc="",
-                             site_pages=None, seeds=None, geo="", n=None):
+                             site_pages=None, seeds=None, geo="", n=None,
+                             negatives=None):
     """What ELSE does a business of this kind sell that people search for.
 
     The list can only ever choose among the seeds it is handed, so when those
@@ -16230,17 +16231,20 @@ def claude_industry_services(brand="", domain="", industry="", business_desc="",
     grounding check, so a term the operator accepts is trusted, and one they
     ignore costs nothing.
     """
-    return _claude_industry_services_inner(brand, domain, industry, business_desc, site_pages, seeds, geo, n)
+    return _claude_industry_services_inner(brand, domain, industry, business_desc,
+                                          site_pages, seeds, geo, n, negatives)
 
 
 def _claude_industry_services_inner(brand="", domain="", industry="", business_desc="",
-                             site_pages=None, seeds=None, geo="", n=None):
+                             site_pages=None, seeds=None, geo="", n=None,
+                             negatives=None):
     """The call itself."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return []
     n = int(n if n else CFG.get("industry_gap_n", 22) or 22)
     have = [str(x).strip().lower() for x in (seeds or []) if str(x).strip()]
+    _negs = [str(x).strip() for x in (negatives or []) if str(x).strip()]
     pages = [str(p) for p in (site_pages or [])][:40]
     prompt = f"""A search campaign is being scoped for {brand or domain or "a business"}.
 Industry: {industry or "(not given)"}
@@ -16250,6 +16254,12 @@ Industry: {industry or "(not given)"}
 
 The keyword list ALREADY covers these services:
 {", ".join(have[:60]) if have else "(nothing yet)"}
+{f"""
+THE PLANNER HAS RULED THESE OUT. Do not return any term about them, in any
+wording: {", ".join(_negs[:40])}
+These are not gaps to fill. The client either does not want the work or does not
+sell it, and a term about one of them is a wasted slot that the planner has
+already said no to once.""" if _negs else ""}
 
 Name up to {n} ADDITIONAL terms this business could rank for that are NOT already
 covered above.
@@ -16385,6 +16395,11 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
         # The floor, the fold and the family cap all still run after this.
         # (2026-09-16)
         if not t or t in seen or not (0 < len(t.split()) <= 5):
+            continue
+        # A PROMPT RULE IS NOT A GUARANTEE, AND THIS ONE THE PLANNER TYPED.
+        # Checked in code with the same whole-word matcher the build uses, so
+        # the two cannot disagree about what "allergy" excludes.
+        if _negs and negative_hit(t, _negs):
             continue
         seen.add(t)
         # WHETHER IT WAS AN INITIALISM, RECORDED BEFORE THE CASE IS LOST.
@@ -17223,11 +17238,17 @@ def api_expand_services():
             pages = fetch_site_pages(dom) or []
         except Exception:
             pages = []
+    # NEGATIVES REACHED THE BUILD AND NOT THIS PASS, so the gap-finder kept
+    # proposing what the planner had already excluded -- and worse, Expand adds
+    # its proposals as SEED chips, which drop_negative_services deliberately
+    # never touches. A negated term laundered itself into the one place the
+    # negative filter will not look. (2026-09-16)
+    negatives = [str(x).strip() for x in (d.get("negatives") or []) if str(x).strip()]
     cands = claude_industry_services(
         d.get("brand") or "", dom, d.get("industry") or "",
         d.get("business_desc") or "", pages,
         [x for x in (d.get("seeds") or []) if x],
-        ", ".join(markets[:4]))
+        ", ".join(markets[:4]), negatives=negatives)
     if not cands:
         # NOT the same as "nothing cleared the volume floor" — the floor was never
         # reached. Amare Homes read that line while the gap-finder was the ONLY

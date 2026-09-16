@@ -2544,6 +2544,12 @@ document.addEventListener('click', async e => {
 async function expandSeeds(r, d){
   const base = {brand: d.brand, domain: d.site, industry: (d.industry || []).join(', '),
                 business_desc: d.business_desc || '', seeds: (d.focus || []).slice(),
+                // THE NEGATIVES REACHED THE BUILD AND NOT THE EXPANSION, so the
+                // three passes kept proposing what the planner had already ruled
+                // out. Sent to all of them, not just the gap-finder: a term the
+                // client ranks for or names on their site can trip a negative
+                // too. (2026-09-16)
+                negatives: (d.negatives || []).slice(),
                 geo_values: geoOf(d), state: stateOf(d),
                 national_demand: (r.band || bandOf(d)) === 'nationwide', cfg: r.over || {}};
   const fails = {};
@@ -2599,9 +2605,20 @@ async function expandSeeds(r, d){
   const floor = Number(ind.floor) || Number(site.floor) || 20;
   let under = 0;
   const rows = [];
+  // AND CHECKED HERE TOO, because this is where all three sources merge and
+  // only one of them is the gap-finder. Whole words, never fragments -- the
+  // same rule the server uses, so negating "allergy" cannot take "allegory".
+  // The server filter is authoritative; this stops the other two passes.
+  const negs = (d.negatives || []).map(n => words(n)).filter(w => w.length);
+  const tripsNegative = term => {
+    const a = words(term);
+    return negs.some(nt => a.some((_, i) =>
+      nt.every((w, j) => a[i + j] === w)));
+  };
   const take = (res, src) => (res.services || []).forEach(x => {
     const term = String(x.term || '').trim();
-    if (!term || have.has(term.toLowerCase()) || echoesADrop(term)) return;
+    if (!term || have.has(term.toLowerCase()) || echoesADrop(term)
+        || tripsNegative(term)) return;
     const vol = Number(x.volume) || 0;
     if (vol < floor) { under++; return; }
     have.add(term.toLowerCase());
