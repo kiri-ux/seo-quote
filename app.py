@@ -268,6 +268,62 @@ def model_is_snapshot(model_id):
     if not m:
         return False                                  # unrecognised: treat as unpinned
     return (int(m.group(1)), int(m.group(2) or 0)) >= (4, 6)
+
+
+# ---------------------------------------------------------------------------
+# ONE MODEL FOR NINE PASSES IS A SETTING NOBODY CHOSE.
+#
+# Every Anthropic call in this file reads the same CLAUDE_MODEL env var, so a
+# 200-token "describe this business in a sentence" runs on the same model as
+# the 2,500-token keyword judgement that sets the price. That is not a decision
+# anyone made; it is what happens when the first call is copied eight times.
+#
+# The small passes are classification: short output, a fixed schema, and a
+# rules-based fallback already sitting behind them. Haiku is built for exactly
+# that and would take real time out of a build.
+#
+# DELIBERATELY NOT SWITCHED HERE. This map is empty, so every pass runs on
+# CLAUDE_MODEL exactly as before and this commit changes no output. The reason
+# is that these passes feed the QUOTE: seed_kinds drops services, replacements
+# rewrites the list, business_desc is the input to every prompt after it — a
+# quality regression in any of them moves a price a partner has already sent.
+# That is worth measuring on a real account before it is worth shipping, and
+# the candidates below are named so the measurement has somewhere to start.
+#
+#   CLAUDE_PASS_MODELS = {
+#       "infer_business":      "claude-haiku-4-5",   # 200 tok, one sentence
+#       "claude_region_names": "claude-haiku-4-5",   # 300 tok, naming only
+#       "claude_replacements": "claude-haiku-4-5",   # 600 tok
+#       "claude_business_desc": "claude-haiku-4-5",  # 900 tok
+#       "widen_vocabulary":    "claude-haiku-4-5",   # 900 tok
+#   }
+#
+# claude_refine_keywords stays wherever CLAUDE_MODEL points regardless: it is
+# the pass doing the actual judgement, and it is not a candidate.
+# Set per pass via env too — CLAUDE_MODEL_<PASS NAME UPPERCASED> — so a live
+# account can be A/B'd without a deploy. (2026-09-16)
+CLAUDE_PASS_MODELS = {}
+
+CLAUDE_MODEL_DEFAULT = "claude-sonnet-4-6"
+
+
+def claude_model_for(pass_name=""):
+    """The model this specific pass should run on.
+
+    Order: a per-pass env var, then the per-pass map above, then CLAUDE_MODEL,
+    then the default. Passing no name is the old behaviour exactly.
+    """
+    name = (pass_name or "").strip()
+    if name:
+        env = os.environ.get("CLAUDE_MODEL_" + re.sub(r"\W", "_", name).upper())
+        if env and env.strip():
+            return env.strip()
+        pinned = CLAUDE_PASS_MODELS.get(name)
+        if pinned and str(pinned).strip():
+            return str(pinned).strip()
+    return os.environ.get("CLAUDE_MODEL", CLAUDE_MODEL_DEFAULT)
+
+
 def _build_stamp():
     """Build time in US Eastern (EST/EDT handled by the tzdb). Falls back to a
     fixed -05:00 if the container image ships without tzdata."""
@@ -1270,6 +1326,18 @@ def _cfg_apply(d, target):
                         ("ecom_anchor_add", int),
                         ("pin_head_terms", int),
                         ("pin_min_volume", int),
+                        # PACING IS A GUESS UNTIL IT IS MEASURED. Google Ads
+                        # LIVE allows 12 a minute and this paces at 10 for
+                        # headroom, but nobody has ever tried 11 or 12 against
+                        # a real account: the value was picked to be safe, not
+                        # measured to be right. On builds that spend a minute
+                        # in rank_seeds the difference is real, and the cost of
+                        # being wrong is one throttled call that already
+                        # retries on its own budget. Editable so the number can
+                        # be found rather than argued about; the default is
+                        # unchanged.
+                        ("dfs_calls_per_minute", int),
+                        ("dfs_calls_per_minute_other", int),
                         ("geo_pct_default", float),
                         ("min_term_months", int),
                         ("nationwide_service_extras", float)]:
@@ -3644,7 +3712,7 @@ Return ONLY the description, no preamble."""
         resp = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+            data=json.dumps({"model": claude_model_for("infer_business"),
                 "max_tokens": 200, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=20)
         resp.raise_for_status()
@@ -5282,6 +5350,31 @@ RULES:
    volume, so the largest national competitor in the trade will almost always appear near the top and
    will look tempting. It is still wrong.
    When you cannot tell which kind of name it is, leave it out.
+2w. WHAT THEY ARE, NOT ONLY WHAT THEY DO. This is the rule this list most often misses.
+   Customers search for the PRACTITIONER as often as the procedure, and the practitioner terms
+   usually carry the HIGHEST volume in a local market. A list made only of what the business does
+   has skipped the biggest terms it could have sold.
+   So include the words for WHO THIS BUSINESS IS alongside the services: the job title, the
+   specialty name, its common abbreviation, and the plain phrase a layperson would use.
+   - ENT practice: not only "ear infection treatment", "hearing aids", "adenoid removal" but
+     "ENT", "ear nose and throat doctor", "ENT doctor", "hearing doctor", "audiologist".
+   - Dental practice: not only "cleanings", "crowns", "invisalign" but "dentist", "dental office",
+     "family dentist".
+   - Law firm: not only "car accident settlement" but "personal injury lawyer", "accident attorney".
+   - Home services: not only "drain cleaning" but "plumber", "plumbing company".
+   Rules to apply to them:
+   - At least TWO practitioner terms when the business has a recognised practitioner name, and at
+     least one of them belongs in the ULTRA tier. These are the money terms.
+   - Include the ABBREVIATION and the spelled-out form as SEPARATE services when both are really
+     searched - "ENT" and "ear nose and throat doctor" are different keywords with different
+     result pages, the same way rule 2h treats wording variants.
+   - The bare practitioner noun is ultra; a qualified form is competitive; a sub-specialty is
+     long tail.
+   - These are still bare services with no city and no "near me" - the grid adds the place, and
+     the near-me pass adds its own forms. That pass can only reach terms that are in this list,
+     which is the other reason a missing practitioner term costs more than one slot.
+   Do NOT invent a title the trade does not use, and do not add one for a business that has no
+   practitioner name - a retailer is a store, not a profession.
 2h. WHEN THE BUSINESS SELLS ONE THING, THE HEAD TERM'S SYNONYMS ARE SEPARATE SERVICES.
    A rental community is not a dental practice with eight departments: there is one thing for
    sale, so the variety has to come from the words customers use for it. "homes for rent",
@@ -5333,7 +5426,7 @@ Return ONLY valid JSON, no prose:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_expand_services"),
                 "max_tokens": 1000, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=30)
         resp.raise_for_status()
@@ -6112,7 +6205,7 @@ Return ONLY JSON, no prose:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_competitor_check"),
                 "max_tokens": 1200, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=25)
         resp.raise_for_status()
@@ -7628,7 +7721,7 @@ Return ONLY a JSON object, no prose, no markdown:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_region_names"),
                 "max_tokens": 300, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=25)
         resp.raise_for_status()
@@ -7697,7 +7790,7 @@ Return ONLY JSON, no prose, no markdown:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_topics"),
                 "max_tokens": 2000, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=30)
         resp.raise_for_status()
@@ -8687,7 +8780,7 @@ Return ONLY valid JSON in exactly this shape. Each keyword item is [keyword, ori
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_refine_keywords"),
                 "max_tokens": 2500,
                 "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}],
@@ -8806,7 +8899,7 @@ Return ONLY valid JSON: {{"terms": ["term one", "term two", ...]}} -- at most {n
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("widen_vocabulary"),
                 "max_tokens": 900, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}],
             }), timeout=30)
@@ -9461,6 +9554,30 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             seed_quality = {"zero": [], "question": []}
 
         n_services = services_needed(len(grid_cities))
+        # TOPICS DO NOT DEPEND ON SERVICES, AND WAITED FOR THEM ANYWAY.
+        #
+        # claude_topics() reads seeds, the business description and the brand —
+        # all three are settled by the time we get here, and none of them is
+        # touched again before the call fires two hundred lines below. It was
+        # simply written after claude_expand_services() and so ran after it, two
+        # sequential Anthropic round trips where the second never needed the
+        # first. Its result is not read until enforce_topic_coverage(), so the
+        # whole expansion AND every filter between here and there is free
+        # overlap.
+        #
+        # topic_seeds is computed here rather than at the call site so both
+        # places use the same list; it reads only `seeds`.
+        # ThreadPoolExecutor is the context-copying subclass at the top of this
+        # file, so t_mark still lands on this request's timing header — a pass
+        # that stops being timed the moment it moves off the main thread is a
+        # pass nobody can find again. (2026-09-16)
+        _buyable = [s for s in (seeds or []) if not is_lookup_kw(str(s))]
+        topic_seeds = _buyable if len(_buyable) >= 2 else list(seeds or [])
+        _topic_pool = ThreadPoolExecutor(max_workers=1)
+        _topic_fut = _topic_pool.submit(claude_topics, topic_seeds, biz, brand)
+        # No further work is queued, and shutdown(wait=False) leaves the running
+        # call alone — so an exception anywhere below cannot leak the thread.
+        _topic_pool.shutdown(wait=False)
         services = claude_expand_services(seeds, biz, site_pages, brand, domain,
                                           cands, n_services,
                                           0 if national_demand else len(cities),
@@ -9664,10 +9781,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # just stop reserving slots against the topics that sell something.
         # Falls back to the whole list rather than leaving nothing to cluster.
         # (2026-08-13)
-        _buyable = [s for s in (seeds or []) if not is_lookup_kw(str(s))]
-        topic_seeds = _buyable if len(_buyable) >= 2 else list(seeds or [])
-        topics = (claude_topics(topic_seeds, biz, brand)
-                  or topic_clusters(topic_seeds))
+        # topic_seeds and the claude_topics() call were moved up to run
+        # alongside the expansion; this is where the answer is first needed.
+        # A pass that raised used to propagate out of stage1b_refine and be
+        # caught by api_refine's blanket handler, which returns the UNREFINED
+        # list — the whole build lost, over the topic guarantee. Collecting
+        # through a future makes that failure visible here, so it takes the
+        # token fallback the dead-API case already had.
+        try:
+            _ai_topics = _topic_fut.result()
+        except Exception:                                 # noqa: BLE001
+            app.logger.exception("claude_topics failed during build")
+            _ai_topics = None
+        topics = _ai_topics or topic_clusters(topic_seeds)
         topic_source = ("ai" if topics and topics[0].get("source") == "ai"
                         else "words")
         services, topic_fixes = enforce_topic_coverage(services, topic_seeds,
@@ -13372,7 +13498,7 @@ def api_import_report():
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+            data=json.dumps({"model": claude_model_for("api_import_report"),
                              "max_tokens": 16000, "temperature": 0,
                              "messages": [{"role": "user", "content": content}]}),
             timeout=120)
@@ -14406,7 +14532,7 @@ Return ONLY JSON: {{"terms": ["...", "..."]}}"""
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_replacements"),
                 "max_tokens": 600, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=25)
         resp.raise_for_status()
@@ -15776,7 +15902,7 @@ Return ONLY a JSON object mapping every input label to its search phrase or null
         resp = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            data=json.dumps({"model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+            data=json.dumps({"model": claude_model_for("claude_menu_to_terms"),
                 "max_tokens": 1500, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=25)
         resp.raise_for_status()
@@ -16088,7 +16214,7 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("_claude_industry_services_inner"),
                 # ASKING FOR 22 AND BUDGETING FOR 14 IS A SILENT ZERO. Each item
                 # carries a `why` string, the reply is one JSON object, and a
                 # truncated object does not parse — so the whole pass would
@@ -16246,7 +16372,7 @@ Return ONLY JSON:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_seed_kinds"),
                 "max_tokens": 4000, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=60)
         resp.raise_for_status()
@@ -17161,7 +17287,7 @@ Return ONLY JSON:
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             data=json.dumps({
-                "model": os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),
+                "model": claude_model_for("claude_business_desc"),
                 "max_tokens": 900, "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}]}), timeout=60)
         resp.raise_for_status()
@@ -19345,9 +19471,89 @@ def api_proposal_docx():
 # one number for all of it names nothing to fix. Every Anthropic pass is timed
 # under its own name, the same way dfs_post times every provider call, so the
 # next slow build reads as a list. (2026-09-16, Kiri)
+# ---------------------------------------------------------------------------
+# THE SAME PASS OVER THE SAME INPUTS IS THE SAME ANSWER.
+#
+# ADS_VOL_CACHE fixed this for volume and RANK_CACHE for positions, and both
+# comments say why: the propose-then-build gate means the second press
+# re-measures identical terms. The model passes were never given the same
+# treatment, and they are the larger half by far — a 133s build spent 129.6s in
+# refine with only 18.5s of it in search_volume, so ~110s was nine Anthropic
+# calls, every one at temperature 0, every one re-asked on a rebuild that
+# changed nothing.
+#
+# Same shape as the two caches above: 6-hour TTL, size cap, one lock, and only
+# a REAL answer is remembered — a pass that failed and returned None must be
+# re-asked, or one bad minute is cached as "no services" for six hours.
+#
+# DEEP-COPIED IN AND OUT, which is not defensive noise. stage1b_refine mutates
+# what these passes return (enforce_topic_coverage rewrites the services list
+# in place), so handing out the stored object would let build N's edits become
+# build N+1's starting point — a cache that silently changes its own answers.
+MODEL_CACHE = {}
+MODEL_CACHE_TTL = 6 * 3600
+MODEL_CACHE_MAX = 500
+_model_cache_lock = threading.Lock()
+
+
+def model_cache_clear():
+    with _model_cache_lock:
+        MODEL_CACHE.clear()
+
+
+def _model_cache_key(label, args, kwargs):
+    """Stable key for one pass over one set of inputs, or None if the inputs
+    cannot be serialized — in which case the call is simply not cached rather
+    than cached under a key that collides."""
+    try:
+        blob = json.dumps([label, args, kwargs], sort_keys=True, default=str,
+                          ensure_ascii=False)
+    except Exception:                                         # noqa: BLE001
+        return None
+    return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
+
+
+def _model_fresh_requested():
+    """True when this request asked for genuinely fresh passes.
+
+    Same mechanism as _pick_country: read once off the payload, carried on g,
+    rather than threaded through the call sites that actually make the calls.
+    """
+    try:
+        return bool(getattr(g, "model_fresh", False))
+    except Exception:                                         # noqa: BLE001
+        return False
+
+
+@app.before_request
+def _pick_model_fresh():
+    fresh = False
+    try:
+        if str(request.args.get("fresh") or "").strip().lower() in ("1", "true", "yes"):
+            fresh = True
+        if not fresh and request.method in ("POST", "PUT"):
+            body = request.get_json(silent=True)
+            if isinstance(body, dict):
+                fresh = bool(body.get("fresh") or body.get("no_cache"))
+    except Exception:                                         # noqa: BLE001
+        fresh = False
+    g.model_fresh = fresh
+
+
+# TWO PASSES DO NOT CARRY THE PREFIX, AND ONE OF THEM IS IN THE HOT PATH.
+# The wrapper below selects on the `claude_` prefix, so infer_business and
+# widen_vocabulary — both plain Anthropic calls — were never timed under their
+# own name and would not have been cached either. infer_business runs inside
+# stage1b_refine on every build that has no business description yet, which is
+# most first builds. Named explicitly rather than renamed, because the names
+# appear in saved quotes and in the timing header.
+_EXTRA_MODEL_PASSES = ("infer_business", "widen_vocabulary")
+
+
 def _time_claude_passes():
     for _name in [n for n in list(globals())
-                  if n.startswith("claude_") and callable(globals().get(n))]:
+                  if (n.startswith("claude_") or n in _EXTRA_MODEL_PASSES)
+                  and callable(globals().get(n))]:
         # Already timed by hand where the wrapper had to sit inside the call.
         if _name == "claude_industry_services":
             continue
@@ -19359,10 +19565,30 @@ def _time_claude_passes():
             @functools.wraps(fn)
             def inner(*a, **kw):
                 _t0 = time.time()
+                ck = _model_cache_key(label, a, kw)
+                if ck and not _model_fresh_requested():
+                    with _model_cache_lock:
+                        ent = MODEL_CACHE.get(ck)
+                    if ent and time.time() - ent[1] < MODEL_CACHE_TTL:
+                        # Labelled like search_volume.cached so a fast build
+                        # reads as cached rather than as a pass that got quick.
+                        t_mark(label + ".cached", _t0)
+                        return copy.deepcopy(ent[0])
                 try:
-                    return fn(*a, **kw)
+                    out = fn(*a, **kw)
                 finally:
                     t_mark(label, _t0)
+                # A FAILURE IS NOT AN ANSWER. Every one of these passes returns
+                # None (or an empty list) when the key is missing, the request
+                # times out or the JSON will not parse, and the callers all
+                # fall back to a rules-based path on exactly that signal.
+                # Remembering it would pin the fallback in place for six hours.
+                if ck and out:
+                    with _model_cache_lock:
+                        if len(MODEL_CACHE) > MODEL_CACHE_MAX:
+                            MODEL_CACHE.clear()
+                        MODEL_CACHE[ck] = (copy.deepcopy(out), time.time())
+                return out
             inner._timed = True
             return inner
 
