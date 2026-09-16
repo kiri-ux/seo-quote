@@ -195,6 +195,8 @@
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
             <div class="f"><label>Expand on focus terms</label>
               <div class="yn" id="kbExpand"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
+            <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
+              <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
             <div class="f"><label>Lock keyword list</label>
               <div class="yn" id="kbLock"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
           </div>
@@ -206,6 +208,7 @@
             <label class="srctog"><input type="checkbox" id="kbSrc"> sources</label>
           </div>
           <p class="hint" id="kbNote"></p>
+          <p class="hint" id="kbAxisNote"></p>
           <div class="cols" id="kbCols"></div>
           <div class="widen" id="kbWiden" hidden></div>
         </section>
@@ -2025,7 +2028,8 @@ function kbLoad(r){
     seedHint.textContent = (r.data.focus || []).length ? ''
       : 'None on this quote \u2014 add them here, or in Product/Vertical Focus on the form.';
   }
-  [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock']].forEach(([id, k]) =>
+  [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock'],
+   ['kbAxis', 'spread']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
   kbScopeNote(r);
@@ -2106,6 +2110,22 @@ function kbDraw(r){
         : (marketsIn.join(', ') || countryOf(r.data)));
   $('kbNote').textContent = `${total.toLocaleString()}/mo measured \u00b7 ${where}`
     + (wideN ? ` \u00b7 ${wideN} answered from a wider area` : '');
+  // WHY THE LIST IS THE SIZE IT IS. A ten-term list off nine markets looks
+  // broken until you know the build MEASURED those markets and spent the budget
+  // on services instead -- which it reports, and nothing on screen showed.
+  const ax = r.axis || kw.grid_axis || null;
+  const axEl = document.getElementById('kbAxisNote');
+  if (axEl) {
+    const ev = (ax && ax.evidence) || {};
+    axEl.textContent = !ax || !ax.axis ? ''
+      : (ax.axis === 'services'
+          ? `Budget on services \u00b7 ${ev.cities_with_demand || 0} of `
+            + `${ev.cities_scored || 0} markets carry measurable demand, so the `
+            + `seeds are not repeated across the rest`
+          : `Budget on geography \u00b7 seeds repeated across `
+            + `${ev.cities_scored || 0} markets`)
+        + (ev.by_hand ? ' \u00b7 set by hand' : '');
+  }
   const w = kw.widen;
   // NOT ONE TERM MEASURED IN THESE MARKETS. Either every figure came from a
   // wider area or there is no figure at all -- both price as no demand.
@@ -2229,6 +2249,8 @@ $('kbBuild').onclick = async () => {
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.lock = $('kbLock').querySelector('button[data-v="1"].on') ? 1 : 0;
+  d.spread = $('kbAxis').querySelector('button[data-v="1"].on') ? 1 : 0;
+  d.axis = d.spread ? 'geography' : '';
   kbScopeNote(r);
   const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
                 brand: d.brand, domain: d.site, negatives: d.negatives || [],
@@ -2236,6 +2258,9 @@ $('kbBuild').onclick = async () => {
                 goal: (d.goals || [])[0] || '',
                 phrase_geos: r.phrase_geos || [],
                 national_demand: (r.band || bandOf(d)) === 'nationwide', cfg: r.over || {},
+                // WHICH AXIS GETS THE TERM BUDGET. Blank lets the build decide on
+                // measured demand; the planner can overrule it.
+                grid_axis: d.axis || "",
                 country: codeOf(d)};
   // NO SEEDS IS NOT A BUILD. The server answers "At least one keyword/vertical
   // is required", which is a 400 the planner should never have to read -- and
@@ -2290,6 +2315,8 @@ $('kbBuild').onclick = async () => {
         national_demand: (r.band || bandOf(d)) === 'nationwide'}));
     } catch (e) { $('saved').textContent = 'Refine failed — raw list kept. ' + e.message; }
     r.kw = ref && ref.all ? ref : kw;
+    // Which axis got the term budget, and the evidence for it.
+    r.axis = (ref && ref.grid_axis) || kw.grid_axis || null;
     // THE BUILD CAN DISCOVER NATIONAL DEMAND. The refine pass says so, and the
     // toggle has to agree with it or the next build sends the local scope back.
     if (r.kw.national_demand && !d.national) {
