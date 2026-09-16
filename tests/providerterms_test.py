@@ -142,6 +142,59 @@ if saved_key is not None:
 check("the gap floor is per-quote editable",
       '("expand_min_volume", int)' in SOURCE, True)
 
+# ------------------------------- VOLUME LIVES IN THE GENERAL TERMS (2026-09-16)
+# Rule 7 asked for "at least TWO practitioner terms" and the model read the floor
+# as a target: on the live ENT quote it returned ONE (otolaryngologist -- the
+# clinically correct word almost nobody types) and spent the other twenty slots
+# on procedures, because six of the seven rules asked for service lines. The
+# quota was the wrong instrument. The ordering principle is the right one, and it
+# is simpler: the biggest terms are the most general ones.
+ask = ""
+ma = re.search(r"Name up to \{n\} ADDITIONAL.*?(?=\nRules:)", SOURCE, re.S)
+if ma:
+    ask = ma.group(0)
+
+# Prompt text is hard-wrapped, so a phrase can straddle a newline. Collapse
+# whitespace before looking for one, or the test pins the line breaks too.
+flat = lambda t: re.sub(r"\s+", " ", t)
+ASK = flat(ask)
+SRCF = flat(SOURCE)
+
+check("the ask is framed on search volume", bool(ask) and "SEARCH VOLUME" in ASK, True)
+check("it is no longer a request for service lines a business sells",
+      "ADDITIONAL service lines a business of this type sells" not in SOURCE, True)
+check("general beats specific is stated", "GENERAL TERMS" in ASK, True)
+check("with the ENT case", "nasal polyp removal" in ASK, True)
+for pair in ("dentist", "plumber", "personal injury lawyer"):
+    check("and generalises past medicine: %r" % pair, pair in ASK, True)
+check("a specific still earns a slot when people search it by name",
+      "wisdom teeth removal" in ASK, True)
+check("and not merely for being on a services page",
+      "services page" in ASK, True)
+check("the failure mode is named", "smallest terms" in ASK, True)
+
+# Rule 4 is the ordering rule. It used to sort by how often a job is PERFORMED,
+# which is not the same question and is why narrow procedures led the answer.
+check("rule 4 orders by expected search volume",
+      "4. Order by EXPECTED SEARCH VOLUME" in SOURCE, True)
+check("and says general before specific",
+      "General before specific, every time." in SRCF, True)
+check("the old purchase-frequency ordering is gone",
+      "Order by how commonly the service is bought" not in SOURCE, True)
+
+# Both practitioner rules must say LEAD, not fill a quota -- in the gap-finder
+# and in stage1b_refine's expansion.
+check("the gap-finder rule says they lead",
+      "Under rule 4 these LEAD the answer" in SRCF, True)
+check("the refine-path rule says they lead too",
+      "so they LEAD: at least one belongs in" in SRCF, True)
+check("neither reads as a quota",
+      SRCF.count("not a quota") >= 2, True)
+check("and the observed failure is written down",
+      SRCF.count("followed by twenty procedures") == 2, True)
+check("the old floor-as-target wording is gone",
+      "At least TWO practitioner terms" not in SOURCE, True)
+
 # ------------------------------------ THE PARSER ATE THE ANSWER (2026-09-16)
 # Rule 7 asks for ENT, audiologist, dentist, plumber. The gap-finder's own parse
 # then required 2-5 words, so every single-word term was discarded before
