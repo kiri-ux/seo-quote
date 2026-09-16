@@ -17443,6 +17443,32 @@ def api_describe_client():
     return jsonify(got)
 
 
+def _measure_proposals(out, d):
+    """Search volume on each proposed service, so one floor applies to every
+    source. The industry pass measured and floored its proposals; this one
+    handed over the site's whole service menu unmeasured, and at fourteen open
+    slots every line of it became a seed -- allergy shots, earwax removal,
+    nosebleed treatment, none with a search behind them. One volume call, in
+    the markets being quoted. (2026-09-16)"""
+    terms = [str(x.get("term") or x.get("label") or "").strip() for x in (out or [])]
+    terms = [t for t in terms if t]
+    if not terms:
+        return out
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    nat = bool(d.get("national_demand")) or not markets
+    try:
+        vols, _pc, _err = fetch_local_volume(terms, [] if nat else markets, state,
+                                             national=nat)
+    except Exception:                                     # noqa: BLE001
+        app.logger.exception("site proposals: volume read failed")
+        vols = {}
+    for x in out:
+        t = str(x.get("term") or x.get("label") or "").strip().lower()
+        x["volume"] = int((vols or {}).get(t, 0) or 0)
+    return out
+
+
 @app.route("/api/site_services", methods=["POST"])
 @_json_error_guard
 def api_site_services():
@@ -17496,7 +17522,8 @@ def api_site_services():
         # See cap_service_family. (2026-08-17)
         out, family_out = cap_service_family(out, seeds=(d.get("seeds") or []))
         out, not_svc = _split_proposal_kinds(out, d, dom or "(pasted list)")
-        return jsonify({"domain": dom, "services": out,
+        return jsonify({"domain": dom, "services": _measure_proposals(out, d),
+                        "floor": int(CFG.get("expand_min_volume", 20)),
                         "not_services": not_svc,
                         "folded": [(x.get("term") or x.get("label") or "")
                                    for x in folded_out],
@@ -17804,7 +17831,8 @@ def api_site_services():
     acronyms = [a for a in acronyms
                 if (a.get("term") or a.get("acronym") or "").lower() not in _no_terms]
     not_svc = _not
-    return jsonify({"domain": dom, "services": out,
+    return jsonify({"domain": dom, "services": _measure_proposals(out, d),
+                        "floor": int(CFG.get("expand_min_volume", 20)),
                     "not_services": not_svc,
                     "folded": [(x.get("term") or x.get("label") or "")
                                for x in folded_out],

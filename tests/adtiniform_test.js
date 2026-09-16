@@ -217,7 +217,8 @@ const BASE = "http://127.0.0.1:5203";
     R.hasBuild = !!document.getElementById('kbBuild');
     R.hasSourceToggle = !!document.getElementById('kbSrc');
     R.noCountryPicker = !document.getElementById('kbCountry');
-    R.builderToggles = ['kbNat', 'kbExpand', 'kbLock'].every(id => !!document.getElementById(id));
+    R.builderToggles = ['kbNat', 'kbLock'].every(id => !!document.getElementById(id))
+      && !!document.getElementById('kbExpandRun') && !document.getElementById('kbExpand');
     R.formHasNoToggles = !document.querySelector('#fseo .yn[data-k="expand"]')
       && !document.querySelector('#fseo .yn[data-k="lock"]')
       && !document.querySelector('#fseo .yn[data-k="national"]')
@@ -236,7 +237,6 @@ const BASE = "http://127.0.0.1:5203";
     // an empty seed box is refused, and says what to do
     document.getElementById('kwBuilder').click();
     document.querySelectorAll('#paneKw [data-chips="seeds"] .chip b').forEach(x => x.click());
-    document.querySelector('#kbExpand button[data-v="0"]').click();
     document.getElementById('kbBuild').click();
     R.emptyBuild = document.getElementById('saved').textContent;
     R.buildStillEnabled = !document.getElementById('kbBuild').disabled;
@@ -331,7 +331,7 @@ const BASE = "http://127.0.0.1:5203";
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
     'kw.noSecondCountryPicker': [kw.noCountryPicker, true],
     'kw.emptySeedsRefused': [kw.emptyBuild,
-      'Add a seed term, or turn Expand on focus terms to Yes to read their site.'],
+      'Add a seed term, or click Expand to read their site.'],
     'kw.buildStaysAvailable': [kw.buildStillEnabled, true],
     'kw.ownsTheThreeToggles': [kw.builderToggles, true],
     'form.keepsNoneOfThem': [kw.formHasNoToggles, true],

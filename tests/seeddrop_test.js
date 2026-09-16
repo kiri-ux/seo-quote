@@ -1,6 +1,7 @@
 // A REMOVED SUGGESTION STAYS REMOVED, AND IT IS REVIEWED BEFORE THE BUILD.
 // "allergy testing" was proposed on every press, and the only way to reject it
-// was to let the whole list be built around it first.
+// was to let the whole list be built around it first. Expansion is its own
+// step now: propose, prune, then build.
 const {chromium} = require('/root/work/node_modules/playwright-core');
 (async () => {
   const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
@@ -15,11 +16,11 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     seedsSent.push(seeds.slice());
     return route.fulfill({status:200, contentType:'application/json',
       body: JSON.stringify({services: [
-        {term: 'allergy testing', volume: 10},
-        {term: 'ear tube surgery', volume: 30}]})});
+        {term: 'allergy testing', volume: 30},
+        {term: 'ear tube surgery', volume: 30}], floor: 20})});
   });
   await p.route('**/api/expand_services', route =>
-    route.fulfill({status:200, contentType:'application/json', body:'{"services":[]}'}));
+    route.fulfill({status:200, contentType:'application/json', body:'{"services":[],"floor":20}'}));
   await p.route('**/api/rank_seeds', route =>
     route.fulfill({status:200, contentType:'application/json', body:'{"services":[]}'}));
   await p.route('**/api/suggest_regions', route =>
@@ -49,13 +50,16 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     open(0, 'kw');
   });
   await p.waitForTimeout(400);
+  const proposed = () => p.waitForFunction(
+    () => /proposed|added nothing|under the/.test($('saved').textContent), {timeout:20000});
 
-  // ONE PRESS BUILDS. The expansion runs inside it and its terms are marked.
-  await p.click('#kbBuild');
-  await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
-  say('builtOnOnePress', buildCalls === 1, buildCalls + ' builds on one press');
+  // EXPAND FIRST. Its terms land in the seed box, marked, and nothing is built.
+  await p.click('#kbExpandRun');
+  await proposed();
+  say('expandedOnce', expandCalls === 1, expandCalls + ' expansion passes');
+  say('nothingBuiltYet', buildCalls === 0, buildCalls + ' builds');
   say('noteSaysWhatToDoNext',
-      /remove any and rebuild/i.test(await p.textContent('#saved')),
+      /remove any, then build keyword list/i.test(await p.textContent('#saved')),
       await p.textContent('#saved'));
   let chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => [n.firstChild.textContent.trim(), n.classList.contains('sug')]));
@@ -76,35 +80,35 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
         await p.textContent('#paneKw .seedhint')),
       await p.textContent('#paneKw .seedhint'));
 
-  // A REBUILD AFTER A REMOVAL DOES NOT ASK THE EXPANSION AGAIN.
+  // THEN BUILD. It does not ask the expansion at all.
   const before = expandCalls;
   await p.click('#kbBuild');
   await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
-  say('builtThisTime', buildCalls === 2, buildCalls + ' builds');
-  say('didNotReExpand', expandCalls === before,
+  say('builtThisTime', buildCalls === 1, buildCalls + ' builds');
+  say('buildDidNotExpand', expandCalls === before,
       (expandCalls - before) + ' extra expansion passes');
   chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => n.firstChild.textContent.trim()));
   say('weakOneStayedOut', !chips.includes('allergy testing'), JSON.stringify(chips));
   say('goodOneKept', chips.includes('ear tube surgery'), JSON.stringify(chips));
 
-  // AND A NEW TYPED SEED DOES ASK AGAIN -- but never for the removed term.
+  // A NEW TYPED SEED, EXPANDED AGAIN -- never brings the removed term back.
   await p.evaluate(() => {
     ROWS[0].data.focus = ROWS[0].data.focus.concat('Tonsillectomy');
     open(0, 'kw');
   });
   await p.waitForTimeout(300);
+  say('readsExpandOnNewSeeds', (await p.textContent('#kbExpandRun')).trim(), 'Expand');
   seedsSent = [];
-  await p.click('#kbBuild');
-  await p.waitForFunction(() => /proposed|^Built /.test($('saved').textContent),
-                          {timeout:20000});
+  await p.click('#kbExpandRun');
+  await proposed();
   say('newSeedReExpands', expandCalls > before, expandCalls + ' total');
   const after = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('removedTermNeverReturns', !after.includes('allergy testing'), JSON.stringify(after));
 
   // A REWORDING IS THE SAME REJECTION. Removing "allergy testing" brought back
   // "allergy skin testing" on the next press.
-  const echo = await p.evaluate(() => {
+  await p.evaluate(() => {
     ROWS[0].seedDrop = ['allergy testing', 'sinus surgery'];
     ROWS[0].data.focus = ['Hearing Aids'];
     ROWS[0].expandDone = [];
@@ -114,15 +118,14 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   await p.route('**/api/site_services', route =>
     route.fulfill({status:200, contentType:'application/json',
       body: JSON.stringify({services: [
-        {term: 'allergy skin testing', volume: 10},
+        {term: 'allergy skin testing', volume: 30},
         {term: 'minimally-invasive sinus surgery', volume: 20},
         {term: 'allergy testing', volume: 30},
-        {term: 'tonsillectomy', volume: 40}]})}));
+        {term: 'tonsillectomy', volume: 40}], floor: 20})}));
   await p.evaluate(() => { open(0, 'kw'); });
   await p.waitForTimeout(300);
-  await p.click('#kbBuild');
-  await p.waitForFunction(() => /proposed|^Built /.test($('saved').textContent),
-                          {timeout:20000});
+  await p.click('#kbExpandRun');
+  await proposed();
   const seeds = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('exactDropStaysOut', !seeds.includes('allergy testing'), JSON.stringify(seeds));
   say('rewordingStaysOut', !seeds.includes('allergy skin testing'),

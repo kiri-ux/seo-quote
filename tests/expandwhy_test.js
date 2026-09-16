@@ -53,9 +53,11 @@ say('missing.named', /no industry or business description to go on/.test(t), t);
 say('off.silent', fn(null) === '', JSON.stringify(fn(null)));
 
 // And the build line uses it.
-say('buildLineUsesIt', /Built \$\{\(r\.kw\.all \|\| \[\]\)\.length\} terms\.`\s*\+ expandWhy/.test(s),
-    'the build message still hardcodes the expansion clause');
-// The per-pass counts are actually collected.
+// The expansion is its own step now, and its line is what reads the note.
+say('expandLineUsesIt', /expandWhy\(got\)\.replace/.test(s),
+    'the Expand step does not use expandWhy for its status line');
+say('buildLineDoesNot', !/Built \$\{\(r\.kw\.all \|\| \[\]\)\.length\} terms\.`\s*\+ expandWhy/.test(s),
+    'the build message still carries the expansion clause');
 say('countsCollected', /const found = \{site:/.test(s));
 say('failuresCollected', /fails\[key\] =/.test(s));
 
