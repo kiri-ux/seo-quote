@@ -46,10 +46,14 @@ check("all.rankedKeepsItsNumber",
       by["generator installation anacortes wa"]["rank"], "8")
 check("all.notFoundStays",
       by["electrical services anacortes wa"]["rank"], "Not Found")
-check("all.erroredReadsNotFound",
-      by["electrical services whidbey island wa"]["rank"], "Not Found")
-check("all.neverCheckedReadsNotFound",
-      by["kohler generator installation anacortes wa"]["rank"], "Not Found")
+# A check that failed, and one that never ran, are both outstanding -- not a
+# claim that the client does not rank.
+check("all.erroredReadsDash",
+      by["electrical services whidbey island wa"]["rank"], "\u2014")
+check("all.neverCheckedReadsDash",
+      by["kohler generator installation anacortes wa"]["rank"], "\u2014")
+check("all.realNotFoundIsKept",
+      by["electrical services anacortes wa"]["rank"], "Not Found")
 check("all.tierCarried",
       by["electrical services whidbey island wa"]["tier"], "Ultra Competitive")
 check("all.volumeCarried",

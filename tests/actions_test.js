@@ -60,11 +60,24 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('share.product', u && u.searchParams.get('review') === 'seo', url);
   say('share.noNewFlag', u && !u.searchParams.has('new'), url);
 
-  // And that link opens the quote.
+  // And that link opens straight onto the newest run, expanded -- the person it
+  // was sent to should not have to find it.
   if (u) {
     await p.goto(url, {waitUntil:'networkidle'});
-    await p.waitForSelector('.prod[data-row="0"] .qres', {timeout:15000});
+    await p.waitForSelector('.prod[data-row="0"]', {timeout:15000});
+    await p.waitForTimeout(600);
     say('share.opens', (await p.$$eval('.prod', n => n.length)) > 0);
+    say('share.landsOnHistory',
+        await p.$eval('.prod[data-row="0"] [data-pane="history"]', el => !el.hidden));
+    say('share.runExpanded',
+        (await p.$$eval('.prod[data-row="0"] [data-pane="history"] tr.histopen',
+                        n => n.length)) === 1);
+    say('share.newestRun',
+        (await p.$eval('.prod[data-row="0"] [data-pane="history"] tr.histrow',
+                       el => el.classList.contains('on'))), 'the open run is not the first');
+    say('share.showsTheQuote',
+        (await p.$$eval('.prod[data-row="0"] [data-pane="history"] .histopen .pvkw',
+                        n => n.length)) === 1);
   }
 
   // The keyword rows no longer repeat the area name on every line.

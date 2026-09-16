@@ -481,6 +481,10 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
   aspect-ratio:16/9;width:100%;overflow:hidden;border-radius:8px;
   border:1px solid var(--line);background:var(--card);
 }
+.pvserp .shotwrap.empty{
+  display:flex;align-items:center;justify-content:center;
+  color:var(--muted);font-size:12.5px;background:var(--card);
+}
 .pvserp .shotwrap img{
   width:100%;height:100%;object-fit:cover;object-position:top center;
   border:0;border-radius:0;

@@ -17,6 +17,7 @@ Local run:
 """
 import os, json, base64, statistics, time, re, threading, io, hashlib
 import contextlib, copy, functools
+import gc
 import html
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
@@ -14958,7 +14959,21 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
     40px-wide downscale per row, so it's fast even on 8000px pages."""
     import io
     from PIL import Image, ImageOps
-    im = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    # DECODE SIZE IS WHAT KILLS THE INSTANCE. A full-page SERP at 2x is roughly
+    # 2,200 x 8,000 px, which PIL decodes to ~50MB of RGB; two or three of those
+    # in flight on a 512MB service and Render restarts it for exceeding its
+    # memory limit -- which is what every 502, failed rank check and failed
+    # capture in this session was. draft() decodes straight to a smaller raster
+    # without ever materialising the full one. (2026-09-16, Kiri)
+    im = Image.open(io.BytesIO(png_bytes))
+    try:
+        im.draft("RGB", (1100, 4000))
+    except Exception:
+        pass
+    im = im.convert("RGB")
+    if im.width > 1400:
+        im = im.resize((1400, max(1, round(im.height * 1400 / im.width))),
+                       Image.BILINEAR)
     w, h = im.size
     # Dark-mode guard: DFS occasionally renders Google in dark theme. Detect a
     # dark page background (sample corners + center-top) and convert to a
@@ -15079,13 +15094,29 @@ def api_serp_fetch():
         except (KeyError, IndexError, TypeError):
             image_url = None
         if not image_url:
-            msg = (sc.get("tasks") or [{}])[0].get("status_message", "")
+            t0 = (sc.get("tasks") or [{}])[0]
+            msg = t0.get("status_message", "")
+            # TASK NOT FOUND IS TERMINAL, WHATEVER IT ARRIVES AS. It came back
+            # as a 200 with the message in the body rather than a 404, so the
+            # poll kept asking for three minutes about a task that no longer
+            # exists -- which is what an instance restart mid-capture leaves
+            # behind. Say so on the first poll instead. (2026-09-16, Kiri)
+            if (str(t0.get("status_code")) in ("40401", "40400")
+                    or "not found" in str(msg).lower()):
+                return jsonify({"ready": False, "gone": True,
+                                "error": "the queued capture no longer exists"})
             return jsonify({"ready": False, "status": msg})
         login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
         tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
         img = requests.get(image_url, headers={"Authorization": f"Basic {tok}"}, timeout=60)
         img.raise_for_status()
         content, mime = img.content, "image/png"
+        # AN UNTRIMMED CAPTURE IS A MEGABYTE OF BASE64 IN A SAVED QUOTE, and the
+        # quote is held in memory, posted to the store and read back on every
+        # load. Always reduce it: the exhibit is a landscape frame either way.
+        if not d.get("trim"):
+            d = dict(d); d["trim"] = True
+            d.setdefault("aspect", 16 / 9)
         if d.get("trim"):
             # Rep-tool proposal shots: collapse blank bands (AI-overview
             # placeholder renders as a huge white gap), cap height for a
@@ -15096,9 +15127,15 @@ def api_serp_fetch():
                 mime = "image/jpeg"
             except Exception as _te:
                 print(f"[serp trim] skipped: {_te}")
+        # Release the decoded original before building the base64 copy.
+        del img
         b64 = base64.b64encode(content).decode()
-        return jsonify({"ready": True, "keyword": keyword,
-                        "data_url": f"data:{mime};base64,{b64}"})
+        out = {"ready": True, "keyword": keyword,
+               "data_url": f"data:{mime};base64,{b64}",
+               "bytes": len(content)}
+        del content, b64
+        gc.collect()
+        return jsonify(out)
     except requests.HTTPError as e:
         # A 404 here is 40401 Task Not Found: the SERP task has been read or has
         # expired, and no number of polls will bring it back. Everything else
@@ -17967,12 +18004,21 @@ def _proposal_rows(d):
             else:
                 pos = live.get("pos")
                 if live.get("error") or live.get("queued") or live.get("expired"):
-                    pos = None
-                if not isinstance(pos, int) and pos not in ("Not Found", None):
-                    pos = None
+                    pos = "UNCHECKED"
+                elif not live:
+                    pos = "UNCHECKED"
+                elif not isinstance(pos, int) and pos not in ("Not Found", None):
+                    pos = "UNCHECKED"
+                elif pos is None:
+                    pos = "UNCHECKED"
             rows.append({
                 "kw": kw,
-                "rank": (str(pos) if isinstance(pos, int) else "Not Found"),
+                # NOT CHECKED IS NOT NOT FOUND. "Not Found" is a positive claim
+                # that the client does not rank for the term; a lookup that
+                # failed or never ran has not earned it. The dash says the
+                # table covers the term and the check is outstanding.
+                "rank": (str(pos) if isinstance(pos, int)
+                         else ("\u2014" if pos == "UNCHECKED" else "Not Found")),
                 "tier": tier_label[tier],
                 "vol": int(r.get("vol") or 0),
             })

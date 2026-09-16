@@ -274,14 +274,27 @@ const frac = v => {
 };
 const pct = v => Math.round(frac(v) * 100) + '%';
 
+// AN ERROR IS A SENTENCE, NOT A PAGE. A 502 from the host answers with an HTML
+// error document, and its first 160 characters -- doctype, meta viewport, the
+// start of a <title> -- were printed into panel headings across the screen.
+function httpSays(status, txt){
+  const s = String(txt || '');
+  if (/^\s*<(!doctype|html|head)/i.test(s) || /<html/i.test(s.slice(0, 400))) {
+    if (status === 502 || status === 503 || status === 504)
+      return `the server did not answer (${status}) — it may be restarting`;
+    return `the server returned an error page (${status})`;
+  }
+  const one = s.replace(/\s+/g, ' ').trim().slice(0, 140);
+  return one ? `HTTP ${status} — ${one}` : `HTTP ${status}`;
+}
 async function post(url, body, method){
   const r = await fetch(url, {method: method || 'POST',
                               headers:{'Content-Type':'application/json'},
                               body: JSON.stringify(body)});
   const txt = await r.text();
   let j = null;
-  try { j = JSON.parse(txt); } catch(e){ throw new Error('HTTP ' + r.status + ' — ' + txt.slice(0,160)); }
-  if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+  try { j = JSON.parse(txt); } catch(e){ throw new Error(httpSays(r.status, txt)); }
+  if (!r.ok || j.error) throw new Error(j.error || httpSays(r.status, ''));
   return j;
 }
 
@@ -413,16 +426,21 @@ const newQid = () => 'Q-' + (++QSEQ);
 ROWS.forEach(r => { r.qid = r.qid || newQid(); });
 
 function rowHtml(r, i){
+  // A review link opens on History, so the row is BUILT on History -- painting
+  // Details first and switching after is a flash of the wrong page. Only the
+  // link sets this: opening a run by hand must not pin the tab for every later
+  // redraw, which hid the Details pane and everything on it.
+  const tab = r.startTab === 'history' ? 'history' : 'details';
   return `
   <div class="prod" data-row="${i}">
     <h4>${r.name} &ndash; <u>${r.qid}</u>
       <span class="when">${dateOf(r)}</span></h4>
     <div class="ptabs">
-      <button type="button" class="on" data-tab="details">Details</button>
-      <button type="button" data-tab="history">History</button>
+      <button type="button" class="${tab === 'details' ? 'on' : ''}" data-tab="details">Details</button>
+      <button type="button" class="${tab === 'history' ? 'on' : ''}" data-tab="history">History</button>
     </div>
     <div class="pbody">
-      <div data-pane="details">
+      <div data-pane="details"${tab === 'details' ? '' : ' hidden'}>
         <div class="prow">
           <button class="btn preview" type="button" data-open="${i}" data-view="cfg">Config</button>
           <span class="rowmsg" data-msg="${i}">${esc([r.saveNote, r.note]
@@ -434,7 +452,7 @@ function rowHtml(r, i){
         </div>
         <div data-results="${i}">${resultsHtml(r)}</div>
       </div>
-      <div data-pane="history" hidden>${histHtml(r)}</div>
+      <div data-pane="history"${tab === 'history' ? '' : ' hidden'}>${histHtml(r)}</div>
     </div>
   </div>`;
 }
@@ -710,12 +728,17 @@ function fromQuery(){
   if (!review) return;
   const i = ROWS.findIndex(r => r.kind === review);
   if (i < 0) return;
+  // A REVIEW LINK OPENS THE FORECAST, NOT THE PAGE IT LIVES ON. It landed on
+  // Details with the overview collapsed, so the person it was sent to had two
+  // clicks to make before seeing anything. Newest run, already expanded.
+  ROWS[i].openRun = 0;
+  ROWS[i].startTab = 'history';
+  draw();
   const prod = document.querySelector(`.prod[data-row="${i}"]`);
   if (!prod) return;
-  const fold = prod.querySelector('.qres');
-  if (fold) fold.open = true;
   prod.scrollIntoView({block: 'start'});
-  prod.querySelector('.rowmsg').textContent = `${ROWS[i].qid} · ${dateOf(ROWS[i])}`;
+  const msg = prod.querySelector('.rowmsg');
+  if (msg) msg.textContent = `${ROWS[i].qid} · ${dateOf(ROWS[i])}`;
 }
 
 // A QUOTE THAT HAS RUN HAS A HISTORY. A saved quote is its own first row --
@@ -1095,7 +1118,7 @@ function plannerView(r, brief){
           shot ? 'Recapture' : 'Capture'}</button></h5>
         ${shot ? `<a href="${shot}" target="_blank" rel="noopener" class="shotwrap">`
                  + `<img class="shotimg" src="${shot}" alt="SERP capture"></a>`
-               : '<p class="hint" style="margin:0">Not captured</p>'}
+               : '<div class="shotwrap empty"><span>Not captured</span></div>'}
         ${((r.result || {}).serp || {}).kw
           ? `<p class="hint" style="margin:6px 0 0">“${esc(r.result.serp.kw)}”</p>` : ''}
         <p class="hint serpmsg" data-serpmsg="${r.i}" style="margin:6px 0 0"></p>
@@ -2384,27 +2407,37 @@ async function autoSerp(r, d, ranks, say){
   // three different things to do next, reported as one.
   try {
     const q = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
-      state: stateOf(d), device: 'desktop', width: 1100, height: 1700, scale: 2});
+      state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1});
     if (!q || !q.task_id)
       return {error: q && q.error ? q.error : 'the capture service took no task'};
     // THE EXHIBIT IS LANDSCAPE. Trimmed and cropped server-side so the stored
     // image is the 16:9 frame the proposal uses, not a 2,000px column that the
     // page then has to squash.
-    let last = '';
+    let last = '', requeued = 0, task = q;
     for (let i = 0; i < 60; i++) {
       // The provider says what it is waiting on; discarding that left three
       // minutes of silence and then one flat sentence.
       say(`Capturing the SERP for “${kw}”… ${i * 3}s`
           + (last ? ` · ${last}` : ''));
       await new Promise(z => setTimeout(z, 3000));
-      const f = await post('/api/serp_fetch', {task_id: q.task_id, device: q.device,
-        keyword: kw, width: q.width, height: q.height, scale: q.scale,
+      const f = await post('/api/serp_fetch', {task_id: task.task_id, device: task.device,
+        keyword: kw, width: task.width, height: task.height, scale: task.scale,
         trim: true, aspect: 16 / 9});
       if (f.ready && f.data_url)
         return {kw, basis, img: f.data_url, area: q.loc_scope ? q.loc_used : ''};
-      if (f.error) return {error: f.error, kw};
-      // The task expired; asking again cannot help.
-      if (f.gone) return {error: `the capture task for “${kw}” expired`, kw};
+      if (f.error && !f.gone) return {error: f.error, kw};
+      // A LOST TASK IS WORTH QUEUEING AGAIN, ONCE. The instance restarting
+      // mid-capture leaves the task behind, and the answer to that is a new
+      // task rather than three minutes of asking about the old one.
+      if (f.gone) {
+        if (requeued++) return {error: `the capture task for “${kw}” keeps being lost`, kw};
+        say(`Capture lost — queueing it again for “${kw}”…`);
+        task = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
+          state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1});
+        if (!task || !task.task_id)
+          return {error: 'the capture service took no task on the retry', kw};
+        continue;
+      }
       if (f.status) last = f.status;
     }
     return {error: `no capture after 3 minutes for “${kw}”`
