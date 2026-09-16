@@ -332,6 +332,8 @@ const CFG = {
   const want = {
     // step 1
     // EXPAND ON FOCUS TERMS runs before the build and feeds it
+    // The band is resolved when the builder opens and cached, so it does not
+    // reappear in the build sequence.
     'kb.expandsFirst': [seq.slice(0, 4).sort().join(','),
       '/api/expand_services,/api/rank_seeds,/api/site_services,/api/suggest_regions'],
     'kb.thenBuildsAndRefines': [seq.slice(4, 6).join(','), '/api/keywords,/api/refine'],

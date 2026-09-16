@@ -1207,10 +1207,16 @@ function plannerView(r, brief){
     <div class="pvsplit">
       ${list}
       <div class="pvserp">
-        <h5>SERP<button class="pvmini" type="button" data-serp="${r.i}">${
+        <h5>SERP${shot ? `<span class="pan">`
+            + `<button class="panb" type="button" data-pan="${r.i}" data-d="-1"`
+            + ` title="Move the window up" aria-label="Move the window up">&#9650;</button>`
+            + `<button class="panb" type="button" data-pan="${r.i}" data-d="1"`
+            + ` title="Move the window down" aria-label="Move the window down">&#9660;</button>`
+            + `</span>` : ''}<button class="pvmini" type="button" data-serp="${r.i}">${
           shot ? 'Recapture' : 'Capture'}</button></h5>
         ${shot ? `<a href="${shot}" target="_blank" rel="noopener" class="shotwrap">`
-                 + `<img class="shotimg" src="${shot}" alt="SERP capture"></a>`
+                 + `<img class="shotimg" src="${shot}" alt="SERP capture"`
+                 + ` style="object-position:center ${Number((r.result || {}).shotY) || 0}%"></a>`
                : '<div class="shotwrap empty"><span>Not captured</span></div>'}
         ${((r.result || {}).serp || {}).kw
           ? `<p class="hint" style="margin:6px 0 0">“${esc(r.result.serp.kw)}”</p>` : ''}
@@ -2089,8 +2095,17 @@ function kbDraw(r){
     : all.reduce((s, x) => s + (x.vol || 0), 0);
   const wideN = all.filter(x => x.vol_scope === 'broader').length;
   $('kbHead').textContent = `Keyword list (${all.length} terms)`;
-  $('kbNote').textContent = `${total.toLocaleString()}/mo measured · ${countryOf(r.data)}`
-    + (wideN ? ` · ${wideN} answered from a wider area` : '');
+  // THE AREA MEASURED, NOT THE COUNTRY IT SITS IN. This printed the quote's
+  // country, so a nine-market Mississippi build read "90/mo measured \u00b7 United
+  // States" -- which says the demand was measured nationally. It was not.
+  const marketsIn = geoOf(r.data);
+  const where = (r.band || bandOf(r.data)) === 'nationwide'
+    ? countryOf(r.data)
+    : (marketsIn.length > 2
+        ? `${marketsIn.length} markets`
+        : (marketsIn.join(', ') || countryOf(r.data)));
+  $('kbNote').textContent = `${total.toLocaleString()}/mo measured \u00b7 ${where}`
+    + (wideN ? ` \u00b7 ${wideN} answered from a wider area` : '');
   const w = kw.widen;
   // NOT ONE TERM MEASURED IN THESE MARKETS. Either every figure came from a
   // wider area or there is no figure at all -- both price as no demand.
@@ -2526,7 +2541,9 @@ async function autoSerp(r, d, ranks, say){
       try {
         f = await post('/api/serp_fetch', {task_id: task.task_id, device: task.device,
           keyword: kw, width: task.width, height: task.height, scale: task.scale,
-          trim: true, aspect: 16 / 9});
+          // Trimmed and bounded, but NOT cropped to the frame: the planner
+        // moves the window over the page, so there has to be a page.
+        trim: true, max_h: 2600});
       } catch (e) {
         // A restart mid-poll is not the capture failing; keep polling.
         if (isWaking(e)) { last = 'server restarting'; continue; }
@@ -3052,6 +3069,32 @@ async function copyReviewLink(i){
 $('prods').addEventListener('click', e => {
   const sh = e.target.closest('[data-share]');
   if (sh) { e.preventDefault(); e.stopPropagation(); copyReviewLink(+sh.dataset.share); }
+});
+
+// THE WINDOW MOVES OVER THE PAGE. Same control as the legacy tab: the frame
+// stays 16:9 and the capture slides under it, so the exhibit can be the local
+// pack or the organic results without recapturing anything. Saved with the
+// quote, because where the window sits IS the exhibit.
+$('prods').addEventListener('click', e => {
+  const btn = e.target.closest('[data-pan]');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const i = +btn.dataset.pan, r = ROWS[i];
+  if (!r || !r.result || !r.result.shot) return;
+  const step = 12;
+  const now = Number(r.result.shotY) || 0;
+  const next = Math.max(0, Math.min(100, now + (+btn.dataset.d) * step));
+  if (next === now) return;
+  r.result.shotY = next;
+  // Move the image in place; a redraw here would collapse the run.
+  const img = btn.closest('.pvserp').querySelector('.shotimg');
+  if (img) img.style.objectPosition = `center ${next}%`;
+  const at = r.openRun == null ? 0 : r.openRun;
+  if (r.history && r.history[at] && r.history[at].quote === r.result)
+    r.history[at].quote = r.result;
+  clearTimeout(r._panSave);
+  r._panSave = setTimeout(() => { persist(r); }, 900);
 });
 </script>
 </body>

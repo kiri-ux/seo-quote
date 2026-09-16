@@ -324,7 +324,7 @@ const BASE = "http://127.0.0.1:5203";
     'adtini.opensForm': [kw.adtiniOpensForm, true],
     'kw.staysInModal': [kw.stayedPut, true],
     'kw.pane': [kw.kwPane, true],
-    'kw.savedListShown': [kw.builtNote, '7,700/mo measured · United States'],
+    'kw.savedListShown': [kw.builtNote, '7,700/mo measured · 3 markets'],
     'kw.hasBuild': [kw.hasBuild, true],
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
     'kw.noSecondCountryPicker': [kw.noCountryPicker, true],

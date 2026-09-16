@@ -14913,7 +14913,15 @@ def api_serp_queue():
     # panel reported "the capture service took no task" over and over. The
     # exhibit is a picture of a result page; the state's page is a usable
     # exhibit where the town's does not exist.
-    want = loc_string(markets, state)
+    # THE CAPTURE IS OF ONE KEYWORD, SO IT BELONGS IN THAT KEYWORD'S MARKET.
+    # loc_string takes the FIRST market, so a capture of "electrical services
+    # anacortes wa" was queued against Whidbey Island -- a location Google does
+    # not carry. task_post ACCEPTS that and the task fails when it runs, and
+    # /serp/screenshot answers 40401 for an errored task exactly as it does for
+    # one that never existed. Three minutes of "queued" for a task that was
+    # already dead. Name the market the keyword itself names. (2026-09-16, Kiri)
+    named = market_for_keyword(keyword, markets, state)
+    want = rank_location([named], state, False) if named else loc_string(markets, state)
     cands = [want]
     st = derive_state(markets, state) or state
     if st:
@@ -15110,8 +15118,24 @@ def api_serp_fetch():
             # long it has been waiting, decide. (2026-09-16, Kiri)
             if (str(t0.get("status_code")) in ("40401", "40400")
                     or "not found" in str(msg).lower()):
+                # 40401 also means "the task contains an error". Ask the task
+                # itself: still running is worth waiting for, failed is not.
+                state_msg, dead = "", False
+                try:
+                    tg = dfs_get(f"/serp/google/organic/task_get/regular/{task_id}")
+                    tt = ((tg or {}).get("tasks") or [{}])[0] or {}
+                    code = str(tt.get("status_code") or "")
+                    state_msg = str(tt.get("status_message") or "")
+                    if code and not code.startswith("2"):
+                        dead = True
+                except Exception:
+                    pass
+                if dead:
+                    return jsonify({"ready": False, "taskerr": True,
+                                    "status": state_msg or msg,
+                                    "why": state_msg or msg})
                 return jsonify({"ready": False, "notfound": True,
-                                "status": msg or "task not found yet"})
+                                "status": state_msg or msg or "task not found yet"})
             return jsonify({"ready": False, "status": msg})
         login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
         tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
