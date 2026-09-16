@@ -1914,12 +1914,37 @@ document.addEventListener('click', e => {
 // it in made ONE chip reading "Electrical Services, Kohler Generator
 // Installation, ..." -- which is then one keyword, crossed with every market,
 // and it matches nothing. Split on the separators a pasted list actually uses.
+const US_ST = new Set(('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA '
+  + 'MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY').split(' '));
+// A PASTED CITY LIST. "Boca Raton, FL" is one place, so the box took a line
+// whole -- and "Idaho Falls ID, Blackfoot ID, Rexburg ID" became one chip.
+// Comma parts that alternate name / state are pairs; otherwise each part is a
+// city, and a bare trailing state gets its comma, which is the documented form.
+function splitCities(text){
+  const out = [];
+  const isSt = v => v.length === 2 && US_ST.has(v.toUpperCase());
+  String(text).split(/[;\t\r\n]+|\s+\u2022\s+/).forEach(line => {
+    const parts = line.split(',').map(v => v.trim()).filter(Boolean);
+    if (!parts.length) return;
+    if (parts.length > 1 && parts.length % 2 === 0
+        && parts.every((v, i) => i % 2 === 0 ? !isSt(v) : isSt(v))) {
+      for (let i = 0; i < parts.length; i += 2)
+        out.push(`${parts[i]}, ${parts[i + 1].toUpperCase()}`);
+      return;
+    }
+    (parts.length > 1 ? parts : [line.trim()]).forEach(c => {
+      const m = c.match(/^(.+?)\s+([A-Za-z]{2})$/);
+      out.push(m && isSt(m[2]) ? `${m[1].trim()}, ${m[2].toUpperCase()}` : c);
+    });
+  });
+  return out;
+}
 const chipCommit = (inp, raw) => {
   const box = inp.closest('.box');
   // City is the exception: "Boca Raton, FL" is one place, not two.
   const whole = box && box.dataset.chips === 'city';
   const text = raw == null ? inp.value : raw;
-  const parts = whole ? [text] : String(text).split(/[,;\t\r\n]+|\s+\u2022\s+/);
+  const parts = whole ? splitCities(text) : String(text).split(/[,;\t\r\n]+|\s+\u2022\s+/);
   const have = new Set((box ? chipsOf(box) : []).map(x => x.toLowerCase()));
   let added = 0;
   parts.forEach(part => {

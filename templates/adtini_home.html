@@ -83,14 +83,14 @@
       <table>
         <thead>
           <tr>
-            <th style="width:64px"></th>
+            <th style="width:40px"></th>
             <th>Planner</th>
             <th>Built</th>
+            <th>Partner</th>
+            <th>Order ID</th>
             <th>Client</th>
             <th>Products</th>
             <th>Strategies</th>
-            <th>Order ID</th>
-            <th>Partner</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -99,9 +99,9 @@
     </div>
     <div class="pager">
       <span>Items per page:</span>
-      <select><option>100</option><option>50</option><option>25</option></select>
-      <span id="count">1 – 8 of 8</span>
-      <span class="arrows"><span>&#8676;</span><span>&#8592;</span><span>&#8594;</span><span>&#8677;</span></span>
+      <select id="per"><option>10</option><option>25</option><option>50</option><option>100</option></select>
+      <span id="count">0 of 0</span>
+      <span class="arrows"><span data-go="first" title="First page">&#8676;</span><span data-go="prev" title="Previous page">&#8592;</span><span data-go="next" title="Next page">&#8594;</span><span data-go="last" title="Last page">&#8677;</span></span>
     </div>
   </div>
 
@@ -158,8 +158,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const tag = (cls, label, n) =>
   `<span class="tag ${cls}">${label}${n > 1 ? '<sup>' + n + '</sup>' : ''}</span>`;
 
-// The sparkle opens the client's quote builder; the two letters open that
-// product's quote for review.
+// The sparkle opens the client's quote builder.
 // The order rides along only when the client has one. An empty &order= is a
 // number nobody entered.
 const fcUrl = (r, product) => '/adtini/forecast?client=' + encodeURIComponent(r.client)
@@ -172,16 +171,23 @@ function pick(list, val, cls, i, field){
     + '</select>';
 }
 
+// TEN TO A PAGE. The pager was drawn and did nothing: every quote on one
+// page, "1 - 8 of 8" hardcoded. A search or a filter starts back at page one.
+let PAGE = 1, PER = 10;
 function draw(){
   const f = document.querySelector('#seg button.on').dataset.f;
   const term = (document.getElementById('q').value || '').toLowerCase();
-  const rows = QUOTES.map((r, i) => [r, i]).filter(([r]) => {
+  const all = QUOTES.map((r, i) => [r, i]).filter(([r]) => {
     if (f === 'seo'  && !r.seo) return false;
     if (f === 'orm'  && !r.orm) return false;
     if (f === 'both' && !(r.seo && r.orm)) return false;
     if (term && !(r.client + ' ' + r.partner + ' ' + r.order).toLowerCase().includes(term)) return false;
     return true;
   });
+  const pages = Math.max(1, Math.ceil(all.length / PER));
+  PAGE = Math.max(1, Math.min(pages, PAGE));
+  const start = (PAGE - 1) * PER;
+  const rows = all.slice(start, start + PER);
   document.getElementById('rows').innerHTML = rows.map(([r, i]) => {
     const [fg, bg] = (TONE[r.planner] || TONE.Kiri).split(',');
     const chips = (r.seo ? tag('seo', 'SEO', r.seo) : '') + (r.orm ? tag('orm', 'ORM', r.orm) : '');
@@ -190,25 +196,43 @@ function draw(){
     return `<tr>
       <td><div class="rowicons">
         <a href="${fcUrl(r)}" title="Quote builder — ${esc(r.client)}" class="spark">&#10022;</a>
-        ${r.seo ? `<a href="${fcUrl(r, 'seo')}" title="SEO review">S</a>`
-                : '<span class="off" title="No SEO quote">S</span>'}
-        ${r.orm ? `<a href="${fcUrl(r, 'orm')}" title="ORM review">R</a>`
-                : '<span class="off" title="No ORM quote">R</span>'}
       </div></td>
       <td>${pick(PLANNERS, r.planner, 'who sel', i, 'planner')
         .replace('class="who sel"', `class="who sel" style="color:${fg};background:${bg}"`)}</td>
       <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${r.built}</span></td>
-      <td class="lnk"><a href="/adtini/forecast">${esc(r.client)}</a></td>
-      <td><div class="tags">${chips}</div></td>
-      <td><div class="tags">${strat}</div></td>
+      <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
       <td><input class="cell ord" data-i="${i}" data-f="order_no" value="${esc(r.order || '')}"
                  placeholder="\u2014"></td>
-      <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
+      <td class="lnk"><a href="${fcUrl(r)}">${esc(r.client)}</a></td>
+      <td><div class="tags">${chips}</div></td>
+      <td><div class="tags">${strat}</div></td>
       <td>${pick(STATUSES, r.status, 'stat sel', i, 'status')}</td>
     </tr>`;
   }).join('');
-  document.getElementById('count').textContent = `1 – ${rows.length} of ${rows.length}`;
+  document.getElementById('count').textContent = all.length
+    ? `${start + 1} – ${start + rows.length} of ${all.length}` : '0 of 0';
+  document.querySelectorAll('.pager .arrows span').forEach(a => {
+    const go = a.dataset.go;
+    const dead = (go === 'first' || go === 'prev') ? PAGE <= 1 : PAGE >= pages;
+    a.style.opacity = dead ? '.35' : '';
+    a.style.cursor = dead ? 'default' : 'pointer';
+  });
 }
+document.querySelector('.pager .arrows').addEventListener('click', e => {
+  const a = e.target.closest('[data-go]');
+  if (!a) return;
+  const go = a.dataset.go;
+  if (go === 'first') PAGE = 1;
+  else if (go === 'prev') PAGE -= 1;
+  else if (go === 'next') PAGE += 1;
+  else PAGE = 1e9;
+  draw();
+});
+document.getElementById('per').addEventListener('change', e => {
+  PER = Math.max(1, +e.target.value || 10);
+  PAGE = 1;
+  draw();
+});
 
 // An edit belongs to the client and sticks -- the same planner, partner and
 // status show on every quote that client has.
@@ -264,9 +288,10 @@ document.getElementById('seg').addEventListener('click', e => {
       .replace('all', 'All').replace('seo', 'SEO').replace('orm', 'ORM')
       .replace('both', 'Both products');
   });
+  PAGE = 1;
   draw();
 });
-document.getElementById('q').addEventListener('input', draw);
+document.getElementById('q').addEventListener('input', () => { PAGE = 1; draw(); });
 draw();
 
 // THE RAIL'S + IS THE SAME CHOICE AS THE BUTTON ON THE QUOTES PAGE. It went

@@ -212,9 +212,11 @@ h3.products{margin:0 0 16px;font-size:22px;font-weight:600}
   font-size:13px;font-weight:600;padding:10px 22px;color:#fff;white-space:nowrap;
 }
 .btn.preview{background:var(--blue);border-radius:999px}
-/* The expansion step in the builder: a real button, but not the Build one. */
-.btn.kbexpand{background:var(--card);color:var(--navy);border:1px solid var(--line);
-  padding:8px 18px;width:100%}
+/* The expansion step in the builder: a pill the size of the Yes/No beside it,
+   on the right of its label like the other rows. width:100% wrapped the label
+   into four lines. */
+.btn.kbexpand{flex:0 0 auto;background:var(--blue);color:#fff;border:0;
+  border-radius:999px;font-size:12px;font-weight:600;padding:8px 18px}
 .btn.kbexpand:disabled{opacity:.6;cursor:default}
 .btn.gemini{background:var(--gold)}
 .btn.claude{background:#D2691E}
