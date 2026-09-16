@@ -190,6 +190,7 @@
           <div class="box" data-chips="seeds"></div>
           <p class="hint seedhint" style="margin:6px 0 0"></p>
           <p class="hint" id="kbScopeNote" style="margin:10px 0 0"></p>
+          <p class="hint unplaced" id="kbUnplaced" hidden></p>
           <div class="kbrow">
             <div class="f"><label>Price on national demand</label>
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
@@ -2055,6 +2056,7 @@ async function resolveBand(r){
     r.band = got.band || bandOf(d);
     r.bandWhy = got.reason || '';
     r.bandSure = got.confidence || '';
+    r.unplaced = got.unplaced || [];
   } catch (e) {
     r._bandKey = key; r.band = bandOf(d); r.bandWhy = ''; r.bandSure = '';
   }
@@ -2066,6 +2068,17 @@ function kbScopeNote(r){
     $('kbScopeNote').textContent = `Geo scope: ${BANDS[r.band || bandOf(d)]}`
       + (g.length ? ` \u00b7 ${g.join(', ')}` : '')
       + (r.bandSure && r.bandSure !== 'high' && r.bandWhy ? ` \u00b7 ${r.bandWhy}` : '');
+    // A MARKET THE MAP CANNOT PLACE IS STILL BEING PRICED. Every keyword naming
+    // it borrows demand from a wider area, and the only clue was a count of rows
+    // "answered from a wider area" with no markets attached to it.
+    const bad = document.getElementById('kbUnplaced');
+    if (!bad) return;
+    const list = r.unplaced || [];
+    bad.hidden = !list.length;
+    bad.innerHTML = !list.length ? '' :
+      'Not on the map: ' + list.map(x => `<b>${esc(x.market)}</b>`
+        + (x.suggestion ? ` \u2014 did you mean ${esc(x.suggestion)}?` : '')).join(' \u00b7 ')
+      + '. Their keywords take demand from a wider area.';
   };
   paint();
   resolveBand(r).then(paint);

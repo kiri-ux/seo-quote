@@ -573,6 +573,8 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .volwide{cursor:help}
 .serpmsg:empty{display:none}
 .volwide{font-style:normal;font-size:11px;color:var(--muted);margin-left:7px}
+.unplaced{color:#B3261E}
+.unplaced b{font-weight:600}
 .rkmsg{font-weight:500;color:var(--muted)}
 
 /* THE QUOTE IS NOT A TABLE CELL. It renders inside one, so `.hist tbody td`

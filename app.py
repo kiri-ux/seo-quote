@@ -14704,7 +14704,27 @@ def api_geo_scope():
                         "reason": "No geographic areas, so demand is national."
                                   if not nat else "Priced on national demand."})
     out = suggest_geo_scope(mk, state, nat, "")
-    return jsonify({"band": out.get("suggested") or "single_city",
+    # A MARKET THE MAP CANNOT PLACE IS STILL BEING PRICED. "Cleaveland, MS" and
+    # "Indianaola, MS" are misspellings; every keyword naming them borrowed its
+    # volume from a wider area and nothing on screen said which markets were
+    # responsible. Name them, and offer the spelling the index does carry.
+    import difflib
+    _abbr = _state_abbr(state) or ""
+    _known = sorted({c for (c, st) in (_zip_index() or {}).items()
+                     if not _abbr or st == _abbr}) if False else \
+             sorted({c for (c, st) in (_zip_index() or {}).keys()
+                     if not _abbr or st == _abbr})
+    unplaced = []
+    for m in mk:
+        if city_coords(m, state):
+            continue
+        city, _st = parse_market(m, state)
+        near = difflib.get_close_matches(str(city or m).strip().lower(),
+                                         _known, n=1, cutoff=0.82)
+        unplaced.append({"market": m,
+                         "suggestion": (near[0].title() if near else "")})
+    return jsonify({"unplaced": unplaced,
+                    "band": out.get("suggested") or "single_city",
                     "confidence": out.get("confidence") or "",
                     "reason": out.get("reason") or "",
                     "markets": len(mk)})
