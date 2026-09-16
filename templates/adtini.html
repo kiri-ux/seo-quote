@@ -449,6 +449,7 @@ function draw(){
 function savePayload(r){
   const p = {
     adtini: {kind: r.kind, qid: r.qid, built: dateOf(r), data: r.data,
+             band: r.band || null,
              cfg: r.cfg || {}, over: r.over || {}, kw: r.kw || null,
              scan: r.scan || null, result: r.result || null,
              history: (r.history || []).slice(0, 20)},
@@ -519,15 +520,20 @@ function rankingText(r){
   const ok = Math.max(checked - errored, 0);
   if (p.pct_not_ranking == null || !ok) return 'ranking unmeasured';
   const ranking = ok - Math.round(ok * (p.pct_not_ranking || 0) / 100);
-  return `${ranking} of ${ok} ranking`
+  return `ranking for ${ranking} of ${ok} terms`
     + (ok < nTerms ? ` · ${nTerms - ok} unmeasured` : '');
 }
 function headlineOf(r){
   const p = (r.result || {}).pricing || {};
   const pkg = H(r).package || {};
-  const lead = pkg.base != null ? pkg.base : pkg[Object.keys(pkg)[0]];
+  // ALL THREE TIERS. The lead price alone is the answer to a question nobody
+  // asked -- a quote is the ladder, and the row that lists it is where the
+  // three numbers are compared.
+  const order = ['base', 'intermediate', 'advanced'].filter(k => pkg[k] != null);
+  const keys = order.length ? order : Object.keys(pkg);
+  const tiers = keys.map(k => money(pkg[k])).join(' / ');
   const n = ((r.kw || {}).all || []).length;
-  return `${money(lead)}/mo · ${n} term${n === 1 ? '' : 's'}`
+  return `${tiers}/mo · ${n} term${n === 1 ? '' : 's'}`
     + ` · ${(p.total_volume || 0).toLocaleString()}/mo · ${rankingText(r)}`;
 }
 
@@ -2368,19 +2374,28 @@ async function autoSerp(r, d, ranks, say){
     const rr = await post('/api/serp_recommend', {head, ranks, geo_values: geoOf(d)});
     if (rr.recommended) { kw = rr.recommended; basis = rr.basis || ''; }
   } catch (e) { /* the first head term is a reasonable exhibit */ }
+  // WHY IT DIDN'T COME BACK. "No capture came back" covers a queue that refused
+  // the task, a task that expired and one that is simply still rendering --
+  // three different things to do next, reported as one.
   try {
     const q = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
       state: stateOf(d), device: 'desktop', width: 1100, height: 1700, scale: 2});
+    if (!q || !q.task_id)
+      return {error: q && q.error ? q.error : 'the capture service took no task'};
     for (let i = 0; i < 40; i++) {
       say(`Capturing the SERP for “${kw}”… ${i * 3}s`);
       await new Promise(z => setTimeout(z, 3000));
       const f = await post('/api/serp_fetch', {task_id: q.task_id, device: q.device,
         keyword: kw, width: q.width, height: q.height, scale: q.scale});
       if (f.ready && f.data_url) return {kw, basis, img: f.data_url};
-      if (f.gone) return null;           // the task expired; asking again cannot help
+      if (f.error) return {error: f.error, kw};
+      // The task expired; asking again cannot help.
+      if (f.gone) return {error: `the capture task for “${kw}” expired`, kw};
     }
-  } catch (e) { /* a quote without its exhibit is still a quote */ }
-  return null;
+    return {error: `Google did not answer within 2 minutes for “${kw}”`, kw};
+  } catch (e) {
+    return {error: e.message, kw};
+  }
 }
 
 // ---------------------------------------------------------------- steps 2-4
@@ -2480,16 +2495,14 @@ async function generate(){
       pageone_rank: null};
     const price = await post('/api/price', priceReq);
 
-    const pkg = (price.handoff || {}).package || {};
-    const lead = Object.keys(pkg).length ? money(pkg[Object.keys(pkg)[0]]) + '/mo' : '';
     r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
       rankReq: {common, geo, st, band},
-      settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {},
-      headline:
-      `${lead} · ${all.length} terms · ${total_volume.toLocaleString()}/mo · `
-      + (pct_not_ranking == null ? 'ranking unmeasured' : `${100 - pct_not_ranking}% ranking`)};
+      settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {}};
+    // One place builds the headline, so the row, the summary and the history
+    // entry cannot print three different versions of the same quote.
+    r.result.headline = headlineOf(r);
     r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,
-                  resp: `${lead} · ${all.length} terms`, quote: r.result}]
+                  resp: r.result.headline, quote: r.result}]
                 .concat(r.history || []);
     await persist(r);
     draw();
@@ -2504,7 +2517,10 @@ async function generate(){
       if (n) n.textContent = [r.saveNote, t].filter(Boolean).join(' · ');
     };
     autoSerp(r, d, ranks, note).then(async shot => {
-      if (!shot) { note('SERP capture — not captured.'); return; }
+      if (!shot || !shot.img) {
+        note('SERP not captured' + (shot && shot.error ? ` — ${shot.error}` : '') + '.');
+        return;
+      }
       r.result.serp = shot;
       r.result.shot = shot.img;
       await persist(r);
@@ -2622,7 +2638,8 @@ async function recaptureSerp(i){
       draw();
       return;
     }
-    say('No capture came back. Try again in a moment.');
+    say(got && got.error ? `Not captured — ${got.error}`
+                         : 'Not captured. No reason given.');
   } catch (e) {
     say('Capture failed \u2014 ' + e.message);
   }
@@ -2693,7 +2710,13 @@ $('prods').addEventListener('click', e => {
 // it is the right response, and it moves the price honestly when it succeeds.
 async function recheckRanks(i){
   const r = ROWS[i];
-  if (!r || !r.result || !r.result.rankReq) return;
+  if (!r || !r.result) return;
+  // REBUILT, NOT REMEMBERED. rankReq is only on quotes generated since it was
+  // added, and it is not in the saved payload at all -- so every quote reopened
+  // from storage returned here without checking anything, which is what
+  // "tried recheck ranks and got nothing" was.
+  const d = r.data || {};
+  const band = r.band || bandOf(d);
   const btn = document.querySelector(`[data-recheck="${i}"]`);
   const say = t => { const m = document.querySelector(`[data-rkmsg="${i}"]`);
                      if (m) m.textContent = t ? ' \u00b7 ' + t : ''; };
@@ -2703,9 +2726,18 @@ async function recheckRanks(i){
     const v = ranks[String(k).toLowerCase()];
     return v === '\u2014' || v == null;
   });
-  if (!todo.length) { say('nothing to recheck'); return; }
+  if (!todo.length) { say('every term already has a rank'); return; }
+  if (!geoOf(d).length && band !== 'nationwide') {
+    say('no markets on this quote');
+    return;
+  }
   if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
-  const common = r.result.rankReq.common || {};
+  const common = Object.assign({
+    geo_values: geoOf(d), state: stateOf(d),
+    industry: (d.industry || []).join(', '), geo_scope: band,
+    national_demand: band === 'nationwide',
+    brand: d.brand, domain: d.site, cfg: r.over || {},
+  }, (r.result.rankReq || {}).common || {});
   let done = 0, stillBad = 0;
   try {
     for (let n = 0; n < todo.length; n += 10) {
@@ -2729,7 +2761,19 @@ async function recheckRanks(i){
     const ranked = tbl.filter(x => x.ranked_top).length;
     const unmeasured = tbl.length > 0 && checkedOk === 0;
     const pct = checkedOk ? Math.round((1 - ranked / checkedOk) * 100) : null;
-    const req = Object.assign({}, r.result.priceReq, {
+    const p0 = (r.result.pricing || {}).handoff || {};
+    const base = r.result.priceReq || {
+      // A quote saved before priceReq existed still has to reprice, so the
+      // request is rebuilt from what the quote itself records.
+      band, adder: ((r.result.metrics || {}).adder) || 0,
+      addon_markets: ((r.result.addon || {}).suggested) || 0,
+      markup_pct: parseFloat(String((r.cfg || {}).markup || d.markup || 35)),
+      total_volume: (r.result.pricing || {}).total_volume
+        || ((r.kw || {}).total_volume || 0),
+      industry: (d.industry || []).join(', '),
+      national_demand: band === 'nationwide', cfg: r.over || {},
+      base_override: (r.cfg || {}).ov_core || '', pageone_rank: null};
+    const req = Object.assign({}, base, {
       pct_not_ranking: pct,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
     say('repricing\u2026');

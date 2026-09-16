@@ -401,7 +401,7 @@ const CFG = {
       + ' | Measured demand: 4,690/mo · 1 answered from Florida'
       + ' | Ranking: 1 of 3 measured terms ranking'],
     'details.overviewOnly': [res.briefHeadline,
-      'Quote results$5,450/mo · 3 terms · 4,690/mo · 1 of 3 rankingCore SEO'],
+      'Quote results$5,450 / $6,450 / $7,750/mo · 3 terms · 4,690/mo · ranking for 1 of 3 termsCore SEO'],
     'details.noFoldsOnDetails': [res.briefHasNoFolds, true],
     'details.noKeywordListOnDetails': [res.briefHasNoKeywordList, true],
     'history.opensTheWholeQuote': [res.openedFromHistory, true],
@@ -500,7 +500,7 @@ const CFG = {
     'hist.noSecondHeader': [hist.noSecondHeader, true],
     'hist.openIsTheWholeQuote': [hist.hasWholeQuote, true],
     'hist.detailsUnchanged': [hist.detailsStillCurrent,
-      'Quote results$6,650/mo · 6 terms · 7,700/mo · 3 of 6 rankingCore SEO'],
+      'Quote results$6,650 / $7,850 / $9,450/mo · 6 terms · 7,700/mo · ranking for 3 of 6 termsCore SEO'],
   });
 
   let bad = 0;

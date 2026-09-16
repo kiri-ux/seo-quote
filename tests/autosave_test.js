@@ -94,7 +94,10 @@ const run = async (b, enabled) => {
     'on.nameCarriesTheQuoteId': [/^Search Engine Optimization — Q-\d+$/.test((on.saved[0] || {}).name || ''), true],
     'on.payloadCarriesTheQuote': [!!((on.saved[0] || {}).payload || {}).adtini
       && !!((on.saved[0] || {}).payload || {}).pricing, true],
-    'on.rowSaysItSaved': [/^Saved to Sage Dental · Q-\d+\.$/.test(on.note), true],
+    // The row carries the save AND what happened to the capture, because a
+    // capture that never came back used to say nothing at all.
+    'on.rowSaysItSaved': [/^Saved to Sage Dental · Q-\d+\./.test(on.note), true],
+    'on.rowSaysWhyNoCapture': [/SERP not captured — .+\.$/.test(on.note), true],
     'on.orderNumberFollowsTheClient': [(on.meta[0] || {}).order_no, '56311'],
     'on.secondRunUpdatesTheSameRecord':
       [on.calls.filter(c => c === 'PUT /api/quotes/77').length >= 1, true],
@@ -102,7 +105,7 @@ const run = async (b, enabled) => {
       [on.calls.filter(c => c === 'POST /api/quotes').length, 1],
     // saving off: nothing is posted, and the row says why
     'off.nothingPosted': [off.saved.length, 0],
-    'off.rowSaysWhy': [off.note,
+    'off.rowSaysWhy': [off.note.split(' · SERP')[0],
       'Not saved — saving is off for this deploy. No DATABASE_URL set — attach a '
       + 'Postgres instance in Render.'],
     'errors': [[...on.errs, ...off.errs].join('; '), ''],
