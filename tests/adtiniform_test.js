@@ -257,7 +257,7 @@ const BASE = "http://127.0.0.1:5203";
     'new.menuStartsClosed': [nq.closed, true],
     'new.menuOpens': [nq.open, true],
     'new.twoProducts': [nq.items.join(' / '),
-      'Search Engine Optimization / Online Reputation Management'],
+      'SEO+ / ORM'],
     'new.linksCarryTheProduct': [nq.links.join(' | '),
       '/adtini/forecast?new=1&product=seo | /adtini/forecast?new=1&product=orm'],
     'new.closesOnOutsideClick': [nq.closesAgain, true],

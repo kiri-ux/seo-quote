@@ -99,9 +99,9 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
   const want = {
     'errored.noRecommendationAsked': [errored.asked, false],
     'errored.pricedWithoutAddOns': [errored.priced, 0],
-    'errored.saysWhyThereIsNoCount': [errored.addon,
-      'Add-on markets: none · no market count — every rank check errored, so nothing'
-      + ' says whether these markets are new to them'],
+    // A workstream the quote did not buy has no card. Zero add-on markets is
+    // not a fact about this quote, it is the absence of one.
+    'errored.noAddOnCard': [errored.addon, undefined],
     'errored.rankingIsUnmeasured': [/unmeasured/.test(errored.ranking || ''), true],
     'measured.recommendationAsked': [measured.asked, true],
     'measured.pricedOnTheRecommendation': [measured.priced, 3],

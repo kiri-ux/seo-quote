@@ -382,15 +382,14 @@ const CFG = {
     // the page-one median comes off the signals pass, which this tab does not run
     'run.pageoneNotGuessed': [priceCall.body.pageone_rank, null],
     // the row opens to the quote
+    // Core SEO alone needs no card -- the three tiles above ARE Core SEO. A
+    // workstream that is off, and an add-on count of zero, have no card at all.
     'details.cards': [res.briefCards.join(' | '),
-      'Core SEO: base $5,450 · intermediate $6,450 · advanced $7,750'
-      + ' | AI Search: not on this quote | Add-on markets: none | Keywords: 3 terms'
+      'Strategy: Core SEO | Keywords: 3 terms'
       + ' | Measured demand: 4,690/mo · 1 answered from a wider area'
-      + ' | Ranking: 33% of 3 terms ranking | Total for a 6-month term: $32,700'
-      + ' | Margin: 35% · $1,907 / $2,257 / $2,712'
-      + ' | Partner cost: $3,543 / $4,193 / $5,038'],
+      + ' | Ranking: 1 of 3 measured terms ranking'],
     'details.overviewOnly': [res.briefHeadline,
-      'Quote results — $5,450/mo · 3 terms · 4,690/mo · 33% ranking'],
+      'Quote results$5,450/mo · 3 terms · 4,690/mo · 1 of 3 rankingCore SEO'],
     'details.noFoldsOnDetails': [res.briefHasNoFolds, true],
     'details.noKeywordListOnDetails': [res.briefHasNoKeywordList, true],
     'history.opensTheWholeQuote': [res.openedFromHistory, true],
@@ -400,8 +399,7 @@ const CFG = {
       'Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
     'history.foldsStartClosed': [res.closed, true],
     'history.plannerView': [res.planner.slice(0, 2).join(' | '),
-      'Core SEO: base $5,450 · intermediate $6,450 · advanced $7,750'
-      + ' | AI Search: not on this quote'],
+      'Strategy: Core SEO | Keywords: 3 terms'],
     'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERP Not captured'],
     // the settings the run was made with, snapshotted
     'run.settingsFocus': [res.runFocus[1],
@@ -484,7 +482,7 @@ const CFG = {
     'hist.opensThatRun': [hist.headline, '9/11/26 4:08 PM — $6,050/mo · 4 terms'],
     'hist.openIsTheWholeQuote': [hist.hasWholeQuote, true],
     'hist.detailsUnchanged': [hist.detailsStillCurrent,
-      'Quote results — $6,650/mo · 6 terms · 7,700/mo · 50% ranking'],
+      'Quote results$6,650/mo · 6 terms · 7,700/mo · 3 of 6 rankingCore SEO'],
   });
 
   let bad = 0;

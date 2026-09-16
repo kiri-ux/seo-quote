@@ -15,10 +15,23 @@
 <nav class="rail">
   <a href="/adtini" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M12 3 3 10v11h6v-6h6v6h6V10z"/></svg></a>
-  <a href="/adtini/forecast?new=1" title="New quote" aria-label="New quote">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/>
-    <path d="M11 8h2v3h3v2h-3v3h-2v-3H8v-2h3z"/></svg></a>
+  <div class="railnew">
+    <button type="button" class="railbtn" id="railNew" title="New quote"
+      aria-label="New quote" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M11 8h2v3h3v2h-3v3h-2v-3H8v-2h3z"/></svg></button>
+    <div class="newmenu railmenu" id="railMenu" hidden role="menu">
+      <a href="/adtini/forecast?new=1&amp;product=seo" role="menuitem">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h10l4 4v14H6z" fill="none"
+          stroke="currentColor" stroke-width="2"/><path d="M9 11h8v2H9zm0 4h5v2H9z"/></svg>
+        SEO+</a>
+      <a href="/adtini/forecast?new=1&amp;product=orm" role="menuitem">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7z"
+          fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        ORM</a>
+    </div>
+  </div>
   <a href="/adtini" title="Quotes" aria-label="Quotes" class="mark on">
     <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M6 3h10l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -40,11 +53,11 @@
       <a href="/adtini/forecast?new=1&amp;product=seo" role="menuitem">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h10l4 4v14H6z" fill="none"
           stroke="currentColor" stroke-width="2"/><path d="M9 11h8v2H9zm0 4h5v2H9z"/></svg>
-        Search Engine Optimization</a>
+        SEO+</a>
       <a href="/adtini/forecast?new=1&amp;product=orm" role="menuitem">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7z"
           fill="none" stroke="currentColor" stroke-width="2"/></svg>
-        Online Reputation Management</a>
+        ORM</a>
     </div>
   </div>
 </div>
@@ -249,6 +262,24 @@ document.getElementById('seg').addEventListener('click', e => {
 });
 document.getElementById('q').addEventListener('input', draw);
 draw();
+
+// THE RAIL'S + IS THE SAME CHOICE AS THE BUTTON ON THE QUOTES PAGE. It went
+// straight to a blank form that had to be both products at once.
+(function(){
+  const b = document.getElementById('railNew'), m = document.getElementById('railMenu');
+  if (!b || !m) return;
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    m.hidden = !m.hidden;
+    b.setAttribute('aria-expanded', String(!m.hidden));
+  });
+  document.addEventListener('click', () => {
+    if (!m.hidden) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !m.hidden) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); }
+  });
+})();
 </script>
 </body>
 </html>

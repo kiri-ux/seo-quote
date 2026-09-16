@@ -30,6 +30,14 @@ nav.rail svg{width:20px;height:20px;fill:currentColor}
 nav.rail a:hover{background:rgba(255,255,255,.14);color:#fff}
 nav.rail a.mark{background:var(--gold);color:#3A2508}
 nav.rail a.mark.on{background:var(--orange);color:#fff}
+/* the + opens the product choice, so it is a button with a menu beside it */
+.railnew{position:relative;display:flex}
+.railbtn{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;color:#E8F0FB;background:none;border:0;cursor:pointer;padding:0}
+.railbtn svg{width:20px;height:20px;fill:currentColor}
+.railbtn:hover{background:rgba(255,255,255,.14);color:#fff}
+.newmenu.railmenu{top:0;left:calc(100% + 8px);right:auto}
+@media(max-width:700px){.newmenu.railmenu{top:calc(100% + 6px);left:0}}
 body{padding-left:54px}
 @media (max-width:700px){
   nav.rail{flex-direction:row;width:100%;height:46px;bottom:auto;padding:4px 8px;gap:4px;
@@ -320,6 +328,14 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 .qres > summary::-webkit-details-marker{display:none}
 .qres > summary::before{content:"\25B8";color:var(--muted);font-size:11px;transition:transform .15s}
 .qres[open] > summary::before{transform:rotate(90deg)}
+/* the quote and its strategies ride on the summary line, not below it */
+.qsum{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;
+  margin-left:18px;font-weight:500}
+.qsumq{color:var(--text)}
+.qsums{display:flex;gap:6px;flex-wrap:wrap}
+.qsums b{background:var(--navy-2);color:#fff;border-radius:7px;font-size:11.5px;
+  font-weight:500;padding:3px 8px;white-space:nowrap}
+@media(max-width:700px){.qsum{margin-left:0;width:100%}}
 .qbody{padding:0 18px 18px}
 .qtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
 .qtile{background:var(--fill);border-radius:12px;padding:12px 14px}
@@ -453,6 +469,23 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .pvsplit{align-items:stretch}
 .pvkw{max-height:none}
 .pvkw .pvscroll{overflow-y:auto}
+
+/* THE CAPTURE IS A LANDSCAPE EXHIBIT. The proposal was built around a 16:9
+   frame, so the capture reads the same here as it does there -- a full-height
+   PNG in a quarter-width column is a column of thumbnail, not an exhibit.
+   Top of the page, which is where the query and the local pack sit. */
+.pvsplit{grid-template-columns:1.5fr 1fr}
+@media(max-width:900px){.pvsplit{grid-template-columns:1fr}}
+.pvserp{align-self:start}
+.pvserp .shotwrap{
+  aspect-ratio:16/9;width:100%;overflow:hidden;border-radius:8px;
+  border:1px solid var(--line);background:var(--card);
+}
+.pvserp .shotwrap img{
+  width:100%;height:100%;object-fit:cover;object-position:top center;
+  border:0;border-radius:0;
+}
+.pvkw .pvscroll{max-height:none}
 
 /* a hover that says what a field is for */
 .i{position:relative}

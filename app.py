@@ -1955,12 +1955,25 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     # so match each market against the terms that mention it.
     top = int(top_n or CFG.get("zero_ranking_top_n", 100))
     covered, measured = set(), set()
+    # A COUNTY IS NAMED BY ITS SEAT IN THE KEYWORD. geo_forms puts "knoxville
+    # tn" in the phrase, not "knox county tn", so matching the market string
+    # against the term found nothing: four counties entered, "0 markets
+    # measured", and the add-on recommendation refused on a rank check that had
+    # in fact run. Match the seat as well as the county, the way the phrase
+    # itself was built. (2026-09-16, Kiri)
+    names_of = {}
+    for m in mk:
+        nm = [(parse_market(m, state)[0] or m).strip().lower()]
+        for seat in county_cities(m, state):
+            seat_city = (parse_market(seat, state)[0] or seat).strip().lower()
+            if seat_city and seat_city not in nm:
+                nm.append(seat_city)
+        names_of[m] = [x for x in nm if x]
     for r in (rows or []):
         kw = (r.get("kw") or "").lower()
         pos = r.get("pos")
         for m in mk:
-            city = (parse_market(m, state)[0] or m).strip().lower()
-            if city and city in kw:
+            if any(nm in kw for nm in names_of[m]):
                 measured.add(m)
                 if isinstance(pos, (int, float)) and pos <= top:
                     covered.add(m)
@@ -14605,6 +14618,31 @@ def _rz_industries():
 STRATEGY_OPTIONS = ["Core SEO", "Core SEO + AI Search", "Website Audit"]
 REP_STRATEGY_OPTIONS = ["Review Removals", "Site/Article Removals",
                         "Reactive", "Proactive"]
+
+
+@app.route("/api/geo_scope", methods=["POST"])
+@_json_error_guard
+def api_geo_scope():
+    """The band the entered markets imply.
+
+    The adtini tab guessed this client-side off which checkbox was ticked, so
+    three cities read "Single city" -- and the band is the PRICING ANCHOR, not a
+    caption. suggest_geo_scope already answers it off the markets themselves:
+    how many states, how far apart, and whether the clusters touch.
+    """
+    d = request.get_json(silent=True) or {}
+    mk = usable_markets(d.get("markets") or [])
+    state = (d.get("state") or "").strip()
+    nat = bool(d.get("national_demand"))
+    if nat or not mk:
+        return jsonify({"band": "nationwide", "confidence": "high", "markets": 0,
+                        "reason": "No geographic areas, so demand is national."
+                                  if not nat else "Priced on national demand."})
+    out = suggest_geo_scope(mk, state, nat, "")
+    return jsonify({"band": out.get("suggested") or "single_city",
+                    "confidence": out.get("confidence") or "",
+                    "reason": out.get("reason") or "",
+                    "markets": len(mk)})
 
 
 @app.route("/api/county_seats", methods=["POST"])

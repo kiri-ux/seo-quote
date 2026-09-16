@@ -15,10 +15,23 @@
 <nav class="rail">
   <a href="/adtini" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M12 3 3 10v11h6v-6h6v6h6V10z"/></svg></a>
-  <a href="/adtini/forecast?new=1" title="New quote" aria-label="New quote">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/>
-    <path d="M11 8h2v3h3v2h-3v3h-2v-3H8v-2h3z"/></svg></a>
+  <div class="railnew">
+    <button type="button" class="railbtn" id="railNew" title="New quote"
+      aria-label="New quote" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M11 8h2v3h3v2h-3v3h-2v-3H8v-2h3z"/></svg></button>
+    <div class="newmenu railmenu" id="railMenu" hidden role="menu">
+      <a href="/adtini/forecast?new=1&amp;product=seo" role="menuitem">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h10l4 4v14H6z" fill="none"
+          stroke="currentColor" stroke-width="2"/><path d="M9 11h8v2H9zm0 4h5v2H9z"/></svg>
+        SEO+</a>
+      <a href="/adtini/forecast?new=1&amp;product=orm" role="menuitem">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7z"
+          fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        ORM</a>
+    </div>
+  </div>
   <a href="/adtini" title="Quotes" aria-label="Quotes" class="mark on">
     <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M6 3h10l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -486,15 +499,25 @@ async function persist(r){
 // THE HEADLINE IS THE BASE TIER, per month. Written after the row is built so
 // it reads the same mapped prices the tiles do -- an older saved quote has no
 // handoff block and printed "—/mo" off it.
+function rankingText(r){
+  const p = (r.result || {}).pricing || {};
+  const rk = (r.result || {}).ranks || {};
+  const nTerms = ((r.kw || {}).all || []).length;
+  const checked = Object.keys(rk).length;
+  const errored = Object.keys(rk).filter(k => rk[k] === '—').length;
+  const ok = Math.max(checked - errored, 0);
+  if (p.pct_not_ranking == null || !ok) return 'ranking unmeasured';
+  const ranking = ok - Math.round(ok * (p.pct_not_ranking || 0) / 100);
+  return `${ranking} of ${ok} ranking`
+    + (ok < nTerms ? ` · ${nTerms - ok} unmeasured` : '');
+}
 function headlineOf(r){
   const p = (r.result || {}).pricing || {};
   const pkg = H(r).package || {};
   const lead = pkg.base != null ? pkg.base : pkg[Object.keys(pkg)[0]];
   const n = ((r.kw || {}).all || []).length;
   return `${money(lead)}/mo · ${n} term${n === 1 ? '' : 's'}`
-    + ` · ${(p.total_volume || 0).toLocaleString()}/mo`
-    + (p.pct_not_ranking == null ? ' · ranking unmeasured'
-                                 : ` · ${100 - p.pct_not_ranking}% ranking`);
+    + ` · ${(p.total_volume || 0).toLocaleString()}/mo · ${rankingText(r)}`;
 }
 
 // EVERY QUOTE WE HAVE IS ONE OF THESE ROWS. The saved quotes on the SEO and
@@ -969,38 +992,40 @@ function plannerView(r, brief){
   } else {
     const inTier = o => ['base', 'intermediate', 'advanced'].filter(k => (o || {})[k] != null)
       .map(k => `${k} ${money(o[k])}`).join(' · ');
-    add('Core SEO', inTier(h.core_seo_price));
-    add('AI Search', h.ai_search_pct
-      ? inTier(h.ai_search_price) + ` · ${pct(h.ai_search_pct)} of Core SEO`
-      : 'not on this quote');
+    // THE STRATEGIES THIS QUOTE IS FOR, as chosen on the form.
+    const strat = asList((r.data || {}).strategy);
+    add('Strategy', strat.join(' · '));
+    // Core SEO is the whole quote when it is the only strategy -- the tiles
+    // above already carry those three numbers.
+    const coreOnly = strat.length === 1 && /^core seo$/i.test(strat[0]);
+    if (!coreOnly) add('Core SEO', inTier(h.core_seo_price));
+    // A workstream this quote did not buy has nothing to report.
+    if (h.ai_search_pct)
+      add('AI Search', inTier(h.ai_search_price) + ` · ${pct(h.ai_search_pct)} of Core SEO`);
     const sug = (r.result || {}).addon || {};
-    add('Add-on markets', h.addon_markets
-      ? `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
+    if (h.addon_markets)
+      add('Add-on markets', `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
         + (h.addon_market_discount_pct ? ` · ${pct(h.addon_market_discount_pct)} off` : '')
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
-           : (sug.basis ? ` · ${sug.basis}` : ''))
-      : (sug.basis ? `none · ${sug.basis}` : 'none'));
+           : (sug.basis ? ` · ${sug.basis}` : '')));
     const rk = (r.result || {}).ranks || {};
+    const nTerms = (kw.all || []).length;
     const checked = Object.keys(rk).length;
     const errored = Object.keys(rk).filter(k => rk[k] === '—').length;
+    const okChecks = Math.max(checked - errored, 0);
     const wide = ((r.kw || {}).all || []).filter(x => x.vol_scope === 'broader').length;
-    add('Keywords', `${(kw.all || []).length} terms`);
+    add('Keywords', `${nTerms} terms`);
     add('Measured demand', `${(p.total_volume || 0).toLocaleString()}/mo`
       + (wide ? ` · ${wide} answered from a wider area` : ''));
+    // THE DENOMINATOR IS WHAT WAS MEASURED, NOT THE WHOLE LIST. One term
+    // checked, one term ranking and eleven failed checks printed "100% of 12
+    // terms ranking" -- a figure that reads as a client already at the top.
+    const ranking = okChecks - Math.round(okChecks * (p.pct_not_ranking || 0) / 100);
     add('Ranking', p.pct_not_ranking == null
       ? (errored ? `unmeasured — ${errored} of ${checked} rank checks errored`
                  : 'unmeasured')
-      : `${100 - p.pct_not_ranking}% of ${checked} terms ranking`);
-    if (p.min_term_months && (h.package || {}).base)
-      add('Total for a ' + p.min_term_months + '-month term',
-          money(h.package.base * p.min_term_months));
-    const md = marginDollars(r);
-    const mdText = ['base', 'intermediate', 'advanced'].filter(k => md[k] != null)
-      .map(k => money(md[k])).join(' / ');
-    add('Margin', pct(h.margin_pct) + (mdText ? ` · ${mdText}` : ''));
-    const ph = h.partner_hard_cost || {};
-    add('Partner cost', ['base', 'intermediate', 'advanced'].filter(k => ph[k] != null)
-      .map(k => money(ph[k])).join(' / '));
+      : `${ranking} of ${okChecks} measured term${okChecks === 1 ? '' : 's'} ranking`
+        + (okChecks < nTerms ? ` · ${nTerms - okChecks} unmeasured` : ''));
   }
   const shot = (r.result || {}).shot;
   const all = (r.kw || {}).all || [];
@@ -1025,7 +1050,7 @@ function plannerView(r, brief){
       ${list}
       <div class="pvserp">
         <h5>SERP</h5>
-        ${shot ? `<a href="${shot}" target="_blank" rel="noopener">`
+        ${shot ? `<a href="${shot}" target="_blank" rel="noopener" class="shotwrap">`
                  + `<img class="shotimg" src="${shot}" alt="SERP capture"></a>`
                : '<p class="hint" style="margin:0">Not captured</p>'}
         ${((r.result || {}).serp || {}).kw
@@ -1067,7 +1092,7 @@ function runSettings(r){
   const val = {
     brand: d.brand, site: d.site, business_desc: d.business_desc,
     focus: d.focus, negatives: d.negatives,
-    geo: geoOf(d), scope: BANDS[bandOf(d)], country: d.country,
+    geo: geoOf(d), scope: BANDS[(r.band || bandOf(d))], country: d.country,
     national: YN(d.national), expand: YN(d.expand), lock: YN(d.lock),
     industry: d.industry, strategy: d.strategy, goals: d.goals,
     past: YN(d.past), past_details: d.past_details, spend: d.spend,
@@ -1122,11 +1147,18 @@ function resultsHtml(r, full){
   // DETAILS IS THE OVERVIEW. The whole quote -- its keyword list, its capture,
   // its settings and both payloads -- belongs to the run that made it, and runs
   // live on History.
-  if (!full) return `
+  if (!full) {
+    const strat = asList((r.data || {}).strategy);
+    return `
   <details class="qres" open>
-    <summary>Quote results &mdash; ${esc(r.result.headline || '')}</summary>
+    <summary>Quote results<span class="qsum">`
+      + `<span class="qsumq">${esc(headlineOf(r))}</span>`
+      + (strat.length
+         ? `<span class="qsums">${strat.map(x => `<b>${esc(x)}</b>`).join('')}</span>` : '')
+      + `</span></summary>
     <div class="qbody">${tileRow}${plannerView(r, true)}</div>
   </details>`;
+  }
   return `
     <div class="qbody">${tileRow}
       ${plannerView(r)}
@@ -1443,12 +1475,61 @@ document.addEventListener('click', e => {
 });
 // ENTER, OR A COMMA. The exception is City: a city carries its state after a
 // comma -- "Boca Raton, FL" is one value, not two -- so that box takes Enter.
-const chipCommit = inp => {
-  const v = inp.value.trim().replace(/,$/, '').trim();
-  if (!v) { inp.value = ''; return; }
-  inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+// A PASTED LIST IS A LIST. Copying a services line out of a brief and dropping
+// it in made ONE chip reading "Electrical Services, Kohler Generator
+// Installation, ..." -- which is then one keyword, crossed with every market,
+// and it matches nothing. Split on the separators a pasted list actually uses.
+const chipCommit = (inp, raw) => {
+  const box = inp.closest('.box');
+  // City is the exception: "Boca Raton, FL" is one place, not two.
+  const whole = box && box.dataset.chips === 'city';
+  const text = raw == null ? inp.value : raw;
+  const parts = whole ? [text] : String(text).split(/[,;\t\r\n]+|\s+\u2022\s+/);
+  const have = new Set((box ? chipsOf(box) : []).map(x => x.toLowerCase()));
+  let added = 0;
+  parts.forEach(part => {
+    // Trailing punctuation rides along on the last item of a pasted sentence.
+    const v = String(part).trim().replace(/[.,;]+$/, '').trim();
+    if (!v || have.has(v.toLowerCase())) return;
+    have.add(v.toLowerCase());
+    inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+    added++;
+  });
   inp.value = '';
+  return added;
 };
+// Paste commits immediately: the text never lands in the field as one blob.
+document.addEventListener('paste', e => {
+  const inp = e.target;
+  if (!inp.classList || !inp.classList.contains('chipin')) return;
+  const text = (e.clipboardData || window.clipboardData || {}).getData
+    ? (e.clipboardData || window.clipboardData).getData('text') : '';
+  if (!text) return;
+  const box = inp.closest('.box');
+  if (inp.dataset.pick) {
+    // A pick box takes only list values, so a paste is matched against the
+    // list rather than typed in as free text.
+    e.preventDefault();
+    const all = LISTS[inp.dataset.pick] || [];
+    const have = new Set(chipsOf(box).map(x => x.toLowerCase()));
+    let hit = 0;
+    String(text).split(/[,;\t\r\n]+/).forEach(part => {
+      const want = part.trim().replace(/[.,;]+$/, '').trim().toLowerCase();
+      if (!want) return;
+      const m = all.find(v => String(v).toLowerCase() === want);
+      if (!m || have.has(want)) return;
+      have.add(want);
+      inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(m)} <b>&times;</b></span>`);
+      hit++;
+    });
+    inp.value = '';
+    picksDraw(inp);
+    return;
+  }
+  if (box && box.dataset.chips === 'city' && !/[\t\r\n;]/.test(text)) return;
+  e.preventDefault();
+  chipCommit(inp, text);
+});
 // A PICK BOX TAKES ONLY WHAT IS IN THE LIST. Industry has to match an RZ
 // category exactly or the pricing rule never fires, and Strategy and Campaign
 // Goals are what the order form accepts -- so free text is dropped in favour
@@ -1738,7 +1819,9 @@ function bandOf(d){
   if (d.national || d.g_country || !geoOf(d).length) return 'nationwide';
   if (d.g_state && asList(d.state).length) return 'statewide';
   if (d.g_county && asList(d.county).length) return 'contiguous_region';
-  return 'single_city';
+  // Three cities is not one city. The server refines this; the fallback must
+  // not assert the cheapest anchor on a multi-market quote.
+  return geoOf(d).length > 1 ? 'contiguous_region' : 'single_city';
 }
 function stateOf(d){
   const st = asList(d.state)[0] || '';
@@ -1755,6 +1838,11 @@ const countryOf = d => (asList(d.countries)[0] || d.country || 'United States');
 const codeOf = d => COUNTRY_CODE[countryOf(d)] || 'US';
 
 function kbLoad(r){
+  // SEED TERMS ARE PRODUCT/VERTICAL FOCUS. Opening the builder read a stale
+  // r.data.focus, so the panel showed six lowercased terms from the last build
+  // while the form above it held eight the planner had just typed.
+  const typed = collect(formOf(r)).focus;
+  if (typed && typed.length) r.data.focus = typed.slice();
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
@@ -1762,10 +1850,35 @@ function kbLoad(r){
   kbScopeNote(r);
   kbDraw(r);
 }
+// THE BAND IS READ OFF THE MARKETS. bandOf() only knows which checkbox is
+// ticked, so three cities came back "Single city" -- and the band picks the
+// pricing anchor, so that is a wrong price, not a wrong caption. The server
+// already answers it: how many states, how far apart, do the clusters touch.
+async function resolveBand(r){
+  const d = r.data, g = geoOf(d);
+  const key = `${bandOf(d)}|${g.join("|")}|${stateOf(d)}|${d.national ? 1 : 0}`;
+  if (r._bandKey === key) return r.band || bandOf(d);
+  try {
+    const got = await post('/api/geo_scope',
+      {markets: g, state: stateOf(d), national_demand: bandOf(d) === 'nationwide'});
+    r._bandKey = key;
+    r.band = got.band || bandOf(d);
+    r.bandWhy = got.reason || '';
+    r.bandSure = got.confidence || '';
+  } catch (e) {
+    r._bandKey = key; r.band = bandOf(d); r.bandWhy = ''; r.bandSure = '';
+  }
+  return r.band;
+}
 function kbScopeNote(r){
   const d = r.data, g = geoOf(d);
-  $('kbScopeNote').textContent = `Geo scope: ${BANDS[bandOf(d)]}`
-    + (g.length ? ` \u00b7 ${g.join(', ')}` : '');
+  const paint = () => {
+    $('kbScopeNote').textContent = `Geo scope: ${BANDS[r.band || bandOf(d)]}`
+      + (g.length ? ` \u00b7 ${g.join(', ')}` : '')
+      + (r.bandSure && r.bandSure !== 'high' && r.bandWhy ? ` \u00b7 ${r.bandWhy}` : '');
+  };
+  paint();
+  resolveBand(r).then(paint);
 }
 function kbDraw(r){
   r = r || ROWS[ROW];
@@ -1880,7 +1993,7 @@ async function expandSeeds(r, d){
   const base = {brand: d.brand, domain: d.site, industry: (d.industry || []).join(', '),
                 business_desc: d.business_desc || '', seeds: (d.focus || []).slice(),
                 geo_values: geoOf(d), state: stateOf(d),
-                national_demand: bandOf(d) === 'nationwide', cfg: r.over || {}};
+                national_demand: (r.band || bandOf(d)) === 'nationwide', cfg: r.over || {}};
   const [site, ind, rank] = await Promise.all([
     post('/api/site_services', base).catch(() => ({})),
     post('/api/expand_services', base).catch(() => ({})),
@@ -1932,7 +2045,7 @@ $('kbBuild').onclick = async () => {
                 business_desc: d.business_desc || '',
                 goal: (d.goals || [])[0] || '',
                 phrase_geos: r.phrase_geos || [],
-                national_demand: bandOf(d) === 'nationwide', cfg: r.over || {},
+                national_demand: (r.band || bandOf(d)) === 'nationwide', cfg: r.over || {},
                 country: codeOf(d)};
   // NO SEEDS IS NOT A BUILD. The server answers "At least one keyword/vertical
   // is required", which is a 400 the planner should never have to read -- and
@@ -1948,6 +2061,8 @@ $('kbBuild').onclick = async () => {
     }
   }
   $('kbBuild').disabled = true;
+  // The list is built for the band it will be priced in.
+  await resolveBand(r);
   try {
     if (d.expand) {
       $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
@@ -1976,13 +2091,13 @@ $('kbBuild').onclick = async () => {
       ref = await post('/api/refine', Object.assign({}, base, {
         ultra: kw.ultra, competitive: kw.competitive, long_tail: kw.long_tail,
         site_terms: kw.site_terms || [], market_vocab: kw.market_vocab || [],
-        market_pool: kw.market_pool || [], geo_scope: bandOf(d),
+        market_pool: kw.market_pool || [], geo_scope: (r.band || bandOf(d)),
         industry: (d.industry || []).join(', '),
         // WHICH SEEDS THE TOOL PROPOSED. Without it the refine pass cannot tell
         // its own suggestions from the planner's own list, and exempts both.
         suggested: (r.suggested || []).slice(),
         ranked: (r.rankedSeeds || []).slice(),
-        national_demand: bandOf(d) === 'nationwide'}));
+        national_demand: (r.band || bandOf(d)) === 'nationwide'}));
     } catch (e) { $('saved').textContent = 'Refine failed — raw list kept. ' + e.message; }
     r.kw = ref && ref.all ? ref : kw;
     // THE BUILD CAN DISCOVER NATIONAL DEMAND. The refine pass says so, and the
@@ -2240,7 +2355,10 @@ async function generate(){
     $('saved').textContent = 'Build the keyword list first — Keyword Builder.';
     show('kw'); return;
   }
-  const geo = geoOf(d), st = stateOf(d), band = bandOf(d);
+  const geo = geoOf(d), st = stateOf(d);
+  // The band is the pricing anchor, so it is resolved against the markets
+  // before anything is priced -- not guessed off which checkbox is ticked.
+  const band = await resolveBand(r);
   const industry = (d.industry || []).join(', ');
   const common = {geo_values: geo, state: st, industry, geo_scope: band,
                   national_demand: band === 'nationwide', brand: d.brand, domain: d.site,
@@ -2423,6 +2541,24 @@ draw();
 fromQuery();
 loadClient();
 listsReady();
+
+// THE RAIL'S + IS THE SAME CHOICE AS THE BUTTON ON THE QUOTES PAGE. It went
+// straight to a blank form that had to be both products at once.
+(function(){
+  const b = document.getElementById('railNew'), m = document.getElementById('railMenu');
+  if (!b || !m) return;
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    m.hidden = !m.hidden;
+    b.setAttribute('aria-expanded', String(!m.hidden));
+  });
+  document.addEventListener('click', () => {
+    if (!m.hidden) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !m.hidden) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); }
+  });
+})();
 </script>
 </body>
 </html>
