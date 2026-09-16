@@ -19,7 +19,8 @@ import os, json, base64, statistics, time, re, threading, io, hashlib
 import contextlib, copy, functools
 import gc
 import html
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+import contextvars
 from html.parser import HTMLParser
 import requests
 from flask import Flask, render_template, request, jsonify, send_file, g
@@ -39,17 +40,35 @@ app = Flask(__name__)
 # the provider calls it made, so the builder can print the breakdown. (Kiri,
 # 2026-09-16)
 _T = threading.local()
+# MARKS FOLLOW THE WORK INTO THREADS. _T is thread-local, and nine call sites
+# fan out to a pool -- per-city volume lookups, per-keyword SERP checks -- so a
+# mark recorded on a worker landed in the worker's _T and was never seen. On an
+# eight-market build that was most of the time: "refine 127.4s" with 44s
+# named. The list lives in a context variable, and the executor below copies
+# the context into each task, so a worker appends to the request's own list.
+# (2026-09-16)
+_MARKS = contextvars.ContextVar("timing_marks", default=None)
+
+
+class ThreadPoolExecutor(_ThreadPoolExecutor):
+    """The stock executor, with the caller's context carried into each task."""
+    def submit(self, fn, /, *args, **kwargs):
+        return super().submit(contextvars.copy_context().run, fn, *args, **kwargs)
 
 
 def _t_start():
     _T.t0 = time.time()
     _T.marks = []
+    _MARKS.set(_T.marks)
 
 
 def t_mark(label, t0):
     """Record one provider call's duration against the request being served."""
     try:
-        _T.marks.append((label, int((time.time() - t0) * 1000)))
+        marks = _MARKS.get(None)
+        if marks is None:
+            marks = _T.marks
+        marks.append((label, int((time.time() - t0) * 1000)))
     except Exception:
         pass
 
@@ -107,7 +126,7 @@ def _timing_end(resp):
             _cur = rolled.get(_k) or [0, 0]
             rolled[_k] = [_cur[0] + int(_v or 0), _cur[1] + 1]
         # Slowest first: the one worth attacking is the one at the front.
-        top = sorted(rolled.items(), key=lambda kv: -kv[1][0])[:6]
+        top = sorted(rolled.items(), key=lambda kv: -kv[1][0])[:12]
         if marks:
             resp.headers["X-Elapsed-Steps"] = ascii_header(
                 "; ".join(f"{k}={v[0]}" for k, v in top)) or ""
@@ -7518,7 +7537,14 @@ def choose_build_markets(markets, state, seeds, home_hint=""):
     live = [c for c, v in (pick.get("kept") or []) if int(v or 0) >= floor]
     facts = {"by_size": [[c, city_size(c, state)] for c in by_size],
              "seed_markets": n, "seeds": len(probe), "measured": list(pool)}
-    if not live and len(by_size) > len(pool):
+    # ONLY ON EVIDENCE. The probe reads geo-suffixed text ("hearing aids
+    # greenwood ms"), which in a small town is zero everywhere -- the case the
+    # Ooten Law note documents. Zero everywhere says nothing about whether a
+    # smaller market would do better, and widening on it re-probed the whole
+    # list and handed back the old five. ENT Consultants: six seeds, five
+    # markets, no saving. Widen when the chosen markets MEASURED and fell
+    # short; keep the size order when nothing measured at all. (2026-09-16)
+    if not live and not pick.get("nothing_measured") and len(by_size) > len(pool):
         wide = {}
         cities = pick_grid_cities(list(by_size), state, cap, probe_term=probe,
                                   explain=wide, home_hint=home_hint)

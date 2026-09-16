@@ -86,6 +86,24 @@ sites = re.findall(r"^\s*(?:resp = )?requests\.post\(\s*\n?\s*\"https://api\.ant
 check("every model site posts through requests.post (13 found)", len(sites) >= 9, True)
 check("only the wrapper calls the saved original", src.count("_requests_post("), 2)
 
+# A mark recorded on a pool worker lands on the request that spawned it.
+import time as _t
+with app.app.test_request_context("/api/refine"):
+    app._t_start()
+    def worker(i):
+        t0 = _t.time()
+        app.t_mark("worker.%d" % i, t0)
+        return i
+    with app.ThreadPoolExecutor(max_workers=3) as ex:
+        list(ex.map(worker, range(3)))
+        futs = [ex.submit(worker, 10 + i) for i in range(2)]
+        [f.result() for f in futs]
+    got = sorted(m[0] for m in app._T.marks)
+check("pool marks reach the request", got,
+      ["worker.0", "worker.1", "worker.10", "worker.11", "worker.2"])
+check("the executor the build uses is the carrying one",
+      app.ThreadPoolExecutor.__module__ == "app", True)
+
 print()
 print("FAILED: %d" % len(FAIL) if FAIL else "ok all")
 sys.exit(1 if FAIL else 0)

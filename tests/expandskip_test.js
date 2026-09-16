@@ -43,6 +43,21 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('didNotCallTheThreeSources',
       !hits.some(u => /site_services|expand_services|rank_seeds/.test(u)), hits.join('|'));
 
+  // The legend offers a way to run it anyway, and that runs the three sources.
+  say('legendOffersExpandAgain', await p.$('#paneKw .seedhint #expandAgain') != null);
+  hits.length = 0;
+  await p.click('#paneKw .seedhint #expandAgain');
+  await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent)
+                                && !/already ran/.test(document.getElementById('saved').textContent),
+                          null, {timeout: 15000});
+  say('expandAgainCallsTheSources', hits.some(u => /expand_services/.test(u)), hits.join('|'));
+  say('expandAgainClearsTheOffer', await p.$('#paneKw .seedhint #expandAgain') == null);
+  // Back to a skipped state for the next check.
+  await p.evaluate(() => { ROWS[ROW].expandDone = ['hearing aids', 'tonsillectomy']; });
+  await p.click('#kbBuild');
+  await p.waitForFunction(() => /already ran/.test(document.getElementById('saved').textContent),
+                          null, {timeout: 15000});
+
   // A changed seed list runs it again, and the skip line goes away.
   await p.evaluate(() => { ROWS[ROW].data.focus.push('Nasal Polyp Removal');
     chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), ROWS[ROW].data.focus.slice()); });

@@ -345,7 +345,7 @@ function timingLine(){
     // leaves the other 100s unexplained on the line.
     const subs = (x.steps || []).slice()
       .sort((a, b) => (b.ms || 0) - (a.ms || 0))
-      .filter(st => st.ms >= 1000).slice(0, 4)
+      .filter(st => st.ms >= 1000).slice(0, 6)
       .map(st => `${st.step} ${(st.ms / 1000).toFixed(1)}s`);
     return subs.length ? `${name} ${secs} (${subs.join(', ')})` : `${name} ${secs}`;
   });
@@ -1521,10 +1521,21 @@ function seedLegend(r){
     ? ` \u00b7 ${dropped} removed \u2014 removed suggestions are not proposed again.`
       + ' <button type="button" class="lnkbtn" id="seedRestore">Restore them</button>'
     : ' \u00b7 Remove one and it is not proposed again.';
-  if (!added) return dropped ? rule.replace(/^ \u00b7 /, '') : '';
+  // A SKIPPED EXPANSION CAN BE RUN AGAIN FROM HERE. The status line says it
+  // already ran; this is the way to ask for it anyway.
+  const again = (r.expandNote && r.expandNote.skipped)
+    ? ' <button type="button" class="lnkbtn" id="expandAgain">Expand again</button>' : '';
+  if (!added) return (dropped ? rule.replace(/^ \u00b7 /, '') : '') + again;
   return `${focus.length - added} from Product/Vertical Focus \u00b7 ${added} added by `
-       + 'expansion, shown dashed.' + rule;
+       + 'expansion, shown dashed.' + rule + again;
 }
+document.addEventListener('click', e => {
+  if (!e.target.closest('#expandAgain') || ROW == null) return;
+  const r = ROWS[ROW];
+  r.expandDone = [];
+  r.expandNote = null;
+  $('kbBuild').click();
+});
 
 // REMOVING IS PERMANENT, SO THERE IS A WAY BACK. Eight good ENT service lines
 // went out with one weak one, and re-typing them was the only route.
@@ -2602,6 +2613,10 @@ $('kbBuild').onclick = async () => {
       // doing nothing. (2026-09-16)
       r.expandNote = {skipped: true, dropped: (r.seedDrop || []).length};
     }
+    // The legend carries the Expand-again offer, so it follows every outcome:
+    // an expansion that ran and added nothing must take the offer down.
+    { const sh = document.querySelector('#paneKw .seedhint');
+      if (sh) sh.innerHTML = seedLegend(r); }
     if (!base.keywords.length) {
       $('saved').textContent = 'Nothing to build on — their site and the industry '
         + 'proposed no terms. Add a seed term.';
