@@ -287,6 +287,29 @@ function httpSays(status, txt){
   const one = s.replace(/\s+/g, ' ').trim().slice(0, 140);
   return one ? `HTTP ${status} — ${one}` : `HTTP ${status}`;
 }
+// A RESTART IS NOT A FAILED REQUEST. The host answers 502/503/504 for the
+// twenty or thirty seconds it takes to come back up, and every button pressed
+// in that window reported a dead end the planner could do nothing about. Wait
+// and ask again, the way the proposal download already did.
+function isWaking(err){
+  return /did not answer \((?:502|503|504)\)/.test(String((err && err.message) || err));
+}
+async function postWait(url, body, method, say){
+  let last = null;
+  for (const wait of [0, 4000, 10000, 20000]) {
+    if (wait) {
+      if (say) say(`Server restarting \u2014 retrying in ${wait / 1000}s\u2026`);
+      await new Promise(z => setTimeout(z, wait));
+    }
+    try {
+      return await post(url, body, method);
+    } catch (e) {
+      last = e;
+      if (!isWaking(e)) throw e;
+    }
+  }
+  throw last;
+}
 async function post(url, body, method){
   const r = await fetch(url, {method: method || 'POST',
                               headers:{'Content-Type':'application/json'},
@@ -430,7 +453,7 @@ function rowHtml(r, i){
   // Details first and switching after is a flash of the wrong page. Only the
   // link sets this: opening a run by hand must not pin the tab for every later
   // redraw, which hid the Details pane and everything on it.
-  const tab = r.startTab === 'history' ? 'history' : 'details';
+  const tab = (r.tab === 'history' || r.startTab === 'history') ? 'history' : 'details';
   return `
   <div class="prod" data-row="${i}">
     <h4>${r.name} &ndash; <u>${r.qid}</u>
@@ -1627,6 +1650,9 @@ $('prods').addEventListener('click', e => {
   const t = e.target.closest('.ptabs button');
   if (t) {
     const prod = t.closest('.prod');
+    // Remembered on the row, so the next redraw comes back to the same pane.
+    const ri = +prod.dataset.row;
+    if (ROWS[ri]) ROWS[ri].tab = t.dataset.tab;
     prod.querySelectorAll('.ptabs button').forEach(x => x.classList.toggle('on', x === t));
     prod.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
     return;
@@ -2406,8 +2432,9 @@ async function autoSerp(r, d, ranks, say){
   // the task, a task that expired and one that is simply still rendering --
   // three different things to do next, reported as one.
   try {
-    const q = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
-      state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1});
+    const q = await postWait('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
+      state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1},
+      null, say);
     if (!q || !q.task_id)
       return {error: q && q.error ? q.error : 'the capture service took no task'};
     // THE EXHIBIT IS LANDSCAPE. Trimmed and cropped server-side so the stored
@@ -2420,9 +2447,16 @@ async function autoSerp(r, d, ranks, say){
       say(`Capturing the SERP for “${kw}”… ${i * 3}s`
           + (last ? ` · ${last}` : ''));
       await new Promise(z => setTimeout(z, 3000));
-      const f = await post('/api/serp_fetch', {task_id: task.task_id, device: task.device,
-        keyword: kw, width: task.width, height: task.height, scale: task.scale,
-        trim: true, aspect: 16 / 9});
+      let f;
+      try {
+        f = await post('/api/serp_fetch', {task_id: task.task_id, device: task.device,
+          keyword: kw, width: task.width, height: task.height, scale: task.scale,
+          trim: true, aspect: 16 / 9});
+      } catch (e) {
+        // A restart mid-poll is not the capture failing; keep polling.
+        if (isWaking(e)) { last = 'server restarting'; continue; }
+        throw e;
+      }
       if (f.ready && f.data_url)
         return {kw, basis, img: f.data_url, area: q.loc_scope ? q.loc_used : ''};
       if (f.error && !f.gone) return {error: f.error, kw};
@@ -2430,7 +2464,9 @@ async function autoSerp(r, d, ranks, say){
       // mid-capture leaves the task behind, and the answer to that is a new
       // task rather than three minutes of asking about the old one.
       if (f.gone) {
-        if (requeued++) return {error: `the capture task for “${kw}” keeps being lost`, kw};
+        if (requeued++)
+          return {error: `the capture task for “${kw}” keeps being lost`
+                         + (f.why ? ` — ${f.why}` : ''), kw};
         say(`Capture lost — queueing it again for “${kw}”…`);
         task = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
           state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1});
@@ -2482,7 +2518,8 @@ async function generate(){
     let ranked = 0, errored = 0;
     for (let i = 0; i < all.length; i += 10) {
       const batch = all.slice(i, i + 10).map(x => ({kw: x.kw}));
-      const rk = await post('/api/rankings', Object.assign({}, common, {batch}));
+      const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
+                                null, say);
       (rk.results || []).forEach(x => {
         ranks[String(x.kw).toLowerCase()] = x.pos;
         table.push(x);
@@ -2794,6 +2831,7 @@ async function recheckRanks(i){
     return;
   }
   if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+  const BATCH = 5;
   const common = Object.assign({
     geo_values: geoOf(d), state: stateOf(d),
     industry: (d.industry || []).join(', '), geo_scope: band,
@@ -2802,20 +2840,35 @@ async function recheckRanks(i){
   }, (r.result.rankReq || {}).common || {});
   let done = 0, stillBad = 0;
   try {
-    for (let n = 0; n < todo.length; n += 10) {
-      say(`${done}/${todo.length}`);
-      const batch = todo.slice(n, n + 10).map(kw => ({kw}));
-      const rk = await post('/api/rankings', Object.assign({}, common, {batch}));
-      (rk.results || []).forEach(x => {
-        const key = String(x.kw).toLowerCase();
-        ranks[key] = x.pos;
-        const at = (r.result.table || []).findIndex(
-          t => String(t.kw).toLowerCase() === key);
-        if (at >= 0) r.result.table[at] = x; else (r.result.table = r.result.table || []).push(x);
-        if (x.error) stillBad++;
-        done++;
-      });
+    // PASSES, NOT ONE SWEEP. Each request runs under a budget the platform
+    // enforces at about thirty seconds, so on a shared CPU some lookups in a
+    // batch run out of time and come back as failures -- which is why pressing
+    // the button repeatedly kept reducing the count. The pass repeats itself
+    // while it is still making progress, so one press finishes the job.
+    let left = todo.slice();
+    for (let pass = 0; pass < 6 && left.length; pass++) {
+      const before = left.length;
+      const failed = [];
+      for (let n = 0; n < left.length; n += BATCH) {
+        say(`${done}/${todo.length}` + (pass ? ` \u00b7 pass ${pass + 1}` : ''));
+        const batch = left.slice(n, n + BATCH).map(kw => ({kw}));
+        const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
+                                  null, say);
+        (rk.results || []).forEach(x => {
+          const key = String(x.kw).toLowerCase();
+          ranks[key] = x.pos;
+          const at = (r.result.table || []).findIndex(
+            t => String(t.kw).toLowerCase() === key);
+          if (at >= 0) r.result.table[at] = x;
+          else (r.result.table = r.result.table || []).push(x);
+          if (x.error) failed.push(x.kw); else done++;
+        });
+      }
+      left = failed;
+      // No movement means the next pass would fail the same way.
+      if (left.length >= before) break;
     }
+    stillBad = left.length;
     // The denominator moved, so the price moves with it.
     const tbl = r.result.table || [];
     const errored = tbl.filter(x => x.error).length;
@@ -2839,16 +2892,21 @@ async function recheckRanks(i){
       pct_not_ranking: pct,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
     say('repricing\u2026');
-    const price = await post('/api/price', req);
+    const price = await postWait('/api/price', req, null, say);
     r.result.pricing = price;
     r.result.priceReq = req;
     r.result.headline = headlineOf(r);
-    // The history row prints resp, not the quote's headline, so a reprice that
-    // only updated the quote left the row showing the old ladder.
-    (r.history || []).forEach(h => {
-      if (h && h.quote === r.result) { h.resp = r.result.headline; }
-    });
-    if (r.history && r.history[0] && !r.history[0].quote) {
+    // THE OPEN RUN RENDERS ITS OWN COPY OF THE QUOTE. A quote reloaded from
+    // storage deserialises history[n].quote as a SEPARATE object from r.result,
+    // so rechecking updated the row's own quote and the expanded run went on
+    // drawing the ranks it was saved with -- "4 of 11 measured, 10 unmeasured"
+    // beside a keyword list showing four failures. Point the run being looked
+    // at back at the quote that was just rechecked. (2026-09-16, Kiri)
+    const at = r.openRun == null ? 0 : r.openRun;
+    if (r.history && r.history[at]) {
+      r.history[at].quote = r.result;
+      r.history[at].resp = r.result.headline;
+    } else if (r.history && r.history[0]) {
       r.history[0].quote = r.result;
       r.history[0].resp = r.result.headline;
     }

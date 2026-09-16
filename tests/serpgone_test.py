@@ -28,7 +28,10 @@ def fetch(task):
 r = fetch({"status_code": 40401, "status_message": "Task Not Found.", "result": None})
 check("notFound.isGone", r.get("gone"), True)
 check("notFound.notReady", r.get("ready"), False)
-check("notFound.saysWhy", "no longer exists" in str(r.get("error")), True)
+check("notFound.saysWhy", "no longer exists" in str(r.get("why")), True)
+# post() throws on any body carrying an "error" key, so a gone task must NOT
+# use that field -- the poll never reached the branch that re-queues it.
+check("notFound.notAnErrorBody", "error" in r, False)
 
 # By message alone, without the code.
 r2 = fetch({"status_code": 20000, "status_message": "Task Not Found.", "result": None})

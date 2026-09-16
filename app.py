@@ -15104,7 +15104,7 @@ def api_serp_fetch():
             if (str(t0.get("status_code")) in ("40401", "40400")
                     or "not found" in str(msg).lower()):
                 return jsonify({"ready": False, "gone": True,
-                                "error": "the queued capture no longer exists"})
+                                "why": "the queued capture no longer exists"})
             return jsonify({"ready": False, "status": msg})
         login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
         tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
@@ -15143,8 +15143,7 @@ def api_serp_fetch():
         _code = getattr(getattr(e, "response", None), "status_code", None)
         if _code in (404, 410):
             return jsonify({"ready": False, "gone": True,
-                            "error": "That queued SERP task no longer exists — "
-                                     "generate a new one."})
+                            "why": "that queued capture no longer exists"})
         # screenshot endpoint returns an error while the task is still running;
         # treat as not-ready rather than a hard failure so the poll continues
         return jsonify({"ready": False, "status": f"processing ({e})"})
