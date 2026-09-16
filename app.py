@@ -5363,8 +5363,10 @@ RULES:
    - Law firm: not only "car accident settlement" but "personal injury lawyer", "accident attorney".
    - Home services: not only "drain cleaning" but "plumber", "plumbing company".
    Rules to apply to them:
-   - At least TWO practitioner terms when the business has a recognised practitioner name, and at
-     least one of them belongs in the ULTRA tier. These are the money terms.
+   - These are usually the HIGHEST-VOLUME terms available, so they LEAD: at least one belongs in
+     the ULTRA tier, ahead of any procedure. They are not a quota to satisfy at the end of the
+     list. One token practitioner term followed by twenty procedures is the failure this rule
+     exists to prevent.
    - Include the ABBREVIATION and the spelled-out form as SEPARATE services when both are really
      searched - "ENT" and "ear nose and throat doctor" are different keywords with different
      result pages, the same way rule 2h treats wording variants.
@@ -16202,8 +16204,25 @@ Industry: {industry or "(not given)"}
 The keyword list ALREADY covers these services:
 {", ".join(have[:60]) if have else "(nothing yet)"}
 
-Name up to {n} ADDITIONAL service lines a business of this type sells that people
-search for, and that are NOT already covered above. Rules:
+Name up to {n} ADDITIONAL terms this business could rank for that are NOT already
+covered above.
+
+WHAT MAKES A GOOD ONE IS SEARCH VOLUME, AND VOLUME LIVES IN THE GENERAL TERMS.
+The broad term for what this business IS and what it plainly DOES outsells every
+specific procedure underneath it, usually by an order of magnitude - "ENT" and
+"ear nose and throat doctor" against "nasal polyp removal"; "dentist" against
+"onlay"; "plumber" against "sump pump float replacement"; "personal injury
+lawyer" against "slip and fall deposition". Those general terms are also the ones
+a client most wants to own, and the ones the near-me and best-of forms are built
+from.
+
+So LEAD WITH THE GENERAL TERMS and spend the tail on specifics - and only on
+specifics people really go looking for by name, like "wisdom teeth removal" or
+"root canal", never on a procedure that is merely listed on their services page.
+A list that opens with a narrow procedure has spent its best slots on its
+smallest terms, which is the most common way this answer goes wrong.
+
+Rules:
 1. A DIFFERENT service, never a synonym of one already listed. "haul away
    service" when "junk removal" is present is a synonym — do not return it.
    This applies WITHIN your own answer too: {n} slots means {n} different things
@@ -16216,7 +16235,9 @@ search for, and that are NOT already covered above. Rules:
 2. The phrase a customer types, 2-4 words, no city, no brand.
 3. Only services this business plausibly sells. If the website pages or the
    description name something, prefer it.
-4. Order by how commonly the service is bought, most common first.
+4. Order by EXPECTED SEARCH VOLUME, biggest first - not by how often the job is
+   performed, and not by how central it feels to the business. General before
+   specific, every time.
 5. USE THE CLIENT'S OWN NOUN FOR WHAT THEY SELL, taken from the description
    above — not the category's noun. A description saying "single-family rental
    homes" means the searched noun is "homes for rent" / "houses for rent" /
@@ -16239,6 +16260,9 @@ search for, and that are NOT already covered above. Rules:
    - Dental office: "dentist", "family dentist" — not only cleanings and crowns.
    - Law firm: "personal injury lawyer", "accident attorney".
    - Home services: "plumber", "electrician", "roofer".
+   Under rule 4 these LEAD the answer: they are the general, high-volume terms, so they belong
+   at the top, ahead of every procedure. They are not a quota to fill at the end -- one token
+   practitioner term followed by twenty procedures is the failure this rule exists to prevent.
    These are NOT caught by rule 1: an abbreviation and its spelled-out form are
    different keywords with different result pages, so "ENT" and "ear nose and
    throat doctor" both earn a slot. They are NOT excluded by rule 3 either — a
