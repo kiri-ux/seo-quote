@@ -77,5 +77,27 @@ bad += check("the overlay moved the price", tuned["base"] != plain["base"], True
 bad += check("the next quote is back on the file", after["base"], plain["base"])
 bad += check("session untouched by a quote", app.CFG, before)
 
+
+# THE INDUSTRY GAP FLOOR IS A PER-QUOTE DECISION. In a thin market it refuses
+# every proposed service line for measuring what that market measures, and the
+# planner has to be able to lower it for one quote without moving the defaults.
+with app.app.test_request_context("/"):
+    _floor = app.CFG["expand_min_volume"]
+    with app.cfg_overlay({"expand_min_volume": 5}):
+        bad += check("industry gap floor overrides per quote",
+                     app.CFG["expand_min_volume"], 5)
+    bad += check("industry gap floor restored after the quote",
+                 app.CFG["expand_min_volume"], _floor)
+    with app.cfg_overlay({}):
+        bad += check("industry gap floor does not leak to the next quote",
+                     app.CFG["expand_min_volume"], _floor)
+
+# The route that reads the floor honours a per-quote cfg block.
+_src = open(os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "app.py"), encoding="utf-8").read()
+_dec = _src.split('def api_expand_services')[0].rsplit('@app.route("/api/expand_services"', 1)[-1]
+bad += check("expand_services honours a per-quote cfg", "_per_quote_cfg" in _dec, True)
+
 print(f"\n{'FAILED' if bad else 'PASSED'} — {bad} failed")
 raise SystemExit(1 if bad else 0)
+

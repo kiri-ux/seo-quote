@@ -1118,6 +1118,10 @@ def _cfg_apply(d, target):
         if key in d and d[key] not in (None, ""):
             target[key] = caster(d[key])
     for key, caster in [("service_min_volume", int), ("service_max_swaps", int),
+                        # The industry gap floor is a per-quote decision in a
+                        # thin market: it can refuse eighteen good service lines
+                        # for measuring 10/mo in a town that runs at 10/mo.
+                        ("expand_min_volume", int),
                         ("service_upgrade_ratio", float),
                         ("metro_no_suffix_share", float),
                         ("store_intent_tier_boost", float),
@@ -16466,6 +16470,7 @@ def api_rank_seeds():
 
 @app.route("/api/expand_services", methods=["POST"])
 @_json_error_guard
+@_per_quote_cfg
 def api_expand_services():
     """Service lines the seed list is missing — proposed, then measured."""
     d = request.get_json(force=True) or {}

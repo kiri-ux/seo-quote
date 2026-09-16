@@ -36,8 +36,23 @@ nav.rail a.mark.on{background:var(--orange);color:#fff}
   justify-content:center;color:#E8F0FB;background:none;border:0;cursor:pointer;padding:0}
 .railbtn svg{width:20px;height:20px;fill:currentColor}
 .railbtn:hover{background:rgba(255,255,255,.14);color:#fff}
-.newmenu.railmenu{top:0;left:calc(100% + 8px);right:auto}
-@media(max-width:700px){.newmenu.railmenu{top:calc(100% + 6px);left:0}}
+/* THE FLYOUT IS NOT A RAIL ICON. nav.rail a forces a 38px square and pale
+   blue text, and the menu's links sit inside nav.rail -- so they came out as
+   greyed-out icon boxes with the labels crushed against them. */
+.newmenu.railmenu{
+  top:0;left:calc(100% + 10px);right:auto;min-width:210px;padding:6px;
+}
+nav.rail .newmenu a{
+  width:auto;height:auto;border-radius:10px;justify-content:flex-start;
+  color:var(--text);font-size:13.5px;font-weight:600;padding:10px 12px;gap:10px;
+}
+nav.rail .newmenu a:hover,nav.rail .newmenu a:focus{
+  background:var(--gold);color:#3A2508;
+}
+nav.rail .newmenu svg{width:18px;height:18px;flex:0 0 18px;fill:currentColor}
+@media(max-width:700px){
+  .newmenu.railmenu{top:calc(100% + 6px);left:0}
+}
 body{padding-left:54px}
 @media (max-width:700px){
   nav.rail{flex-direction:row;width:100%;height:46px;bottom:auto;padding:4px 8px;gap:4px;
@@ -249,8 +264,13 @@ form{padding:18px 22px 22px}
 .f.wide{grid-column:1 / -1}
 form label,.lab{font-size:12.5px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px}
 .i{
+  /* INLINE-FLEX, NOT INLINE. Width and height do nothing on an inline box, so
+     the badge collapsed to a faint mark anywhere its label was not itself a
+     flex container -- which is every label outside a <form>, including the
+     keyword builder's toggles. */
+  display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;
   width:15px;height:15px;border-radius:50%;background:var(--blue-lt);color:#fff;
-  font-size:10px;font-weight:700;line-height:15px;text-align:center;flex:0 0 auto;
+  font-size:10px;font-weight:700;line-height:1;text-align:center;flex:0 0 auto;
   cursor:help;font-family:Georgia,serif;font-style:italic;
 }
 form input[type=text],form input[type=number],form textarea,form select,.box{

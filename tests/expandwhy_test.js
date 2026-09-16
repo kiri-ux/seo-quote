@@ -29,6 +29,26 @@ say('failed.namesTheRightOne', /their site could not be read/.test(t), t);
 t = fn({added: [], found: {site: 5, industry: 2, ranks: 0}, fails: {}, dupes: true});
 say('dupes.saysSo', /already/.test(t), t);
 
+// THE FLOOR IS THE USUAL ANSWER IN A THIN MARKET, and it is a number the
+// planner can change rather than a dead end.
+t = fn({added: [], found: {site: 0, industry: 0, ranks: 0}, fails: {},
+        floorInfo: {proposed: 18, rejected: 18, floor: 20, thin: true, typical: 10}});
+say('floor.countsProposed', /proposed 18 service lines/.test(t), t);
+say('floor.countsDropped', /18 measured under the 20\/mo floor/.test(t), t);
+say('floor.namesTheMarket', /this market runs about 10\/mo/.test(t), t);
+say('floor.saysWhatToDo', /Config/.test(t), t);
+say('floor.notBlamingTheIndustryPass', !/the industry returned none/.test(t), t);
+
+// One proposal reads as one.
+t = fn({added: [], found: {}, fails: {},
+        floorInfo: {proposed: 1, rejected: 1, floor: 20, typical: 0}});
+say('floor.singular', /proposed 1 service line;/.test(t), t);
+
+// A missing input is named rather than blamed on the pass.
+t = fn({added: [], found: {site: 0, industry: 0, ranks: 0}, fails: {},
+        floorInfo: {proposed: 0, rejected: 0, missing: ['Industry', 'Business description']}});
+say('missing.named', /no industry or business description to go on/.test(t), t);
+
 // No expansion at all is silent.
 say('off.silent', fn(null) === '', JSON.stringify(fn(null)));
 
@@ -39,5 +59,5 @@ say('buildLineUsesIt', /Built \$\{\(r\.kw\.all \|\| \[\]\)\.length\} terms\.`\s*
 say('countsCollected', /const found = \{site:/.test(s));
 say('failuresCollected', /fails\[key\] =/.test(s));
 
-console.log(bad ? 'failed=' + bad : 'ok=13 failed=0');
+console.log(bad ? 'failed=' + bad : 'ok=20 failed=0');
 process.exit(bad ? 1 : 0);

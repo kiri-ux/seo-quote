@@ -1802,6 +1802,7 @@ const CFGSPEC = [
     ['grid_state_suffix','State suffix','auto, 1 = "auto insurance fairfax va", 0 = "auto insurance fairfax"'],
     ['service_min_volume','Service min volume','a service under this many searches/mo is replaced by a stronger term in the same topic; 0 = off'],
     ['service_upgrade_ratio','Service upgrade ratio','replace a service when an unused term in the same topic measures this many × more; 0 = off'],
+    ['expand_min_volume','Industry gap floor','Expand drops a proposed service line measuring under this many searches/mo; lower it in a thin market'],
     ['service_max_swaps','Max service swaps','ceiling across both checks'],
     ['store_intent_tier_boost','Store-intent tier boost','how much a shop term outweighs a product term of the same size; 1 = raw volume only'],
    ]},
@@ -2221,6 +2222,17 @@ async function expandSeeds(r, d){
   const found = {site: (site.services || []).length,
                  industry: (ind.services || []).length,
                  ranks: (rank.services || []).length};
+  // WHAT THE FLOOR REFUSED. The industry pass proposes, then MEASURES, then
+  // drops anything under expand_min_volume -- so in a thin market it can
+  // propose twenty good service lines and hand back none, which read on screen
+  // as "the industry returned none". It did not; the floor did. The endpoint
+  // has said so all along and nothing here read it. (2026-09-16, Kiri)
+  const floorInfo = {proposed: Number(ind.proposed) || 0,
+                     rejected: (ind.rejected || []).length,
+                     floor: Number(ind.floor) || 0,
+                     thin: !!ind.thin_market,
+                     typical: Number(ind.market_typical) || 0,
+                     missing: ind.missing_inputs || []};
   const have = new Set((d.focus || []).map(x => String(x).toLowerCase()));
   const rows = [];
   const take = (res, src) => (res.services || []).forEach(x => {
@@ -2248,7 +2260,7 @@ async function expandSeeds(r, d){
   r.seedSrc = Object.assign({}, r.seedSrc || {}, SEED_SRC);
   r.suggested = (r.suggested || []).concat(kept.map(x => x.term.toLowerCase()));
   r.rankedSeeds = kept.filter(x => x.ranked).map(x => x.term.toLowerCase());
-  return {added: kept.map(x => x.term), rows: kept, regions, found, fails,
+  return {added: kept.map(x => x.term), rows: kept, regions, found, fails, floorInfo,
           dupes: rows.length === 0 && (found.site + found.industry + found.ranks) > 0,
           held: Math.max(0, rows.length - kept.length)};
 }
@@ -3150,6 +3162,18 @@ function expandWhy(note){
   if (note.dupes)
     return ' \u00b7 Expansion added nothing \u2014 everything it proposed is already'
          + ' on the list.';
+  // THE FLOOR IS THE USUAL ANSWER IN A SMALL MARKET, and it is a number the
+  // planner can change in Config rather than a dead end.
+  const fi = note.floorInfo || {};
+  if (fi.rejected > 0)
+    return ` \u00b7 Expansion proposed ${fi.proposed} service line`
+         + `${fi.proposed === 1 ? '' : 's'}; ${fi.rejected} measured under the `
+         + `${fi.floor}/mo floor and were dropped`
+         + (fi.typical ? ` \u2014 this market runs about ${fi.typical}/mo` : '')
+         + '. Lower "Industry gap floor" in Config to keep them.';
+  if ((fi.missing || []).length)
+    return ` \u00b7 Expansion added nothing \u2014 no `
+         + `${fi.missing.join(' or ').toLowerCase()} to go on.`;
   const bits = [];
   if (empty.length) bits.push(`${empty.map(k => names[k]).join(', ')} returned none`);
   if (broke.length) bits.push(`${broke.map(k => names[k]).join(', ')} could not be read`);
