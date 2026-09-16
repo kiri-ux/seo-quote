@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "/tmp/patch43.py", line 17, in <module>
-    assert old2 in s, 'base payload'
-           ^^^^^^^^^
-AssertionError: base payload
