@@ -96,6 +96,52 @@ check("and inventing a title is forbidden",
 check("near-me terms are still configured",
       int(app.CFG.get("near_me_terms") or 0) > 0, True)
 
+# ------------------------------------- AND THE OTHER EXPANSION, WHICH I MISSED
+# There are TWO expansion prompts and they are reached from different screens.
+# claude_expand_services is stage1b_refine's, on the SEO quote's refine path.
+# claude_industry_services is /api/expand_services, which is what the adtini
+# Keyword Builder's Expand button calls — and that is the screen Brendan's ENT
+# list came off. Putting the rule in one of them fixed the path nobody was
+# looking at. Both are asserted here so the next person cannot repeat it.
+rule7 = ""
+m7 = re.search(r"^7\. THE PRACTITIONER.*?(?=\nReturn ONLY JSON)", SOURCE, re.S | re.M)
+if m7:
+    rule7 = m7.group(0)
+
+check("the gap-finder has a practitioner rule too", bool(rule7), True)
+check("it is reachable from /api/expand_services",
+      "claude_industry_services(" in SOURCE
+      and "def api_expand_services" in SOURCE, True)
+for term in ("ENT", "audiologist", "dentist", "plumber"):
+    check("gap-finder rule names %r" % term, term in rule7, True)
+
+# Two of that prompt's own rules would otherwise suppress these, so the rule has
+# to say so explicitly: rule 1 forbids synonyms (an abbreviation reads as one)
+# and rule 3 allows only services the business sells (a job title does not read
+# as a service). Naming them is the whole reason the rule works there.
+check("it overrides the synonym rule", "NOT caught by rule 1" in rule7, True)
+check("it overrides the services-only rule",
+      "NOT excluded by rule 3" in rule7, True)
+check("it defers to the client's-own-noun rule", "Rule 5 still applies" in rule7, True)
+check("a retailer is exempted here too",
+      "retailer" in rule7 and "Do not invent one" in rule7, True)
+
+# Both prompts are built by real calls with no key, so a rule that does not
+# survive its f-string fails here rather than in front of a partner.
+saved_key = os.environ.pop("ANTHROPIC_API_KEY", None)
+check("gap-finder returns nothing without a key",
+      app.claude_industry_services("ENT Consultants", "entoxford.com", "Medical",
+                                   "An ENT practice", [], ["hearing aids"], "oxford, ms"),
+      [])
+if saved_key is not None:
+    os.environ["ANTHROPIC_API_KEY"] = saved_key
+
+# The floor is the other thing that can hide a good term in a thin market: ENT
+# in Oxford MS may genuinely measure under it. Editable per quote, which is the
+# lever if the practitioner terms come back measured but withheld.
+check("the gap floor is per-quote editable",
+      '("expand_min_volume", int)' in SOURCE, True)
+
 # ------------------------------------------------- topics no longer wait
 # claude_topics reads seeds, the business description and the brand. None is
 # touched between the expansion and the point the answer is first needed, so it
