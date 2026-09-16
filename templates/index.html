@@ -2586,9 +2586,21 @@ function preflightAdvice(inp){
 
 // ---------- STEP 1 ----------
 $('step1').addEventListener('click', async()=>{
+  // Reset every press: only the locked-list rebuild below turns it on, and
+  // it must not survive into the next, ordinary build.
+  ST.forceFresh=false;
   if($('kwlock')&&$('kwlock').checked&&ST.kw&&ST.kw.all){
     if(!confirm('The keyword list is locked.\n\nRebuilding pulls fresh search data and will likely produce a different list — which can move the quote. Replace the list you reviewed?')) return;
     $('kwlock').checked=false;
+    // THE DIALOG PROMISED FRESH DATA, SO THE REQUEST HAS TO ASK FOR IT.
+    // Model passes are cached on their inputs for six hours, which is the
+    // point — an ordinary re-press of Step 1 should not re-ask nine questions
+    // whose answers cannot have changed. But this path is the one where the
+    // operator was told rebuilding "pulls fresh search data and will likely
+    // produce a different list", and a cached rebuild would hand back the
+    // identical list while the confirm said otherwise. Only this branch sets
+    // it; every other press stays cached. (2026-09-16)
+    ST.forceFresh=true;
   }
   const inp=collectInputs(); if(!inp) return;
   // THE CALIBRATION BASELINE IS ABOUT TO BE OVERWRITTEN. The panel compares the
@@ -2682,6 +2694,7 @@ $('step1').addEventListener('click', async()=>{
   try{ aimAtList(true); requestAnimationFrame(()=>aimAtList(false)); }catch(e){}
   try{
     const kw=await postJSON('/api/keywords',{
+      fresh:!!ST.forceFresh,
       keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
       domain:inp.domain, business_desc:inp.business_desc, negatives:inp.negatives});
     ST.kw=kw;
@@ -2704,7 +2717,8 @@ $('step1').addEventListener('click', async()=>{
       note.innerHTML=`<span style="width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--velocity,#378ADD);border-radius:50%;display:inline-block;animation:spin .8s linear infinite"></span> Refining with AI — cleaning off-target terms, reading the site, correcting volume…`;
       const p1=$('p1'); if(p1) p1.appendChild(note);
       try{
-        const ref=await postJSON('/api/refine',{phrase_geos:ST.inputs.phrase_geos||[],
+        const ref=await postJSON('/api/refine',{fresh:!!ST.forceFresh,
+          phrase_geos:ST.inputs.phrase_geos||[],
           keywords:inp.keywords, geo_values:inp.geo_values, state:inp.state, brand:inp.brand,
           domain:inp.domain, business_desc:inp.business_desc,
           industry:inp.industry||'', geo_scope:inp.geo_scope, goal:inp.goal||'',
