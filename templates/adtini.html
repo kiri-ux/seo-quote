@@ -1767,6 +1767,28 @@ document.addEventListener('keydown', e => {
     picksClose(box);
   }
 }, true);
+// BACKSPACE POPS THE LAST CHIP. Every one of these boxes is a multi-value
+// question and the only way out of a wrong pick was the x, which means leaving
+// the keyboard to aim at a 9px target. The legacy form has had this since
+// August; this one never got it.
+//
+// Empty input only, so it never eats a character someone is still editing, and
+// it CLICKS THE X rather than removing the chip itself. That x handler carries
+// the standing-rejection bookkeeping -- a removed proposal goes on seedDrop so
+// the expansion stops offering it -- plus the legend refresh. Re-implementing
+// the removal here would silently skip both. (2026-09-16)
+document.addEventListener('keydown', e => {
+  const inp = e.target;
+  if (e.key !== 'Backspace' || !inp.classList
+      || !inp.classList.contains('chipin') || inp.value !== '') return;
+  const box = inp.closest('.box');
+  if (!box) return;
+  const chips = [...box.querySelectorAll('.chip')];
+  if (!chips.length) return;
+  e.preventDefault();
+  const x = chips[chips.length - 1].querySelector('b');
+  if (x) x.click();
+});
 function load(form, data){
   form.querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k, v = data[k];
