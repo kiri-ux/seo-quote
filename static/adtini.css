@@ -476,7 +476,7 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
    Top of the page, which is where the query and the local pack sit. */
 .pvsplit{grid-template-columns:1.5fr 1fr}
 @media(max-width:900px){.pvsplit{grid-template-columns:1fr}}
-.pvserp{align-self:start}
+.pvserp{align-self:stretch}
 .pvserp .shotwrap{
   aspect-ratio:16/9;width:100%;overflow:hidden;border-radius:8px;
   border:1px solid var(--line);background:var(--card);
@@ -485,7 +485,13 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
   width:100%;height:100%;object-fit:cover;object-position:top center;
   border:0;border-radius:0;
 }
-.pvkw .pvscroll{max-height:none}
+/* THE LIST IS AS TALL AS THE CAPTURE, AND SCROLLS. height:0 keeps the keyword
+   panel out of the row-height calculation, so the 16:9 capture sets the height
+   and min-height:100% stretches the list to match it. */
+.pvsplit{align-items:stretch}
+.pvkw{height:0;min-height:100%;overflow:hidden}
+.pvkw .pvscroll{flex:1;min-height:0;overflow-y:auto;max-height:none}
+.pvserp{align-self:stretch}
 
 /* a run expands in place: the row IS the expander, no second header above it */
 .histrow{cursor:pointer}

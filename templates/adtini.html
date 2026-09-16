@@ -2387,17 +2387,28 @@ async function autoSerp(r, d, ranks, say){
       state: stateOf(d), device: 'desktop', width: 1100, height: 1700, scale: 2});
     if (!q || !q.task_id)
       return {error: q && q.error ? q.error : 'the capture service took no task'};
-    for (let i = 0; i < 40; i++) {
-      say(`Capturing the SERP for “${kw}”… ${i * 3}s`);
+    // THE EXHIBIT IS LANDSCAPE. Trimmed and cropped server-side so the stored
+    // image is the 16:9 frame the proposal uses, not a 2,000px column that the
+    // page then has to squash.
+    let last = '';
+    for (let i = 0; i < 60; i++) {
+      // The provider says what it is waiting on; discarding that left three
+      // minutes of silence and then one flat sentence.
+      say(`Capturing the SERP for “${kw}”… ${i * 3}s`
+          + (last ? ` · ${last}` : ''));
       await new Promise(z => setTimeout(z, 3000));
       const f = await post('/api/serp_fetch', {task_id: q.task_id, device: q.device,
-        keyword: kw, width: q.width, height: q.height, scale: q.scale});
-      if (f.ready && f.data_url) return {kw, basis, img: f.data_url};
+        keyword: kw, width: q.width, height: q.height, scale: q.scale,
+        trim: true, aspect: 16 / 9});
+      if (f.ready && f.data_url)
+        return {kw, basis, img: f.data_url, area: q.loc_scope ? q.loc_used : ''};
       if (f.error) return {error: f.error, kw};
       // The task expired; asking again cannot help.
       if (f.gone) return {error: `the capture task for “${kw}” expired`, kw};
+      if (f.status) last = f.status;
     }
-    return {error: `Google did not answer within 2 minutes for “${kw}”`, kw};
+    return {error: `no capture after 3 minutes for “${kw}”`
+                   + (last ? ` — the provider last said: ${last}` : ''), kw};
   } catch (e) {
     return {error: e.message, kw};
   }
@@ -2666,7 +2677,20 @@ async function downloadProposal(i){
     brand: d.brand || '', business_desc: d.business_desc || '',
     geo_values: geoOf(d), state: stateOf(d),
     strategy: asList(d.strategy).join(', '),
-    kw: r.kw || {}, table: (r.result || {}).table || [],
+    kw: r.kw || {},
+    // ALL OF THEM. The table is the keyword set being proposed; a set with
+    // holes in it reads as a smaller engagement than the one being quoted.
+    all_keywords: true,
+    table: (function(){
+      const by = {};
+      ((r.result || {}).table || []).forEach(x => {
+        by[String(x.kw || '').trim().toLowerCase()] = x;
+      });
+      return ((r.kw || {}).all || []).map(x => {
+        const k = String(x.kw || '').trim().toLowerCase();
+        return by[k] || {kw: x.kw, pos: null, ranked_top: false, error: false};
+      });
+    })(),
     signals: (r.result || {}).signals || null,
     pricing: (r.result || {}).pricing || {},
     perf_on: false,
@@ -2786,7 +2810,15 @@ async function recheckRanks(i){
     r.result.pricing = price;
     r.result.priceReq = req;
     r.result.headline = headlineOf(r);
-    if (r.history && r.history[0]) r.history[0].quote = r.result;
+    // The history row prints resp, not the quote's headline, so a reprice that
+    // only updated the quote left the row showing the old ladder.
+    (r.history || []).forEach(h => {
+      if (h && h.quote === r.result) { h.resp = r.result.headline; }
+    });
+    if (r.history && r.history[0] && !r.history[0].quote) {
+      r.history[0].quote = r.result;
+      r.history[0].resp = r.result.headline;
+    }
     await persist(r);
     draw();
     const m = document.querySelector(`[data-rkmsg="${i}"]`);

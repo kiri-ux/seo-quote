@@ -17949,13 +17949,27 @@ def _proposal_rows(d):
             # nobody checked. Three of Ski Barn's rows were 40101 errors and
             # would have gone to the client as three terms they are missing
             # from. Left out entirely and counted separately. (2026-08-19)
-            if live.get("error") or live.get("queued") or live.get("expired"):
-                continue
-            pos = live.get("pos")
-            if not live:
-                continue
-            if not isinstance(pos, int) and pos not in ("Not Found", None):
-                continue
+            # EVERY TERM IN THE LIST, ON REQUEST. The rule below leaves out a
+            # term nobody checked, because "Not Found" is a positive claim that
+            # the client does not rank for it. The adtini tab asks for the whole
+            # list anyway: the table is the proposed keyword set, and a set with
+            # holes in it reads as a shorter engagement than the one being
+            # quoted. An unchecked term reads "Not Found" there, which is the
+            # trade the planner is making knowingly. (2026-09-16, Kiri)
+            if not d.get("all_keywords"):
+                if live.get("error") or live.get("queued") or live.get("expired"):
+                    continue
+                pos = live.get("pos")
+                if not live:
+                    continue
+                if not isinstance(pos, int) and pos not in ("Not Found", None):
+                    continue
+            else:
+                pos = live.get("pos")
+                if live.get("error") or live.get("queued") or live.get("expired"):
+                    pos = None
+                if not isinstance(pos, int) and pos not in ("Not Found", None):
+                    pos = None
             rows.append({
                 "kw": kw,
                 "rank": (str(pos) if isinstance(pos, int) else "Not Found"),
