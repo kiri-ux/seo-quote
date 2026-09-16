@@ -2240,6 +2240,29 @@ def provider_city(city):
 def loc_string(markets, state):
     for m in usable_markets(markets) or []:
         city, st = parse_market(m, state)
+        # A COUNTY IS NOT A LOCATION THE PROVIDER CAN TARGET.
+        #
+        # The county-to-seat conversion has existed for weeks on the KEYWORD
+        # side: geo_forms puts "knoxville tn" in front of "knox county tn" and
+        # the volume probe picks between them. The LOCATION side never got it.
+        # So a quote whose markets were four Tennessee counties built
+        # "Knox County,Tennessee,United States" -- not a place in DataForSEO's
+        # database, so the call fell back to the widest thing that resolved and
+        # every term came home marked "answered from a wider area" against the
+        # United States. 28 of 28 terms, one measured number in the whole list,
+        # and the volume component priced on almost nothing.
+        #
+        # Nothing on screen said the county was the reason, which is the same
+        # silent-failure shape as "New York City" below it. Substitute the seat
+        # and the probe measures in a place that exists, which is what the
+        # keyword side already assumed had happened. (2026-09-15, Kiri)
+        if county_key(m, state):
+            seats = county_cities(m, state, limit=1)
+            if seats:
+                city, st = parse_market(seats[0], st or state)
+                # county_cities indexes in lower case; the provider strings
+                # everywhere else in this function are title case.
+                city = (city or "").title()
         st = provider_city_state(city) or st
         city = provider_city(city)
         # A two-letter fallback state reaches here unexpanded when the market

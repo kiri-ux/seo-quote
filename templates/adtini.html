@@ -31,12 +31,12 @@
 
 <div class="pagehead">
   <span class="burger">&#9776;</span>
-  <h2>Forecast – Order <u>56305</u> – Sage Dental</h2>
+  <h2>Forecast</h2>
   <span class="build">{{ build }}</span>
 </div>
 
 <div class="wrap">
-  <p class="crumbs"><a href="/adtini">Workflow Page</a> &rsaquo; <a href="/adtini">56305</a> &rsaquo; Forecast</p>
+  <p class="crumbs"><a href="/adtini">Workflow Page</a> &rsaquo; Forecast</p>
   <h3 class="products">Products</h3>
   <div id="prods"></div>
 </div>
@@ -659,10 +659,13 @@ function fromQuery(){
     return;
   }
   if (client || order) {
-    document.querySelector('.pagehead h2').innerHTML =
-      `Forecast &ndash; Order <u>${esc(order || '—')}</u> &ndash; ${esc(client || '')}`;
+    if (client) {
+      document.querySelector('.pagehead h2').textContent = `Forecast – ${client}`;
+    }
     document.querySelector('.crumbs').innerHTML =
-      `<a href="/adtini">Workflow Page</a> &rsaquo; <a href="/adtini">${esc(order || '')}</a> &rsaquo; Forecast`;
+      `<a href="/adtini">Workflow Page</a> &rsaquo; `
+      + (client ? `<span class="crumbc">${esc(client)}</span> &rsaquo; ` : '')
+      + `Forecast`;
   }
   if (!review) return;
   const i = ROWS.findIndex(r => r.kind === review);

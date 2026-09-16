@@ -70,6 +70,7 @@ nav.tabs a.on{background:var(--page);color:var(--navy)}
 .wrap{max-width:none;margin:0;padding:20px 26px 70px}
 .crumbs{font-size:12.5px;color:var(--muted);margin:0 0 14px}
 .crumbs a{color:var(--navy);font-weight:600}
+.crumbs .crumbc{color:var(--text);font-weight:600}
 
 /* ---- controls row (workflow page) -------------------------------------- */
 .controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
