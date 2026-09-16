@@ -2592,6 +2592,12 @@ $('kbBuild').onclick = async () => {
       r.expandDone = seedSig(d.focus);
     } else if (!d.expand) {
       r.expandNote = null;
+    } else {
+      // SKIPPED, AND SAID SO. expandDone rides in the saved payload and the
+      // note does not, so a reopened quote rebuilt on the same seeds ran no
+      // expansion and printed nothing about it -- which reads as Expand
+      // doing nothing. (2026-09-16)
+      r.expandNote = {skipped: true, dropped: (r.seedDrop || []).length};
     }
     if (!base.keywords.length) {
       $('saved').textContent = 'Nothing to build on — their site and the industry '
@@ -3475,6 +3481,9 @@ $('prods').addEventListener('click', e => {
 // part the planner can act on.
 function expandWhy(note){
   if (!note) return '';
+  if (note.skipped)
+    return ' \u00b7 Expansion already ran on these seeds'
+         + (note.dropped ? ` \u00b7 ${note.dropped} removed.` : '.');
   if (note.added && note.added.length)
     return ` \u00b7 ${note.added.length} terms added by expansion.`;
   const f = note.found || {}, bad = note.fails || {};
