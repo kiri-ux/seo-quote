@@ -216,6 +216,44 @@ check("and the observed failure is written down",
 check("the old floor-as-target wording is gone",
       "At least TWO practitioner terms" not in SOURCE, True)
 
+# ------------ THREE RULES UPSTREAM WERE OVERRULING RULE 7 (2026-09-16, third go)
+# After two prompt changes the live ENT quote still returned exactly ONE provider
+# term out of eight. Reading the assembled prompt in order, rather than editing
+# rules in isolation, showed why: rule 7 is correct and it is SEVENTH, behind two
+# instructions that contradict it and one worked example that demonstrates the
+# failure. All three are fixed here, and pinned, because each is an easy revert.
+RULES = flat(SOURCE)
+
+# 1. Rule 2 required 2-4 words, which forbids the entire class rule 7 asks for.
+#    The parser's word gate was fixed earlier; the rule TELLING the model not to
+#    produce them never was.
+check("rule 2 allows a one-word term",
+      "The phrase a customer types: ONE to four words" in RULES, True)
+check("and says so is not too short", "One word is not too short" in RULES, True)
+check("naming the one-word practitioners",
+      "dentist, plumber, electrician, audiologist, ENT" in RULES, True)
+check("the 2-4 word floor is gone",
+      "The phrase a customer types, 2-4 words" not in RULES, True)
+
+# 2. Rule 1's worked example was eight procedures and no practitioner -- a
+#    demonstration of a good answer that taught the exact failure. An example
+#    beats an instruction six rules later.
+check("rule 1's dental example opens with the practitioner",
+      "A dental list runs dentist, family dentist, cleanings" in RULES, True)
+check("and points at what it opens with",
+      "Note what that list OPENS with: the practitioner, then the procedures" in RULES, True)
+
+# 3. The instruction now sits in the ask, which is read before any rule, instead
+#    of only at rule 7 of 7.
+check("the ask names the practitioner family",
+      "THE MOST GENERAL TERM OF ALL IS WHAT THE PRACTITIONER IS CALLED" in ASK, True)
+check("it asks for three or four of them",
+      "RETURN THREE OR FOUR OF THOSE, at the top, before any procedure" in ASK, True)
+check("and names the observed failure",
+      "one provider term and then twenty procedures" in ASK, True)
+check("rule 7 is still there to carry the detail",
+      "7. THE PRACTITIONER, NOT ONLY THE PROCEDURE" in SOURCE, True)
+
 # ------------------------------------ THE PARSER ATE THE ANSWER (2026-09-16)
 # Rule 7 asks for ENT, audiologist, dentist, plumber. The gap-finder's own parse
 # then required 2-5 words, so every single-word term was discarded before
