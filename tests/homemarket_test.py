@@ -136,6 +136,59 @@ check("but it still counts as measured, so a widen can happen",
 out, exp = probe({"greenwood, ms": FLOOR})
 check("exactly the floor ranks", exp.get("ranked_on_demand"), True)
 
+# ------------------------------------- END TO END, WHICH IS WHERE IT GOT OUT
+# The checks above drive pick_grid_cities with one value per city, so they never
+# exercise the thing that actually broke: `scored` SUMS a market's probe terms.
+# Six seeds of pure 10/mo noise sum to 60 and clear a floor of 20 with no real
+# reading behind them, and the first version of this fix compared the floor
+# against that sum. It passed every test above and changed nothing in
+# production. So the floor is compared against the PEAK term, and this drives
+# choose_build_markets, which is the call the build actually makes.
+SEEDS = ["hearing aids", "pediatric ent care", "pediatric ent surgery",
+         "tonsillectomy", "chronic sinusitis treatment",
+         "minimally-invasive sinus procedures"]
+
+
+def build(fn):
+    real = app.dfs_post
+    app.dfs_post = lambda path, payload, *a, **kw: {"tasks": [{
+        "status_code": 20000,
+        "result": [{"keyword": k, "search_volume": fn(str(k).lower())}
+                   for k in ((payload[0] or {}).get("keywords") or [])]}]}
+    try:
+        return app.choose_build_markets(list(MARKETS), "MS", SEEDS, HOME)
+    finally:
+        app.dfs_post = real
+
+
+cities, pick = build(lambda k: 10 if "greenwood" in k else 0)
+check("e2e: six noise terms do not add up to a measurement",
+      pick.get("ranked_on_demand"), False)
+check("e2e: the home market leads", cities[0], "oxford, ms")
+
+cities, pick = build(lambda k: 10)
+check("e2e: a floor-wide tie still does not rank",
+      pick.get("ranked_on_demand"), False)
+check("e2e: home market leads that too", cities[0], "oxford, ms")
+
+cities, pick = build(lambda k: 0)
+check("e2e: a dead probe leads with the home market", cities[0], "oxford, ms")
+
+# The other direction, which matters just as much: a market with genuine demand
+# must still beat the client's own town.
+cities, pick = build(lambda k: 90 if "greenwood" in k else 0)
+check("e2e: a real reading ranks", pick.get("ranked_on_demand"), True)
+check("e2e: and outranks the home market", cities[0], "greenwood, ms")
+
+cities, pick = build(lambda k: 140 if "oxford" in k else (90 if "greenwood" in k else 0))
+check("e2e: the biggest real reading wins", cities[0], "oxford, ms")
+
+# One strong term must not be hidden by five thin ones sharing the market.
+cities, pick = build(lambda k: (90 if "hearing aids" in k else 10) if "greenwood" in k else 0)
+check("e2e: one genuinely strong term is enough to rank a market",
+      pick.get("ranked_on_demand"), True)
+check("e2e: and that market leads", cities[0], "greenwood, ms")
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))
