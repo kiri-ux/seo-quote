@@ -566,6 +566,19 @@ function rankingText(r){
 }
 function headlineOf(r){
   const p = (r.result || {}).pricing || {};
+  // AN ORM QUOTE HAS NO TIER LADDER. Its numbers live on quote.totals, so
+  // reading the SEO package here produced "\u2014/mo \u00b7 0 terms" for every
+  // reputation run.
+  if (r.kind === 'orm') {
+    const t = ((r.result || {}).quote || {}).totals || {};
+    const bits = [];
+    if (t.monthly) bits.push(`${money(t.monthly)}/mo`);
+    if (t.removals_max) bits.push(`${money(t.removals_max)} removals`);
+    if (t.total && !t.monthly) bits.push(`${money(t.total)} total`);
+    const n = (((r.result || {}).quote || {}).lines || []).length;
+    if (n) bits.push(`${n} line${n === 1 ? '' : 's'}`);
+    return bits.join(' \u00b7 ');
+  }
   const pkg = H(r).package || {};
   // ALL THREE TIERS. The lead price alone is the answer to a question nobody
   // asked -- a quote is the ladder, and the row that lists it is where the
@@ -772,7 +785,19 @@ function histRows(r){
     h.push({when: r.built || dateOf(r), resp: r.result.headline || '',
             quote: r.result, first: true});
   }
-  return h;
+  // THE RESPONSE LINE IS DERIVED, NOT REMEMBERED. It was written into storage
+  // as a string, so a run rechecked and repriced under an older build kept
+  // showing the ladder it was first saved with -- "$5,350/mo" beside tiles
+  // reading $3,200 / $4,200 / $5,200. Read it off the quote every time, and
+  // no stored string can disagree with the numbers beside it.
+  return h.map(x => {
+    if (!x || !x.quote) return x;
+    let line = '';
+    try { line = headlineOf(Object.assign({}, r, {result: x.quote})); } catch (e) { line = ''; }
+    // A derived line with no figure in it says less than the stored one.
+    if (!line || !/\d/.test(line)) return x;
+    return Object.assign({}, x, {resp: line});
+  });
 }
 function histHtml(r){
   const h = histRows(r);

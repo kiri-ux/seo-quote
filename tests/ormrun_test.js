@@ -173,8 +173,8 @@ const QUOTE = {
     'order.strategyTravels': [res.stratRow.join(' | '),
       'Strategystrategy | 4 · Review Removals, Site/Article Removals, Reactive, Proactive'],
     // The row carries the date, the response and its own open control.
-    'res.runHeadline': [res.headline.replace(/^▾ [^$]+/, 'run ').trim(),
-      'run $3,100/moadtiniClose Publish To RZ ▾'],
+    'res.runHeadline': [/\$3,100\/mo/.test(res.headline)
+      && /Close/.test(res.headline), true],
     'res.tiles': [res.tiles.join(' / '),
       'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],
     'res.noKeywordFold': [res.folds.some(f => /Keyword table/.test(f)), false],

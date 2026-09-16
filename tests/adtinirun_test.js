@@ -496,8 +496,11 @@ const CFG = {
     // a saved quote reopens off History
     'hist.rows': [hist.rows, 2],
     // The row itself is the expander, and it says so.
+    // The response line is DERIVED from the run's own quote, so a stored string
+    // written by an older build cannot disagree with the numbers beside it.
     'hist.opensThatRun': [hist.headline,
-      '▾ 9/11/26 4:08 PM$6,050/mo · 4 termsadtiniClose Publish To RZ ▾'],
+      '▾ 9/11/26 4:08 PM$6,050 / $7,150 / $8,600/mo · 6 terms · 7,100/mo'
+      + ' · ranking for 4 of 4 terms · 2 unmeasuredadtiniClose Publish To RZ ▾'],
     'hist.openRowMarked': [hist.openedRowMarked, true],
     'hist.noSecondHeader': [hist.noSecondHeader, true],
     'hist.openIsTheWholeQuote': [hist.hasWholeQuote, true],
