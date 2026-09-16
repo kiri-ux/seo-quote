@@ -107,7 +107,7 @@
         <div class="f" data-past><label>Current Spend / Month</label><input type="text" data-k="spend"></div>
         <div class="f" data-past><label class="dl" for="pastReport">&#11015; Current SEO Report</label>
           <input id="pastReport" type="file" hidden
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg">
+            accept=".pptx,.potx,.ppt,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.webp">
           <span class="hint" id="pastReportName"></span></div>
 
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
@@ -1149,27 +1149,182 @@ let ROW = null, VIEW = 'form';
 // same options the legacy tab offers -- typed values drift, and Industry has to
 // match an RZ category exactly or the pricing rule never fires.
 const CHIP_LIST = {industry: 'industries', goals: 'goals', strategy: 'strategies'};
+// WHICH SEEDS THE PLANNER TYPED AND WHICH THE TOOL PROPOSED. Expand merges its
+// suggestions straight into the seed box, where they read as the planner's own
+// list -- so a term the industry pass guessed at looks exactly like a term the
+// client named, and the only way to tell was to remember what you typed.
+let SEED_SRC = {};
 function chipbox(box, list){
   const key = box.dataset.chips;
   const src = (box.closest('#form') && key === 'strategy') ? 'rep_strategies'
             : CHIP_LIST[key];
   const opts = src ? (LISTS[src] || []) : null;
-  box.innerHTML = list.map(v => `<span class="chip">${esc(v)} <b>&times;</b></span>`).join('')
+  // A NATIVE <select> IS THE WRONG CONTROL FOR A 346-ENTRY LIST. It renders in
+  // the OS, so it cannot be styled to match, it has no type-ahead beyond
+  // first-letter jumping, and it closes on every pick -- which on a box that
+  // holds several values means reopening the list once per value.
+  const sug = key === 'seeds' ? SEED_SRC : null;
+  box.innerHTML = list.map(v => {
+    const from = sug ? sug[String(v).toLowerCase()] : null;
+    return from
+      ? `<span class="chip sug" title="Suggested \u2014 ${esc(from)}">${esc(v)} <b>&times;</b></span>`
+      : `<span class="chip">${esc(v)} <b>&times;</b></span>`;
+  }).join('')
+    + `<input class="chipin" type="text" placeholder="add…" autocomplete="off"`
+    + (opts && opts.length ? ` data-pick="${esc(src)}"` : '')
+    + ` style="flex:1;min-width:110px;background:none;border:0;outline:none;`
+    + `font-family:inherit;font-size:13px;padding:2px;min-height:0">`
     + (opts && opts.length
-       ? `<select class="chipsel"><option value="">add…</option>`
-         + opts.map(v => `<option>${esc(v)}</option>`).join('') + '</select>'
-       : '<input class="chipin" type="text" placeholder="add…" style="flex:1;min-width:110px;'
-         + 'background:none;border:0;outline:none;font-family:inherit;font-size:13px;padding:2px;min-height:0">');
+       ? '<span class="pickcar" title="Show all">&#9662;</span><div class="picks" hidden></div>'
+       : '');
 }
-document.addEventListener('change', e => {
-  const sel = e.target.closest('.chipsel');
-  if (!sel || !sel.value) return;
-  const v = sel.value;
-  sel.value = '';
-  if ([...sel.closest('.box').querySelectorAll('.chip')]
-      .some(c => c.firstChild.textContent.trim() === v)) return;
-  sel.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+
+// ------------------------------------------------------- type-ahead picker
+// The panel lives INSIDE the box so a click on it never leaves the field, and
+// the box stays open after a pick: these are multi-value questions and the
+// list is long, so closing on every choice is the expensive part.
+const chipsOf = box => [...box.querySelectorAll('.chip')]
+  .map(c => c.firstChild.textContent.trim());
+
+function picksDraw(inp){
+  const box = inp.closest('.box'), panel = box.querySelector('.picks');
+  if (!panel) return;
+  const all = LISTS[inp.dataset.pick] || [];
+  const q = inp.value.trim().toLowerCase();
+  const taken = new Set(chipsOf(box).map(v => v.toLowerCase()));
+  // Starts-with before contains: typing "der" should reach Dermatology before
+  // it reaches anything that merely has the letters somewhere.
+  const hit = all.filter(v => !taken.has(String(v).toLowerCase()))
+                 .filter(v => !q || String(v).toLowerCase().includes(q))
+                 .sort((a, b) => {
+                   if (!q) return 0;
+                   const A = String(a).toLowerCase().startsWith(q) ? 0 : 1;
+                   const B = String(b).toLowerCase().startsWith(q) ? 0 : 1;
+                   return A - B;
+                 }).slice(0, 60);
+  if (!hit.length) {
+    panel.innerHTML = `<div class="picknone">No match${q ? ' for \u201c' + esc(inp.value.trim()) + '\u201d' : ''}</div>`;
+  } else {
+    panel.innerHTML = hit.map((v, i) =>
+      `<div class="pick${i === 0 ? ' on' : ''}" data-v="${esc(v)}">${mark(String(v), q)}</div>`).join('');
+  }
+  panel.hidden = false;
+  panel.scrollTop = 0;
+}
+function mark(v, q){
+  if (!q) return esc(v);
+  const i = v.toLowerCase().indexOf(q);
+  if (i < 0) return esc(v);
+  return esc(v.slice(0, i)) + '<b>' + esc(v.slice(i, i + q.length)) + '</b>'
+       + esc(v.slice(i + q.length));
+}
+function picksClose(box){
+  const panel = box && box.querySelector('.picks');
+  if (panel) { panel.hidden = true; }
+}
+function picksTake(inp, v){
+  const box = inp.closest('.box');
+  if (!chipsOf(box).some(c => c.toLowerCase() === String(v).toLowerCase()))
+    inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+  inp.value = '';
+  picksDraw(inp);          // stays open, minus what was just taken
+  inp.focus();
+}
+document.addEventListener('input', e => {
+  if (e.target.classList && e.target.classList.contains('chipin') && e.target.dataset.pick)
+    picksDraw(e.target);
 });
+// ONLY ONE PANEL OPEN, EVER. An open list overlays whatever sits below it, so
+// a panel left open on Industry swallowed the click aimed at Strategy and the
+// field underneath simply would not take focus.
+function picksOnly(box){
+  document.querySelectorAll('.picks').forEach(p => {
+    if (!box || p.parentElement !== box) p.hidden = true;
+  });
+}
+// FOCUS DOES NOT OPEN IT. The panel overlays whatever sits below, so opening on
+// focus alone put a 346-entry list on top of Strategy the moment Industry was
+// clicked -- and the next click landed on an option instead of the field. It
+// opens when there is something to narrow: a keystroke, ArrowDown, or the caret.
+document.addEventListener('focusin', e => {
+  const inp = e.target;
+  const box = inp && inp.closest ? inp.closest('.box') : null;
+  picksOnly(box && box.querySelector('.chipin[data-pick]') ? box : null);
+});
+// AIMING AT THE NEXT FIELD CLOSES IT. The panel stays open across picks on
+// purpose, which means it sits over the field below -- and a click aimed at
+// that field would land on an option. Closing as the pointer arrives over
+// another field gets the click to where it was aimed, first time.
+document.addEventListener('mouseover', e => {
+  const t = e.target;
+  if (!t.closest || t.closest('.picks')) return;
+  const box = t.closest('.box');
+  const aim = box || t.closest('input,textarea,select,button,.yn,label');
+  if (!aim) return;
+  // Never while they are typing in it -- the mouse often rests somewhere else
+  // entirely, and closing the list mid-keystroke is worse than overlapping.
+  document.querySelectorAll('.picks:not([hidden])').forEach(pnl => {
+    const own = pnl.parentElement;
+    if (own === box) return;
+    if (own.contains(document.activeElement)) return;
+    pnl.hidden = true;
+  });
+});
+document.addEventListener('focusout', e => {
+  const inp = e.target;
+  if (!inp.classList || !inp.classList.contains('chipin') || !inp.dataset.pick) return;
+  const box = inp.closest('.box');
+  setTimeout(() => { if (!box.contains(document.activeElement)) picksClose(box); }, 0);
+});
+// mousedown, not click: preventing the default here stops the blur, so the
+// field keeps focus and the next pick needs no second click into the box.
+document.addEventListener('mousedown', e => {
+  const car = e.target.closest('.pickcar');
+  if (car) {
+    e.preventDefault();
+    const box = car.closest('.box'), panel = box.querySelector('.picks');
+    const inp = box.querySelector('.chipin');
+    if (panel.hidden) { picksOnly(box); inp.focus(); picksDraw(inp); }
+    else { picksClose(box); }
+    return;
+  }
+  const opt = e.target.closest('.pick');
+  if (opt) {
+    e.preventDefault();
+    const box = opt.closest('.box');
+    picksTake(box.querySelector('.chipin'), opt.dataset.v);
+    return;
+  }
+  const box = e.target.closest('.box');
+  const inp = box && box.querySelector('.chipin[data-pick]');
+  picksOnly(inp ? box : null);
+});
+document.addEventListener('keydown', e => {
+  const inp = e.target;
+  if (!inp.classList || !inp.classList.contains('chipin') || !inp.dataset.pick) return;
+  const box = inp.closest('.box'), panel = box.querySelector('.picks');
+  if (!panel || panel.hidden) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); picksDraw(inp); }
+    return;
+  }
+  const opts = [...panel.querySelectorAll('.pick')];
+  const at = opts.findIndex(o => o.classList.contains('on'));
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!opts.length) return;
+    const nx = e.key === 'ArrowDown' ? Math.min(at + 1, opts.length - 1) : Math.max(at - 1, 0);
+    opts.forEach((o, i) => o.classList.toggle('on', i === nx));
+    opts[nx].scrollIntoView({block: 'nearest'});
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (at >= 0) picksTake(inp, opts[at].dataset.v);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    picksClose(box);
+  }
+}, true);
 function load(form, data){
   form.querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k, v = data[k];
@@ -1230,6 +1385,7 @@ function listsReady(){
 function open(i, view){
   ROW = i;
   const r = ROWS[i];
+  SEED_SRC = Object.assign({}, r.seedSrc || {});   // per row, not per session
   // A box that should offer the RZ list must not open as a free-text field.
   if (!LISTS.industries.length) listsReady().then(() => { if (ROW === i) load(formOf(r), r.data); });
   $('fseo').hidden = r.kind !== 'seo';
@@ -1255,6 +1411,9 @@ function show(view){
   const orm = ROW != null && ROWS[ROW].kind === 'orm';
   $('kwBuilder').innerHTML = orm ? '&#9906; Brand Scan' : '&#9998; Keyword Builder';
   $('gen').textContent = view === 'kw' ? 'Apply to the quote' : 'Generate Quote';
+  // The keyword builder produces a LIST, not a quote, so there is nothing to
+  // save without generating -- "Apply to the quote" is the whole action.
+  $('save').hidden = view === 'kw';
 }
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
@@ -1290,14 +1449,20 @@ const chipCommit = inp => {
   inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
   inp.value = '';
 };
+// A PICK BOX TAKES ONLY WHAT IS IN THE LIST. Industry has to match an RZ
+// category exactly or the pricing rule never fires, and Strategy and Campaign
+// Goals are what the order form accepts -- so free text is dropped in favour
+// of the picker, which is handled above.
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.classList.contains('chipin')) return;
   e.preventDefault();
+  if (e.target.dataset.pick) return;
   chipCommit(e.target);
 });
 document.addEventListener('input', e => {
   const inp = e.target;
   if (!inp.classList.contains('chipin') || !inp.value.includes(',')) return;
+  if (inp.dataset.pick) return;
   const box = inp.closest('.box');
   if (box && box.dataset.chips === 'city') return;
   chipCommit(inp);
@@ -1731,6 +1896,8 @@ async function expandSeeds(r, d){
        brand: d.brand, business_desc: d.business_desc || ''});
     regions = (rr.regions || []).map(x => String(x.name || '').trim()).filter(Boolean);
   } catch (e) { regions = []; }
+  kept.forEach(x => { SEED_SRC[x.term.toLowerCase()] = x.src; });
+  r.seedSrc = Object.assign({}, r.seedSrc || {}, SEED_SRC);
   r.suggested = (r.suggested || []).concat(kept.map(x => x.term.toLowerCase()));
   r.rankedSeeds = kept.filter(x => x.ranked).map(x => x.term.toLowerCase());
   return {added: kept.map(x => x.term), rows: kept, regions,
@@ -1763,7 +1930,7 @@ $('kbBuild').onclick = async () => {
         ? 'Add a seed term, or turn Expand on focus terms to Yes to read their site.'
         : 'Add a seed term first.';
       document.querySelector('#paneKw [data-chips="seeds"] .chipin, '
-        + '#paneKw [data-chips="seeds"] .chipsel').focus();
+        + '#paneKw [data-chips="seeds"] .chipin').focus();
       return;
     }
   }
@@ -2177,22 +2344,31 @@ async function generate(){
   $('gen').disabled = false;
 }
 
-$('save').onclick = () => {
+// SAVE WRITES TO THE DATABASE. It used to copy the form into memory and print
+// "Saved 24 fields" off the field count -- a message about an object in the
+// browser, not a record anywhere. Closing the tab lost the lot, and the only
+// thing that ever reached storage was Generate.
+$('save').onclick = async () => {
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
   if (VIEW === 'kw') r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
     .map(c => c.firstChild.textContent.trim());
-  const msg = `Saved ${Object.keys(r.data).length} fields to ${r.name} – ${dateOf(r)}.`;
-  if (VIEW === 'cfg') {
-    r.cfg = cfgCollect();
-    r.over = cfgOverride();
-    const n = Object.keys(r.over).length;
-    $('saved').textContent = `${msg} ${n
-      ? `${n} constant${n === 1 ? '' : 's'} set on this quote.`
-      : 'Pricing constants on the file defaults.'}`;
-    return;
+  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  const n = Object.keys(r.over || {}).length;
+  const cfgMsg = VIEW === 'cfg'
+    ? (n ? ` ${n} constant${n === 1 ? '' : 's'} set on this quote.`
+         : ' Pricing constants on the file defaults.')
+    : '';
+  const btn = $('save');
+  btn.disabled = true;
+  $('saved').textContent = 'Saving…';
+  try {
+    await persist(r);
+  } finally {
+    btn.disabled = false;
   }
-  $('saved').textContent = msg;
+  $('saved').textContent = r.saveNote + cfgMsg;
+  draw();
 };
 $('gen').onclick = () => {
   if (ROWS[ROW].kind === 'orm' && VIEW === 'scan') { show('form'); return; }

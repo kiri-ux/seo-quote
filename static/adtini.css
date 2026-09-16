@@ -245,6 +245,9 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
   font-weight:500;padding:4px 8px;display:inline-flex;align-items:center;gap:6px;
 }
 .chip b{cursor:pointer;font-weight:600;opacity:.75}
+/* a seed the tool proposed, not one the planner typed */
+.chip.sug{background:var(--fill);color:var(--text);border:1px dashed var(--muted)}
+.chip.sug b{opacity:.85}
 .yn{display:inline-flex;align-self:flex-start;background:var(--fill);border-radius:999px;padding:3px}
 .yn button{
   font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;border:0;
@@ -462,9 +465,23 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .i:hover::before{
   content:"";position:absolute;left:50%;top:calc(100% + 3px);transform:translateX(-50%);
   border:5px solid transparent;border-bottom-color:var(--navy-2);z-index:80}
-select.chipsel{border:0;background:none;font-family:inherit;font-size:13px;color:var(--muted);
-  padding:2px 4px;min-height:0;cursor:pointer;flex:1;min-width:110px}
-select.chipsel:focus{outline:none}
+/* type-ahead picker: the panel is a child of .box so a click on it never
+   leaves the field, which is what keeps the box open across several picks */
+.box{position:relative}
+.picks{
+  position:absolute;left:0;top:calc(100% + 4px);width:100%;z-index:90;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 8px 24px rgba(18,58,99,.14);max-height:264px;overflow:auto;padding:4px;
+}
+.pick{padding:7px 10px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pick b{font-weight:700;color:var(--blue)}
+.pick.on{background:var(--fill)}
+.pick:hover{background:var(--fill)}
+.picknone{padding:8px 10px;font-size:12.5px;color:var(--muted)}
+.pickcar{margin-left:auto;color:var(--muted);font-size:11px;cursor:pointer;
+  padding:2px 4px;user-select:none;line-height:1}
+.pickcar:hover{color:var(--text)}
 
 /* new quote: pick the product first */
 .newq{position:relative;margin-left:14px}

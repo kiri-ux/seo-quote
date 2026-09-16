@@ -152,8 +152,6 @@ const BASE = "http://127.0.0.1:5203";
     R.countyPills = [...document.querySelectorAll('#fseo [data-chips="county"] .chip')]
       .map(c => c.firstChild.textContent.trim());
     document.getElementById('save').click();
-    R.savedMsg = /^Saved \d+ fields to Search Engine Optimization – 9\/16\/26\./
-      .test(document.getElementById('saved').textContent);
     document.getElementById('close').click();
     R.closed = document.getElementById('scrim').hidden;
     document.querySelector('[data-open="0"]').click();
@@ -165,13 +163,17 @@ const BASE = "http://127.0.0.1:5203";
     // a chip comes off again
     document.querySelector('#fseo [data-chips="focus"] .chip b').click();
     R.chipRemoved = document.querySelectorAll('#fseo [data-chips="focus"] .chip').length;
-    const indSel = document.querySelector('#fseo [data-chips="industry"] .chipsel');
-    R.industryIsAList = !!indSel && indSel.options.length > 100;
-    R.stratOptions = [...document.querySelector('#fseo [data-chips="strategy"] .chipsel').options]
-      .map(o => o.textContent).slice(1);
-    R.goalOptions = [...document.querySelector('#fseo [data-chips="goals"] .chipsel').options].length - 1;
-    indSel.value = 'Plumbing';
-    indSel.dispatchEvent(new Event('change', {bubbles: true}));
+    // A styled type-ahead, not an OS select: the options live in LISTS and the
+    // panel is drawn from them on demand.
+    const indInp = document.querySelector('#fseo [data-chips="industry"] .chipin');
+    R.industryIsAList = !!indInp && indInp.dataset.pick === 'industries'
+      && (LISTS.industries || []).length > 100;
+    R.stratOptions = (LISTS.strategies || []).slice();
+    R.goalOptions = (LISTS.goals || []).length;
+    indInp.value = 'Plumbing';
+    indInp.dispatchEvent(new Event('input', {bubbles: true}));
+    const first = document.querySelector('#fseo [data-chips="industry"] .pick');
+    if (first) first.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
     R.industryPicked = [...document.querySelectorAll('#fseo [data-chips="industry"] .chip')]
       .map(c => c.firstChild.textContent.trim());
     document.getElementById('close').click();
@@ -182,6 +184,13 @@ const BASE = "http://127.0.0.1:5203";
       .map(c => c.firstChild.textContent.trim());
     return R;
   });
+
+  // SAVE REPORTS WHAT HAPPENED. It writes to the store, so the message is the
+  // outcome of that write -- never a count of fields sitting in the browser.
+  await p.waitForTimeout(600);
+  const saveMsg = await p.textContent('#saved');
+  form.savedMsg = /^(Saved to |Not saved — )/.test(saveMsg);
+  form.savedNoFieldCount = !/\d+ fields/.test(saveMsg);
 
   // ---------------- keyword builder is a pane of the same modal ----------
   const kw = await p.evaluate(() => {
@@ -294,6 +303,7 @@ const BASE = "http://127.0.0.1:5203";
     'geo.childFollowsItsCheckbox': [form.countyShown, true],
     'geo.countyCommitsOnComma': [form.countyPills.join(','), 'Palm Beach County'],
     'form.savedMsg': [form.savedMsg, true],
+    'form.savedIsNotAFieldCount': [form.savedNoFieldCount, true],
     'form.closed': [form.closed, true],
     'form.brandKept': [form.brandKept, 'EDITED'],
     'form.markupKept': [form.markupKept, '12'],
