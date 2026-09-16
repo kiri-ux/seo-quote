@@ -142,6 +142,60 @@ if saved_key is not None:
 check("the gap floor is per-quote editable",
       '("expand_min_volume", int)' in SOURCE, True)
 
+# ------------------------------------ THE PARSER ATE THE ANSWER (2026-09-16)
+# Rule 7 asks for ENT, audiologist, dentist, plumber. The gap-finder's own parse
+# then required 2-5 words, so every single-word term was discarded before
+# volume, before the floor, before the fold. On the real ENT quote the ONLY
+# practitioner term that survived was "ear nose and throat doctor" — because it
+# happened to be five words. The rule worked; the parser deleted its output.
+GATE = lambda t: bool(app.clean_kw(app.strip_placeholders(t.lower())).strip()) \
+    and 0 < len(app.clean_kw(app.strip_placeholders(t.lower())).strip().split()) <= 5
+for one in ("ENT", "audiologist", "dentist", "plumber", "electrician"):
+    check("a one-word practitioner noun survives the parse: %r" % one, GATE(one), True)
+check("multi-word still survives", GATE("ear nose and throat doctor"), True)
+check("six words is still too many", GATE("a b c d e f"), False)
+
+# ------------------------------ AN INITIALISM IS A HEAD TERM, NOT A FRAGMENT
+# fold_proposals folds a one-token term into a longer seed containing it, which
+# is right for "junk" inside "junk removal" and wrong for "ENT" inside
+# "pediatric ENT care" — structurally identical, semantically opposite. Code
+# cannot read the difference from tokens, so the parse records the model's own
+# capitalisation before .lower() destroys it and the caller passes it through.
+ENT_SEEDS = ["hearing aids", "pediatric ent care", "pediatric ent surgery",
+             "tonsillectomy", "chronic sinusitis treatment"]
+MK = ["oxford, ms", "grenada, ms"]
+
+kept_no, folded_no = app.fold_proposals(
+    ["ent", "audiologist"], seeds=ENT_SEEDS, markets=MK, state="MS")
+check("without the exemption ENT is folded away", "ent" in folded_no, True)
+
+kept_yes, _ = app.fold_proposals(
+    ["ent", "audiologist", "ear nose and throat doctor", "hearing doctor"],
+    seeds=ENT_SEEDS, markets=MK, state="MS", keep_bare=["ent"])
+check("with it ENT survives", "ent" in kept_yes, True)
+check("and the spelled-out form survives beside it",
+      "ear nose and throat doctor" in kept_yes, True)
+check("audiologist is unaffected either way", "audiologist" in kept_yes, True)
+
+# BOTH REGRESSIONS. The guard exists because of these two; the exemption must
+# not reach either. Nothing is passed as keep_bare, which is the normal case.
+_k, _f = app.fold_proposals(["junk", "junk removal", "haul away junk"],
+                            seeds=["junk removal"], markets=[], state="")
+check("junk still folds against its own seed", "junk" in _f, True)
+
+_k2, _f2 = app.fold_proposals(
+    ["ski jackets", "boys ski jackets", "girls ski jackets", "ski pants",
+     "boys ski pants"], seeds=[], markets=[], state="")
+check("Ski Barn near-duplicates still collapse", _k2, ["ski jackets", "ski pants"])
+check("and their qualified forms are what went",
+      _f2, ["boys ski jackets", "girls ski jackets", "boys ski pants"])
+
+# The flag itself is set from the model's raw casing, not guessed downstream.
+check("the parse records an initialism",
+      'bool(re.fullmatch(r"[A-Z]{2,5}", rawt))' in SOURCE, True)
+check("and the route passes it to the fold",
+      'keep_bare=[c["term"] for c in cands' in SOURCE, True)
+
 # ------------------------------------------------- topics no longer wait
 # claude_topics reads seeds, the business description and the brand. None is
 # touched between the expansion and the point the answer is first needed, so it

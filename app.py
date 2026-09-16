@@ -5817,7 +5817,8 @@ def cap_service_family(terms, seeds=None, cap=None, markets=None, state=""):
     return kept, dropped
 
 
-def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
+def fold_proposals(terms, seeds=None, markets=None, state="", limit=None,
+                   keep_bare=None):
     """Collapse a list of PROPOSED service terms the way rank_seeds folds seeds.
 
     Ski Barn's menu produced 39 chips: ski jackets, boys ski jackets, girls ski
@@ -5839,6 +5840,8 @@ def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
         k = _seed_key(seed_norm(sd, markets, state))
         if k:
             have.add(k)
+    _bare_keep = {seed_norm(str(x), markets, state)
+                  for x in (keep_bare or []) if str(x).strip()}
     kept, folded, groups = [], [], []
     for t in terms or []:
         name = seed_norm(t if isinstance(t, str) else (t or {}).get("term", ""),
@@ -5857,8 +5860,27 @@ def fold_proposals(terms, seeds=None, markets=None, state="", limit=None):
         # existing bare-head guard, reused: "junk" ({junk}, one token) is still
         # folded into "junk removal", which is the case this fold was written for.
         # (2026-08-13)
+        # AN INITIALISM IS ONE TOKEN AND A WHOLE HEAD TERM, WHICH THE GUARD
+        # BELOW CANNOT TELL APART FROM A FRAGMENT.
+        #
+        # The >= 2 test exists so "junk" still folds into "junk removal", and
+        # that is right: "junk" alone is not what anybody sells. But "ENT" is
+        # one token too, and it keys to {ent}, a subset of the seed "pediatric
+        # ENT care" — so containment folded away the shortest, highest-volume
+        # term an ENT practice can own, on the same rule that removes a noun
+        # fragment. Structurally identical, semantically opposite, and code
+        # cannot read the difference from the tokens.
+        #
+        # So the caller passes the ones the model capitalised. That decision is
+        # made where the evidence still exists — at the parse, before .lower()
+        # — rather than guessed at from a word list here. (2026-09-16)
+        _bare_ok = bool(_bare_keep and name in _bare_keep)
         _broader = any(k < h for h in have)
-        if _broader and len(k) >= 2:
+        if _broader and (len(k) >= 2 or _bare_ok):
+            pass
+        elif _bare_ok and any(k <= h for h in have):
+            # Same exemption on the already-covered branch: an abbreviation
+            # sitting inside a longer seed is not "already covered" by it.
             pass
         elif any(k == h or k <= h or h <= k for h in have):
             folded.append(t)
@@ -16253,11 +16275,36 @@ Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on 
         return []
     out, seen = [], set(have)
     for it in raw:
-        t = clean_kw(strip_placeholders(str((it or {}).get("term") or "").lower())).strip()
-        if not t or t in seen or not (1 < len(t.split()) <= 5):
+        rawt = str((it or {}).get("term") or "").strip()
+        t = clean_kw(strip_placeholders(rawt.lower())).strip()
+        # ONE WORD IS NOT AUTOMATICALLY A FRAGMENT, AND THIS GATE SAID IT WAS.
+        #
+        # The window was 2-5 words, so every single-word term the model returned
+        # was discarded here — before volume, before the floor, before the fold.
+        # That silently deleted the entire class of terms rule 7 exists to ask
+        # for: ENT, audiologist, dentist, plumber, electrician, roofer. On ENT
+        # Consultants of North MS the only practitioner term that survived was
+        # "ear nose and throat doctor", because it happened to be five words.
+        # The rule worked and the parser ate the answer.
+        #
+        # A practitioner noun is the shortest, highest-volume term the client
+        # can own, so length is the wrong test for whether it is real. These
+        # are PROPOSALS — offered as dashed chips the operator accepts or
+        # ignores, never fed straight into the grid — so a weak one-word
+        # suggestion costs a glance, while a missing one costs the money term.
+        # The floor, the fold and the family cap all still run after this.
+        # (2026-09-16)
+        if not t or t in seen or not (0 < len(t.split()) <= 5):
             continue
         seen.add(t)
-        out.append({"term": t, "why": str((it or {}).get("why") or "")[:80]})
+        # WHETHER IT WAS AN INITIALISM, RECORDED BEFORE THE CASE IS LOST.
+        # Everything downstream works on the lowercased form, so "ENT" and a
+        # bare noun are indistinguishable by the time the fold sees them — and
+        # the fold treats a one-token term as a fragment of a longer seed.
+        # Capture it here, where the model's own capitalisation is still
+        # readable, rather than guess at it later.
+        out.append({"term": t, "why": str((it or {}).get("why") or "")[:80],
+                    "abbr": bool(re.fullmatch(r"[A-Z]{2,5}", rawt))})
     return out[:n]
 
 
@@ -17116,7 +17163,9 @@ def api_expand_services():
     rows.sort(key=lambda r: -r["volume"])
     good, folded_rows = fold_proposals([r for r in rows if r["volume"] >= floor],
                                        seeds=(d.get("seeds") or []),
-                                       markets=([] if nat else markets), state=state)
+                                       markets=([] if nat else markets), state=state,
+                                       keep_bare=[c["term"] for c in cands
+                                                  if c.get("abbr")])
     # The prompt is now asked for 22 rather than 14, and a model asked for more
     # than the vertical has will pad with rewordings — which is the one thing this
     # pass exists NOT to do. fold_proposals catches near-duplicates by
