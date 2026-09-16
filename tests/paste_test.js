@@ -57,6 +57,29 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   const cc = await chips(city);
   say('city.keepsComma', cc.includes('Boca Raton, FL'), cc.join('|'));
 
+  // A LIST OF CITIES IS A LIST. "Idaho Falls ID, Blackfoot ID, Rexburg ID"
+  // was one chip; each is a city, and the bare state gets its comma.
+  await p.fill(`${city} .chipin`, 'Idaho Falls ID, Blackfoot ID, Rexburg ID, St. Anthony ID');
+  await p.keyboard.press('Enter');
+  await p.waitForTimeout(120);
+  let cl = await chips(city);
+  say('city.listSplits', ['Idaho Falls, ID', 'Blackfoot, ID', 'Rexburg, ID', 'St. Anthony, ID']
+      .every(x => cl.includes(x)), cl.join('|'));
+  say('city.noBlob', !cl.some(x => x.split(',').length > 2), cl.join('|'));
+  // Pairs stay pairs.
+  await p.fill(`${city} .chipin`, 'Delray Beach, FL, Jupiter, FL');
+  await p.keyboard.press('Enter');
+  await p.waitForTimeout(120);
+  cl = await chips(city);
+  say('city.pairsStayPairs', cl.includes('Delray Beach, FL') && cl.includes('Jupiter, FL'), cl.join('|'));
+  say('city.noStrayState', !cl.includes('FL'), cl.join('|'));
+  // A two-letter word that is not a state is part of the name.
+  await p.fill(`${city} .chipin`, 'Santa Fe');
+  await p.keyboard.press('Enter');
+  await p.waitForTimeout(120);
+  cl = await chips(city);
+  say('city.notEveryTwoLettersIsAState', cl.includes('Santa Fe') && !cl.includes('Santa, FE'), cl.join('|'));
+
   // Typing a comma still commits one term at a time.
   await p.fill(`${focus} .chipin`, 'Standby Generators,');
   await p.waitForTimeout(150);

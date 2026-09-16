@@ -30,9 +30,11 @@ const BASE = "http://127.0.0.1:5203";
     R.hasRail = document.querySelectorAll('nav.rail a').length > 0;
     const icons = document.querySelectorAll('tbody tr')[2].querySelectorAll('.rowicons a, .rowicons .off');
     R.icons = [...icons].map(x => x.getAttribute('href') || 'none');
-    const skiRow = [...document.querySelectorAll('tbody tr')]
-      .find(t => t.textContent.includes('Ski Barn'));
-    R.seoOffWhenNoSeo = !!skiRow.querySelector('.rowicons .off');
+    // The S and R review links are gone from every row; the client name opens
+    // that client's quote.
+    R.noReviewLinks = !document.querySelector('.rowicons .off')
+      && ![...document.querySelectorAll('.rowicons a')].some(a => /review=/.test(a.getAttribute('href')));
+    R.clientLink = document.querySelectorAll('tbody tr')[2].querySelector('td.lnk a').getAttribute('href');
     // an edit sticks on that client
     const inp = document.querySelector('tbody input.cell[data-f="partner"]');
     inp.value = 'Edited Partner';
@@ -246,7 +248,7 @@ const BASE = "http://127.0.0.1:5203";
   const want = {
     'home.heading': [home.heading, 'Quotes'],
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Client|Products|Strategies|Order ID|Partner|Status'],
+      'Planner|Built|Partner|Order ID|Client|Products|Strategies|Status'],
     'home.rows': [home.rows, 8],
     'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
     'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],
@@ -271,11 +273,9 @@ const BASE = "http://127.0.0.1:5203";
     'home.leftRail': [home.hasRail, true],
     // An order ID is typed, never invented -- the sample rows carry none, so
     // the links carry none either.
-    'home.rowIcons': [home.icons.join(' | '),
-      '/adtini/forecast?client=Sage%20Dental'
-      + ' | /adtini/forecast?client=Sage%20Dental&review=seo'
-      + ' | /adtini/forecast?client=Sage%20Dental&review=orm'],
-    'home.iconOffWithoutThatProduct': [home.seoOffWhenNoSeo, true],
+    'home.rowIcons': [home.icons.join(' | '), '/adtini/forecast?client=Sage%20Dental'],
+    'home.noReviewLinks': [home.noReviewLinks, true],
+    'home.clientNameOpensTheClient': [home.clientLink, '/adtini/forecast?client=Sage%20Dental'],
     'home.partnerEditSticks': [home.partnerKept, 'Edited Partner'],
     'home.statusEditSticks': [home.statusKept, 'Complete'],
     'home.strategiesPerProduct': [home.strategies.join(','),
