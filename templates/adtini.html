@@ -3288,8 +3288,11 @@ async function downloadProposal(i){
     pricing: (r.result || {}).pricing || {},
     perf_on: false,
     inputs: {geo_values: geoOf(d)},
+    // The page and WHERE THE WINDOW SITS on it. The document cuts the same
+    // 16:9 window the row shows; without y it was handed the whole column.
     serp: (r.result || {}).shot
-      ? {img: r.result.shot, kw: ((r.result || {}).serp || {}).kw || ''} : null});
+      ? {img: r.result.shot, kw: ((r.result || {}).serp || {}).kw || '',
+         y: Number((r.result || {}).shotY) || 0} : null});
   try {
     // A 502/503/504 is the host waking up, not the document.
     let res = null;

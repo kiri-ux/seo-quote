@@ -15501,6 +15501,39 @@ def _trim_serp_image(png_bytes, max_h=None, blank_thresh=245, collapse_over=110,
     return buf.getvalue()
 
 
+def _window_serp_image(data, y=0, ratio=16 / 9):
+    """The window the planner set on screen, cut out of the page.
+
+    The capture is stored whole so the window can move without recapturing,
+    and the row shows it through a 16:9 box with the picture slid to shotY --
+    object-fit cover, object-position center Y%. The document was handed the
+    whole page: a 2,600px column where the screen showed a landscape frame.
+    Same geometry as the box: the window is the width over 16:9, and its top
+    is Y% of what is left. A capture already no taller than the window is
+    returned as it is. (2026-09-16)
+    """
+    import io
+    from PIL import Image
+    try:
+        im = Image.open(io.BytesIO(data))
+        im = im.convert("RGB")
+    except Exception:
+        return data
+    w, h = im.size
+    win = min(h, int(round(w / ratio)))
+    if win >= h or w <= 0:
+        return data
+    try:
+        pct = max(0.0, min(100.0, float(y or 0)))
+    except (TypeError, ValueError):
+        pct = 0.0
+    off = int(round((h - win) * pct / 100.0))
+    out = im.crop((0, off, w, off + win))
+    buf = io.BytesIO()
+    out.save(buf, "JPEG", quality=85)
+    return buf.getvalue()
+
+
 @app.route("/api/serp_fetch", methods=["POST"])
 @_json_error_guard
 def api_serp_fetch():
@@ -19011,7 +19044,9 @@ def build_proposal_docx(d, _notes=None):
         cap = body(f"Google results today for “{sp.get('kw', '')}”:", True)
         try:
             raw = sp["img"].split(",", 1)[1]
-            doc.add_picture(io.BytesIO(base64.b64decode(raw)), width=Inches(6.4))
+            # The window, not the page -- see _window_serp_image.
+            shot = _window_serp_image(base64.b64decode(raw), sp.get("y"))
+            doc.add_picture(io.BytesIO(shot), width=Inches(6.4))
             doc.add_paragraph()
         except Exception:                                     # noqa: BLE001
             app.logger.exception("serp image could not be embedded")
