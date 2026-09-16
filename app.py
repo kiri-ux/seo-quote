@@ -7473,6 +7473,15 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         exp["probe"] = " / ".join(f"{t} <city>{_lbl_sfx}" for t in terms)
         exp["method"] = "client term"
         scored = {c: sum(kvol(vol, t, c) for t in terms) for c in cities}
+        # THE SUM RANKS; THE PEAK SAYS WHETHER THERE IS ANYTHING TO RANK.
+        # `scored` adds a market's terms together, which is a fine ORDERING but
+        # the wrong number to compare against a per-market floor: DataForSEO
+        # floors a thin term at 10/mo, so four probe terms of pure noise sum to
+        # 40 and clear a floor of 20 without a single real reading behind them.
+        # Greenwood did exactly that against Oxford on ENT Consultants. The
+        # peak asks the question the floor is actually for -- does ANY term in
+        # this market carry real demand. (2026-09-16)
+        peak = {c: max([kvol(vol, t, c) for t in terms] or [0]) for c in cities}
         # The same lookup that ranks the cities also reveals which of them
         # Google Ads treats as one place — no extra call.
         vectors = {c: [kvol(vol, t, c) for t in terms] for c in cities}
@@ -7583,7 +7592,7 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # Folding them into one flag stopped the widen from ever running.
         exp["nothing_measured"] = not any(scored.values())
         _floor = int(CFG.get("axis_city_volume_floor", 20))
-        _measured = [v for v in scored.values() if v and v >= _floor]
+        _measured = [c for c, v in peak.items() if v and v >= _floor]
         exp["ranked_on_demand"] = bool(_measured)
         exp["measure_floor"] = _floor
         # Noise is not evidence: when nothing cleared the floor the scores are
