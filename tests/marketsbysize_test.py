@@ -91,10 +91,25 @@ check("measured", pick["measured"], by[:2])
 check("by_size names every market", [x[0] for x in pick["by_size"]], by)
 check("not widened", "widened_from" in pick, False)
 
-# Thin: the two biggest measure nothing, a smaller town does. Widened to the
-# whole list under the old cap, and the town that measured leads.
+# Nothing measured anywhere: the probe reads geo-suffixed text, which in a
+# small town is zero everywhere. That is not evidence for a different market,
+# so the size order stands and no second probe is spent.
 calls.clear()
-VOL["fn"] = lambda kw: 100 if "oak ridge" in kw else 0
+VOL["fn"] = lambda kw: 0
+cities, pick = app.choose_build_markets(TOWNS, ST, SEEDS, "")
+check("zero probe: not widened", "widened_from" in pick, False)
+check("zero probe: still the two biggest", sorted(cities), sorted(by[:2]))
+# Two calls, not one: an all-zero client-term probe already falls back to
+# the population proxy inside pick_grid_cities. What must NOT happen is a
+# third, the widen re-probe of the whole list.
+check("zero probe: no widen re-probe", len(calls), 2)
+check("zero probe: says nothing measured", pick["nothing_measured"], True)
+
+# Thin: the two biggest measure a little, under the floor; a smaller town
+# measures a lot. That is evidence. Widened to the whole list under the old
+# cap, and the town that measured leads.
+calls.clear()
+VOL["fn"] = lambda kw: 100 if "oak ridge" in kw else 3
 cities, pick = app.choose_build_markets(TOWNS, ST, SEEDS, "")
 check("widened from the two by size", pick.get("widened_from"), by[:2])
 check("widen probed every market",
