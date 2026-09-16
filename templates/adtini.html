@@ -205,7 +205,7 @@
             <div class="f"><label>Price on national demand</label>
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
             <div class="f"><label>Expand on focus terms</label>
-              <div class="yn" id="kbExpand"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
+              <button type="button" class="btn kbexpand" id="kbExpandRun">Expand</button></div>
             <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
               <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
             <div class="f"><label>Lock keyword list</label>
@@ -1521,21 +1521,24 @@ function seedLegend(r){
     ? ` \u00b7 ${dropped} removed \u2014 removed suggestions are not proposed again.`
       + ' <button type="button" class="lnkbtn" id="seedRestore">Restore them</button>'
     : ' \u00b7 Remove one and it is not proposed again.';
-  // A SKIPPED EXPANSION CAN BE RUN AGAIN FROM HERE. The status line says it
-  // already ran; this is the way to ask for it anyway.
-  const again = (r.expandNote && r.expandNote.skipped)
-    ? ' <button type="button" class="lnkbtn" id="expandAgain">Expand again</button>' : '';
-  if (!added) return (dropped ? rule.replace(/^ \u00b7 /, '') : '') + again;
-  return `${focus.length - added} from Product/Vertical Focus \u00b7 ${added} added by `
-       + 'expansion, shown dashed.' + rule + again;
+  if (!added) return dropped ? rule.replace(/^ · /, '') : '';
+  return `${focus.length - added} from Product/Vertical Focus · ${added} added by `
+       + 'expansion, shown dashed.' + rule;
 }
-document.addEventListener('click', e => {
-  if (!e.target.closest('#expandAgain') || ROW == null) return;
-  const r = ROWS[ROW];
-  r.expandDone = [];
-  r.expandNote = null;
-  $('kbBuild').click();
-});
+// EXPANSION IS ITS OWN STEP, BEFORE THE BUILD. It ran inside Build, so every
+// weak proposal cost a 130s build to see and another to remove. The button
+// runs the three sources, puts the proposals in the seed box dashed, and
+// stops. Build builds on what is left. (2026-09-16)
+const seedSig = xs => xs.map(x => String(x).toLowerCase().trim()).sort();
+function expandRanOnThese(r){
+  const done = r.expandDone || [];
+  const focus = ((r.data || {}).focus || []).map(t => String(t).toLowerCase().trim());
+  return done.length > 0 && focus.length > 0 && focus.every(t => done.includes(t));
+}
+function expandBtnSync(r){
+  const b = $('kbExpandRun');
+  if (b) b.textContent = expandRanOnThese(r) ? 'Expand again' : 'Expand';
+}
 
 // REMOVING IS PERMANENT, SO THERE IS A WAY BACK. Eight good ENT service lines
 // went out with one weak one, and re-typing them was the only route.
@@ -1869,7 +1872,7 @@ document.addEventListener('click', e => {
     b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     if (b.parentNode.dataset.k === 'past') pastFields();
     // National demand is a scope decision, so the builder's line follows it.
-    const kbk = {kbNat: 'national', kbExpand: 'expand', kbLock: 'lock'}[b.parentNode.id];
+    const kbk = {kbNat: 'national', kbLock: 'lock'}[b.parentNode.id];
     if (kbk && ROW != null) {
       ROWS[ROW].data[kbk] = b.dataset.v === '1' ? 1 : 0;
       if (kbk === 'national') kbScopeNote(ROWS[ROW]);
@@ -1881,10 +1884,13 @@ document.addEventListener('click', e => {
     // REMOVING A PROPOSED SEED IS A STANDING DECISION. The expansion proposed
     // "allergy testing" on every build, so a term the planner had already
     // rejected came back each time and cost a full build to reject again.
-    if (chip.classList.contains('sug')
-        && chip.closest('[data-chips="seeds"]') && ROW != null) {
+    // FROM EITHER BOX. The form's focus chips are the same list, and a
+    // proposed seed removed there came straight back on the next expansion.
+    const inBox = chip.closest('[data-chips="seeds"], [data-chips="focus"]');
+    const t = chip.firstChild.textContent.trim().toLowerCase();
+    if (inBox && ROW != null
+        && (chip.classList.contains('sug') || (ROWS[ROW].seedSrc || {})[t])) {
       const r = ROWS[ROW];
-      const t = chip.firstChild.textContent.trim().toLowerCase();
       r.seedDrop = (r.seedDrop || []).filter(v => v !== t).concat(t);
       delete (r.seedSrc || {})[t];
       SEED_SRC && delete SEED_SRC[t];
@@ -2279,11 +2285,12 @@ function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   const seedHint = document.querySelector('#paneKw .seedhint');
   if (seedHint) seedHint.innerHTML = seedLegend(r);
-  [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock'],
+  [['kbNat', 'national'], ['kbLock', 'lock'],
    ['kbAxis', 'spread']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
   kbScopeNote(r);
+  expandBtnSync(r);
   kbDraw(r);
 }
 // THE BAND IS READ OFF THE MARKETS. bandOf() only knows which checkbox is
@@ -2513,16 +2520,27 @@ async function expandSeeds(r, d){
       return shared === Math.min(a.length, b.length);
     });
   };
+  // ONE FLOOR FOR EVERY SOURCE. The industry pass measured and floored its
+  // proposals; their site handed over its whole service menu unmeasured, and
+  // at fourteen open slots every line of it became a seed. The site pass
+  // measures now, and the floor here is the same for all three.
+  const floor = Number(ind.floor) || Number(site.floor) || 20;
+  let under = 0;
   const rows = [];
   const take = (res, src) => (res.services || []).forEach(x => {
     const term = String(x.term || '').trim();
     if (!term || have.has(term.toLowerCase()) || echoesADrop(term)) return;
+    const vol = Number(x.volume) || 0;
+    if (vol < floor) { under++; return; }
     have.add(term.toLowerCase());
-    rows.push({term, vol: Number(x.volume) || 0, ranked: !!x.ranked_top, src});
+    rows.push({term, vol, ranked: !!x.ranked_top, src});
   });
   take(rank, 'ranks for it');            // a position is proof the term is real
   take(site, 'their site');
   take(ind, 'the industry');
+  floorInfo.proposed += (site.services || []).length + (rank.services || []).length;
+  floorInfo.rejected += under;
+  floorInfo.floor = floor;
   // Best first, and stop at the slot count -- a list longer than the grid is
   // terms nobody will quote.
   rows.sort((a, b) => (b.ranked - a.ranked) || (b.vol - a.vol));
@@ -2540,9 +2558,50 @@ async function expandSeeds(r, d){
   r.suggested = (r.suggested || []).concat(kept.map(x => x.term.toLowerCase()));
   r.rankedSeeds = kept.filter(x => x.ranked).map(x => x.term.toLowerCase());
   return {added: kept.map(x => x.term), rows: kept, regions, found, fails, floorInfo,
-          dupes: rows.length === 0 && (found.site + found.industry + found.ranks) > 0,
+          dupes: rows.length === 0 && under === 0
+                 && (found.site + found.industry + found.ranks) > 0,
           held: Math.max(0, rows.length - kept.length)};
 }
+
+$('kbExpandRun').onclick = async () => {
+  const r = ROWS[ROW];
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
+  r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+    .map(c => c.firstChild.textContent.trim());
+  const d = r.data;
+  if (!d.focus.length && !d.site) {
+    $('saved').textContent = 'Add a seed term or the client website first.';
+    return;
+  }
+  d.expand = 1;
+  const btn = $('kbExpandRun');
+  btn.disabled = true;
+  $('kbBuild').disabled = true;
+  timingReset();
+  $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
+  try {
+    await resolveBand(r);
+    const got = await expandSeeds(r, d);
+    if (got.added.length) {
+      d.focus = d.focus.concat(got.added);
+      chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+    }
+    if (got.regions.length) r.phrase_geos = got.regions;
+    r.expandNote = got;
+    r.expandDone = seedSig(d.focus);
+    const sh = document.querySelector('#paneKw .seedhint');
+    if (sh) sh.innerHTML = seedLegend(r);
+    expandBtnSync(r);
+    const n = got.added.length;
+    $('saved').textContent = (n
+      ? `${n} term${n === 1 ? '' : 's'} proposed, shown dashed. Remove any, then Build keyword list.`
+      : expandWhy(got).replace(/^ · /, '')) + timingLine();
+  } catch (e) {
+    $('saved').textContent = e.message;
+  }
+  btn.disabled = false;
+  $('kbBuild').disabled = false;
+};
 
 $('kbBuild').onclick = async () => {
   const r = ROWS[ROW];
@@ -2551,7 +2610,6 @@ $('kbBuild').onclick = async () => {
     .map(c => c.firstChild.textContent.trim());
   const d = r.data;
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
-  d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.lock = $('kbLock').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.spread = $('kbAxis').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.axis = d.spread ? 'geography' : '';
@@ -2570,53 +2628,19 @@ $('kbBuild').onclick = async () => {
   // is required", which is a 400 the planner should never have to read -- and
   // when Expand is on and a website is known, their site can propose the seeds.
   if (!d.focus.length) {
-    if (!d.expand || !d.site) {
-      $('saved').textContent = d.site
-        ? 'Add a seed term, or turn Expand on focus terms to Yes to read their site.'
-        : 'Add a seed term first.';
-      document.querySelector('#paneKw [data-chips="seeds"] .chipin, '
-        + '#paneKw [data-chips="seeds"] .chipin').focus();
-      return;
-    }
+    $('saved').textContent = d.site
+      ? 'Add a seed term, or click Expand to read their site.'
+      : 'Add a seed term first.';
+    document.querySelector('#paneKw [data-chips="seeds"] .chipin').focus();
+    return;
   }
   $('kbBuild').disabled = true;
   timingReset();
   // The list is built for the band it will be priced in.
   await resolveBand(r);
   try {
-    // ONE PRESS BUILDS THE LIST. Stopping after the expansion so its terms
-    // could be reviewed first cost a second full wait on every build, which is
-    // worse than the problem -- a removal already sticks, so the rebuild only
-    // happens when something was actually removed.
-    const seedSig = xs => xs.map(x => String(x).toLowerCase().trim()).sort();
-    const covered = (r.expandDone || []).length
-      && d.focus.every(t => (r.expandDone || []).includes(String(t).toLowerCase().trim()));
-    if (d.expand && !covered) {
-      $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
-      const got = await expandSeeds(r, d);
-      if (got.added.length) {
-        d.focus = d.focus.concat(got.added);
-        chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
-        const sh = document.querySelector('#paneKw .seedhint');
-        if (sh) sh.innerHTML = seedLegend(r);
-        base.keywords = d.focus;
-      }
-      if (got.regions.length) { r.phrase_geos = got.regions; base.phrase_geos = got.regions; }
-      r.expandNote = got;
-      r.expandDone = seedSig(d.focus);
-    } else if (!d.expand) {
-      r.expandNote = null;
-    } else {
-      // SKIPPED, AND SAID SO. expandDone rides in the saved payload and the
-      // note does not, so a reopened quote rebuilt on the same seeds ran no
-      // expansion and printed nothing about it -- which reads as Expand
-      // doing nothing. (2026-09-16)
-      r.expandNote = {skipped: true, dropped: (r.seedDrop || []).length};
-    }
-    // The legend carries the Expand-again offer, so it follows every outcome:
-    // an expansion that ran and added nothing must take the offer down.
-    { const sh = document.querySelector('#paneKw .seedhint');
-      if (sh) sh.innerHTML = seedLegend(r); }
+    // Expansion is its own step now -- see kbExpandRun. Build builds on the
+    // seeds as they stand.
     if (!base.keywords.length) {
       $('saved').textContent = 'Nothing to build on — their site and the industry '
         + 'proposed no terms. Add a seed term.';
@@ -2653,11 +2677,7 @@ $('kbBuild').onclick = async () => {
     }
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
-      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
-        + expandWhy(r.expandNote)
-        + ((r.expandNote && (r.expandNote.added || []).length)
-           ? ' Dashed seeds were proposed \u2014 remove any and rebuild.' : '')
-        + timingLine();
+      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.` + timingLine();
   } catch (e) {
     $('saved').textContent = e.message;
   }
@@ -3499,9 +3519,6 @@ $('prods').addEventListener('click', e => {
 // part the planner can act on.
 function expandWhy(note){
   if (!note) return '';
-  if (note.skipped)
-    return ' \u00b7 Expansion already ran on these seeds'
-         + (note.dropped ? ` \u00b7 ${note.dropped} removed.` : '.');
   if (note.added && note.added.length)
     return ` \u00b7 ${note.added.length} terms added by expansion.`;
   const f = note.found || {}, bad = note.fails || {};

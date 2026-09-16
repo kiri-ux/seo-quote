@@ -212,6 +212,10 @@ h3.products{margin:0 0 16px;font-size:22px;font-weight:600}
   font-size:13px;font-weight:600;padding:10px 22px;color:#fff;white-space:nowrap;
 }
 .btn.preview{background:var(--blue);border-radius:999px}
+/* The expansion step in the builder: a real button, but not the Build one. */
+.btn.kbexpand{background:var(--card);color:var(--navy);border:1px solid var(--line);
+  padding:8px 18px;width:100%}
+.btn.kbexpand:disabled{opacity:.6;cursor:default}
 .btn.gemini{background:var(--gold)}
 .btn.claude{background:#D2691E}
 .btn.adtini{background:var(--navy)}
