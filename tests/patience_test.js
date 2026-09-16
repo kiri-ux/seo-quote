@@ -1,6 +1,6 @@
-// THE CAPTURE WAITS FOR THE TASK TO START. "Task Not Found" also comes back
-// while the organic task is still queued, so the poll holds for 75 seconds
-// before it treats the id as missing and asks for a fresh one.
+// "Task Not Found" while the organic task is still QUEUED must not be mistaken
+// for a lost task. Treating it as terminal made the capture give up seconds
+// after queueing, re-queue, ask too early again, and report "keeps being lost".
 const {chromium} = require('/root/work/node_modules/playwright-core');
 (async () => {
   const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
@@ -10,23 +10,22 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
 
   const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA'
             + 'C0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-  let queued = 0, fetched = 0;
+  let queued = 0, polls = 0;
   await p.route('**/api/serp_recommend', r =>
     r.fulfill({status:200, contentType:'application/json', body:'{}'}));
   await p.route('**/api/serp_queue', r => {
     queued++;
     return r.fulfill({status:200, contentType:'application/json',
-      body: JSON.stringify({task_id: 'task-' + queued, device: 'desktop',
-                            width: 1100, height: 1200, scale: 1})});
+      body: JSON.stringify({task_id:'t' + queued, device:'desktop',
+                            width:1100, height:1200, scale:1})});
   });
+  // Not found for the first four polls -- the task is still queued -- then it
+  // renders. The old code would have given up on the first one.
   await p.route('**/api/serp_fetch', r => {
-    fetched++;
-    // The first task is lost; the one queued after it works.
-    const body = r.request().postDataJSON() || {};
-    if (body.task_id === 'task-1')
+    polls++;
+    if (polls <= 4)
       return r.fulfill({status:200, contentType:'application/json',
-        body: JSON.stringify({ready:false, gone:true,
-                              why:'that queued capture no longer exists'})});
+        body: JSON.stringify({ready:false, notfound:true, status:'Task Not Found.'})});
     return r.fulfill({status:200, contentType:'application/json',
       body: JSON.stringify({ready:true, keyword:'x', data_url: PNG})});
   });
@@ -41,17 +40,18 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
 
   const hist = '.prod[data-row="0"] [data-pane="history"]';
   await p.click(hist + ' .pvserp .pvmini');
-  for (let i = 0; i < 40 && queued < 2; i++) await p.waitForTimeout(500);
-  await p.waitForTimeout(3500);
+  for (let i = 0; i < 60; i++) {
+    const shot = await p.evaluate(() => (ROWS[0].result || {}).shot || '');
+    if (shot) break;
+    await p.waitForTimeout(500);
+  }
 
-  say('queuedTwice', queued === 2, queued + ' queue calls');
-  say('waitedBeforeRequeue', fetched >= 2, 'it requeued without polling');
-  say('polledBoth', fetched >= 2, fetched + ' fetch calls');
+  say('keptWaiting', polls >= 5, polls + ' polls before it gave up');
+  say('didNotRequeue', queued === 1, queued + ' queue calls — it requeued too early');
   const shot = await p.evaluate(() => (ROWS[0].result || {}).shot || '');
-  say('captureLanded', shot.startsWith('data:image/'), shot.slice(0, 40));
-
+  say('captureLanded', shot.startsWith('data:image/'), shot.slice(0, 30));
   const msg = await p.textContent(hist + ' [data-serpmsg]').catch(() => '');
-  say('noDeadEndMessage', !/no longer exists/.test(msg), msg);
+  say('noLostTaskClaim', !/lost|no longer exists/.test(msg), msg);
 
   await b.close();
   console.log(bad ? 'failed=' + bad : 'ok all');

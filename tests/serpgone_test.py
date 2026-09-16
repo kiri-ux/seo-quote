@@ -1,8 +1,10 @@
-"""A lost capture task is terminal, however the message arrives.
+""""Task Not Found" is a CONDITION, not a verdict.
 
-It came back as HTTP 200 with "Task Not Found" in the body rather than a 404,
-so the poll spent three minutes asking about a task that no longer existed --
-which is what an instance restart mid-capture leaves behind.
+/serp/screenshot renders from a COMPLETED organic task, so until Google answers
+the id is genuinely not found -- the same 40401 an expired task gives. Calling
+it terminal made the capture give up seconds after queueing. The endpoint
+reports the condition and the caller, which knows how long it has waited,
+decides.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,25 +28,27 @@ def fetch(task):
 
 # The shape that actually arrived.
 r = fetch({"status_code": 40401, "status_message": "Task Not Found.", "result": None})
-check("notFound.isGone", r.get("gone"), True)
+check("notFound.reportsCondition", r.get("notfound"), True)
 check("notFound.notReady", r.get("ready"), False)
-check("notFound.saysWhy", "no longer exists" in str(r.get("why")), True)
-# post() throws on any body carrying an "error" key, so a gone task must NOT
-# use that field -- the poll never reached the branch that re-queues it.
+check("notFound.doesNotCallItGone", bool(r.get("gone")), False)
+# post() throws on any body carrying an "error" key, so this must not use it.
 check("notFound.notAnErrorBody", "error" in r, False)
+check("notFound.carriesTheMessage", "Task Not Found" in str(r.get("status")), True)
 
 # By message alone, without the code.
 r2 = fetch({"status_code": 20000, "status_message": "Task Not Found.", "result": None})
-check("byMessage.isGone", r2.get("gone"), True)
+check("byMessage.reportsCondition", r2.get("notfound"), True)
 
 # Still rendering is NOT gone -- the poll has to keep going.
 r3 = fetch({"status_code": 20100, "status_message": "Task In Queue.", "result": None})
 check("inQueue.notGone", bool(r3.get("gone")), False)
+check("inQueue.notNotfound", bool(r3.get("notfound")), False)
 check("inQueue.carriesStatus", r3.get("status"), "Task In Queue.")
 check("inQueue.notReady", r3.get("ready"), False)
 
 r4 = fetch({"status_code": 20000, "status_message": "Task Handed.", "result": None})
 check("handed.notGone", bool(r4.get("gone")), False)
+check("handed.notNotfound", bool(r4.get("notfound")), False)
 
 print(f"ok={ok} failed={fail}")
 sys.exit(1 if fail else 0)

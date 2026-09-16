@@ -188,6 +188,7 @@
           <h4>Seed terms</h4>
           <p class="hint">What the client sells. Everything below is built from these.</p>
           <div class="box" data-chips="seeds"></div>
+          <p class="hint seedhint" style="margin:6px 0 0"></p>
           <p class="hint" id="kbScopeNote" style="margin:10px 0 0"></p>
           <div class="kbrow">
             <div class="f"><label>Price on national demand</label>
@@ -479,7 +480,12 @@ function rowHtml(r, i){
     </div>
   </div>`;
 }
+let LOADING = false;
 function draw(){
+  if (LOADING && !ROWS.length) {
+    $('prods').innerHTML = '<p class="hint" style="padding:6px 2px">Loading\u2026</p>';
+    return;
+  }
   ROWS.forEach((r, i) => { r.i = i; });
   $('prods').innerHTML = ROWS.map(rowHtml).join('');
 }
@@ -561,8 +567,9 @@ function rankingText(r){
   const ok = Math.max(checked - errored, 0);
   if (p.pct_not_ranking == null || !ok) return 'ranking unmeasured';
   const ranking = ok - Math.round(ok * (p.pct_not_ranking || 0) / 100);
-  return `ranking for ${ranking} of ${ok} terms`
-    + (ok < nTerms ? ` · ${nTerms - ok} unmeasured` : '');
+  // The unmeasured count belongs on the Ranking card, where there is room to
+  // read it against the list. On the one-line summary it is noise.
+  return `ranking for ${ranking} of ${ok} terms`;
 }
 function headlineOf(r){
   const p = (r.result || {}).pricing || {};
@@ -630,11 +637,46 @@ function adopt(got){
   const ranks = {};
   (pay.table || []).forEach(x => { ranks[String(x.kw || '').toLowerCase()] = x.pos; });
   const kwAll = ((pay.kw || {}).all || []);
+  // A LEGACY PAYLOAD MAY NOT CARRY ITS SEEDS. inputs.keywords is the planner's
+  // own list, and older saves have it empty -- so the Keyword Builder opened on
+  // a blank Seed terms box for a quote that plainly had a keyword list. Read
+  // them back off the list: every built term is a service crossed with a
+  // market, so strip the markets and what is left is what was typed.
+  const seedsFromList = () => {
+    const places = new Set();
+    geo.forEach(m => {
+      String(m).split(',').forEach(part => {
+        const t = part.trim().toLowerCase();
+        if (t) places.add(t);
+      });
+    });
+    if (i.state) places.add(String(i.state).trim().toLowerCase());
+    const out = [], seen = new Set();
+    ((pay.kw || {}).head || kwAll).forEach(x => {
+      let t = String((x && x.kw) || x || '').toLowerCase().trim();
+      if (!t) return;
+      // The state code comes off FIRST, or "whidbey island" never matches the
+      // end of "electrical services whidbey island wa". Then the market names,
+      // longest first, then any code the market itself left behind.
+      const strip = () => {
+        t = t.replace(/\s+[a-z]{2}$/, '').trim();
+        [...places].sort((a, b) => b.length - a.length).forEach(pl => {
+          if (t.endsWith(' ' + pl)) t = t.slice(0, -(pl.length + 1)).trim();
+        });
+      };
+      strip(); strip();
+      if (!t || seen.has(t)) return;
+      seen.add(t);
+      out.push(t);
+    });
+    return out.slice(0, 20);
+  };
   return {
     kind: 'seo', qid: null, built: (got.updated_at || '').slice(0, 10),
     data: {brand: i.brand || got.client || '', site: i.domain || (i.sites || [])[0] || '',
            business_desc: i.business_desc || '',
-           focus: (i.keywords || []).slice(), negatives: (i.negatives || []).slice(),
+           focus: (i.keywords || []).length ? (i.keywords || []).slice() : seedsFromList(),
+           negatives: (i.negatives || []).slice(),
            industry: (i.industries || (i.industry ? String(i.industry).split(' | ') : [])),
            strategy: String(i.strategy || 'Core SEO').split(' + '),
            goals: i.goal ? [i.goal] : [],
@@ -690,10 +732,12 @@ async function loadClient(){
   CLIENT = q.get('client') || '';
   if (!CLIENT) return;
   let list = null;
-  try { list = await (await fetch('/api/adtini/clients')).json(); } catch (e) { return; }
-  if (!list || !list.enabled) return;
+  try { list = await (await fetch('/api/adtini/clients')).json(); }
+  catch (e) { samplesBack(); draw(); fromQuery(); return; }
+  if (!list || !list.enabled) { samplesBack(); draw(); fromQuery(); return; }
   const c = (list.clients || []).find(x => x.client === CLIENT);
-  if (!c || !(c.quotes || []).length) { ROWS.length = 0; draw(); return; }
+  if (!c || !(c.quotes || []).length) { ROWS.length = 0; SAMPLES = null;
+                                        LOADING = false; draw(); fromQuery(); return; }
   const loaded = [];
   for (const q2 of c.quotes) {
     try {
@@ -712,7 +756,8 @@ async function loadClient(){
       loaded.push(row);
     } catch (e) { /* one unreadable quote must not empty the page */ }
   }
-  if (loaded.length) { ROWS.length = 0; loaded.forEach(x => ROWS.push(x)); }
+  if (loaded.length) { ROWS.length = 0; loaded.forEach(x => ROWS.push(x)); SAMPLES = null; }
+  samplesBack();
   draw();
   fromQuery();
 }
@@ -1969,6 +2014,11 @@ function kbLoad(r){
   const typed = collect(formOf(r)).focus;
   if (typed && typed.length) r.data.focus = typed.slice();
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
+  const seedHint = document.querySelector('#paneKw .seedhint');
+  if (seedHint) {
+    seedHint.textContent = (r.data.focus || []).length ? ''
+      : 'None on this quote \u2014 add them here, or in Product/Vertical Focus on the form.';
+  }
   [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
@@ -2484,19 +2534,25 @@ async function autoSerp(r, d, ranks, say){
       }
       if (f.ready && f.data_url)
         return {kw, basis, img: f.data_url, area: q.loc_scope ? q.loc_used : ''};
-      if (f.error && !f.gone) return {error: f.error, kw};
-      // A LOST TASK IS WORTH QUEUEING AGAIN, ONCE. The instance restarting
-      // mid-capture leaves the task behind, and the answer to that is a new
-      // task rather than three minutes of asking about the old one.
-      if (f.gone) {
+      if (f.error && !f.gone && !f.notfound) return {error: f.error, kw};
+      // A TASK THAT IS NOT THERE YET IS NOT A LOST TASK. /serp/screenshot
+      // renders from a COMPLETED organic task, so until Google answers the id
+      // genuinely is not found -- the same 40401 an expired task gives. Calling
+      // that terminal made the capture give up seconds after queueing, queue
+      // again, ask too early again, and conclude the task "keeps being lost".
+      // It was never lost; it had not started.
+      if (f.notfound && (i * 3) < 75) { last = 'queued'; continue; }
+      if (f.gone || f.notfound) {
         if (requeued++)
-          return {error: `the capture task for “${kw}” keeps being lost`
-                         + (f.why ? ` — ${f.why}` : ''), kw};
-        say(`Capture lost — queueing it again for “${kw}”…`);
-        task = await post('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
-          state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1});
+          return {error: `no capture for \u201c${kw}\u201d \u2014 the task was not`
+                         + ` there after two attempts`, kw};
+        say(`Still queued \u2014 asking for a fresh capture of \u201c${kw}\u201d\u2026`);
+        task = await postWait('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
+          state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1},
+          null, say);
         if (!task || !task.task_id)
           return {error: 'the capture service took no task on the retry', kw};
+        i = 0;                          // the fresh task gets its own patience
         continue;
       }
       if (f.status) last = f.status;
@@ -2706,6 +2762,26 @@ $('revert').onclick = $('reset').onclick = () => {
 
 // THE ROWS DRAW FIRST. The pick lists are only needed when the modal opens, so
 // waiting on them left the page blank until a fetch came back.
+//
+// BUT NOT THE SAMPLES. A URL naming a client is about to replace them, so
+// painting them first is a flash of somebody else's quotes -- which is the
+// "weird behaviour on refresh". Held aside rather than thrown away: on a deploy
+// with no store the samples are all there is, and blanking the page would be a
+// worse answer than showing them.
+let SAMPLES = null;
+(function(){
+  const q = new URLSearchParams(location.search);
+  if (q.get('client') && !q.get('new')) {
+    SAMPLES = ROWS.slice();
+    ROWS.length = 0;
+    LOADING = true;
+  }
+})();
+function samplesBack(){
+  if (SAMPLES && !ROWS.length) SAMPLES.forEach(x => ROWS.push(x));
+  SAMPLES = null;
+  LOADING = false;
+}
 draw();
 fromQuery();
 loadClient();

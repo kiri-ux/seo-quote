@@ -15096,15 +15096,22 @@ def api_serp_fetch():
         if not image_url:
             t0 = (sc.get("tasks") or [{}])[0]
             msg = t0.get("status_message", "")
-            # TASK NOT FOUND IS TERMINAL, WHATEVER IT ARRIVES AS. It came back
-            # as a 200 with the message in the body rather than a 404, so the
-            # poll kept asking for three minutes about a task that no longer
-            # exists -- which is what an instance restart mid-capture leaves
-            # behind. Say so on the first poll instead. (2026-09-16, Kiri)
+            # "TASK NOT FOUND" MEANS TWO DIFFERENT THINGS.
+            #
+            # /serp/screenshot renders from a COMPLETED organic task, and until
+            # that task finishes the id is not there to find -- so an early poll
+            # gets the same 40401 as a task that has genuinely expired. Calling
+            # it terminal on the first poll (2026-09-16) made the capture give
+            # up seconds after queueing, re-queue, ask too early again and
+            # conclude the task "keeps being lost". It was never lost; it had
+            # not started.
+            #
+            # So this reports the CONDITION and lets the caller, which knows how
+            # long it has been waiting, decide. (2026-09-16, Kiri)
             if (str(t0.get("status_code")) in ("40401", "40400")
                     or "not found" in str(msg).lower()):
-                return jsonify({"ready": False, "gone": True,
-                                "why": "the queued capture no longer exists"})
+                return jsonify({"ready": False, "notfound": True,
+                                "status": msg or "task not found yet"})
             return jsonify({"ready": False, "status": msg})
         login = os.environ.get("DFS_LOGIN", ""); pw = os.environ.get("DFS_PASSWORD", "")
         tok = base64.b64encode(f"{login}:{pw}".encode()).decode()
@@ -15142,8 +15149,8 @@ def api_serp_fetch():
         # from this endpoint really is "still running". (2026-09-04, Kiri)
         _code = getattr(getattr(e, "response", None), "status_code", None)
         if _code in (404, 410):
-            return jsonify({"ready": False, "gone": True,
-                            "why": "that queued capture no longer exists"})
+            return jsonify({"ready": False, "notfound": True,
+                            "status": "task not found yet"})
         # screenshot endpoint returns an error while the task is still running;
         # treat as not-ready rather than a hard failure so the poll continues
         return jsonify({"ready": False, "status": f"processing ({e})"})
