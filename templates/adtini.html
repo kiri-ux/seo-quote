@@ -839,6 +839,12 @@ async function loadClient(){
         data: a.data || {}, cfg: a.cfg || {}, over: a.over || {},
         kw: a.kw || null, scan: a.scan || null, result: a.result || null,
         history: a.history || [],
+        // WHICH SEEDS WERE PROPOSED, AND WHICH WERE REFUSED. Saved with the
+        // quote, and dropped here on the way back in -- so every chip opened
+        // solid after a reload.
+        seedSrc: a.seedSrc || {}, seedDrop: a.seedDrop || [],
+        suggested: a.suggested || [], rankedSeeds: a.rankedSeeds || [],
+        expandDone: a.expandDone || [],
       };
       if (row.result && !row.result.headline) row.result.headline = headlineOf(row);
       loaded.push(row);
@@ -924,21 +930,51 @@ function fromQuery(){
 
 // A QUOTE THAT HAS RUN HAS A HISTORY. A saved quote is its own first row --
 // it was generated once, whatever wrote it -- and every Generate adds another.
+// THE RUN AS IT WAS. Its own list where it kept one; otherwise the list is read
+// back off its rank table, which names every term the run priced. Never the
+// row's current list -- that is a different run.
+// A ROW BUILT FROM A PROPOSED SEED IS MARKED LIKE THE SEED. The seed chips
+// carry the mark; the terms built from them did not, so the list and every
+// run's table read as one list the client wrote.
+function fromExpansion(kw, seedSrc){
+  const t = ' ' + String(kw || '').toLowerCase().replace(/\s+/g, ' ').trim() + ' ';
+  if (t === '  ') return false;
+  // Whole words: "ear tube" must not claim "ear tube surgery" is its own row,
+  // and "term 2" must not claim "term 20".
+  return Object.keys(seedSrc || {}).some(sd =>
+    sd && t.includes(' ' + String(sd).toLowerCase().replace(/\s+/g, ' ').trim() + ' '));
+}
+
+function runView(r, x, j){
+  const q = x && x.quote;
+  let kw = x && x.kw && (x.kw.all || []).length ? x.kw : null;
+  // The newest run IS the row's list. Only an older run without a snapshot
+  // has to be read back off its table.
+  if (!kw && (j === 0 || j == null) && (q === r.result || !(r.history || []).length
+      || (r.history || [])[0] === x)) kw = r.kw;
+  if (!kw && q && (q.table || []).length) {
+    kw = {all: q.table.map(t => ({kw: t.kw, vol: t.vol != null ? t.vol : null})),
+          reconstructed: true};
+  }
+  return Object.assign({}, r, {result: q, kw: kw || r.kw,
+                               seedSrc: (x && x.seedSrc) || r.seedSrc || {}});
+}
+
 function histRows(r){
   const h = (r.history || []).slice();
   if (!h.length && r.result) {
     h.push({when: r.built || dateOf(r), resp: r.result.headline || '',
-            quote: r.result, first: true});
+            quote: r.result, kw: r.kw, seedSrc: r.seedSrc, first: true});
   }
   // THE RESPONSE LINE IS DERIVED, NOT REMEMBERED. It was written into storage
   // as a string, so a run rechecked and repriced under an older build kept
   // showing the ladder it was first saved with -- "$5,350/mo" beside tiles
   // reading $3,200 / $4,200 / $5,200. Read it off the quote every time, and
   // no stored string can disagree with the numbers beside it.
-  return h.map(x => {
+  return h.map((x, j) => {
     if (!x || !x.quote) return x;
     let line = '';
-    try { line = headlineOf(Object.assign({}, r, {result: x.quote})); } catch (e) { line = ''; }
+    try { line = headlineOf(runView(r, x, j)); } catch (e) { line = ''; }
     // A derived line with no figure in it says less than the stored one.
     if (!line || !/\d/.test(line)) return x;
     return Object.assign({}, x, {resp: line});
@@ -967,7 +1003,7 @@ function histHtml(r){
           + ` title="Remove this run" aria-label="Remove this run">&times;</button>`
           + ' <span class="chev">&#9662;</span></td></tr>'
           + (on ? `<tr class="histopen"><td colspan="${cols.length}">`
-                  + resultsHtml(Object.assign({}, r, {result: x.quote}), true)
+                  + resultsHtml(runView(r, x, j), true)
                   + '</td></tr>' : '');
       }).join('')
     + '</tbody></table></div>';
@@ -1302,8 +1338,9 @@ function plannerView(r, brief){
           const from = x.vol_scope === 'broader'
             ? ` <i class="volwide" title="${esc(x.vol_area || 'a wider area')} \u2014 `
               + `not this market's own figure">*</i>` : '';
-          return `<tr><td>${esc(x.kw)}</td>`
-               + `<td>${(x.vol || 0).toLocaleString()}${from}</td>`
+          const exp = fromExpansion(x.kw, r.seedSrc);
+          return `<tr${exp ? ' class="exp"' : ''}><td>${esc(x.kw)}</td>`
+               + `<td>${x.vol == null ? '' : (x.vol || 0).toLocaleString()}${from}</td>`
                + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
         }).join('')}
       </table></div>
@@ -2281,7 +2318,7 @@ function kbDraw(r){
   $('kbCols').innerHTML = ['ultra','competitive','long_tail'].map(k => `
     <div class="col"><h5>${KBL[k]}<span>${(kw[k] || []).length}</span></h5>
       <ul>${(kw[k] || []).map((x, i) =>
-        `<li><span>${esc(x.kw)}</span>${src && x.src ? `<span class="s">[${esc(x.src)}]</span>` : ''}`
+        `<li${fromExpansion(x.kw, r.seedSrc) ? ' class="exp"' : ''}><span>${esc(x.kw)}</span>${src && x.src ? `<span class="s">[${esc(x.src)}]</span>` : ''}`
         + vol(x)
         + `<b class="kwrm" data-bucket="${k}" data-i="${i}" title="Remove">&times;</b></li>`).join('')}
       </ul>
@@ -2963,8 +3000,14 @@ async function generate(){
     // One place builds the headline, so the row, the summary and the history
     // entry cannot print three different versions of the same quote.
     r.result.headline = headlineOf(r);
+    // THE RUN KEEPS ITS OWN LIST. A run held only its quote, and drew its
+    // keyword list off whatever the row's list was at the time of drawing --
+    // so rebuilding to 13 terms made every earlier run read "13 terms" too,
+    // and the 36-term run could not be seen again.
     r.history = [{when: new Date().toLocaleString(), prompt: `{ band: ${band}, adder: ${met.adder} }`,
-                  resp: r.result.headline, quote: r.result}]
+                  resp: r.result.headline, quote: r.result,
+                  kw: JSON.parse(JSON.stringify(r.kw || null)),
+                  seedSrc: Object.assign({}, r.seedSrc || {})}]
                 .concat(r.history || []);
     await persist(r);
     draw();
@@ -3230,6 +3273,13 @@ $('prods').addEventListener('click', e => {
 async function recheckRanks(i){
   const r = ROWS[i];
   if (!r || !r.result) return;
+  // THE RUN THAT IS OPEN IS THE RUN THAT IS CHECKED. This always worked on the
+  // row's newest quote and then wrote that into whichever run was open -- so
+  // rechecking an older run replaced it with the newest one.
+  const at = r.openRun == null ? 0 : r.openRun;
+  const run = (r.history || [])[at] || null;
+  const work = run ? runView(r, run, at) : r;
+  const res = (run && run.quote) || r.result;
   // REBUILT, NOT REMEMBERED. rankReq is only on quotes generated since it was
   // added, and it is not in the saved payload at all -- so every quote reopened
   // from storage returned here without checking anything, which is what
@@ -3239,8 +3289,8 @@ async function recheckRanks(i){
   const btn = document.querySelector(`[data-recheck="${i}"]`);
   const say = t => { const m = document.querySelector(`[data-rkmsg="${i}"]`);
                      if (m) m.textContent = t ? ' \u00b7 ' + t : ''; };
-  const all = worthChecking((r.kw || {}).all || []);
-  const ranks = r.result.ranks || {};
+  const all = worthChecking((work.kw || {}).all || []);
+  const ranks = res.ranks || {};
   const todo = all.map(x => x.kw).filter(k => {
     const v = ranks[String(k).toLowerCase()];
     return v === '\u2014' || v == null;
@@ -3260,7 +3310,7 @@ async function recheckRanks(i){
     industry: (d.industry || []).join(', '), geo_scope: band,
     national_demand: band === 'nationwide',
     brand: d.brand, domain: d.site, cfg: r.over || {},
-  }, (r.result.rankReq || {}).common || {});
+  }, (res.rankReq || {}).common || {});
   let done = 0, stillBad = 0;
   try {
     // PASSES, NOT ONE SWEEP. Each request runs under a budget the platform
@@ -3280,10 +3330,10 @@ async function recheckRanks(i){
         (rk.results || []).forEach(x => {
           const key = String(x.kw).toLowerCase();
           ranks[key] = x.pos;
-          const at = (r.result.table || []).findIndex(
+          const at = (res.table || []).findIndex(
             t => String(t.kw).toLowerCase() === key);
-          if (at >= 0) r.result.table[at] = x;
-          else (r.result.table = r.result.table || []).push(x);
+          if (at >= 0) res.table[at] = x;
+          else (res.table = res.table || []).push(x);
           if (x.error) failed.push(x.kw); else done++;
         });
       }
@@ -3295,23 +3345,23 @@ async function recheckRanks(i){
     // The denominator moved, so the price moves with it.
     // Rows for terms that are no longer checked leave the tally with them.
     const keep = new Set(all.map(x => String(x.kw).toLowerCase()));
-    const tbl = (r.result.table || [])
+    const tbl = (res.table || [])
       .filter(x => keep.has(String(x.kw).toLowerCase()));
-    r.result.table = tbl;
+    res.table = tbl;
     const errored = tbl.filter(x => x.error).length;
     const checkedOk = Math.max(tbl.length - errored, 0);
     const ranked = tbl.filter(x => x.ranked_top).length;
     const unmeasured = tbl.length > 0 && checkedOk === 0;
     const pct = checkedOk ? Math.round((1 - ranked / checkedOk) * 100) : null;
-    const p0 = (r.result.pricing || {}).handoff || {};
-    const base = r.result.priceReq || {
+    const p0 = (res.pricing || {}).handoff || {};
+    const base = res.priceReq || {
       // A quote saved before priceReq existed still has to reprice, so the
       // request is rebuilt from what the quote itself records.
-      band, adder: ((r.result.metrics || {}).adder) || 0,
-      addon_markets: ((r.result.addon || {}).suggested) || 0,
+      band, adder: ((res.metrics || {}).adder) || 0,
+      addon_markets: ((res.addon || {}).suggested) || 0,
       markup_pct: parseFloat(String((r.cfg || {}).markup || d.markup || 35)),
-      total_volume: (r.result.pricing || {}).total_volume
-        || ((r.kw || {}).total_volume || 0),
+      total_volume: (res.pricing || {}).total_volume
+        || ((work.kw || {}).total_volume || 0),
       industry: (d.industry || []).join(', '),
       national_demand: band === 'nationwide', cfg: r.over || {},
       base_override: (r.cfg || {}).ov_core || '', pageone_rank: null};
@@ -3320,23 +3370,21 @@ async function recheckRanks(i){
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
     say('repricing\u2026');
     const price = await postWait('/api/price', req, null, say);
-    r.result.pricing = price;
-    r.result.priceReq = req;
-    r.result.headline = headlineOf(r);
+    res.pricing = price;
+    res.priceReq = req;
+    res.headline = headlineOf(Object.assign({}, work, {result: res}));
     // THE OPEN RUN RENDERS ITS OWN COPY OF THE QUOTE. A quote reloaded from
-    // storage deserialises history[n].quote as a SEPARATE object from r.result,
+    // storage deserialises history[n].quote as a SEPARATE object from res,
     // so rechecking updated the row's own quote and the expanded run went on
     // drawing the ranks it was saved with -- "4 of 11 measured, 10 unmeasured"
     // beside a keyword list showing four failures. Point the run being looked
     // at back at the quote that was just rechecked. (2026-09-16, Kiri)
-    const at = r.openRun == null ? 0 : r.openRun;
-    if (r.history && r.history[at]) {
-      r.history[at].quote = r.result;
-      r.history[at].resp = r.result.headline;
-    } else if (r.history && r.history[0]) {
-      r.history[0].quote = r.result;
-      r.history[0].resp = r.result.headline;
+    if (run) {
+      run.quote = res;
+      run.resp = res.headline;
     }
+    // The newest run is the row's own quote, so the tiles agree with it.
+    if (at === 0 || !run) r.result = res;
     await persist(r);
     draw();
     const m = document.querySelector(`[data-rkmsg="${i}"]`);
