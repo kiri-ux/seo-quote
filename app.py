@@ -7550,8 +7550,46 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # location and the price. Say so rather than letting it read as a
         # finding. The client's own name or domain breaks the tie first, which
         # is what home_rank is for. (2026-08-22)
+        # ALL-ZERO WAS TOO NARROW A TEST FOR "NOTHING MEASURED".
+        #
+        # This probe reads geo-suffixed text ("hearing aids greenwood ms"),
+        # which in a small town is noise at Google's 10/mo floor. The flag only
+        # fired when EVERY market read zero, so one town returning 10 made
+        # any() true and the scores were treated as a ranking -- and because
+        # -scored is the FIRST sort key, that 10 outranked home_rank, which is
+        # the third.
+        #
+        # ENT Consultants of North MS (2026-09-16): entoxford.com, eight
+        # markets. Greenwood read 10 on this probe, Oxford read 0, so Greenwood
+        # became the primary market. The services axis then collapses the grid
+        # to cities[:1], and that one city sets the grid suffix, the rank-check
+        # location AND the price -- so a quote for an Oxford practice was built
+        # and priced entirely on Greenwood. Measured demand fell 230/mo to
+        # 100/mo, and the two 50/mo near-me terms went with it. The grid's own
+        # lookup, which asks for the bare service in the city's location rather
+        # than the suffixed phrase, had Oxford at 30 for the head term.
+        #
+        # So the test is now whether anything cleared the floor that already
+        # decides this question elsewhere -- axis_city_volume_floor, the same
+        # number choose_grid_axis uses to ask "does this market carry demand".
+        # Below it there is no ranking to be had, and the client's own market
+        # decides. A market that genuinely clears the floor still wins on
+        # merit. (2026-09-16)
+        # TWO DIFFERENT QUESTIONS, AND THEY NEED TWO FLAGS.
+        # `nothing_measured` answers "did the probe return anything at all",
+        # and choose_build_markets reads it to decide whether to WIDEN the
+        # search -- a weak 3/mo reading is still a reason to go look at more
+        # markets. Ranking is the other question, and it needs the floor.
+        # Folding them into one flag stopped the widen from ever running.
         exp["nothing_measured"] = not any(scored.values())
-        ranked = sorted(cities, key=lambda c: (-scored.get(c, 0), cty_rank(c),
+        _floor = int(CFG.get("axis_city_volume_floor", 20))
+        _measured = [v for v in scored.values() if v and v >= _floor]
+        exp["ranked_on_demand"] = bool(_measured)
+        exp["measure_floor"] = _floor
+        # Noise is not evidence: when nothing cleared the floor the scores are
+        # dropped from the key entirely rather than ordering the list.
+        _score_key = (lambda c: -scored.get(c, 0)) if _measured else (lambda c: 0)
+        ranked = sorted(cities, key=lambda c: (_score_key(c), cty_rank(c),
                                                home_rank(c), c.lower()))
         if under_cap:
             exp["method"] = "all"
