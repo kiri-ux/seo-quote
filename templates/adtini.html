@@ -340,11 +340,14 @@ function timingLine(){
   const worst = TIMING.slice().sort((a, b) => b.ms - a.ms).slice(0, 3).map(x => {
     const name = x.url.replace('/api/', '');
     const secs = (x.ms / 1000).toFixed(1) + 's';
-    const sub = (x.steps || []).slice()
-      .sort((a, b) => (b.ms || 0) - (a.ms || 0))[0];
-    return sub && sub.ms >= 1000
-      ? `${name} ${secs} (${sub.step} ${(sub.ms / 1000).toFixed(1)}s)`
-      : `${name} ${secs}`;
+    // THE TOP FEW, NOT THE TOP ONE. With every model pass now timed, the
+    // slowest single step of a 130s refine is one of nine; naming only it
+    // leaves the other 100s unexplained on the line.
+    const subs = (x.steps || []).slice()
+      .sort((a, b) => (b.ms || 0) - (a.ms || 0))
+      .filter(st => st.ms >= 1000).slice(0, 4)
+      .map(st => `${st.step} ${(st.ms / 1000).toFixed(1)}s`);
+    return subs.length ? `${name} ${secs} (${subs.join(', ')})` : `${name} ${secs}`;
   });
   return ` \u00b7 ${(total / 1000).toFixed(1)}s \u2014 ${worst.join(', ')}`;
 }
