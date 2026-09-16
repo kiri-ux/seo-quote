@@ -1016,7 +1016,11 @@ CFG = {
     # Four, not three — Brendan's Ooten list carries four "near me" terms out of
     # fifty (car accident lawyer, personal injury lawyer, dui lawyer, criminal
     # defense lawyer near me), all on the lead services. (2026-08-22)
-    "near_me_terms": 4,
+    # EIGHT (2026-09-16). These are the only rows in a grid build that are what
+    # a person actually types rather than service x city, and a 36-term list
+    # carried one of them. Still measured, still floored, so a form nobody
+    # searches costs nothing; this only stops cutting the ones that do.
+    "near_me_terms": 8,
     "near_me_probe_cap": 12,
     # Monthly searches a proposed extra service must clear to be offered.
     "expand_min_volume": 20,
@@ -1040,7 +1044,10 @@ CFG = {
     # it the whole market is small and the floor is refusing the only terms that
     # exist — Santa Fe apartment rentals top out at 90/mo. (2026-08-13)
     "expand_thin_market_mult": 10,
-    "near_me_min_volume": 30,
+    # 30 -> 20 (2026-09-16): the same floor the axis choice and the industry
+    # gap-finder use, just above Google's 10/mo for thin terms. At 30 a real
+    # "<service> near me" at 20/mo lost to nothing.
+    "near_me_min_volume": 20,
     # SINGULAR OR PLURAL — see pick_service_forms. Nothing chose between them,
     # and Amare shipped "home for rent" where Brendan's list leads with "homes
     # for rent". A variant has to clearly win before the operator's phrasing is
@@ -5382,6 +5389,19 @@ def services_needed(n_cities):
     return max(lo, min(hi, math.ceil(target / n)))
 
 
+def markets_for_seeds(n_seeds):
+    """How many markets the seed list leaves room for: slots / seeds, rounded
+    up, never more than the city cap. The inverse of services_needed -- that
+    one cuts SERVICES to fit the markets; this one cuts MARKETS to fit the
+    services, which is the right way round when the seeds are what the client
+    sells. Twelve seeds against twenty slots is two markets. (2026-09-16)"""
+    import math
+    slots = int(CFG.get("grid_max_services", 20))
+    cap = int(CFG.get("grid_max_cities", 5))
+    n = max(int(n_seeds or 0), 1)
+    return max(1, min(cap, math.ceil(slots / n)))
+
+
 
 # --- ranking the partner's own seed list ------------------------------------
 # enforce_seed_services() fills the grid from clean[:max_services] IN ENTRY
@@ -6702,6 +6722,23 @@ def market_anchor(group, state=""):
                                         len(str(m)), str(m).lower()))[0]
 
 
+def markets_by_size(markets, state="", home_hint=""):
+    """The entered markets, biggest first, off the bundled ZIP index -- no call.
+
+    The client's own market leads whatever its size: a Sevierville firm that
+    lists Knoxville and Maryville is measured in Sevierville first, or the size
+    order would cut the one market it actually trades in. Counties sort behind
+    towns of the same size; ties break on the name so the same input always
+    gives the same order."""
+    cities = [str(m).strip() for m in (markets or []) if m and str(m).strip()]
+    if state:
+        cities = [c for c in cities if c.lower() != state.strip().lower()]
+    return sorted(cities, key=lambda c: (home_market_rank(c, state, home_hint),
+                                         -city_size(c, state),
+                                         1 if county_key(c, state) else 0,
+                                         c.lower()))
+
+
 def city_coords(market, state=""):
     """Latitude/longitude for an entered market, or None."""
     city, st = parse_market(market, state)
@@ -7129,6 +7166,31 @@ def group_by_metro(vectors, min_terms=2):
     return groups
 
 
+def home_market_rank(market, state, home_hint):
+    """0 when the client's name, domain or site names this market, else 1.
+
+    Matching the WHOLE market string ("clarendon hills, il") against the hint
+    could never succeed: a domain is "clarendonchiro.com", with no space, no
+    state and usually only the first word of the town. So compare on the bare
+    city, on its de-spaced form, and on its first token -- which is what a
+    domain almost always carries (2026-08-04). Shared by the demand ranking's
+    tiebreak and the size order, so both agree on whose market it is."""
+    hint_raw = (home_hint or "").lower()
+    hint_squashed = re.sub(r"[^a-z0-9]", "", hint_raw)
+    bare = (parse_market(market, state)[0] or market).strip().lower()
+    if not bare:
+        return 1
+    squashed = re.sub(r"[^a-z0-9]", "", bare)
+    if len(squashed) > 3 and squashed in hint_squashed:
+        return 0                       # "clarendonhills" in the hint
+    if len(bare) > 3 and bare in hint_raw:
+        return 0                       # "clarendon hills" spelled out
+    first = bare.split()[0]
+    if len(first) >= 5 and first in hint_squashed:
+        return 0                       # "clarendon" in clarendonchiro
+    return 1
+
+
 def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
                     home_hint=""):
     """`explain` is an optional dict that gets filled with WHY these cities won.
@@ -7311,22 +7373,8 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # space, no state and usually only the first word of the town. So
         # compare on the bare city, on its de-spaced form, and on its first
         # token — which is what a domain almost always carries (2026-08-04).
-        hint_raw = (home_hint or "").lower()
-        hint_squashed = re.sub(r"[^a-z0-9]", "", hint_raw)
-
         def home_rank(c):
-            bare = (parse_market(c, state)[0] or c).strip().lower()
-            if not bare:
-                return 1
-            squashed = re.sub(r"[^a-z0-9]", "", bare)
-            if len(squashed) > 3 and squashed in hint_squashed:
-                return 0                       # "clarendonhills" in the hint
-            if len(bare) > 3 and bare in hint_raw:
-                return 0                       # "clarendon hills" spelled out
-            first = bare.split()[0]
-            if len(first) >= 5 and first in hint_squashed:
-                return 0                       # "clarendon" in clarendonchiro
-            return 1
+            return home_market_rank(c, state, home_hint)
         # A county is coverage, not a search target: "junk removal jefferson
         # county tn" is not a phrase anyone types, and a county only earns a grid
         # slot when no town of its market is available to stand for it.
@@ -7399,6 +7447,59 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
                     "kept": [(c, None) for c in cities[:limit]],
                     "dropped": [(c, None) for c in cities[limit:]]})
         return cities[:limit]
+
+
+def choose_build_markets(markets, state, seeds, home_hint=""):
+    """WHICH MARKETS GET MEASURED. The seeds decide how many. (2026-09-16)
+
+    The grid measured up to grid_max_cities markets whatever the seed list
+    looked like, then cut SEEDS to fit: twelve focus terms across five markets
+    became seven services, and five things the client sells never reached the
+    quote. Now the seed count sets the market count -- slots / seeds, rounded
+    up -- and the markets are taken by size off the ZIP index, so a twelve-seed
+    client is measured in its two biggest markets on all twelve terms. Every
+    volume and rank call downstream falls with the market count.
+
+    The demand probe still runs, on the chosen markets only: the axis decision
+    reads its scores and the county wording reads its forms. If none of the
+    chosen markets clears the axis floor the pick is WIDENED to the whole
+    entered list under the old cap -- the one case where a smaller market can
+    out-search a bigger one and the size order would have hidden it. Costs a
+    second probe, only then.
+
+    Returns (cities, explain). explain carries what the panel prints: by_size,
+    seed_markets, measured, and widened_from when it happened."""
+    cap = int(CFG.get("grid_max_cities", 5))
+    probe = list(seeds or [])
+    by_size = markets_by_size(markets, state, home_hint)
+    if not by_size:
+        # No markets: same call as before, so a national build reads the same.
+        pick = {}
+        cities = pick_grid_cities(markets, state, cap, probe_term=probe,
+                                  explain=pick, home_hint=home_hint)
+        pick.update({"by_size": [], "seed_markets": 0,
+                     "seeds": len(probe), "measured": []})
+        return cities, pick
+    n = markets_for_seeds(len(probe))
+    pool = by_size[:n]
+    pick = {}
+    cities = pick_grid_cities(pool, state, n, probe_term=probe,
+                              explain=pick, home_hint=home_hint)
+    floor = int(CFG.get("axis_city_volume_floor", 20))
+    live = [c for c, v in (pick.get("kept") or []) if int(v or 0) >= floor]
+    facts = {"by_size": [[c, city_size(c, state)] for c in by_size],
+             "seed_markets": n, "seeds": len(probe), "measured": list(pool)}
+    if not live and len(by_size) > len(pool):
+        wide = {}
+        cities = pick_grid_cities(list(by_size), state, cap, probe_term=probe,
+                                  explain=wide, home_hint=home_hint)
+        wide.update(facts)
+        wide["measured"] = list(by_size)
+        wide["widened_from"] = list(pool)
+        wide["floor"] = floor
+        return cities, wide
+    pick.update(facts)
+    return cities, pick
 
 
 # DataForSEO's Google Ads keyword endpoints reject a specific punctuation set
@@ -9017,18 +9118,15 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         services_deduped = []
         negative_conflicts = negative_seed_conflicts(seeds, negatives)
         # Decide the city set FIRST so the service count can scale to it.
-        city_pick = {}
-        cities = pick_grid_cities(markets, state, CFG["grid_max_cities"],
-                                  probe_term=list(seeds or []),
-                                  explain=city_pick,
-                                  # Location pages and named service areas are
-                                  # direct evidence of where the client
-                                  # actually operates — better than the domain
-                                  # alone, which only ever names one town.
-                                  home_hint=" ".join(
-                                      [brand or "", domain or ""]
-                                      + [str(x) for x in (site_locations or [])]
-                                      + [str(x) for x in (service_areas or [])]))
+        # Location pages and named service areas are direct evidence of where
+        # the client actually operates — better than the domain alone, which
+        # only ever names one town.
+        _home = " ".join([brand or "", domain or ""]
+                         + [str(x) for x in (site_locations or [])]
+                         + [str(x) for x in (service_areas or [])])
+        # As many markets as the seeds leave room for, biggest first -- see
+        # choose_build_markets. The cap is a ceiling, not the count.
+        cities, city_pick = choose_build_markets(markets, state, seeds, _home)
         # Search-phrase geos ("south jersey", "fox cities") cross into keyword
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
