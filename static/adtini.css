@@ -504,6 +504,22 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .pvmini:hover{text-decoration:underline}
 .pvmini:disabled{color:var(--muted);cursor:default;text-decoration:none}
 .qdl{display:flex;align-items:center;gap:12px;margin:0 0 12px;flex-wrap:wrap}
+/* what you do with a finished quote, where the quote is */
+.qacts{display:flex;align-items:center;gap:10px;margin:0 0 14px;flex-wrap:wrap}
+.btn2{
+  border:1px solid var(--line);border-radius:999px;cursor:pointer;font-family:inherit;
+  font-size:13px;font-weight:600;padding:9px 20px;color:var(--navy);
+  background:var(--card);white-space:nowrap;
+}
+.btn2:hover{background:var(--fill)}
+.btn2:disabled{color:var(--muted);cursor:default}
+.qacts .btn{background:var(--navy)}
+.qacts .hint{color:var(--muted)}
+.sharein{
+  font-family:inherit;font-size:12px;background:var(--card);border:1px solid var(--line);
+  border-radius:8px;padding:6px 9px;min-width:330px;color:var(--text);
+}
+.volwide{cursor:help}
 .serpmsg:empty{display:none}
 .volwide{font-style:normal;font-size:11px;color:var(--muted);margin-left:7px}
 .rkmsg{font-weight:500;color:var(--muted)}

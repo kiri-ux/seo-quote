@@ -10649,6 +10649,11 @@ def market_for_keyword(kw, markets, state=""):
     return ""
 
 
+# Which location actually answered each keyword's rank check, so a rank read at
+# the state rather than the city can be shown as exactly that.
+_SERP_LOC_USED = {}
+
+
 def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
               loc_override=""):
     """One keyword's SERP call. Returns (position, [paa questions], [rival domains]).
@@ -10657,11 +10662,37 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
     save this keyword — it kills the WHOLE batch, failing keywords that had
     already finished. Better to fail one fast and let the retry pass get it."""
     depth = max(top_n, 10)
-    payload = [{"keyword": kw,
-                # loc_override is an already-built DataForSEO location string —
-                # step 3 measures each grid row in the market it names, so the
-                # caller resolves the location per keyword rather than per batch.
-                "location_name": loc_override or loc_string(markets, state),
+    # loc_override is an already-built DataForSEO location string — step 3
+    # measures each grid row in the market it names, so the caller resolves the
+    # location per keyword rather than per batch.
+    want = loc_override or loc_string(markets, state)
+    # A LOCATION GOOGLE DOES NOT CARRY IS NOT A FAILED RANK CHECK.
+    #
+    # The volume probe has retried at a broader location since August; this one
+    # never did, so a market DataForSEO returns 40501 for -- "Whidbey Island,
+    # WA" -- failed EVERY keyword that named it. Whidbey Island Electric read
+    # "0 of 3 measured terms ranking, 18 unmeasured", and pressing Recheck ran
+    # the same unresolvable location again and failed the same 18 the same way.
+    #
+    # Same ladder the volume side uses: the city under the name Google actually
+    # carries, then the state, then the country. A rank read in the state's SERP
+    # is not the city's rank, but it is far closer to it than a blank -- and the
+    # caller is told which location answered so it can say so. (2026-09-16)
+    cands = [want]
+    try:
+        head = str(want).split(",")[0].strip()
+        rest = str(want).split(",")[1:] 
+        st_part = rest[0].strip() if len(rest) > 1 else (state or "")
+        alt = canonical_city_name(head, st_part or state)
+        if alt and alt.lower() != head.lower():
+            cands.append(",".join([alt] + rest) if rest else f"{alt},{country_name()}")
+        if st_part and f"{st_part},{country_name()}" not in cands:
+            cands.append(f"{st_part},{country_name()}")
+    except Exception:
+        pass
+    if country_name() not in cands:
+        cands.append(country_name())
+    payload = [{"keyword": kw, "location_name": cands[0],
                 "language_code": "en", "depth": depth}]
     last_err = None
     for attempt in range(2):
@@ -10694,8 +10725,29 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
     # a failed lookup as "—", keeps it out of the ranked fraction, and does not
     # cache it. (2026-08-10)
     task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+    # Walk the ladder only for an unusable LOCATION. Every other task error is
+    # still an error: retrying it at the state would hide a real failure.
+    used_loc = cands[0]
+    ci = 1
+    while (str(task0.get("status_code")) == "40501"
+           or "location" in str(task0.get("status_message") or "").lower()) and ci < len(cands):
+        remaining = (deadline - time.time()) if deadline else 20
+        if remaining < 5:
+            break
+        used_loc = cands[ci]
+        ci += 1
+        try:
+            data = dfs_post("/serp/google/organic/live/regular",
+                            [{"keyword": kw, "location_name": used_loc,
+                              "language_code": "en", "depth": depth}],
+                            timeout=min(14, max(5, remaining - 1)))
+            task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+        except Exception as e:
+            last_err = e
+            task0 = {"status_code": 40501, "status_message": str(e)}
     if task0.get("status_code") not in (20000, None):
         raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
+    _SERP_LOC_USED[kw] = used_loc
     res = (task0.get("result") or [{}])[0] or {}
     items = res.get("items", []) or []
     # THE SAME PARSE AS THE TASK PATH. This was a hand-rolled copy of
@@ -14153,10 +14205,18 @@ def api_rankings():
                 pos, qs, err = hits[kw], [], False
             else:
                 pos, qs, err = done.get(kw, (None, [], True))
+            _want = per_kw_loc.get(kw, loc)
+            _used = _SERP_LOC_USED.get(kw, _want)
             results.append({"kw": kw,
                             "pos": ("—" if err else (pos if pos is not None else "Not Found")),
                             "ranked_top": (not err and pos is not None and pos <= top_n),
                             "error": err,
+                            # A rank the city's own SERP could not answer was
+                            # read somewhere wider. Reported, not hidden.
+                            "rank_scope": ("broader" if (not err and _used != _want)
+                                           else ""),
+                            "rank_area": (_used.replace(f",{country_name()}", "")
+                                          if (not err and _used != _want) else ""),
                             # A batch that answers instantly is a batch that
                             # never called Google. Say so, rather than leaving
                             # the operator to wonder whether the check ran.
@@ -14847,18 +14907,45 @@ def api_serp_queue():
     device  = d.get("device", "desktop")
     if not keyword:
         return jsonify({"error": "No keyword provided."}), 400
+    # THE SAME LOCATION LADDER THE RANK CHECK WALKS. A market Google does not
+    # carry -- "Whidbey Island, WA" -- made task_post refuse the task, and the
+    # panel reported "the capture service took no task" over and over. The
+    # exhibit is a picture of a result page; the state's page is a usable
+    # exhibit where the town's does not exist.
+    want = loc_string(markets, state)
+    cands = [want]
+    st = derive_state(markets, state) or state
+    if st:
+        _wide = f"{_abbrev_to_state().get(str(st).strip().lower(), st).title()},{country_name()}" \
+            if str(st).strip().lower() in _abbrev_to_state() else f"{st},{country_name()}"
+        if _wide not in cands:
+            cands.append(_wide)
+    if country_name() not in cands:
+        cands.append(country_name())
     try:
-        tp = dfs_post("/serp/google/organic/task_post", [{
-            "keyword": keyword, "location_name": loc_string(markets, state),
-            "language_code": "en", "device": device, "priority": 2}])
-        task = (tp.get("tasks") or [{}])[0]
-        task_id = task.get("id")
+        task, task_id, used, why = None, None, want, ""
+        for cand in cands:
+            tp = dfs_post("/serp/google/organic/task_post", [{
+                "keyword": keyword, "location_name": cand,
+                "language_code": "en", "device": device, "priority": 2}])
+            task = (tp.get("tasks") or [{}])[0]
+            task_id = task.get("id")
+            why = str(task.get("status_message") or "")
+            if task_id:
+                used = cand
+                break
+            # Only a LOCATION problem is worth trying somewhere wider.
+            if str(task.get("status_code")) != "40501" and "location" not in why.lower():
+                break
         if not task_id:
-            return jsonify({"error": f"Task not created: {task.get('status_message')}"}), 502
+            return jsonify({"error": f"Task not created: {why}"}), 502
         # pass display params through so the fetch step can size the screenshot
         return jsonify({"task_id": task_id, "keyword": keyword, "device": device,
                         "width": d.get("width"), "height": d.get("height"),
-                        "scale": d.get("scale")})
+                        "scale": d.get("scale"),
+                        # Which page was captured, when it is not the market's own.
+                        "loc_used": used,
+                        "loc_scope": "broader" if used != want else ""})
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}"}), 502
     except Exception as e:

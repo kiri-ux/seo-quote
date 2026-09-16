@@ -454,7 +454,9 @@ const CFG = {
 
     'res.rankRows': [res.rankRows.join(' // '),
       // A volume answered from a wider area names the area on the row.
-      'dental implants | 3,600 | 4 // dental implants boca raton | 880 Florida | Not Found'
+      // A borrowed figure is marked, not captioned -- the area is named once
+      // on the card above, not twenty-one times down the column.
+      'dental implants | 3,600 | 4 // dental implants boca raton | 880 * | Not Found'
       + ' // affordable dental implants near me | 210 | Not Found'],
 
     'res.modalClosed': [res.modalClosed, true],

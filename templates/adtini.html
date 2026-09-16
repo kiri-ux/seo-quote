@@ -1073,9 +1073,11 @@ function plannerView(r, brief){
         <tr><th>Term</th><th>Vol/mo</th><th>Rank</th></tr>
         ${all.map(x => {
           const rk = ranks[String(x.kw || '').toLowerCase()];
+          // The area is named once on the Measured demand card. Here the row
+          // only has to say the figure is not this market's own.
           const from = x.vol_scope === 'broader'
-            ? ` <i class="volwide" title="Not this market's own figure">${
-                esc(x.vol_area || 'wider area')}</i>` : '';
+            ? ` <i class="volwide" title="${esc(x.vol_area || 'a wider area')} \u2014 `
+              + `not this market's own figure">*</i>` : '';
           return `<tr><td>${esc(x.kw)}</td>`
                + `<td>${(x.vol || 0).toLocaleString()}${from}</td>`
                + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
@@ -1202,7 +1204,13 @@ function resultsHtml(r, full){
   </details>`;
   }
   return `
-    <div class="qbody">${tileRow}
+    <div class="qbody">
+      <div class="qacts">
+        <button class="btn" type="button" data-prop="${r.i}">Download proposal</button>
+        <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>
+        <span class="hint" data-propmsg="${r.i}"></span>
+      </div>
+      ${tileRow}
       ${plannerView(r)}
 
       <details class="qfold"><summary>Settings for this run</summary>
@@ -1213,9 +1221,6 @@ function resultsHtml(r, full){
 
       <details class="qfold"><summary>Proposal &mdash;
         ${pro.have} of ${pro.n} fields</summary>
-        <div class="qdl"><button class="btn" type="button" data-prop="${r.i}">
-          Download proposal</button>
-          <span class="hint" data-propmsg="${r.i}"></span></div>
         ${pro.html}</details>
     </div>`;
 }
@@ -2795,6 +2800,34 @@ async function recheckRanks(i){
 $('prods').addEventListener('click', e => {
   const rb = e.target.closest('[data-recheck]');
   if (rb) { e.preventDefault(); e.stopPropagation(); recheckRanks(+rb.dataset.recheck); }
+});
+
+// A LINK SOMEONE ELSE CAN OPEN. The quote lives under its client, so the link
+// is the client and the product -- it opens this row with the run expanded.
+async function copyReviewLink(i){
+  const r = ROWS[i];
+  if (!r) return;
+  const client = CLIENT || (r.data || {}).brand || '';
+  const say = t => { const m = document.querySelector(`[data-propmsg="${i}"]`);
+                     if (m) m.textContent = t; };
+  if (!client) { say('The quote needs a brand name first.'); return; }
+  const q = new URLSearchParams({client, review: r.kind === 'orm' ? 'orm' : 'seo'});
+  const url = `${location.origin}/adtini/forecast?${q.toString()}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    say('Review link copied.');
+  } catch (e) {
+    // Clipboard access is refused outside a secure context; the link is still
+    // the answer, so it is put somewhere they can copy it by hand.
+    const box = document.querySelector(`[data-propmsg="${i}"]`);
+    if (box) box.innerHTML = `<input class="sharein" readonly value="${esc(url)}">`;
+    const inp = box && box.querySelector('.sharein');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+}
+$('prods').addEventListener('click', e => {
+  const sh = e.target.closest('[data-share]');
+  if (sh) { e.preventDefault(); e.stopPropagation(); copyReviewLink(+sh.dataset.share); }
 });
 </script>
 </body>
