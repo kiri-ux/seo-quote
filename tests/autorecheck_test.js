@@ -86,6 +86,40 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
       'the capture should photograph a term that has a rank');
   say('rerunOnlyWhenSomethingFailed', /errored\s*\n?\s*\?/.test(src) || /const rerun = errored/.test(src));
 
+  // A ROW THAT WAS NEVER GOING TO BE CHECKED IS NOT AN UNMEASURED ROW.
+  await p.evaluate(() => {
+    const r = ROWS[0];
+    r.kw = {all: [{kw:'a', vol:20}, {kw:'b', vol:10},
+                  {kw:'z1', vol:0}, {kw:'z2', vol:0}, {kw:'z3', vol:0}]};
+    r.result = r.result || {};
+    r.result.ranks = {a: 4, b: '\u2014'};
+    r.result.table = [{kw:'a', pos:4, ranked_top:true, error:false},
+                      {kw:'b', pos:'\u2014', ranked_top:false, error:true}];
+    r.result.pricing = {package:{base:2900,intermediate:3900,advanced:4900},
+                        total_volume: 30, pct_not_ranking: 0};
+    draw();
+  });
+  await p.waitForTimeout(400);
+  const card = await p.$$eval('.prod[data-row="0"] .pv', ns =>
+    ns.map(n => n.textContent).find(t => /^Ranking/.test(t)) || '');
+  say('measuredCountIsWhatWasChecked', /1 of 1 measured term ranking/.test(card), card);
+  say('unmeasuredCountsOnlyTheChecked', /1 unmeasured/.test(card), card);
+  say('skippedAreNamedForWhatTheyAre', /3 no demand/.test(card), card);
+  say('noPhantomUnmeasured', !/4 unmeasured/.test(card), card);
+
+  // The provider's wording is not a status line.
+  const says = await p.evaluate(() => [
+    captureSays("Invalid Field: 'task_id' - This task is not yet completed."),
+    captureSays('Task In Queue'),
+    captureSays('Task Not Found.'),
+    captureSays(''),
+    captureSays('Something else entirely')]);
+  say('notCompletedIsPlain', says[0] === 'still rendering', says[0]);
+  say('queuedIsPlain', says[1] === 'still rendering', says[1]);
+  say('notFoundIsPlain', says[2] === 'queued', says[2]);
+  say('blankStaysBlank', says[3] === '', says[3]);
+  say('anythingElseIsKept', says[4] === 'Something else entirely', says[4]);
+
   console.log(bad ? 'failed=' + bad : 'ok all');
   await b.close();
   process.exit(bad ? 1 : 0);

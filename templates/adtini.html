@@ -616,6 +616,19 @@ async function persist(r){
 // THE HEADLINE IS THE BASE TIER, per month. Written after the row is built so
 // it reads the same mapped prices the tiles do -- an older saved quote has no
 // handoff block and printed "—/mo" off it.
+// THE PROVIDER'S WORDING IS NOT A STATUS LINE. "Invalid Field: 'task_id' -
+// This task is not yet completed" is the screenshot service saying the page has
+// not been crawled yet, which is the normal middle of a capture -- and it reads
+// like a failure in a field the planner cannot act on.
+function captureSays(msg){
+  const t = String(msg || '').trim();
+  if (!t) return '';
+  if (/not yet completed|in queue|in progress|task handed/i.test(t))
+    return 'still rendering';
+  if (/not found/i.test(t)) return 'queued';
+  return t;
+}
+
 // A TERM NOBODY SEARCHES IS NOT WORTH A SERP CALL.
 //
 // A 6-service list across 6 markets is 36 rank checks, and a third of the rows
@@ -1259,11 +1272,17 @@ function plannerView(r, brief){
     // checked, one term ranking and eleven failed checks printed "100% of 12
     // terms ranking" -- a figure that reads as a client already at the top.
     const ranking = okChecks - Math.round(okChecks * (p.pct_not_ranking || 0) / 100);
+    // A ROW THAT WAS NEVER GOING TO BE CHECKED IS NOT AN UNMEASURED ROW. The
+    // zero-demand rows are skipped on purpose, and folding them into the
+    // unmeasured count made a deliberate saving read as 26 failures.
+    const nLive = worthChecking((r.kw || {}).all || []).length;
+    const noDemand = Math.max(nTerms - nLive, 0);
     add('Ranking', p.pct_not_ranking == null
       ? (errored ? `unmeasured — ${errored} of ${checked} rank checks errored`
                  : 'unmeasured')
       : `${ranking} of ${okChecks} measured term${okChecks === 1 ? '' : 's'} ranking`
-        + (okChecks < nTerms ? ` · ${nTerms - okChecks} unmeasured` : ''));
+        + (okChecks < nLive ? ` · ${nLive - okChecks} unmeasured` : '')
+        + (noDemand ? ` · ${noDemand} no demand` : ''));
   }
   const shot = (r.result || {}).shot;
   const all = (r.kw || {}).all || [];
@@ -2498,10 +2517,10 @@ $('kbBuild').onclick = async () => {
   // The list is built for the band it will be priced in.
   await resolveBand(r);
   try {
-    // PROPOSE, THEN BUILD. The expansion and the build ran on one press, so a
-    // weak proposal could only be rejected after the whole list had been built
-    // around it -- and the next press proposed it again. The expansion stops
-    // here with its terms on screen; the second press builds.
+    // ONE PRESS BUILDS THE LIST. Stopping after the expansion so its terms
+    // could be reviewed first cost a second full wait on every build, which is
+    // worse than the problem -- a removal already sticks, so the rebuild only
+    // happens when something was actually removed.
     const seedSig = xs => xs.map(x => String(x).toLowerCase().trim()).sort();
     const covered = (r.expandDone || []).length
       && d.focus.every(t => (r.expandDone || []).includes(String(t).toLowerCase().trim()));
@@ -2518,14 +2537,6 @@ $('kbBuild').onclick = async () => {
       if (got.regions.length) { r.phrase_geos = got.regions; base.phrase_geos = got.regions; }
       r.expandNote = got;
       r.expandDone = seedSig(d.focus);
-      if (got.added.length) {
-        $('saved').textContent =
-          `${got.added.length} term${got.added.length === 1 ? '' : 's'} proposed, shown `
-          + 'dashed. Remove any, then press Build keyword list.' + timingLine();
-        $('kbBuild').disabled = false;
-        await persist(r);
-        return;
-      }
     } else if (!d.expand) {
       r.expandNote = null;
     }
@@ -2566,7 +2577,10 @@ $('kbBuild').onclick = async () => {
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
       $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
-        + expandWhy(r.expandNote) + timingLine();
+        + expandWhy(r.expandNote)
+        + ((r.expandNote && (r.expandNote.added || []).length)
+           ? ' Dashed seeds were proposed \u2014 remove any and rebuild.' : '')
+        + timingLine();
   } catch (e) {
     $('saved').textContent = e.message;
   }
@@ -2798,7 +2812,7 @@ async function autoSerp(r, d, ranks, say){
       // The provider says what it is waiting on; discarding that left three
       // minutes of silence and then one flat sentence.
       say(`Capturing the SERP for “${kw}”… ${i * 3}s`
-          + (last ? ` · ${last}` : ''));
+          + (last ? ` · ${captureSays(last)}` : ''));
       await new Promise(z => setTimeout(z, 3000));
       let f;
       try {

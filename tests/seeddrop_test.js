@@ -50,13 +50,12 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   });
   await p.waitForTimeout(400);
 
-  // FIRST PRESS PROPOSES AND STOPS.
+  // ONE PRESS BUILDS. The expansion runs inside it and its terms are marked.
   await p.click('#kbBuild');
-  await p.waitForFunction(() => /proposed/.test($('saved').textContent), {timeout:15000});
-  say('proposedBeforeBuilding', buildCalls === 0, buildCalls + ' builds on the first press');
-  say('saysHowManyAndWhatToDo',
-      /2 terms proposed, shown dashed\. Remove any, then press Build keyword list\./
-        .test(await p.textContent('#saved')),
+  await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
+  say('builtOnOnePress', buildCalls === 1, buildCalls + ' builds on one press');
+  say('noteSaysWhatToDoNext',
+      /remove any and rebuild/i.test(await p.textContent('#saved')),
       await p.textContent('#saved'));
   let chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => [n.firstChild.textContent.trim(), n.classList.contains('sug')]));
@@ -77,11 +76,11 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
         await p.textContent('#paneKw .seedhint')),
       await p.textContent('#paneKw .seedhint'));
 
-  // SECOND PRESS BUILDS, WITHOUT ASKING THE EXPANSION AGAIN.
+  // A REBUILD AFTER A REMOVAL DOES NOT ASK THE EXPANSION AGAIN.
   const before = expandCalls;
   await p.click('#kbBuild');
   await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
-  say('builtThisTime', buildCalls === 1, buildCalls + ' builds');
+  say('builtThisTime', buildCalls === 2, buildCalls + ' builds');
   say('didNotReExpand', expandCalls === before,
       (expandCalls - before) + ' extra expansion passes');
   chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',

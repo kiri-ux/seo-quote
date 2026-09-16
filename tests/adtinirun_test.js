@@ -179,14 +179,8 @@ const CFG = {
   // ---------------- step 1: the keyword builder ----------------
   await p.click('[data-open="0"][data-view="form"]');
   await p.click('#kwBuilder');
-  // PROPOSE, THEN BUILD. The first press stops with the expansion's terms on
-  // screen so a weak one can be removed before the list is built around it.
+  // ONE PRESS BUILDS THE LIST.
   await p.click('#kbBuild');
-  await p.waitForFunction(() => /proposed, shown dashed|^Built /.test(
-    document.getElementById('saved').textContent));
-  if (/proposed, shown dashed/.test(await p.textContent('#saved'))) {
-    await p.click('#kbBuild');
-  }
   await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent));
 
   const kb = await p.evaluate(() => ({
@@ -360,8 +354,11 @@ const CFG = {
 
     // The build reports what it waited on, so the note is checked by its
     // meaning rather than character for character.
-    'kb.note': [kb.note.split(' · ').slice(0, 2).join(' · '),
+    'kb.note': [kb.note.split(' · ').slice(0, 2).join(' · ')
+                  .replace(' Dashed seeds were proposed — remove any and rebuild.', ''),
       'Built 3 terms. · 4 terms added by expansion.'],
+    'kb.noteSaysHowToReject':
+      [/remove any and rebuild/.test(kb.note), true],
     'kb.noteCarriesTiming': [/\d+\.\d+s — /.test(kb.note), true],
     // the measured figure is the pricer's deduplicated total, not a row sum
     'kb.totalIsDeduplicated': [kb.head, 'Keyword list (3 terms)'],
