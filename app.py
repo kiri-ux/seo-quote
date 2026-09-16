@@ -16207,6 +16207,24 @@ search for, and that are NOT already covered above. Rules:
    "3 bedroom homes for rent", "homes for rent with garage", "pet friendly
    rentals".
 
+7. THE PRACTITIONER, NOT ONLY THE PROCEDURE. A service line is what they DO.
+   Customers search just as often for WHO THEY ARE, and in a local market those
+   terms usually carry the most volume of anything on the list. Whenever the
+   trade has a recognised name for the practitioner, name it: the job title,
+   the specialty, its common abbreviation, and the phrase a layperson uses.
+   - ENT practice: "ENT", "ear nose and throat doctor", "hearing doctor",
+     "audiologist" — not only tonsillectomy, adenoid removal, ear tube surgery.
+   - Dental office: "dentist", "family dentist" — not only cleanings and crowns.
+   - Law firm: "personal injury lawyer", "accident attorney".
+   - Home services: "plumber", "electrician", "roofer".
+   These are NOT caught by rule 1: an abbreviation and its spelled-out form are
+   different keywords with different result pages, so "ENT" and "ear nose and
+   throat doctor" both earn a slot. They are NOT excluded by rule 3 either — a
+   practitioner name is exactly what the business sells, and it is the term the
+   client most wants to own. Rule 5 still applies: use the noun THIS trade uses.
+   A business with no practitioner name — a retailer, a store, a brand — has
+   none of these. Do not invent one.
+
 Return ONLY JSON: {{"services": [{{"term": "hoarding cleanup", "why": "named on their site"}}]}}"""
     try:
         resp = requests.post(
