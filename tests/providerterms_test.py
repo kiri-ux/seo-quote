@@ -119,7 +119,28 @@ for term in ("ENT", "audiologist", "dentist", "plumber"):
 # to say so explicitly: rule 1 forbids synonyms (an abbreviation reads as one)
 # and rule 3 allows only services the business sells (a job title does not read
 # as a service). Naming them is the whole reason the rule works there.
-check("it overrides the synonym rule", "NOT caught by rule 1" in rule7, True)
+# THE CARVE-OUT HAS TO COVER THE WHOLE FAMILY, NOT JUST THE ABBREVIATION.
+# It first said only that an abbreviation and its spelled-out form are different
+# keywords. The model then returned ONE provider term on the live ENT quote --
+# correctly, under rule 1: "hearing doctor" and "audiologist" really are synonyms
+# of "ear nose and throat doctor". The sibling prompt's rule 2h had solved this
+# for head terms ("homes for rent" / "houses for rent" / "rentals" are four
+# keywords, buy three); the gap-finder never got it.
+R7 = re.sub(r"\s+", " ", rule7)
+check("it overrides the synonym rule for the whole family",
+      "RULE 1 DOES NOT APPLY WITHIN THIS FAMILY" in R7, True)
+check("it names them as separate keywords",
+      "five different keywords" in R7, True)
+check("and says how many to buy", "three or four of them, not one" in R7, True)
+check("the one-term failure is written down",
+      'because the rest "are synonyms of it"' in R7, True)
+# Rule 1 must survive everywhere else -- it is what stops the padding.
+check("rule 1 still holds outside the family",
+      "Rule 1 still holds everywhere else" in R7, True)
+check("and still stops the junk-removal padding",
+      "haul away service" in R7, True)
+check("and still stops procedure rewordings",
+      "wordings of one PROCEDURE" in R7, True)
 check("it overrides the services-only rule",
       "NOT excluded by rule 3" in rule7, True)
 check("it defers to the client's-own-noun rule", "Rule 5 still applies" in rule7, True)

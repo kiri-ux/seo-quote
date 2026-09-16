@@ -16263,9 +16263,16 @@ Rules:
    Under rule 4 these LEAD the answer: they are the general, high-volume terms, so they belong
    at the top, ahead of every procedure. They are not a quota to fill at the end -- one token
    practitioner term followed by twenty procedures is the failure this rule exists to prevent.
-   These are NOT caught by rule 1: an abbreviation and its spelled-out form are
-   different keywords with different result pages, so "ENT" and "ear nose and
-   throat doctor" both earn a slot. They are NOT excluded by rule 3 either — a
+   RULE 1 DOES NOT APPLY WITHIN THIS FAMILY, AND THIS IS THE PART THAT GETS MISSED.
+   Every way people name this practitioner is a SEPARATE term: the abbreviation, the
+   spelled-out form, the specialty noun, the plain-English one. "ENT", "ear nose and throat
+   doctor", "ENT doctor", "hearing doctor", "audiologist" are five different keywords with
+   five different result pages and five different volumes - a proposal buys three or four of
+   them, not one. Returning a single provider term because the rest "are synonyms of it" is
+   the most common way this answer comes back wrong, and it costs the client the biggest
+   terms on the list.
+   Rule 1 still holds everywhere else: it stops "haul away service" beside "junk removal",
+   and it stops thirteen wordings of one PROCEDURE. It does not thin the head of the list. They are NOT excluded by rule 3 either — a
    practitioner name is exactly what the business sells, and it is the term the
    client most wants to own. Rule 5 still applies: use the noun THIS trade uses.
    A business with no practitioner name — a retailer, a store, a brand — has
