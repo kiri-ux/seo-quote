@@ -1518,8 +1518,13 @@ function seedLegend(r){
   const added = focus.filter(v => src[String(v).toLowerCase()]).length;
   const dropped = (r.seedDrop || []).length;
   const rule = dropped
-    ? ` \u00b7 ${dropped} removed \u2014 removed suggestions are not proposed again.`
+    // TWO DIFFERENT THINGS, AND ONE BUTTON WAS DOING BOTH. Restore put every
+    // removed term back in the box AND cleared the block, so a planner who
+    // wanted the expansion free to propose again had to accept thirteen chips
+    // back to get it. Allow again clears the block only; the box is untouched.
+    ? ` \u00b7 ${dropped} removed.`
       + ' <button type="button" class="lnkbtn" id="seedRestore">Restore them</button>'
+      + ' \u00b7 <button type="button" class="lnkbtn" id="seedAllow">Allow again</button>'
     : ' \u00b7 Remove one and it is not proposed again.';
   if (!added) return dropped ? rule.replace(/^ · /, '') : '';
   return `${focus.length - added} from Product/Vertical Focus · ${added} added by `
@@ -1562,6 +1567,26 @@ document.addEventListener('click', e => {
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), r.data.focus.slice());
   const sh = document.querySelector('#paneKw .seedhint');
   if (sh) sh.innerHTML = seedLegend(r);
+  persist(r);
+});
+
+// CLEARING THE BLOCK IS NOT THE SAME AS TAKING THE TERMS BACK. Restore does
+// both, which is right when the removal was the mistake. This is for the other
+// case: the removals were correct, but the expansion has since been given a
+// rule it did not have -- practitioner terms -- and it cannot offer anything
+// that echoes a dropped term. The exclusion list is emptied and the seed box is
+// left exactly as the planner left it. (2026-09-16)
+document.addEventListener('click', e => {
+  if (!e.target.closest('#seedAllow') || ROW == null) return;
+  const r = ROWS[ROW];
+  if (!(r.seedDrop || []).length) return;
+  r.seedDrop = [];
+  // The expansion is asked again, because the terms it was told to skip are no
+  // longer skipped -- same reason Restore resets it.
+  r.expandDone = [];
+  const sh = document.querySelector('#paneKw .seedhint');
+  if (sh) sh.innerHTML = seedLegend(r);
+  expandBtnSync(r);
   persist(r);
 });
 

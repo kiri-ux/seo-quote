@@ -75,10 +75,20 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('recordedAsRemoved',
       (await p.evaluate(() => ROWS[0].seedDrop)).join('|') === 'allergy testing',
       JSON.stringify(await p.evaluate(() => ROWS[0].seedDrop)));
-  say('legendSaysTheRule',
-      /removed suggestions are not proposed again/i.test(
-        await p.textContent('#paneKw .seedhint')),
-      await p.textContent('#paneKw .seedhint'));
+  // STATES THE FACT AND STOPS. The legend used to carry the mechanism --
+  // "removed suggestions are not proposed again" -- which belongs in the code
+  // comment, not on screen. What it owes the planner is the count and the two
+  // ways out of it.
+  const legend = await p.textContent('#paneKw .seedhint');
+  say('legendSaysTheCount', /1 removed\./i.test(legend), legend);
+  say('legendOffersRestore', /Restore them/i.test(legend), legend);
+  // Restore takes the terms back AND clears the block; Allow again clears the
+  // block only, so a corrected removal does not have to be undone to let the
+  // expansion propose freely.
+  say('legendOffersAllowAgain', /Allow again/i.test(legend), legend);
+  say('legendDropsTheExplanation',
+      !/not proposed again/i.test(legend), legend);
+
 
   // THEN BUILD. It does not ask the expansion at all.
   const before = expandCalls;
@@ -157,6 +167,34 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('restoreGoesAway', (await p.$$('#seedRestore')).length === 0);
   say('typedOneNotDuplicated',
       restored.filter(x => x === 'hearing aids').length === 1, JSON.stringify(restored));
+
+  // ALLOW AGAIN CLEARS THE BLOCK AND NOTHING ELSE. Restore does both, which is
+  // right when the removal was the mistake. This is the other case: the removal
+  // was correct and the expansion has since been given a rule it did not have,
+  // so the block has to go without the rejected chips coming back with it.
+  // Drops one of its own rather than reusing the state above, which Restore has
+  // already emptied.
+  await p.evaluate(() => [...document.querySelectorAll(
+    '#paneKw [data-chips="seeds"] .chip')].find(
+      c => c.firstChild.textContent.trim() === 'allergy testing').querySelector('b').click());
+  await p.waitForTimeout(200);
+  say('allowAgainOffered', (await p.$$('#seedAllow')).length === 1);
+  const chipsBefore = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
+    ns => ns.map(n => n.firstChild.textContent.trim()).sort().join('|'));
+  await p.click('#seedAllow');
+  await p.waitForTimeout(300);
+  say('allowAgainClearsTheBlock',
+      (await p.evaluate(() => ROWS[0].seedDrop || [])).length === 0,
+      JSON.stringify(await p.evaluate(() => ROWS[0].seedDrop)));
+  const chipsAfter = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
+    ns => ns.map(n => n.firstChild.textContent.trim()).sort().join('|'));
+  say('allowAgainDoesNotTakeTheTermsBack', chipsAfter === chipsBefore,
+      chipsBefore + '  ->  ' + chipsAfter);
+  say('theRemovedTermStaysOutOfTheBox',
+      !/allergy testing/.test(chipsAfter), chipsAfter);
+  say('allowAgainReopensTheExpansion',
+      (await p.evaluate(() => (ROWS[0].expandDone || []).length)) === 0);
+  say('allowAgainGoesAway', (await p.$$('#seedAllow')).length === 0);
 
   console.log(bad ? 'failed=' + bad : 'ok all');
   await b.close();
