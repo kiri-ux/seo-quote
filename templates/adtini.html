@@ -1242,14 +1242,14 @@ function picksOnly(box){
     if (!box || p.parentElement !== box) p.hidden = true;
   });
 }
-// FOCUS DOES NOT OPEN IT. The panel overlays whatever sits below, so opening on
-// focus alone put a 346-entry list on top of Strategy the moment Industry was
-// clicked -- and the next click landed on an option instead of the field. It
-// opens when there is something to narrow: a keystroke, ArrowDown, or the caret.
+// CLICKING IN SHOWS THE OPTIONS. The list is the point of the field -- nobody
+// should have to guess what Industry accepts and type a prefix to find out.
 document.addEventListener('focusin', e => {
   const inp = e.target;
   const box = inp && inp.closest ? inp.closest('.box') : null;
-  picksOnly(box && box.querySelector('.chipin[data-pick]') ? box : null);
+  const mine = inp.classList && inp.classList.contains('chipin') && inp.dataset.pick;
+  picksOnly(mine ? box : (box && box.querySelector('.chipin[data-pick]') ? box : null));
+  if (mine) picksDraw(inp);
 });
 // AIMING AT THE NEXT FIELD CLOSES IT. The panel stays open across picks on
 // purpose, which means it sits over the field below -- and a click aimed at
@@ -1809,18 +1809,31 @@ function kbDraw(r){
   const inMarket = all.filter(x => x.vol && x.vol_scope !== 'broader').length;
   const nothing = all.length && !inMarket;
   const thin = inMarket && total > 0 && total < 500;
-  if (nothing || thin) {
-    // A QUOTE MEASURED ON NOTHING PRICES AS A CLIENT WITH NO DEMAND. County
-    // keyword volume is rarely reported; the county seat measures directly.
+  // A COUNTY IS MEASURED IN ITS SEAT AUTOMATICALLY, so the offer to swap is for
+  // the counties that did not resolve to one -- a misspelling, or a county with
+  // no seat in the index. Offering it when the swap already happened read as a
+  // contradiction: a panel headed "260/mo measured" saying nothing was measured.
+  const counties = geoOf(r.data).filter(m => /\bcount(y|ies)\b/i.test(String(m)));
+  if (nothing) {
     $('kbWiden').hidden = false;
     $('kbWiden').innerHTML =
-      `<b>${nothing ? `${wideN} of ${all.length} terms answered from a wider area`
-                     : `${total.toLocaleString()}/mo measured across ${all.length} terms`}</b>`
-      + `<p class="hint" style="margin:0 0 10px">Nothing measured in `
-      + `${esc(geoOf(r.data).join(', ') || 'these markets')}, so the volume component`
-      + ` prices on almost nothing.</p>`
-      + `<button class="btn" type="button" id="kbSeats">Use county seats instead</button>`
-      + `<span class="hint" id="kbSeatsMsg" style="margin-left:10px"></span>`;
+      `<b>No demand measured</b>`
+      + `<p class="hint" style="margin:0 0 ${counties.length ? '10px' : '0'}">`
+      + `0 of ${all.length} terms measured in `
+      + `${esc(geoOf(r.data).join(', ') || 'these markets')}.`
+      + ` The volume component prices on nothing.</p>`
+      + (counties.length
+         ? `<button class="btn" type="button" id="kbSeats">Use county seats instead</button>`
+           + `<span class="hint" id="kbSeatsMsg" style="margin-left:10px"></span>`
+         : '');
+  } else if (thin) {
+    $('kbWiden').hidden = false;
+    $('kbWiden').innerHTML =
+      `<b>${total.toLocaleString()}/mo across ${all.length} terms</b>`
+      + `<p class="hint" style="margin:0">Under 500/mo. The volume component`
+      + ` contributes little at this level.`
+      + (wideN ? ` ${wideN} of ${all.length} answered from a wider area.` : '')
+      + `</p>`;
   } else {
     $('kbWiden').hidden = !(w && w.show);
     $('kbWiden').innerHTML = (w && w.show) ? `<b>${esc(w.fact)}</b>` : '';

@@ -15,15 +15,18 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('no.native.select', await p.$$eval('.box select', n => n.length) === 0);
 
   const box = '#fseo [data-chips="industry"]';
-  // Focus alone must NOT open it -- the panel would cover Strategy below.
+  // Clicking in shows the options -- no prefix required.
   await p.click(`${box} .chipin`);
-  await p.waitForTimeout(150);
-  say('closed.on.focus', await p.$eval(`${box} .picks`, el => el.hidden));
+  await p.waitForSelector(`${box} .picks:not([hidden])`, {timeout:5000});
+  say('opens.on.focus', true);
 
-  // The caret opens the whole list.
+  // The caret closes it again, and reopens.
+  await p.click(`${box} .pickcar`);
+  await p.waitForTimeout(150);
+  say('caret.closes', await p.$eval(`${box} .picks`, el => el.hidden));
   await p.click(`${box} .pickcar`);
   await p.waitForSelector(`${box} .picks:not([hidden])`, {timeout:5000});
-  say('caret.opens', true);
+  say('caret.reopens', true);
 
   const n0 = await p.$$eval(`${box} .pick`, n => n.length);
   say('has.options', n0 > 1, `got ${n0}`);
@@ -54,7 +57,6 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   // Clicking a second option adds it without closing -- multiselect.
   const goals = '#fseo [data-chips="goals"]';
   await p.click(`${goals} .chipin`);
-  await p.click(`${goals} .pickcar`);
   await p.waitForSelector(`${goals} .picks:not([hidden])`);
   await p.click(`${goals} .pick >> nth=0`);
   await p.waitForTimeout(120);

@@ -471,7 +471,7 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .picks{
   position:absolute;left:0;top:calc(100% + 4px);width:100%;z-index:90;
   background:var(--card);border:1px solid var(--line);border-radius:10px;
-  box-shadow:0 8px 24px rgba(18,58,99,.14);max-height:264px;overflow:auto;padding:4px;
+  box-shadow:0 8px 24px rgba(18,58,99,.14);max-height:208px;overflow:auto;padding:4px;
 }
 .pick{padding:7px 10px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

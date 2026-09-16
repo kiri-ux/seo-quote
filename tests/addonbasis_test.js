@@ -109,8 +109,13 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
       .test(measured.addon || ''), true],
     'both.widerAreaNamedOnDemand': [/answered from a wider area/.test(measured.demand || ''), true],
     'counties.nothingMeasuredIsFlagged':
-      [/answered from a wider area/.test(measured.widen || ''), true],
+      [/No demand measured/.test(measured.widen || ''), true],
     'counties.offersTheSeats': [measured.offersSeats, true],
+    // THE PANEL MUST NOT CONTRADICT ITS OWN HEADLINE. It headed itself
+    // "260/mo measured across 12 terms" and then said nothing was measured.
+    'counties.noContradiction':
+      [/measured across/.test(measured.widen || '')
+       && /Nothing measured/.test(measured.widen || ''), false],
   };
 
   let bad = 0;
