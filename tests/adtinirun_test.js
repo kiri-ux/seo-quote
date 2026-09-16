@@ -179,7 +179,14 @@ const CFG = {
   // ---------------- step 1: the keyword builder ----------------
   await p.click('[data-open="0"][data-view="form"]');
   await p.click('#kwBuilder');
+  // PROPOSE, THEN BUILD. The first press stops with the expansion's terms on
+  // screen so a weak one can be removed before the list is built around it.
   await p.click('#kbBuild');
+  await p.waitForFunction(() => /proposed, shown dashed|^Built /.test(
+    document.getElementById('saved').textContent));
+  if (/proposed, shown dashed/.test(await p.textContent('#saved'))) {
+    await p.click('#kbBuild');
+  }
   await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent));
 
   const kb = await p.evaluate(() => ({

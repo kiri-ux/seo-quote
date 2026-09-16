@@ -76,6 +76,11 @@
         <div class="f"><label>Website Needing SEO <span class="i" data-tip="Pulled from the order" aria-label="Pulled from the order">i</span></label>
           <input type="text" data-k="site"></div>
 
+        <div class="f"><label>Order ID <span class="i" data-tip="Names the proposal file and shows on the workflow page" aria-label="Names the proposal file and shows on the workflow page">i</span></label>
+          <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
+        <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
+          <input type="text" data-k="partner"></div>
+
         <div class="f wide"><label>Product/Vertical Focus <span class="i" data-tip="Built on the Keyword Builder page" aria-label="Built on the Keyword Builder page">i</span></label>
           <div class="box" data-chips="focus"></div></div>
 
@@ -134,6 +139,11 @@
           <input type="text" data-k="brand"></div>
         <div class="f"><label>Client Website <span class="i" data-tip="Tags a result as owned" aria-label="Tags a result as owned">i</span></label>
           <input type="text" data-k="site"></div>
+
+        <div class="f"><label>Order ID <span class="i" data-tip="Names the proposal file and shows on the workflow page" aria-label="Names the proposal file and shows on the workflow page">i</span></label>
+          <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
+        <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
+          <input type="text" data-k="partner"></div>
 
         <div class="f wide"><label>Strategy <span class="i" data-tip="Every workstream this quote carries" aria-label="Every workstream this quote carries">i</span></label>
           <div class="box" data-chips="strategy"></div></div>
@@ -324,8 +334,18 @@ function timingReset(){ TIMING = []; }
 function timingLine(){
   if (!TIMING.length) return '';
   const total = TIMING.reduce((z, x) => z + x.ms, 0);
-  const worst = TIMING.slice().sort((a, b) => b.ms - a.ms).slice(0, 3)
-    .map(x => `${x.url.replace('/api/', '')} ${(x.ms / 1000).toFixed(1)}s`);
+  // AND WHAT THE SLOWEST STEP WAS WAITING ON. "refine 112.1s" names nothing to
+  // fix; refine is a sitemap read, four Anthropic passes and a volume re-pull,
+  // and each of those reports its own time.
+  const worst = TIMING.slice().sort((a, b) => b.ms - a.ms).slice(0, 3).map(x => {
+    const name = x.url.replace('/api/', '');
+    const secs = (x.ms / 1000).toFixed(1) + 's';
+    const sub = (x.steps || []).slice()
+      .sort((a, b) => (b.ms || 0) - (a.ms || 0))[0];
+    return sub && sub.ms >= 1000
+      ? `${name} ${secs} (${sub.step} ${(sub.ms / 1000).toFixed(1)}s)`
+      : `${name} ${secs}`;
+  });
   return ` \u00b7 ${(total / 1000).toFixed(1)}s \u2014 ${worst.join(', ')}`;
 }
 async function post(url, body, method){
@@ -522,6 +542,15 @@ function savePayload(r){
              band: r.band || null,
              cfg: r.cfg || {}, over: r.over || {}, kw: r.kw || null,
              scan: r.scan || null, result: r.result || null,
+             // WHICH SEEDS THE CLIENT NAMED AND WHICH THE TOOL PROPOSED. The
+             // expansion terms were merged into the seed list and the mark that
+             // told them apart lived only in memory, so reopening a quote showed
+             // thirteen identical chips.
+             seedSrc: r.seedSrc || {},
+             seedDrop: (r.seedDrop || []).slice(),
+             expandDone: (r.expandDone || []).slice(),
+             suggested: (r.suggested || []).slice(),
+             rankedSeeds: (r.rankedSeeds || []).slice(),
              history: (r.history || []).slice(0, 20)},
     inputs: {strategy: (r.data.strategy || []).join(' + '),
              brand: r.data.brand, geo_values: geoOf(r.data),
@@ -554,13 +583,19 @@ async function persist(r){
       const got = await post('/api/quotes', body);
       r.saveId = got.id;
       CLIENT = CLIENT || client;         // later runs group under the same client
-      // The order number belongs to the client, so a new quote carries it over.
-      const ord = new URLSearchParams(location.search).get('order');
-      if (ord) {
-        try {
-          await post('/api/adtini/client_meta', {client, order_no: ord});
-        } catch (e) { /* the quote is saved either way */ }
-      }
+    }
+    // ORDER ID AND PARTNER BELONG TO THE CLIENT, so they are written where the
+    // workflow page reads them rather than kept inside this quote.
+    const ord = String(r.data.order_no || '').trim()
+      || new URLSearchParams(location.search).get('order') || '';
+    const partner = String(r.data.partner || '').trim();
+    if (ord || partner) {
+      const meta = {client};
+      if (ord) { meta.order_no = ord; r.data.order_no = ord; }
+      if (partner) meta.partner = partner;
+      try {
+        await post('/api/adtini/client_meta', meta);
+      } catch (e) { /* the quote is saved either way */ }
     }
     r.saveNote = `Saved to ${client} · ${r.qid}.`;
     try {
@@ -780,6 +815,15 @@ async function loadClient(){
     } catch (e) { /* one unreadable quote must not empty the page */ }
   }
   if (loaded.length) { ROWS.length = 0; loaded.forEach(x => ROWS.push(x)); SAMPLES = null; }
+  // The client's own fields, so Order ID and Partner open filled in.
+  if (c) {
+    const ord = c.order || new URLSearchParams(location.search).get('order') || '';
+    ROWS.forEach(x => {
+      x.data = x.data || {};
+      if (!String(x.data.order_no || '').trim() && ord) x.data.order_no = ord;
+      if (!String(x.data.partner || '').trim() && c.partner) x.data.partner = c.partner;
+    });
+  }
   samplesBack();
   draw();
   fromQuery();
@@ -800,10 +844,12 @@ function fromQuery(){
                                                      year: '2-digit'}),
       data: kind === 'orm'
         ? {brand: client || '', site: '', strategy: ['Reactive'], reviews: '', locations: 1,
+           order_no: order || '', partner: '',
            std: '', prem: '', volume: '', g_city: false, g_county: false, g_state: false,
            g_country: false, city: [], county: [], state: [], countries: [],
            country: 'United States', autosuggest: 0, markup: '35'}
         : {brand: client || '', site: '', business_desc: '', focus: [], negatives: [],
+           order_no: order || '', partner: '',
            g_city: true, g_county: false, g_state: false, g_country: false,
            city: [], county: [], state: [], countries: [],
            industry: [], strategy: ['Core SEO'], goals: [], past: 0, past_details: '',
@@ -1385,6 +1431,24 @@ const CHIP_LIST = {industry: 'industries', goals: 'goals', strategy: 'strategies
 // list -- so a term the industry pass guessed at looks exactly like a term the
 // client named, and the only way to tell was to remember what you typed.
 let SEED_SRC = {};
+// WHO PUT EACH SEED THERE. Counted rather than described, because the chips
+// already carry the mark and the source is on each one's tooltip.
+function seedLegend(r){
+  const focus = (r.data || {}).focus || [];
+  if (!focus.length)
+    return 'None on this quote \u2014 add them here, or in Product/Vertical Focus '
+         + 'on the form.';
+  const src = (r.seedSrc || {});
+  const added = focus.filter(v => src[String(v).toLowerCase()]).length;
+  const dropped = (r.seedDrop || []).length;
+  const rule = dropped
+    ? ` \u00b7 ${dropped} removed \u2014 removed suggestions are not proposed again.`
+    : ' \u00b7 Remove one and it is not proposed again.';
+  if (!added) return dropped ? rule.replace(/^ \u00b7 /, '') : '';
+  return `${focus.length - added} from Product/Vertical Focus \u00b7 ${added} added by `
+       + 'expansion, shown dashed.' + rule;
+}
+
 function chipbox(box, list){
   const key = box.dataset.chips;
   const src = (box.closest('#form') && key === 'strategy') ? 'rep_strategies'
@@ -1395,6 +1459,12 @@ function chipbox(box, list){
   // first-letter jumping, and it closes on every pick -- which on a box that
   // holds several values means reopening the list once per value.
   const sug = key === 'seeds' ? SEED_SRC : null;
+  // Typed first, proposed after. Merged into one alphabet-free run they read as
+  // one list the client wrote.
+  if (sug) {
+    const isSug = v => !!sug[String(v).toLowerCase()];
+    list = list.filter(v => !isSug(v)).concat(list.filter(isSug));
+  }
   box.innerHTML = list.map(v => {
     const from = sug ? sug[String(v).toLowerCase()] : null;
     return from
@@ -1677,7 +1747,29 @@ document.addEventListener('click', e => {
     }
   }
   const x = e.target.closest('.chip b');
-  if (x) x.closest('.chip').remove();
+  if (x) {
+    const chip = x.closest('.chip');
+    // REMOVING A PROPOSED SEED IS A STANDING DECISION. The expansion proposed
+    // "allergy testing" on every build, so a term the planner had already
+    // rejected came back each time and cost a full build to reject again.
+    if (chip.classList.contains('sug')
+        && chip.closest('[data-chips="seeds"]') && ROW != null) {
+      const r = ROWS[ROW];
+      const t = chip.firstChild.textContent.trim().toLowerCase();
+      r.seedDrop = (r.seedDrop || []).filter(v => v !== t).concat(t);
+      delete (r.seedSrc || {})[t];
+      SEED_SRC && delete SEED_SRC[t];
+    }
+    chip.remove();
+    if (ROW != null) {
+      const sh = document.querySelector('#paneKw .seedhint');
+      if (sh && !$('paneKw').hidden) {
+        ROWS[ROW].data.focus = [...document.querySelectorAll(
+          '#paneKw [data-chips="seeds"] .chip')].map(c => c.firstChild.textContent.trim());
+        sh.textContent = seedLegend(ROWS[ROW]);
+      }
+    }
+  }
   const box = e.target.closest('.box');
   if (box && !e.target.closest('.chip')) { const i = box.querySelector('.chipin'); if (i) i.focus(); }
 });
@@ -2057,10 +2149,7 @@ function kbLoad(r){
   if (typed && typed.length) r.data.focus = typed.slice();
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   const seedHint = document.querySelector('#paneKw .seedhint');
-  if (seedHint) {
-    seedHint.textContent = (r.data.focus || []).length ? ''
-      : 'None on this quote \u2014 add them here, or in Product/Vertical Focus on the form.';
-  }
+  if (seedHint) seedHint.textContent = seedLegend(r);
   [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock'],
    ['kbAxis', 'spread']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
@@ -2274,6 +2363,8 @@ async function expandSeeds(r, d){
                      typical: Number(ind.market_typical) || 0,
                      missing: ind.missing_inputs || []};
   const have = new Set((d.focus || []).map(x => String(x).toLowerCase()));
+  // A term the planner removed is not proposed again on this quote.
+  (r.seedDrop || []).forEach(t => have.add(String(t).toLowerCase()));
   const rows = [];
   const take = (res, src) => (res.services || []).forEach(x => {
     const term = String(x.term || '').trim();
@@ -2345,17 +2436,35 @@ $('kbBuild').onclick = async () => {
   // The list is built for the band it will be priced in.
   await resolveBand(r);
   try {
-    if (d.expand) {
+    // PROPOSE, THEN BUILD. The expansion and the build ran on one press, so a
+    // weak proposal could only be rejected after the whole list had been built
+    // around it -- and the next press proposed it again. The expansion stops
+    // here with its terms on screen; the second press builds.
+    const seedSig = xs => xs.map(x => String(x).toLowerCase().trim()).sort();
+    const covered = (r.expandDone || []).length
+      && d.focus.every(t => (r.expandDone || []).includes(String(t).toLowerCase().trim()));
+    if (d.expand && !covered) {
       $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
       const got = await expandSeeds(r, d);
       if (got.added.length) {
         d.focus = d.focus.concat(got.added);
         chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+        const sh = document.querySelector('#paneKw .seedhint');
+        if (sh) sh.textContent = seedLegend(r);
         base.keywords = d.focus;
       }
       if (got.regions.length) { r.phrase_geos = got.regions; base.phrase_geos = got.regions; }
       r.expandNote = got;
-    } else {
+      r.expandDone = seedSig(d.focus);
+      if (got.added.length) {
+        $('saved').textContent =
+          `${got.added.length} term${got.added.length === 1 ? '' : 's'} proposed, shown `
+          + 'dashed. Remove any, then press Build keyword list.' + timingLine();
+        $('kbBuild').disabled = false;
+        await persist(r);
+        return;
+      }
+    } else if (!d.expand) {
       r.expandNote = null;
     }
     if (!base.keywords.length) {
@@ -2944,6 +3053,18 @@ async function recaptureSerp(i){
 
 // THE PROPOSAL DOCUMENT. Built from the same quote the fold lists, so what
 // downloads and what is on screen cannot drift.
+// MMDDYYYY_Client Name_Order ID. The order segment appears only when an order
+// ID was typed.
+function proposalFilename(client, order, ext){
+  const n = new Date();
+  const pad = x => String(x).padStart(2, '0');
+  const stamp = `${pad(n.getMonth() + 1)}${pad(n.getDate())}${n.getFullYear()}`;
+  const parts = [stamp, String(client || '').trim() || 'Client'];
+  if (String(order || '').trim()) parts.push(String(order).trim());
+  return parts.join('_').replace(/[\\/:*?"<>|\r\n\t]+/g, '-').replace(/^[ .]+|[ .]+$/g, '')
+    + '.' + (ext || 'docx');
+}
+
 async function downloadProposal(i){
   const r = ROWS[i];
   if (!r || !r.result) return;
@@ -2955,6 +3076,7 @@ async function downloadProposal(i){
   const d = r.data || {};
   const body = JSON.stringify({
     brand: d.brand || '', business_desc: d.business_desc || '',
+    order_no: d.order_no || '',
     geo_values: geoOf(d), state: stateOf(d),
     strategy: asList(d.strategy).join(', '),
     kw: r.kw || {},
@@ -2996,7 +3118,7 @@ async function downloadProposal(i){
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${(d.brand || 'proposal').replace(/[^\w.-]+/g, '_')}-${r.qid}.docx`;
+    a.download = proposalFilename(d.brand, d.order_no);
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 30000);
     say('Downloaded.');

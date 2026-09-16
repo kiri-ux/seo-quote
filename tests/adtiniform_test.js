@@ -246,7 +246,7 @@ const BASE = "http://127.0.0.1:5203";
   const want = {
     'home.heading': [home.heading, 'Quotes'],
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Client|Products|Strategies|Partner|Status'],
+      'Planner|Built|Client|Products|Strategies|Order ID|Partner|Status'],
     'home.rows': [home.rows, 8],
     'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
     'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],
@@ -269,10 +269,12 @@ const BASE = "http://127.0.0.1:5203";
     'new.noQuoteYet': [blank.noResults, true],
     'new.noRunsYet': [blank.history, 'No runs yet.'],
     'home.leftRail': [home.hasRail, true],
+    // An order ID is typed, never invented -- the sample rows carry none, so
+    // the links carry none either.
     'home.rowIcons': [home.icons.join(' | '),
-      '/adtini/forecast?client=Sage%20Dental&order=56305'
-      + ' | /adtini/forecast?client=Sage%20Dental&order=56305&review=seo'
-      + ' | /adtini/forecast?client=Sage%20Dental&order=56305&review=orm'],
+      '/adtini/forecast?client=Sage%20Dental'
+      + ' | /adtini/forecast?client=Sage%20Dental&review=seo'
+      + ' | /adtini/forecast?client=Sage%20Dental&review=orm'],
     'home.iconOffWithoutThatProduct': [home.seoOffWhenNoSeo, true],
     'home.partnerEditSticks': [home.partnerKept, 'Edited Partner'],
     'home.statusEditSticks': [home.statusKept, 'Complete'],

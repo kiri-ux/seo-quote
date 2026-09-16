@@ -108,7 +108,10 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     const R = {rows: rows.length, first: cells(rows[0])};
     R.noSamples = !rows.some(t => /Sage Dental|Junk Bee Gone/.test(t.textContent));
     R.plannerFromStore = rows[1].querySelector('select.who').value;
-    R.partnerFromStore = rows[0].querySelector('input.cell').value;
+    // By field, not by position: Order ID now sits between Strategies and
+    // Partner.
+    R.partnerFromStore = rows[0].querySelector('input[data-f="partner"]').value;
+    R.orderFromStore = rows[0].querySelector('input[data-f="order_no"]').value;
     R.countPerProduct = [...rows[0].querySelectorAll('.tag')].map(t => t.textContent.trim());
     // an edit goes back to the store, against that client
     const sel = rows[0].querySelector('select.stat');
@@ -202,6 +205,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'home.quoteCountPerProduct': [home.countPerProduct.join(','), 'SEO2'],
     'home.plannerFromTheStore': [home.plannerFromStore, 'Stacy'],
     'home.partnerFromTheStore': [home.partnerFromStore, 'ADX Communications'],
+    'home.orderCellPresent': [typeof home.orderFromStore, 'string'],
     'home.editWritesBackToTheClient': [JSON.stringify(posted[0] || {}),
       '{"client":"Drainify","status":"Complete"}'],
     'seo.everyQuoteIsARow': [seo.rows.length, 2],

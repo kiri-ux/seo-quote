@@ -89,6 +89,7 @@
             <th>Client</th>
             <th>Products</th>
             <th>Strategies</th>
+            <th>Order ID</th>
             <th>Partner</th>
             <th>Status</th>
           </tr>
@@ -126,29 +127,29 @@ const TONE = {
   SSG:    '#33265C,#E2DCF7',
 };
 const QUOTES = [
-  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Drainify', order:'56310',
+  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Drainify', order:'',
    seo:2, orm:0, seoStrat:['Core SEO','AI Search'], ormStrat:[],
    partner:'ADX Communications', status:'In Progress'},
-  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Ski Barn', order:'56311',
+  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Ski Barn', order:'',
    seo:0, orm:2, seoStrat:[], ormStrat:['Review Removals','Reactive'],
    partner:'Rock Paper Scissors', status:'Pending'},
-  {planner:'Kiri', built:'9/16/26', due:'warn', client:'Sage Dental', order:'56305',
+  {planner:'Kiri', built:'9/16/26', due:'warn', client:'Sage Dental', order:'',
    seo:1, orm:1, seoStrat:['Core SEO'],
    ormStrat:['Review Removals','Site/Article Removals','Reactive','Proactive'],
    partner:'Bay Area Digital Solutions', status:'Ready for SSG Review'},
-  {planner:'Kiri', built:'9/16/26', due:'warn', client:"Rosalyn's Ice Cream", order:'45663',
+  {planner:'Kiri', built:'9/16/26', due:'warn', client:"Rosalyn's Ice Cream", order:'',
    seo:1, orm:0, seoStrat:['Core SEO'], ormStrat:[],
    partner:'Local Media San Diego', status:'Pending'},
-  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Renfroe Pecans', order:'56310',
+  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Renfroe Pecans', order:'',
    seo:1, orm:0, seoStrat:['Core SEO','AI Search'], ormStrat:[],
    partner:'ADX Communications', status:'In Progress'},
-  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Junk Bee Gone', order:'56298',
+  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Junk Bee Gone', order:'',
    seo:1, orm:3, seoStrat:['Core SEO'], ormStrat:['Review Removals','Proactive'],
    partner:'Amperage Marketing + Fundraising', status:'Ready for SSG Review'},
-  {planner:'Kiri', built:'9/12/26', due:'warn', client:'Visions Electronics', order:'56247',
+  {planner:'Kiri', built:'9/12/26', due:'warn', client:'Visions Electronics', order:'',
    seo:0, orm:1, seoStrat:[], ormStrat:['Reactive'],
    partner:'Benchmarketing Group', status:'Complete'},
-  {planner:'Kiri', built:'9/11/26', due:'ok', client:'Whidbey Island Electric', order:'56299',
+  {planner:'Kiri', built:'9/11/26', due:'ok', client:'Whidbey Island Electric', order:'',
    seo:1, orm:0, seoStrat:['Core SEO'], ormStrat:[],
    partner:'CK Advertising Strategies', status:'Complete'},
 ];
@@ -159,8 +160,11 @@ const tag = (cls, label, n) =>
 
 // The sparkle opens the client's quote builder; the two letters open that
 // product's quote for review.
+// The order rides along only when the client has one. An empty &order= is a
+// number nobody entered.
 const fcUrl = (r, product) => '/adtini/forecast?client=' + encodeURIComponent(r.client)
-  + '&order=' + encodeURIComponent(r.order) + (product ? '&review=' + product : '');
+  + (r.order ? '&order=' + encodeURIComponent(r.order) : '')
+  + (product ? '&review=' + product : '');
 
 function pick(list, val, cls, i, field){
   return `<select class="${cls}" data-i="${i}" data-f="${field}">`
@@ -197,6 +201,8 @@ function draw(){
       <td class="lnk"><a href="/adtini/forecast">${esc(r.client)}</a></td>
       <td><div class="tags">${chips}</div></td>
       <td><div class="tags">${strat}</div></td>
+      <td><input class="cell ord" data-i="${i}" data-f="order_no" value="${esc(r.order || '')}"
+                 placeholder="\u2014"></td>
       <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
       <td>${pick(STATUSES, r.status, 'stat sel', i, 'status')}</td>
     </tr>`;
@@ -212,7 +218,7 @@ document.getElementById('rows').addEventListener('change', async e => {
   const el = e.target.closest('[data-f]');
   if (!el) return;
   const r = QUOTES[+el.dataset.i];
-  r[el.dataset.f] = el.value;
+  r[el.dataset.f === 'order_no' ? 'order' : el.dataset.f] = el.value;
   if (el.dataset.f === 'planner') draw();
   if (!LIVE) return;
   try {

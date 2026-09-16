@@ -70,11 +70,18 @@ def _timing_end(resp):
         ms = int((time.time() - t0) * 1000)
         resp.headers["X-Elapsed-Ms"] = str(ms)
         marks = getattr(_T, "marks", []) or []
+        # ONE LINE PER THING WAITED ON, NOT ONE PER CALL. A build makes twenty
+        # provider calls under one name; twenty entries reading 900ms each hide
+        # the eighteen seconds they add up to.
+        rolled = {}
+        for _k, _v in marks:
+            _cur = rolled.get(_k) or [0, 0]
+            rolled[_k] = [_cur[0] + int(_v or 0), _cur[1] + 1]
+        # Slowest first: the one worth attacking is the one at the front.
+        top = sorted(rolled.items(), key=lambda kv: -kv[1][0])[:6]
         if marks:
-            # Slowest first: the one worth attacking is the one at the front.
-            top = sorted(marks, key=lambda x: -x[1])[:6]
             resp.headers["X-Elapsed-Steps"] = ascii_header(
-                "; ".join(f"{k}={v}" for k, v in top)) or ""
+                "; ".join(f"{k}={v[0]}" for k, v in top)) or ""
         # The same numbers in the body, where the panel can read them without
         # CORS-exposing headers.
         if resp.is_json:
@@ -83,7 +90,8 @@ def _timing_end(resp):
                 if isinstance(body, dict):
                     body["_ms"] = ms
                     if marks:
-                        body["_steps"] = [{"step": k, "ms": v} for k, v in marks]
+                        body["_steps"] = [{"step": k, "ms": v[0], "n": v[1]}
+                                          for k, v in top]
                     resp.set_data(json.dumps(body))
             except Exception:
                 pass
@@ -17556,6 +17564,21 @@ def api_quotes_status():
         "detail": storage.status_detail(),
     })
 
+def proposal_filename(client, order_no="", ext="docx", when=None):
+    """MMDDYYYY_Client Name_Order ID. The order segment appears only when an
+    order ID was typed — a document is never named after a number nobody
+    entered. (2026-09-16, Kiri)"""
+    stamp = (when or _dt.datetime.now()).strftime("%m%d%Y")
+    parts = [stamp, (str(client or "").strip() or "Client")]
+    order = str(order_no or "").strip()
+    if order:
+        parts.append(order)
+    name = "_".join(parts)
+    # Only what a filesystem refuses. Spaces in the client's name are kept.
+    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "-", name).strip(" .")
+    return f"{name or 'Proposal'}.{ext}"
+
+
 def group_by_client(seo_rows, rep_rows, meta=None):
     """ONE CLIENT IS ONE ROW, WHATEVER IT BOUGHT. The quote list is a client
     list: two products on one client merge, and a client with four saved SEO
@@ -17609,12 +17632,20 @@ def api_adtini_clients():
                                                storage.client_meta())})
 
 
-@app.route("/api/adtini/client_meta", methods=["POST"])
+@app.route("/api/adtini/client_meta", methods=["GET", "POST"])
 @_json_error_guard
 def api_adtini_client_meta():
     """Planner, partner, status or order number for one client."""
     if not storage.enabled():
+        if request.method == "GET":
+            return jsonify({"enabled": False, "meta": {}})
         return jsonify({"error": "Saving isn't enabled — attach a Postgres database."}), 400
+    if request.method == "GET":
+        # The forecast page asks for the client's own fields so Order ID and
+        # Partner open with what the workflow page holds.
+        who = (request.args.get("client") or "").strip()
+        return jsonify({"enabled": True,
+                        "meta": (storage.client_meta() or {}).get(who, {})})
     d = request.get_json(force=True)
     client = (d.get("client") or "").strip()
     if not client:
@@ -18000,10 +18031,9 @@ def api_rep_removals_docx():
     except Exception as e:                                    # noqa: BLE001
         app.logger.exception("review removal docx failed")
         return jsonify({"error": str(e)[:200]}), 500
-    name = re.sub(r"[^A-Za-z0-9]+", "_",
-                  (d.get("brand") or "client")).strip("_") or "client"
     return send_file(buf, as_attachment=True,
-                     download_name=f"{name}_Review_Removal_Analysis.docx",
+                     download_name=proposal_filename(d.get("brand"),
+                                                     d.get("order_no")),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
 
@@ -18036,10 +18066,9 @@ def api_rep_proposal_docx():
     except Exception as e:                                    # noqa: BLE001
         app.logger.exception("rep proposal docx failed")
         return jsonify({"error": str(e)[:200]}), 500
-    name = re.sub(r"[^A-Za-z0-9]+", "_",
-                  (d.get("brand") or "client")).strip("_") or "client"
     return send_file(buf, as_attachment=True,
-                     download_name=f"{name}_Reputation_Proposal.docx",
+                     download_name=proposal_filename(d.get("brand"),
+                                                     d.get("order_no")),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
 
@@ -18964,10 +18993,9 @@ def api_proposal_docx():
     except Exception as e:                                    # noqa: BLE001
         app.logger.exception("proposal docx failed")
         return jsonify({"error": str(e)[:200]}), 500
-    name = re.sub(r"[^A-Za-z0-9]+", "_",
-                  (d.get("brand") or "proposal")).strip("_") or "proposal"
     resp = send_file(buf, as_attachment=True,
-                     download_name=f"{name}_SEO_Proposal.docx",
+                     download_name=proposal_filename(d.get("brand"),
+                                                     d.get("order_no")),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
     # A SECTION THAT REMOVES ITSELF HAS TO SAY SO. The performance table
@@ -18979,3 +19007,38 @@ def api_proposal_docx():
         if _pm:
             resp.headers["X-Perf-Omitted"] = _pm
     return resp
+
+
+# ---------------------------------------------------------------------------
+# WHERE THE TIME WENT, INSIDE THE STEP.
+#
+# The build reported "refine 112.1s" and stopped there. Refine is a sitemap
+# read, four separate Anthropic passes and an exact-match volume re-pull, and
+# one number for all of it names nothing to fix. Every Anthropic pass is timed
+# under its own name, the same way dfs_post times every provider call, so the
+# next slow build reads as a list. (2026-09-16, Kiri)
+def _time_claude_passes():
+    for _name in [n for n in list(globals())
+                  if n.startswith("claude_") and callable(globals().get(n))]:
+        # Already timed by hand where the wrapper had to sit inside the call.
+        if _name == "claude_industry_services":
+            continue
+        _fn = globals()[_name]
+        if getattr(_fn, "_timed", False):
+            continue
+
+        def _wrap(fn=_fn, label=_name):
+            @functools.wraps(fn)
+            def inner(*a, **kw):
+                _t0 = time.time()
+                try:
+                    return fn(*a, **kw)
+                finally:
+                    t_mark(label, _t0)
+            inner._timed = True
+            return inner
+
+        globals()[_name] = _wrap()
+
+
+_time_claude_passes()
