@@ -79,6 +79,12 @@ nav.tabs a.on{background:var(--page);color:var(--navy)}
 .crumbs{font-size:12.5px;color:var(--muted);margin:0 0 14px}
 .crumbs a{color:var(--navy);font-weight:600}
 .crumbs .crumbc{color:var(--text);font-weight:600}
+.sitelink{
+  display:inline-block;margin:-6px 0 12px;font-size:12.5px;color:var(--blue);
+  text-decoration:none;
+}
+.sitelink::before{content:"\2197";margin-right:5px;font-size:11px}
+.sitelink:hover{text-decoration:underline}
 
 /* ---- controls row (workflow page) -------------------------------------- */
 .controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
@@ -196,6 +202,12 @@ h3.products{margin:0 0 16px;font-size:22px;font-weight:600}
   font-family:inherit;font-size:11.5px;font-weight:600;padding:7px 14px;
 }
 .chev{color:var(--muted);cursor:pointer}
+.btn-del{
+  border:1px solid var(--line);background:var(--card);color:var(--muted);
+  border-radius:999px;cursor:pointer;font-family:inherit;font-size:13px;
+  line-height:1;padding:5px 10px;
+}
+.btn-del:hover{background:#FDECEC;border-color:#E9B9B9;color:#B3261E}
 
 .note{max-width:1760px;margin:0 auto;padding:14px 26px 0;color:var(--muted);font-size:12.5px}
 

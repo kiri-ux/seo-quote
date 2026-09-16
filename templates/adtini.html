@@ -490,6 +490,7 @@ function draw(){
     return;
   }
   ROWS.forEach((r, i) => { r.i = i; });
+  try { siteLink(); } catch (e) {}
   $('prods').innerHTML = ROWS.map(rowHtml).join('');
 }
 
@@ -808,6 +809,7 @@ function fromQuery(){
       `<a href="/adtini">Workflow Page</a> &rsaquo; `
       + (client ? `<span class="crumbc">${esc(client)}</span> &rsaquo; ` : '')
       + `Forecast`;
+    siteLink();
   }
   if (!review) return;
   const i = ROWS.findIndex(r => r.kind === review);
@@ -866,6 +868,8 @@ function histHtml(r){
           + `<td>${x.quote ? `<button class="btn-open" type="button" data-hist="${j}">`
                              + `${on ? 'Close' : 'Open'}</button> ` : ''}`
           + '<button class="btn-pub" type="button">Publish To RZ</button>'
+          + ` <button class="btn-del" type="button" data-del="${j}"`
+          + ` title="Remove this run" aria-label="Remove this run">&times;</button>`
           + ' <span class="chev">&#9662;</span></td></tr>'
           + (on ? `<tr class="histopen"><td colspan="${cols.length}">`
                   + resultsHtml(Object.assign({}, r, {result: x.quote}), true)
@@ -2204,11 +2208,19 @@ async function expandSeeds(r, d){
                 business_desc: d.business_desc || '', seeds: (d.focus || []).slice(),
                 geo_values: geoOf(d), state: stateOf(d),
                 national_demand: (r.band || bandOf(d)) === 'nationwide', cfg: r.over || {}};
+  const fails = {};
+  const tryPost = (url, key) => post(url, base).catch(e => {
+    fails[key] = e.message || 'failed';
+    return {};
+  });
   const [site, ind, rank] = await Promise.all([
-    post('/api/site_services', base).catch(() => ({})),
-    post('/api/expand_services', base).catch(() => ({})),
-    post('/api/rank_seeds', base).catch(() => ({})),
+    tryPost('/api/site_services', 'site'),
+    tryPost('/api/expand_services', 'industry'),
+    tryPost('/api/rank_seeds', 'ranks'),
   ]);
+  const found = {site: (site.services || []).length,
+                 industry: (ind.services || []).length,
+                 ranks: (rank.services || []).length};
   const have = new Set((d.focus || []).map(x => String(x).toLowerCase()));
   const rows = [];
   const take = (res, src) => (res.services || []).forEach(x => {
@@ -2236,7 +2248,8 @@ async function expandSeeds(r, d){
   r.seedSrc = Object.assign({}, r.seedSrc || {}, SEED_SRC);
   r.suggested = (r.suggested || []).concat(kept.map(x => x.term.toLowerCase()));
   r.rankedSeeds = kept.filter(x => x.ranked).map(x => x.term.toLowerCase());
-  return {added: kept.map(x => x.term), rows: kept, regions,
+  return {added: kept.map(x => x.term), rows: kept, regions, found, fails,
+          dupes: rows.length === 0 && (found.site + found.industry + found.ranks) > 0,
           held: Math.max(0, rows.length - kept.length)};
 }
 
@@ -2329,8 +2342,7 @@ $('kbBuild').onclick = async () => {
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
       $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
-        + (r.expandNote && r.expandNote.added.length
-           ? ` · ${r.expandNote.added.length} terms added by expansion.` : '');
+        + expandWhy(r.expandNote);
   } catch (e) {
     $('saved').textContent = e.message;
   }
@@ -2550,7 +2562,7 @@ async function autoSerp(r, d, ranks, say){
   // three different things to do next, reported as one.
   try {
     const q = await postWait('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
-      state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1},
+      state: stateOf(d), device: 'desktop', width: 1600, height: 1400, scale: 1},
       null, say);
     if (!q || !q.task_id)
       return {error: q && q.error ? q.error : 'the capture service took no task'};
@@ -2592,7 +2604,7 @@ async function autoSerp(r, d, ranks, say){
                          + ` there after two attempts`, kw};
         say(`Still queued \u2014 asking for a fresh capture of \u201c${kw}\u201d\u2026`);
         task = await postWait('/api/serp_queue', {keyword: kw, geo_values: geoOf(d),
-          state: stateOf(d), device: 'desktop', width: 1100, height: 1200, scale: 1},
+          state: stateOf(d), device: 'desktop', width: 1600, height: 1400, scale: 1},
           null, say);
         if (!task || !task.task_id)
           return {error: 'the capture service took no task on the retry', kw};
@@ -3123,6 +3135,73 @@ $('prods').addEventListener('click', e => {
   clearTimeout(r._panSave);
   r._panSave = setTimeout(() => { persist(r); }, 900);
 });
+
+// WHAT EXPANSION DID, IN ONE LINE. Silence after "Built 10 terms" reads as the
+// toggle having been ignored; it ran, and which pass came back empty is the
+// part the planner can act on.
+function expandWhy(note){
+  if (!note) return '';
+  if (note.added && note.added.length)
+    return ` \u00b7 ${note.added.length} terms added by expansion.`;
+  const f = note.found || {}, bad = note.fails || {};
+  const names = {site: 'their site', industry: 'the industry', ranks: 'what they rank for'};
+  const empty = Object.keys(names).filter(k => !bad[k] && !(f[k] > 0));
+  const broke = Object.keys(names).filter(k => bad[k]);
+  if (note.dupes)
+    return ' \u00b7 Expansion added nothing \u2014 everything it proposed is already'
+         + ' on the list.';
+  const bits = [];
+  if (empty.length) bits.push(`${empty.map(k => names[k]).join(', ')} returned none`);
+  if (broke.length) bits.push(`${broke.map(k => names[k]).join(', ')} could not be read`);
+  return bits.length
+    ? ` \u00b7 Expansion added nothing \u2014 ${bits.join('; ')}.`
+    : ' \u00b7 Expansion added nothing.';
+}
+
+// REMOVING A RUN. A build made on the wrong markets stays on the record for
+// ever otherwise, and the newest run is what the row and the proposal read.
+$('prods').addEventListener('click', async e => {
+  const b = e.target.closest('[data-del]');
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const i = +b.closest('.prod').dataset.row, r = ROWS[i];
+  const j = +b.dataset.del;
+  if (!r || !(r.history || [])[j]) return;
+  const when = r.history[j].when || 'this run';
+  if (!confirm(`Remove the run from ${when}? The quote keeps its other runs.`)) return;
+  r.history.splice(j, 1);
+  // The row shows the newest run, so removing it promotes the one before.
+  if (r.history.length && r.history[0].quote) r.result = r.history[0].quote;
+  else if (!r.history.length) r.result = r.result;
+  r.openRun = r.history.length ? 0 : null;
+  if (r.result) r.result.headline = headlineOf(r);
+  await persist(r);
+  draw();
+});
+
+// THE CLIENT'S SITE, ONE CLICK AWAY. It is on every SEO quote already; nothing
+// linked it, so checking what they actually sell meant copying it out of the
+// form.
+function siteLink(){
+  const head = document.querySelector('.pagehead h2');
+  if (!head) return;
+  const url = (ROWS.map(r => (r.data || {}).site).find(Boolean) || '').trim();
+  const old = document.getElementById('siteLink');
+  if (old) old.remove();
+  if (!url) return;
+  const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  let label = url.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, '');
+  const a = document.createElement('a');
+  a.id = 'siteLink';
+  a.className = 'sitelink';
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = label;
+  a.title = href;
+  head.insertAdjacentElement('afterend', a);
+}
 </script>
 </body>
 </html>

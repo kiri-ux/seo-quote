@@ -504,7 +504,7 @@ const CFG = {
       // The unmeasured count lives on the Ranking card; the one-line summary
       // carries the ladder, the list size, the demand and the ranking.
       '▾ 9/11/26 4:08 PM$6,050 / $7,150 / $8,600/mo · 6 terms · 7,100/mo'
-      + ' · ranking for 4 of 4 termsadtiniClose Publish To RZ ▾'],
+      + ' · ranking for 4 of 4 termsadtiniClose Publish To RZ × ▾'],
     'hist.openRowMarked': [hist.openedRowMarked, true],
     'hist.noSecondHeader': [hist.noSecondHeader, true],
     'hist.openIsTheWholeQuote': [hist.hasWholeQuote, true],
