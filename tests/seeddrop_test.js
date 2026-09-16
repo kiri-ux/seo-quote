@@ -103,6 +103,59 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   const after = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('removedTermNeverReturns', !after.includes('allergy testing'), JSON.stringify(after));
 
+  // A REWORDING IS THE SAME REJECTION. Removing "allergy testing" brought back
+  // "allergy skin testing" on the next press.
+  const echo = await p.evaluate(() => {
+    ROWS[0].seedDrop = ['allergy testing', 'sinus surgery'];
+    ROWS[0].data.focus = ['Hearing Aids'];
+    ROWS[0].expandDone = [];
+    return null;
+  });
+  await p.unroute('**/api/site_services');
+  await p.route('**/api/site_services', route =>
+    route.fulfill({status:200, contentType:'application/json',
+      body: JSON.stringify({services: [
+        {term: 'allergy skin testing', volume: 10},
+        {term: 'minimally-invasive sinus surgery', volume: 20},
+        {term: 'allergy testing', volume: 30},
+        {term: 'tonsillectomy', volume: 40}]})}));
+  await p.evaluate(() => { open(0, 'kw'); });
+  await p.waitForTimeout(300);
+  await p.click('#kbBuild');
+  await p.waitForFunction(() => /proposed|^Built /.test($('saved').textContent),
+                          {timeout:20000});
+  const seeds = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
+  say('exactDropStaysOut', !seeds.includes('allergy testing'), JSON.stringify(seeds));
+  say('rewordingStaysOut', !seeds.includes('allergy skin testing'),
+      JSON.stringify(seeds));
+  say('longerRewordingStaysOut',
+      !seeds.includes('minimally-invasive sinus surgery'), JSON.stringify(seeds));
+  say('unrelatedStillProposed', seeds.includes('tonsillectomy'),
+      JSON.stringify(seeds));
+
+  // AND THERE IS A WAY BACK.
+  await p.evaluate(() => {
+    const r = ROWS[0];
+    r.seedDrop = ['allergy testing', 'ear tube surgery'];
+    r.data.focus = ['Hearing Aids'];
+    open(0, 'kw');
+  });
+  await p.waitForTimeout(300);
+  say('restoreOffered', (await p.$$('#seedRestore')).length === 1);
+  await p.click('#seedRestore');
+  await p.waitForTimeout(300);
+  const restored = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
+  say('bothCameBack',
+      restored.includes('allergy testing') && restored.includes('ear tube surgery'),
+      JSON.stringify(restored));
+  say('dropListCleared',
+      (await p.evaluate(() => ROWS[0].seedDrop)).length === 0);
+  say('expansionAskedAgain',
+      (await p.evaluate(() => ROWS[0].expandDone)).length === 0);
+  say('restoreGoesAway', (await p.$$('#seedRestore')).length === 0);
+  say('typedOneNotDuplicated',
+      restored.filter(x => x === 'hearing aids').length === 1, JSON.stringify(restored));
+
   console.log(bad ? 'failed=' + bad : 'ok all');
   await b.close();
   process.exit(bad ? 1 : 0);

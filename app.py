@@ -1827,6 +1827,117 @@ def _dfs_rate_limited(data):
     return False
 
 
+# ---------------------------------------------------------------------------
+# THE SAME KEYWORD IN THE SAME CITY IS THE SAME NUMBER.
+#
+# Google Ads LIVE is the one family DataForSEO really does cap at 12 requests a
+# minute, and volume is asked per market: eight markets is eight requests for
+# one pass, and a build makes several passes. On an ENT build that read
+# "rank_seeds 73.7s (search_volume.live 49.5s)" — the time was pacing, not
+# Google. And the propose-then-build gate means the SECOND press re-measures
+# the identical terms in the identical markets.
+#
+# So a measured keyword is remembered per (keyword, location, language) and only
+# the misses are asked for. Same TTL as the rank cache: long enough that a
+# rebuild is nearly free, short enough that nothing stale ever reaches a price.
+ADS_VOL_CACHE = {}
+ADS_VOL_LOC = {}          # (location, language) -> location_code DataForSEO used
+ADS_VOL_TTL = 6 * 3600
+ADS_VOL_MAX = 20000
+_ads_vol_lock = threading.Lock()
+_ADS_VOL_PATH = "/keywords_data/google_ads/search_volume/live"
+
+
+def _ads_vol_key(kw, loc, lang):
+    return (str(kw or "").strip().lower(), str(loc or "").strip().lower(),
+            str(lang or "en").strip().lower())
+
+
+def ads_volume_cache_clear():
+    with _ads_vol_lock:
+        ADS_VOL_CACHE.clear()
+        ADS_VOL_LOC.clear()
+
+
+def _volume_cached(path, payload, timeout, method, retries):
+    """One volume task, answered from the cache where it can be."""
+    task = payload[0]
+    kws = [str(k) for k in (task.get("keywords") or []) if str(k).strip()]
+    loc = task.get("location_name") or ""
+    lang = task.get("language_code") or "en"
+    if not kws:
+        return _dfs_post_inner(path, payload, timeout=timeout, method=method,
+                               retries=retries)
+    now = time.time()
+    hits, miss = {}, []
+    with _ads_vol_lock:
+        for k in kws:
+            ent = ADS_VOL_CACHE.get(_ads_vol_key(k, loc, lang))
+            if ent and now - ent[1] < ADS_VOL_TTL:
+                hits[k] = ent[0]
+            else:
+                miss.append(k)
+        code = ADS_VOL_LOC.get((str(loc).strip().lower(),
+                                str(lang).strip().lower()))
+
+    def _answer(rows, location_code):
+        return {"tasks": [{"status_code": 20000, "status_message": "Ok.",
+                           "data": {"location_name": loc, "language_code": lang,
+                                    "location_code": location_code},
+                           "result": rows}]}
+
+    if not miss:
+        rows = [dict(hits[k]) for k in kws if isinstance(hits.get(k), dict)]
+        t_mark("search_volume.cached", now)
+        return _answer(rows, code)
+
+    asked = dict(task)
+    asked["keywords"] = miss
+    data = _dfs_post_inner(path, [asked], timeout=timeout, method=method,
+                           retries=retries)
+    task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+    # A REFUSAL IS NOT A MEASUREMENT. Only a clean task is remembered, or a
+    # rate-limited minute would be cached as "no demand" for six hours.
+    if task0.get("status_code") not in (20000, None):
+        return data
+    fresh = task0.get("result") or []
+    got = {}
+    for it in fresh:
+        if isinstance(it, dict):
+            got[str(it.get("keyword", "")).strip().lower()] = it
+    new_code = None
+    try:
+        new_code = (task0.get("data") or {}).get("location_code")
+        if new_code is None:
+            for it in fresh:
+                if isinstance(it, dict) and it.get("location_code") is not None:
+                    new_code = it.get("location_code")
+                    break
+    except Exception:
+        new_code = None
+    stamp = time.time()
+    with _ads_vol_lock:
+        if len(ADS_VOL_CACHE) > ADS_VOL_MAX:
+            ADS_VOL_CACHE.clear()
+        for k in miss:
+            # A keyword the provider returned nothing for is remembered as
+            # nothing, or it is re-asked on every pass forever.
+            ADS_VOL_CACHE[_ads_vol_key(k, loc, lang)] = (
+                got.get(str(k).strip().lower()), stamp)
+        if new_code is not None:
+            ADS_VOL_LOC[(str(loc).strip().lower(),
+                         str(lang).strip().lower())] = new_code
+    if not hits:
+        return data
+    merged = []
+    for k in kws:
+        row = (got.get(str(k).strip().lower())
+               if k in miss else hits.get(k))
+        if isinstance(row, dict):
+            merged.append(dict(row))
+    return _answer(merged, new_code if new_code is not None else code)
+
+
 def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     """One DataForSEO call, retried once on a TRANSIENT failure.
 
@@ -1854,6 +1965,11 @@ def dfs_post(path, payload, timeout=None, method="POST", retries=1):
     """
     _t0 = time.time()
     try:
+        if (str(path).rstrip("/") == _ADS_VOL_PATH
+                and method == "POST"
+                and isinstance(payload, list) and len(payload) == 1
+                and isinstance(payload[0], dict)):
+            return _volume_cached(path, payload, timeout, method, retries)
         return _dfs_post_inner(path, payload, timeout=timeout, method=method,
                                retries=retries)
     finally:

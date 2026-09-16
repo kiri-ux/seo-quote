@@ -616,6 +616,23 @@ async function persist(r){
 // THE HEADLINE IS THE BASE TIER, per month. Written after the row is built so
 // it reads the same mapped prices the tiles do -- an older saved quote has no
 // handoff block and printed "—/mo" off it.
+// A TERM NOBODY SEARCHES IS NOT WORTH A SERP CALL.
+//
+// A 6-service list across 6 markets is 36 rank checks, and a third of the rows
+// measured 0/mo in the market they name. Their rank changes no price -- they
+// are not in the ranked fraction either way -- so the call buys nothing and the
+// row comes back "unmeasured", which reads like a failure rather than a market
+// with no demand. Checked rows are the ones with demand; the rest show their
+// 0/mo beside a blank rank, which says it already.
+//
+// Unless nothing at all measured: a thin market where every row reads 0/mo
+// still gets checked, because then the zeros are the reading and not the filter.
+function worthChecking(all){
+  const has = x => Number(x && x.vol) > 0;
+  const live = (all || []).filter(has);
+  return live.length ? live : (all || []).slice();
+}
+
 function rankingText(r){
   const p = (r.result || {}).pricing || {};
   const rk = (r.result || {}).ranks || {};
@@ -1443,11 +1460,37 @@ function seedLegend(r){
   const dropped = (r.seedDrop || []).length;
   const rule = dropped
     ? ` \u00b7 ${dropped} removed \u2014 removed suggestions are not proposed again.`
+      + ' <button type="button" class="lnkbtn" id="seedRestore">Restore them</button>'
     : ' \u00b7 Remove one and it is not proposed again.';
   if (!added) return dropped ? rule.replace(/^ \u00b7 /, '') : '';
   return `${focus.length - added} from Product/Vertical Focus \u00b7 ${added} added by `
        + 'expansion, shown dashed.' + rule;
 }
+
+// REMOVING IS PERMANENT, SO THERE IS A WAY BACK. Eight good ENT service lines
+// went out with one weak one, and re-typing them was the only route.
+document.addEventListener('click', e => {
+  if (!e.target.closest('#seedRestore') || ROW == null) return;
+  const r = ROWS[ROW];
+  const back = (r.seedDrop || []).slice();
+  if (!back.length) return;
+  r.seedDrop = [];
+  r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+    .map(c => c.firstChild.textContent.trim());
+  const have = new Set(r.data.focus.map(x => x.toLowerCase()));
+  back.forEach(t => {
+    if (have.has(t)) return;
+    have.add(t);
+    r.data.focus.push(t);
+    (r.seedSrc = r.seedSrc || {})[t] = 'restored';
+  });
+  // The expansion is asked again, because the terms it was told to skip are back.
+  r.expandDone = [];
+  chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), r.data.focus.slice());
+  const sh = document.querySelector('#paneKw .seedhint');
+  if (sh) sh.innerHTML = seedLegend(r);
+  persist(r);
+});
 
 function chipbox(box, list){
   const key = box.dataset.chips;
@@ -1766,7 +1809,7 @@ document.addEventListener('click', e => {
       if (sh && !$('paneKw').hidden) {
         ROWS[ROW].data.focus = [...document.querySelectorAll(
           '#paneKw [data-chips="seeds"] .chip')].map(c => c.firstChild.textContent.trim());
-        sh.textContent = seedLegend(ROWS[ROW]);
+        sh.innerHTML = seedLegend(ROWS[ROW]);
       }
     }
   }
@@ -2149,7 +2192,7 @@ function kbLoad(r){
   if (typed && typed.length) r.data.focus = typed.slice();
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   const seedHint = document.querySelector('#paneKw .seedhint');
-  if (seedHint) seedHint.textContent = seedLegend(r);
+  if (seedHint) seedHint.innerHTML = seedLegend(r);
   [['kbNat', 'national'], ['kbExpand', 'expand'], ['kbLock', 'lock'],
    ['kbAxis', 'spread']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
@@ -2363,12 +2406,31 @@ async function expandSeeds(r, d){
                      typical: Number(ind.market_typical) || 0,
                      missing: ind.missing_inputs || []};
   const have = new Set((d.focus || []).map(x => String(x).toLowerCase()));
-  // A term the planner removed is not proposed again on this quote.
-  (r.seedDrop || []).forEach(t => have.add(String(t).toLowerCase()));
+  // A term the planner removed is not proposed again on this quote -- and
+  // neither is a rewording of it. Removing "allergy testing" got "allergy skin
+  // testing" back on the next press, which is the same rejection a second time.
+  const dropped = (r.seedDrop || []).map(t => String(t).toLowerCase().trim())
+    .filter(Boolean);
+  dropped.forEach(t => have.add(t));
+  const words = t => String(t).toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+  const echoesADrop = term => {
+    const a = words(term);
+    if (!a.length) return false;
+    return dropped.some(d => {
+      const b = words(d);
+      if (!b.length) return false;
+      const shared = a.filter(w => b.includes(w)).length;
+      // Every word of the shorter phrase appears in the longer one: "allergy
+      // skin testing" against "allergy testing", "sinus surgery" against
+      // "minimally-invasive sinus surgery".
+      return shared === Math.min(a.length, b.length);
+    });
+  };
   const rows = [];
   const take = (res, src) => (res.services || []).forEach(x => {
     const term = String(x.term || '').trim();
-    if (!term || have.has(term.toLowerCase())) return;
+    if (!term || have.has(term.toLowerCase()) || echoesADrop(term)) return;
     have.add(term.toLowerCase());
     rows.push({term, vol: Number(x.volume) || 0, ranked: !!x.ranked_top, src});
   });
@@ -2450,7 +2512,7 @@ $('kbBuild').onclick = async () => {
         d.focus = d.focus.concat(got.added);
         chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
         const sh = document.querySelector('#paneKw .seedhint');
-        if (sh) sh.textContent = seedLegend(r);
+        if (sh) sh.innerHTML = seedLegend(r);
         base.keywords = d.focus;
       }
       if (got.regions.length) { r.phrase_geos = got.regions; base.phrase_geos = got.regions; }
@@ -2812,11 +2874,12 @@ async function generate(){
 
     say('Step 3 — checking rankings…');
     const all = r.kw.all || [];
+    const live = worthChecking(all);
     const ranks = {};
     const table = [];              // the proposal's own rank table
     let ranked = 0, errored = 0;
-    for (let i = 0; i < all.length; i += 10) {
-      const batch = all.slice(i, i + 10).map(x => ({kw: x.kw}));
+    for (let i = 0; i < live.length; i += 10) {
+      const batch = live.slice(i, i + 10).map(x => ({kw: x.kw}));
       const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
                                 null, say);
       (rk.results || []).forEach(x => {
@@ -2825,13 +2888,13 @@ async function generate(){
         if (x.ranked_top) ranked++;
         if (x.error) errored++;
       });
-      say(`Step 3 — checking rankings… ${Math.min(i + 10, all.length)}/${all.length}`);
+      say(`Step 3 — checking rankings… ${Math.min(i + 10, live.length)}/${live.length}`);
     }
     // A FAILED SERP CALL IS NOT A KEYWORD THAT DOESN'T RANK. Errored rows leave
     // the denominator, and a run where every call failed prices with no ranking
     // adjustment at all rather than the maximum uplift.
-    const checkedOk = Math.max(all.length - errored, 0);
-    const unmeasured = all.length > 0 && checkedOk === 0;
+    const checkedOk = Math.max(live.length - errored, 0);
+    const unmeasured = live.length > 0 && checkedOk === 0;
     const pct_not_ranking = checkedOk
       ? Math.round((1 - ranked / checkedOk) * 100) : null;   // 0-100, not a fraction
 
@@ -2901,7 +2964,18 @@ async function generate(){
       const n = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"] .rowmsg`);
       if (n) n.textContent = [r.saveNote, t].filter(Boolean).join(' · ');
     };
-    autoSerp(r, d, ranks, note).then(async shot => {
+    // THE UNMEASURED RERUN THEMSELVES. A failed lookup is a timeout, not a
+    // verdict, and the answer was always "press Recheck" -- so the run presses
+    // it. The capture follows, because the term it photographs should have a
+    // rank by then.
+    const rerun = errored
+      ? (async () => {
+          note(`Rechecking ${errored} unmeasured term${errored === 1 ? '' : 's'}…`);
+          try { await recheckRanks(ROWS.indexOf(r)); }
+          catch (e) { /* the quote stands either way */ }
+        })()
+      : Promise.resolve();
+    rerun.then(() => autoSerp(r, d, ranks, note)).then(async shot => {
       if (!shot || !shot.img) {
         note('SERP not captured' + (shot && shot.error ? ` — ${shot.error}` : '') + '.');
         return;
@@ -3151,7 +3225,7 @@ async function recheckRanks(i){
   const btn = document.querySelector(`[data-recheck="${i}"]`);
   const say = t => { const m = document.querySelector(`[data-rkmsg="${i}"]`);
                      if (m) m.textContent = t ? ' \u00b7 ' + t : ''; };
-  const all = (r.kw || {}).all || [];
+  const all = worthChecking((r.kw || {}).all || []);
   const ranks = r.result.ranks || {};
   const todo = all.map(x => x.kw).filter(k => {
     const v = ranks[String(k).toLowerCase()];
@@ -3205,7 +3279,11 @@ async function recheckRanks(i){
     }
     stillBad = left.length;
     // The denominator moved, so the price moves with it.
-    const tbl = r.result.table || [];
+    // Rows for terms that are no longer checked leave the tally with them.
+    const keep = new Set(all.map(x => String(x.kw).toLowerCase()));
+    const tbl = (r.result.table || [])
+      .filter(x => keep.has(String(x.kw).toLowerCase()));
+    r.result.table = tbl;
     const errored = tbl.filter(x => x.error).length;
     const checkedOk = Math.max(tbl.length - errored, 0);
     const ranked = tbl.filter(x => x.ranked_top).length;

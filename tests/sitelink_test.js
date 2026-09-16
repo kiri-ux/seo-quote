@@ -27,6 +27,26 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
       await p.$eval('#siteLink', el =>
         el.previousElementSibling && el.previousElementSibling.tagName === 'H2'));
 
+  // A PILL, CENTRED ON THE HEADING. It sat on the text baseline with a negative
+  // top margin, so it read as a stray line rather than a control.
+  const pill = await p.$eval('#siteLink', el => {
+    const s = getComputedStyle(el);
+    const h = el.previousElementSibling.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return {radius: parseFloat(s.borderRadius), display: s.display,
+            border: parseFloat(s.borderTopWidth),
+            bg: s.backgroundColor, padX: parseFloat(s.paddingLeft),
+            offset: Math.abs((r.top + r.height / 2) - (h.top + h.height / 2))};
+  });
+  say('pill.rounded', pill.radius >= 12, pill.radius + 'px radius');
+  say('pill.hasAFill', pill.bg !== 'rgba(0, 0, 0, 0)', pill.bg);
+  say('pill.hasAnEdge', pill.border > 0, pill.border + 'px border');
+  say('pill.padded', pill.padX >= 8, pill.padX + 'px side padding');
+  // A flex item blockifies, so inline-flex computes as flex here. Either is the
+  // row-with-a-gap the arrow and the label need.
+  say('pill.laysOutAsARow', /flex/.test(pill.display), pill.display);
+  say('pill.centredOnTheHeading', pill.offset <= 1.5, pill.offset + 'px off centre');
+
   // A bare domain still makes a working link.
   await set('drainify.com');
   await p.waitForTimeout(150);
