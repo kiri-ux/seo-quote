@@ -16222,17 +16222,29 @@ specifics people really go looking for by name, like "wisdom teeth removal" or
 A list that opens with a narrow procedure has spent its best slots on its
 smallest terms, which is the most common way this answer goes wrong.
 
+THE MOST GENERAL TERM OF ALL IS WHAT THE PRACTITIONER IS CALLED, and a trade
+usually has three or four names for it that are each searched separately:
+"ENT" / "ear nose and throat doctor" / "ENT doctor" / "hearing doctor" /
+"audiologist"; "dentist" / "family dentist"; "plumber" / "plumbing company".
+RETURN THREE OR FOUR OF THOSE, at the top, before any procedure. Returning one
+provider term and then twenty procedures is the specific failure this instruction
+exists to stop - rule 7 has the detail, including why rule 1 does not apply to
+them.
+
 Rules:
 1. A DIFFERENT service, never a synonym of one already listed. "haul away
    service" when "junk removal" is present is a synonym — do not return it.
    This applies WITHIN your own answer too: {n} slots means {n} different things
-   this business sells, not one thing worded {n} ways. A dental list runs
-   cleanings, crowns, whitening, root canals, extractions, dentures, implants,
-   emergency care — it does NOT run overlay onlay, crown overlay, overlay crown,
-   overlays on teeth, tooth overlay. Return fewer terms rather than pad with
+   this business sells, not one thing worded {n} ways. A dental list runs dentist,
+   family dentist, cleanings, crowns, whitening, root canals, extractions,
+   dentures, implants, emergency care — it does NOT run overlay onlay, crown
+   overlay, overlay crown, overlays on teeth, tooth overlay. Note what that list
+   OPENS with: the practitioner, then the procedures. Return fewer terms rather than pad with
    rewordings; anything past three variants of one procedure is discarded
    unread.
-2. The phrase a customer types, 2-4 words, no city, no brand.
+2. The phrase a customer types: ONE to four words, no city, no brand. One word is
+   not too short - a practitioner's name usually IS one word, and those are the
+   biggest terms on the list: dentist, plumber, electrician, audiologist, ENT.
 3. Only services this business plausibly sells. If the website pages or the
    description name something, prefer it.
 4. Order by EXPECTED SEARCH VOLUME, biggest first - not by how often the job is
