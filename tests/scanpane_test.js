@@ -233,6 +233,12 @@ const SERP = {
       mismatch.gone.slice(0, 120));
 
   // ============================================ the quote shows the scan
+  // It was folded away at the foot of the quote, and the split's left column
+  // was empty -- which is why the capture beside it read as an enormous white
+  // box. Same placement as the SEO row's keyword list.
+  await p.route('**/api/serp_queue', route =>
+    route.fulfill({status: 200, contentType: 'application/json',
+                   body: JSON.stringify({error: 'stubbed'})}));
   await p.click('#gen');
   await p.waitForSelector('.prod[data-row="2"] .qres', {state: 'attached', timeout: 20000});
   const fold = await p.evaluate(() => {
@@ -241,13 +247,17 @@ const SERP = {
     if (!prod.querySelector('[data-pane="history"] tr.histopen'))
       prod.querySelector('.hist tr.histrow .btn-open').click();
     const q = document.querySelector('.prod[data-row="2"] [data-pane="history"] tr.histopen');
-    const f = [...q.querySelectorAll('.qfold > summary')]
-      .find(x => /Reputation snapshot/.test(x.textContent));
-    if (!f) return {missing: true};
-    f.click();
-    const box = f.parentNode.querySelector('.scfold');
+    const box = q.querySelector('.pvsplit .scfold');
+    if (!box) return {missing: true};
+    const split = q.querySelector('.pvsplit');
+    const serp = q.querySelector('.pvserp');
     return {
-      head: f.textContent,
+      head: box.querySelector('h5').textContent,
+      inTheSplit: box.parentNode === split,
+      beside: !!serp && box.getBoundingClientRect().right <= serp.getBoundingClientRect().left + 2,
+      notAFold: !q.querySelector('.qfold > summary.scfold')
+                && ![...q.querySelectorAll('.qfold > summary')]
+                     .some(x => /Reputation snapshot/.test(x.textContent)),
       cols: [...box.querySelectorAll('.col h5')].map(h => h.childNodes[0].textContent.trim()),
       pageOne: /PAGE ONE/i.test(box.textContent),
       locations: /LOCATIONS/i.test(box.textContent),
@@ -255,31 +265,33 @@ const SERP = {
       ratingShown: /1\.4★ \(90\)/.test(box.textContent),
       tacticShown: /SITE REMOVAL/i.test(box.textContent),
       relatedLabel: /related search/.test(box.textContent),
-      // the checkboxes are a record here, not a control
       boxesInert: getComputedStyle(box.querySelector('.sclx')).pointerEvents === 'none',
-      tiles: [...q.querySelectorAll('.qtile small')].map(t => t.textContent),
-      planner: [...q.querySelectorAll('.pv tr, .plannerview tr')].map(t =>
-        t.textContent.replace(/\s+/g, ' ').trim()),
+      // one column inside the panel: two across a half-sheet column is a squeeze
+      across: getComputedStyle(box.querySelector('.cols.quad4'))
+        .gridTemplateColumns.split(' ').length,
     };
   });
   say('theQuoteCarriesTheSnapshot', !fold.missing);
+  say('itSitsWhereTheKeywordListDoes', fold.inTheSplit);
+  say('besideTheCaptureNotAboveIt', fold.beside);
+  say('andIsNoLongerFoldedAway', fold.notAFold);
   say('headNamesTheBrandAndItsVolume', /Bright Dental Co · 390\/mo/.test(fold.head || ''),
       fold.head);
   say('bothColumnsAreThere',
       (fold.cols || []).join(',') === 'Negative terms,Auto-suggest & related',
       (fold.cols || []).join(','));
+  say('stackedInOneColumn', fold.across === 1, String(fold.across));
   say('pageOneIsOnTheQuote', fold.pageOne);
   say('locationsAreOnTheQuote', fold.locations);
   say('withRatings', fold.ratingShown);
   say('withTactics', fold.tacticShown);
   say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
-  // "related" did not say related to what.
   say('relatedSaysWhichBlockItCameFrom', fold.relatedLabel);
   say('theQuotesCheckboxesAreInert', fold.boxesInert);
 
   // ============================================ nothing spills out
   const fits = await p.evaluate(() => {
-    const over = [...document.querySelectorAll('.qfold .scfold *')]
+    const over = [...document.querySelectorAll('.scfold *')]
       .filter(e => e.scrollWidth > e.clientWidth + 2 && /TABLE/.test(e.tagName))
       .map(e => e.tagName);
     return over;

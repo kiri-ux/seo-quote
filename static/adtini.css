@@ -690,12 +690,18 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .demofold[open] > summary::before{content:'\25BE '}
 .demofold > .grid{margin-top:10px}
 #scLocs .sctbl{background:var(--fill);margin-top:0}
-/* the snapshot as a record on the quote page, inside a fold */
-.scfold{padding:2px 0 6px}
-.scfold .sctbl{background:var(--fill)}
-.scfold .sctbl table{background:transparent}
-.scfold .col{background:var(--fill)}
+/* THE SNAPSHOT WHERE THE KEYWORD LIST GOES. One column, so the panels stack
+   and scroll rather than squeezing two across a column half the sheet wide. */
+/* the quote body sits in a history <td>, which centres its text */
+.scfold,.scfold .scw,.scfold .col li{text-align:left}
+.scfold .pvscroll{display:grid;gap:10px;align-content:start}
+.scfold .cols.quad4{grid-template-columns:1fr;gap:10px}
+.scfold .col,.scfold .sctbl{background:var(--card)}
+.scfold .sctbl{margin-top:0;padding:10px 12px}
+.scfold .scw{font-size:12px;padding:8px 10px}
 .scfold .sclx{pointer-events:none;opacity:.55}
+.scfold h5 span{font-weight:600;text-transform:none;letter-spacing:0;
+  font-size:11px;color:var(--muted)}
 #scWarn{display:grid;gap:8px;margin:0 0 12px}
 #scWarn:empty{margin:0}
 .scw{background:#FDF3E2;border:1px solid #E8C98A;border-radius:10px;
