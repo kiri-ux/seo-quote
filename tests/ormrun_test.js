@@ -84,16 +84,14 @@ const QUOTE = {
   await p.goto(BASE + '/adtini/forecast', { waitUntil: 'domcontentloaded' });
   await p.click('[data-open="2"][data-view="form"]');           // the ORM row
 
+  // STEP 1 IS ON THE FORM (2026-09-17, Kiri). The scan used to be a second
+  // pane you opened, scanned in and came back from.
   const pane = await p.evaluate(() => ({
-    pill: document.getElementById('kwBuilder').textContent.trim(),
+    secondPaneHidden: document.getElementById('kwBuilder').hidden,
     gen: document.getElementById('gen').textContent.trim(),
-  }));
-  await p.click('#kwBuilder');
-  const opened = await p.evaluate(() => ({
-    title: document.querySelector('.sheet .top h2').textContent.trim(),
-    scanPane: !document.getElementById('paneScan').hidden,
-    noKeywordPane: document.getElementById('paneKw').hidden,
-    brand: document.getElementById('scBrand').value,
+    runOnForm: !!document.querySelector('#form #scRun'),
+    noScanPane: !document.getElementById('paneScan'),
+    brand: document.querySelector('#form [data-k="brand"]').value,
   }));
 
   await p.click('#scRun');
@@ -101,13 +99,14 @@ const QUOTE = {
     { timeout: 30000 });
   const scan = await p.evaluate(() => ({
     prog: document.getElementById('scProg').textContent,
-    cols: [...document.querySelectorAll('#paneScan .col h5')].map(h => h.childNodes[0].textContent.trim()),
-    counts: [...document.querySelectorAll('#paneScan .col h5 span')].map(s => s.textContent),
-    firstTerm: document.querySelector('#paneScan .col li > span').firstChild.textContent,
-    // Page one and Locations are tables now, not columns — they carry
-    // ratings, tactics and the per-location star split.
-    serpHead: (document.querySelector('#scSerp .scth') || {}).textContent,
+    // The form carries only what changes the price; the rest reads back on
+    // the quote.
+    warn: document.getElementById('scWarn').textContent,
     locsHead: (document.querySelector('#scLocs .scth') || {}).textContent,
+    // Negative terms and Auto-suggest are .col panels, page one is a second
+    // .sctbl. Neither is on the form: they are a record of what was found.
+    colsOnForm: document.querySelectorAll('#form .col').length,
+    tablesOnForm: document.querySelectorAll('#form .sctbl').length,
   }));
 
   // the scan filled the form, so the quote prices what was measured
@@ -168,24 +167,21 @@ const QUOTE = {
   const quoteCall = calls.find(c => c.url === '/api/rep_quote') || { body: {} };
 
   const want = {
-    'orm.stepOneIsAScan': [pane.pill.replace(/^\S+\s/, ''), 'Brand Scan'],
+    'orm.stepOneIsOnTheForm': [pane.runOnForm, true],
     'orm.generateIsAQuote': [pane.gen, 'Generate Quote'],
-    'orm.paneTitle': [opened.title, 'Brand Scan'],
-    'orm.scanPaneOpens': [opened.scanPane, true],
-    'orm.noKeywordBuilder': [opened.noKeywordPane, true],
-    'orm.brandFromRow': [opened.brand, 'Sage Dental'],
+    'orm.noSeparateScanPane': [pane.noScanPane, true],
+    'orm.noKeywordBuilderButton': [pane.secondPaneHidden, true],
+    'orm.brandFromRow': [pane.brand, 'Sage Dental'],
     'scan.order': [seq.slice(0, 4).join(','),
       '/api/rep_scan_locations,/api/rep_scan_terms,/api/rep_scan_serp,/api/rep_scan_autocomplete'],
     'scan.countsReviews': [seq.slice(4, 6).join(','),
       '/api/rep_reviews_submit,/api/rep_reviews_collect'],
-    'scan.cols': [scan.cols.join(','), 'Negative terms,Auto-suggest'],
-    // Every panel is fed from its own key. A zero in any of these means the
-    // pane is reading a key the scanner does not send.
-    'scan.counts': [scan.counts.join(','), '3,1'],
-    'scan.firstTerm': [scan.firstTerm, 'sage dental reviews'],
-    'scan.pageOneIsATable': [/1 of 3 client-controlled/.test(scan.serpHead || ''), true],
     'scan.locationsSayHowTheyMatched':
       [/3 of 3 \u00b7 by website/.test(scan.locsHead || ''), true],
+    'scan.theRecordPanelsAreNotOnTheForm': [scan.colsOnForm, 0],
+    'scan.onlyLocationsIsATableHere': [scan.tablesOnForm, 1],
+    // the volume callout IS a price input, so it stays on the form
+    'scan.volumeCalloutStays': [/on negative terms/.test(scan.warn), true],
     'scan.namesTheListing': [/Google lists them as/.test(scan.prog), true],
     'scan.reportsWhatItFound': [scan.prog.split(' · ').slice(1, 4).join(' · '),
       '14 flagged reviews · 3 locations · 1,030/mo brand volume'],
