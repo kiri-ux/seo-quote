@@ -90,7 +90,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   // ---- the partner cost on the tiles ----
   const costs = out.tiles.map(t => t.cost).join(' / ');
   say('each tier names what it costs us',
-      costs === '$4,420 cost / $5,460 cost / $6,500 cost', costs);
+      costs === '$4,420 hard cost / $5,460 hard cost / $6,500 hard cost', costs);
   const prices = out.tiles.map(t => t.price).join(' / ');
   say('under the price, not instead of it',
       prices === '$6,800 / $8,400 / $10,000', prices);

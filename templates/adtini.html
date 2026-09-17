@@ -852,6 +852,20 @@ async function loadClient(){
         expandDone: a.expandDone || [],
       };
       if (row.result && !row.result.headline) row.result.headline = headlineOf(row);
+      // A LEGACY QUOTE IS STILL A RUN. The Reputation and SEO tabs predate this
+      // page and save no adtini block, so an adopted quote arrives with an
+      // empty history -- and once Details stopped carrying a copy of the
+      // planner cards (2026-09-17) that left it three tier prices and no way to
+      // reach its own working. The quote it was adopted from IS the run; give
+      // it the one row it always described, so a stored quote opens the way a
+      // fresh one does instead of needing a second code path on Details.
+      if (row.result && !row.history.length)
+        row.history = [{when: q2.updated_at || row.built || '',
+                        prompt: '{ adopted from a saved quote }',
+                        resp: row.result.headline,
+                        quote: row.result,
+                        kw: row.kw ? JSON.parse(JSON.stringify(row.kw)) : null,
+                        seedSrc: Object.assign({}, row.seedSrc)}];
       loaded.push(row);
     } catch (e) { /* one unreadable quote must not empty the page */ }
   }
@@ -1272,7 +1286,12 @@ function sendList(r, want){
 
 // WHAT THE QUOTE IS, IN THE PLANNER'S TERMS. Opening a run off History lands
 // here rather than in the field lists.
-function plannerView(r, brief){
+// DETAILS NO LONGER TAKES A CUT-DOWN COPY OF THIS. It showed the same four
+// cards the open quote does, one screen out, which made the glance a second
+// summary of the summary. Details is the three tier prices and the headline
+// above them; everything else belongs to the run. The `brief` parameter that
+// returned the cards alone went with it. (2026-09-17)
+function plannerView(r){
   const h = H(r);
   const p = (r.result || {}).pricing || {};
   const q = (r.result || {}).quote || {};
@@ -1386,7 +1405,6 @@ function plannerView(r, brief){
     </div>`;
   const cards = `<div class="pview">${rows.map(([k, v]) =>
       `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>`;
-  if (brief) return cards;
   return `${cards}
     <div class="pvsplit">
       ${list}
@@ -1583,9 +1601,13 @@ function resultsHtml(r, full){
   const TIER_KEY = {Base: 'base', Intermediate: 'intermediate', Advanced: 'advanced',
                     Monthly: 'monthly'};
   const hardOf = t => (h.partner_hard_cost || {})[TIER_KEY[t]];
-  const tileRow = `<div class="qtiles">${Object.keys(tiers).map(t =>
+  // ON THE OPEN QUOTE ONLY. Details is the glance and the glance is what the
+  // client is quoted; the partner figure belongs with the working, one screen
+  // in. Named in full, because "cost" alone sat under a client price and read
+  // like a discount. (2026-09-17)
+  const tileRow = cost => `<div class="qtiles">${Object.keys(tiers).map(t =>
     `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b>`
-    + (hardOf(t) != null ? `<u>${money(hardOf(t))} cost</u>` : '')
+    + (cost && hardOf(t) != null ? `<u>${money(hardOf(t))} hard cost</u>` : '')
     + `</div>`).join('')}</div>`;
   // DETAILS IS THE OVERVIEW. The whole quote -- its keyword list, its capture,
   // its settings and both payloads -- belongs to the run that made it, and runs
@@ -1599,7 +1621,7 @@ function resultsHtml(r, full){
       + (strat.length
          ? `<span class="qsums">${strat.map(x => `<b>${esc(x)}</b>`).join('')}</span>` : '')
       + `</span></summary>
-    <div class="qbody">${tileRow}${plannerView(r, true)}</div>
+    <div class="qbody">${tileRow(false)}</div>
   </details>`;
   }
   return `
@@ -1611,7 +1633,7 @@ function resultsHtml(r, full){
         <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>
         <span class="hint" data-propmsg="${r.i}"></span>
       </div>
-      ${tileRow}
+      ${tileRow(true)}
       ${plannerView(r)}
 
       <details class="qfold"><summary>Settings for this run</summary>

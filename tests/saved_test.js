@@ -141,12 +141,16 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     R.headline = q.querySelector('summary').textContent.trim();
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
-    R.planner = [...q.querySelectorAll('.pview .pv')]
-      .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
     const row0 = () => document.querySelector('.prod[data-row="0"]');
     row0().querySelector('.ptabs button[data-tab="history"]').click();
     row0().querySelector('.hist tr.histrow .btn-open').click();
     row0().querySelector('.ptabs button[data-tab="history"]').click();
+    // THE PLANNER CARDS LIVE ON THE OPEN RUN (2026-09-17). Details used to
+    // carry a copy of them; it is the three tier prices and the headline now,
+    // so what a saved quote restores is checked where it is shown.
+    R.runs = row0().querySelectorAll('.hist tr.histrow').length;
+    R.planner = [...row0().querySelectorAll('[data-pane="history"] .pview .pv')]
+      .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
     R.serp = !!row0().querySelector('[data-pane="history"] .pvserp img');
     row0().querySelector('.ptabs button[data-tab="details"]').click();
     // the form carries what the quote was built on
@@ -191,8 +195,16 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     const q = document.querySelector('.prod[data-row="0"] .qres');
     R.tiles = [...q.querySelectorAll('.qtile')].map(t =>
       t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
-    R.planner = [...q.querySelectorAll('.pview .pv')]
+    // As above: the cards are on the open run, not on Details. Re-queried each
+    // time, because opening a run redraws and the old node is detached.
+    const row0 = () => document.querySelector('.prod[data-row="0"]');
+    row0().querySelector('.ptabs button[data-tab="history"]').click();
+    row0().querySelector('.hist tr.histrow .btn-open').click();
+    row0().querySelector('.ptabs button[data-tab="history"]').click();
+    R.runs = row0().querySelectorAll('.hist tr.histrow').length;
+    R.planner = [...row0().querySelectorAll('[data-pane="history"] .pview .pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
+    row0().querySelector('.ptabs button[data-tab="details"]').click();
     document.querySelector('[data-open="0"][data-view="form"]').click();
     R.strategy = [...document.querySelectorAll('#form [data-chips="strategy"] .chip')]
       .map(c => c.firstChild.textContent.trim());
@@ -218,6 +230,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'home.orderCellPresent': [typeof home.orderFromStore, 'string'],
     'home.editWritesBackToTheClient': [JSON.stringify(posted[0] || {}),
       '{"client":"Drainify","status":"Complete"}'],
+    'seo.adoptedQuoteIsARun': [seo.runs, 1],
     'seo.everyQuoteIsARow': [seo.rows.length, 2],
     'seo.rowsAreDated': [/9\/10\/2026|2026-09-10/.test(seo.rows[0]), true],
     'seo.legacyQuotePriced': [seo.headline,
@@ -249,6 +262,13 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'Monthly $12,550 / Removals — max $95,250'],
     // A WORKSTREAM THIS QUOTE DID NOT BUY GETS NO TILE. This read "not on
     // this quote" twice on a quote that bought one thing.
+    // A LEGACY QUOTE IS STILL A RUN. The Reputation and SEO tabs predate this
+    // page and save no adtini block, so an adopted quote arrives with an empty
+    // history. Once Details stopped carrying a copy of the planner cards
+    // (2026-09-17) that would have left it three tier prices and no way to
+    // reach its own working -- so the quote it was adopted from becomes the one
+    // run it always described. Checked on both adopted shapes.
+    'orm.adoptedQuoteIsARun': [orm.runs, 1],
     'orm.plannerView': [orm.planner.slice(0, 3).join(' | '),
       'Review removals: 31 × $100 | Locations: 2 | Margin: 0% · —/mo'],
     'orm.strategyRead': [orm.strategy.join(','),
