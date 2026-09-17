@@ -148,6 +148,48 @@ check("even at the very top of the curve",
 check("and the ramp still ramps rather than cliffing",
       base(51690, nr=40) < base(51690, nr=50) < base(51690, nr=60), True)
 
+# ---------------------------------------------- the ramp, widened with it
+# THE RAMP SMOOTHS A PERCENTAGE THAT IS QUANTISED BY THE TERM COUNT. On a
+# 25-term list each term is four points, so "linear, no discontinuity" was only
+# ever true of the percentage, not of the quote. At a $450 add that was worth
+# $135 a keyword and nobody noticed. At $2,500 one term falling out of the top
+# 100 moved Susquehanna $750 -- a bigger cliff than the hard gate the ramp was
+# built to remove, arrived at from the other direction.
+check("the ramp is wider than the add it now scales",
+      app.CFG["vol_add_ramp"], [40, 100])
+
+
+def swing(n_terms, vol=133860):
+    """The most one keyword can move a quote, on a list of n measured terms."""
+    def at(k):
+        return app.stage4_price(band="contiguous_region", adder=0, zero_ranking=False,
+                                markup_pct=35, pct_not_ranking=round((1 - k / n_terms) * 100),
+                                total_volume=vol)["handoff"]["package"]["base"]
+    return max(abs(at(k) - at(k - 1)) for k in range(1, n_terms + 1))
+
+
+# The list lengths Brendan actually writes: his proposals run 20 to 99 terms.
+check("one keyword moves a 25-term quote by at most $400", swing(25) <= 400, True)
+check("and a 99-term quote by at most $350", swing(99) <= 350, True)
+# A ten-term list is the worst case and is still the worst case -- it is just
+# well under half what it was. Pinned so nobody reads the line above as "solved".
+check("a ten-term list is still coarse, at $850", swing(10), 850)
+
+# ---------------------------------------------- and the bottom end did not move
+# THE BOTTOM OF THE RAMP IS A CALIBRATED DATAPOINT AND THE TOP NEVER WAS.
+# Widening both ends (the first attempt, 30/80) pulled Susquehanna off the floor
+# -- at 40% not ranking they stopped being free, $2,950 -> $3,950, a thousand
+# over what Brendan quoted, breaking the one actual the whole "volume is
+# opportunity, not demand" rule rests on. Nothing in the book sits between 60%
+# and 100% not ranking, so stretching the top is free.
+check("40% not ranking still pays nothing for volume",
+      base(133860, nr=40), base(0, nr=40))
+check("and 39% certainly does", base(133860, nr=39), base(0, nr=39))
+check("full price needs a client ranking for nothing at all",
+      base(133860, nr=100) > base(133860, nr=99), True)
+check("90% not ranking is no longer the same as 100%",
+      base(133860, nr=90) < base(133860, nr=100), True)
+
 # ---------------------------------------------- the knobs stay editable
 SOURCE = open(SRC, encoding="utf-8").read()
 for k in ("volume_add_cap", "vol_free_below"):

@@ -547,7 +547,27 @@ CFG = {
     # volume add scales linearly from 0% of itself at the bottom of this range
     # to 100% at the top. Fits the same three actuals (Susquehanna 40 -> none,
     # Skidmore 88 and MPG 100 -> full) with no discontinuity in between.
-    "vol_add_ramp": [40, 60],           # [no opportunity, full opportunity] % not ranking
+    #
+    # WIDENED 40/60 -> 40/100 (2026-09-17, Kiri). The ramp smooths the
+    # PERCENTAGE, but the percentage is quantised by however many terms got
+    # measured: on a 25-term list each term is four points. That was fine while
+    # the whole add was $450 and the widest a single keyword could move a quote
+    # was $135. After the volume reshape the add reaches $2,500, and one term
+    # falling out of the top 100 moved Susquehanna $750 -- a bigger cliff than
+    # the hard gate this ramp was built to remove, arrived at from the other
+    # direction. Doubling the range cuts the worst single-keyword swing from
+    # $800 to $400 at 25 terms, and from $2,000 to $1,000 at ten.
+    #
+    # WIDENED AT THE TOP ONLY, AND THAT IS THE WHOLE POINT. The first attempt
+    # widened both ends (30/80), which pulled Susquehanna off the floor: at 40%
+    # not ranking they stopped being free and went $2,950 -> $3,950, a thousand
+    # over what Brendan quoted, breaking the one actual the entire "volume is
+    # opportunity, not demand" rule rests on. The bottom of this range is a
+    # calibrated datapoint and the top never was -- nothing in the book sits
+    # between 60% and 100% not ranking, so stretching the top is free. It also
+    # reads better: full price is now reserved for a client ranking for nothing
+    # at all, which is what Brendan says he is pricing.
+    "vol_add_ramp": [40, 100],          # [no opportunity, full opportunity] % not ranking
     "vol_free_below": 10000,            # normalized: base already covers this
     # RESHAPED 2026-09-17 (Seascape, Brendan) — cap 450 -> 2500 and the rates
     # re-banded. Scored by tools/pricebench.py: total error 15,515 -> 5,115
