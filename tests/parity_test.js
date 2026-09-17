@@ -117,7 +117,9 @@ const stub = async (p, calls) => {
     { timeout: 30000 });
   await ap.click('#gen');
   await ap.click('#gen');
-  await ap.waitForSelector('.prod[data-row="0"] .qres', { timeout: 40000 });
+  // Attached, not visible: a finished build lands on History now.
+  await ap.waitForSelector('.prod[data-row="0"] .qres',
+                           { state: 'attached', timeout: 40000 });
 
   const L = legacyCalls.price[legacyCalls.price.length - 1] || {};
   const A = adtiniCalls.price[adtiniCalls.price.length - 1] || {};

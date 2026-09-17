@@ -62,7 +62,9 @@ const run = async (b, enabled) => {
     {timeout: 30000});
   await p.click('#gen');
   await p.click('#gen');
-  await p.waitForSelector('.prod[data-row="0"] .qres', {timeout: 30000});
+  // Attached, not visible: a finished build lands on History now.
+  await p.waitForSelector('.prod[data-row="0"] .qres',
+                          {state: 'attached', timeout: 30000});
   await p.waitForFunction(() =>
     /Saved|Not saved/.test(document.querySelector('.prod[data-row="0"] .rowmsg').textContent),
     {timeout: 10000});
@@ -71,7 +73,9 @@ const run = async (b, enabled) => {
       .textContent.split(' · Capturing')[0].trim(),
     saveId: ROWS[0].saveId || null,
   }));
-  // a second run updates the same record rather than making another
+  // a second run updates the same record rather than making another.
+  // The build landed on History, and the row's buttons live on Details.
+  await p.click('.prod[data-row="0"] .ptabs button[data-tab="details"]');
   await p.click('[data-open="0"][data-view="form"]');
   await p.click('#gen');
   await p.waitForFunction(() =>

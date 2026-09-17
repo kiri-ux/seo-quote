@@ -1282,7 +1282,12 @@ function plannerView(r, brief){
     // Core SEO is the whole quote when it is the only strategy -- the tiles
     // above already carry those three numbers.
     const coreOnly = strat.length === 1 && /^core seo$/i.test(strat[0]);
-    if (!coreOnly) add('Core SEO', inTier(h.core_seo_price));
+    // AI Search prices as a percentage of the Core SEO figure whether or not
+    // Core SEO is being sold, so on a solo quote that figure is a basis and not
+    // a line. Naming it stops it reading as something the client is buying.
+    const aiOnly = h.core_seo_sold === false;
+    if (!coreOnly)
+      add(aiOnly ? 'Core SEO basis' : 'Core SEO', inTier(h.core_seo_price));
     // A workstream this quote did not buy has nothing to report.
     if (h.ai_search_pct)
       add('AI Search', inTier(h.ai_search_price) + ` · ${pct(h.ai_search_pct)} of Core SEO`);
@@ -1585,6 +1590,15 @@ let ROW = null, VIEW = 'form';
 // A PICK LIST WHERE ONE EXISTS. Industry, Strategy and Campaign Goals are the
 // same options the legacy tab offers -- typed values drift, and Industry has to
 // match an RZ category exactly or the pricing rule never fires.
+// A stored quote joins its chips back into one string ("Core SEO + AI Search"),
+// and loading splits it again, so both shapes reach this. Matched on the whole
+// chip rather than a substring: "Core SEO" must not answer for "AI Search".
+function hasStrategy(d, name){
+  return asList((d || {}).strategy)
+    .flatMap(x => String(x).split(' + '))
+    .some(x => x.trim().toLowerCase() === name);
+}
+
 const CHIP_LIST = {industry: 'industries', goals: 'goals', strategy: 'strategies'};
 // WHICH SEEDS THE PLANNER TYPED AND WHICH THE TOOL PROPOSED. Expand merges its
 // suggestions straight into the seed box, where they read as the planner's own
@@ -2146,7 +2160,10 @@ $('prods').addEventListener('click', e => {
     const prod = t.closest('.prod');
     // Remembered on the row, so the next redraw comes back to the same pane.
     const ri = +prod.dataset.row;
-    if (ROWS[ri]) ROWS[ri].tab = t.dataset.tab;
+    // startTab wins over tab on every redraw, so leaving it set meant a later
+    // draw -- the SERP capture landing, a save -- threw you back to History
+    // after you had chosen Details. Choosing a tab by hand ends the pin.
+    if (ROWS[ri]) { ROWS[ri].tab = t.dataset.tab; ROWS[ri].startTab = ''; }
     prod.querySelectorAll('.ptabs button').forEach(x => x.classList.toggle('on', x === t));
     prod.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
     return;
@@ -3077,9 +3094,14 @@ async function generateOrm(){
                   resp: `${money(tot.monthly || 0)}/mo`, quote: r.result}]
                 .concat(r.history || []);
     await persist(r);
+    // Same landing as an SEO build: the run you just waited for, expanded.
+    r.openRun = 0;
+    r.startTab = 'history';
     draw();
     $('saved').textContent = '';
     close();
+    const prod = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"]`);
+    if (prod) prod.scrollIntoView({block: 'start'});
   } catch (e) { $('saved').textContent = e.message; }
   $('gen').disabled = false;
 }
@@ -3311,6 +3333,14 @@ async function generate(){
       // sending 0.35 priced the quote at 0.0035 margin -- a quote that read
       // "35%" and carried none.
       markup_pct: parseFloat(String(r.cfg.markup || d.markup || 35)),
+      // WHAT THE CLIENT IS ACTUALLY BUYING. The Strategy chips reached the
+      // order form and the proposal and stopped there -- /api/price was never
+      // told, so a quote that said "Core SEO + AI Search" was priced as Core
+      // SEO and the AI Search leg was a label. Both chips now price the pair;
+      // AI Search alone prices the AI Search leg, off the Core SEO figure it
+      // is a percentage of. (2026-09-17)
+      ai_search: hasStrategy(d, 'ai search'),
+      core_seo: hasStrategy(d, 'core seo'),
       pct_not_ranking, total_volume, industry,
       national_demand: band === 'nationwide', cfg: r.over,
       base_override: r.cfg.ov_core || '',
@@ -3342,9 +3372,18 @@ async function generate(){
                   seedSrc: Object.assign({}, r.seedSrc || {})}]
                 .concat(r.history || []);
     await persist(r);
+    // A FINISHED BUILD LANDS ON ITS OWN QUOTE. It dropped you back on Details
+    // with the run collapsed, so the thing you just waited four minutes for
+    // took two more clicks to see -- History, then open the top row. The review
+    // link has opened this way since it shipped; the planner who built it had
+    // to do it by hand. Newest run, already expanded.
+    r.openRun = 0;
+    r.startTab = 'history';
     draw();
     say('');
     close();
+    const prod = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"]`);
+    if (prod) prod.scrollIntoView({block: 'start'});
     // The capture is a queued screenshot and takes up to two minutes, so the
     // quote is finished and on the row first. It lands on the row when it
     // arrives, reporting on the row rather than holding the modal.

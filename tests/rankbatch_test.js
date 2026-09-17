@@ -114,8 +114,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   // ---- the recheck line reaches the open quote ----
   // The build above failed a batch, so the run started a recheck by itself.
   // That is exactly the state a planner opens the quote in.
-  await p.click('.prod[data-row="0"] .ptabs button[data-tab="history"]');
-  await p.click('.prod[data-row="0"] .hist tr.histrow .btn-open');
+  // The build lands here with the run already open.
   await p.waitForTimeout(300);
   const note = await p.evaluate(() => {
     const i = ROWS.indexOf(ROWS[0]);

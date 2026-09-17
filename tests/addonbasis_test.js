@@ -78,7 +78,9 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     }));
     await p.click('#gen');
     await p.click('#gen');
-    await p.waitForSelector('.prod[data-row="0"] .qres');
+    // A finished build lands on History with the run open, so Details is in the
+    // DOM but not on screen. These cards are read, not clicked.
+    await p.waitForSelector('.prod[data-row="0"] .qres', {state: 'attached'});
     const out = await p.evaluate(() => {
       const cards = [...document.querySelectorAll('.prod[data-row="0"] .pv')]
         .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
