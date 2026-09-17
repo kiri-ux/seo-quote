@@ -46,15 +46,31 @@ const QUOTE = {
       {title: 'Sage Dental of Midtown Atlanta', place_id: 'p1', reviews: 214},
       {title: 'Sage Dental of Tucker', place_id: 'p2', reviews: 174},
       {title: 'Sage Dental of Conway', place_id: 'p3', reviews: 58}]});
-    if (url === '/api/rep_scan_terms') return json(route, {rows: [
-      {keyword: 'sage dental reviews', volume: 720},
-      {keyword: 'sage dental lawsuit', volume: 170},
-      {keyword: 'sage dental complaints', volume: 140}]});
-    if (url === '/api/rep_scan_serp') return json(route, {rows: [
-      {pos: 1, domain: 'trustpilot.com', url: 'https://trustpilot.com/x'},
-      {pos: 2, domain: 'sage-dental.com', url: 'https://sage-dental.com'},
-      {pos: 3, domain: 'ripoffreport.com', url: 'https://ripoffreport.com/y'}]});
-    if (url === '/api/rep_scan_autocomplete') return json(route, {rows: [{term: 'sage dental sued'}]});
+    // THE SHAPES rep_scan.py ACTUALLY RETURNS. These stubs used to answer
+    // {rows: [...]} on all three -- a key the scanner has never returned -- so
+    // the test passed against a server that does not exist while the shipping
+    // page rendered "Negative terms 0" and "Page one 0" on every real scan.
+    // A stub is part of the contract: if it does not match the module, the
+    // test is describing something else. (2026-09-17)
+    if (url === '/api/rep_scan_terms') return json(route, {
+      terms: [{term: 'sage dental reviews', volume: 720, 'class': 'watch'},
+              {term: 'sage dental lawsuit', volume: 170, 'class': 'negative'},
+              {term: 'sage dental complaints', volume: 140, 'class': 'negative'}],
+      total_volume: 1030, negative_volume: 310, watch_volume: 720});
+    if (url === '/api/rep_scan_serp') return json(route, {
+      query: 'sage dental reviews',
+      organic: [
+        {pos: 1, domain: 'trustpilot.com', url: 'https://trustpilot.com/x',
+         owned: false, tactic: 'site removal'},
+        {pos: 2, domain: 'sage-dental.com', url: 'https://sage-dental.com',
+         owned: true, tactic: 'owned \u2014 boost'},
+        {pos: 3, domain: 'ripoffreport.com', url: 'https://ripoffreport.com/y',
+         owned: false, tactic: 'site removal'}],
+      forums: [], owned_in_top10: 1});
+    if (url === '/api/rep_scan_autocomplete') return json(route, {
+      'sage dental': {suggestions: ['sage dental sued', 'sage dental near me'],
+                      negative: ['sage dental sued']},
+      'sage dental reviews': {suggestions: [], negative: []}});
     if (url === '/api/rep_reviews_submit') return json(route, {tasks: [{id: 't1', ok: true}]});
     if (url === '/api/rep_reviews_collect') return json(route, {
       done: [{id: 't1', neg_1_2: 14, neg_1: 9}], pending: []});
@@ -157,8 +173,11 @@ const QUOTE = {
       '/api/rep_scan_locations,/api/rep_scan_terms,/api/rep_scan_serp,/api/rep_scan_autocomplete'],
     'scan.countsReviews': [seq.slice(4, 6).join(','),
       '/api/rep_reviews_submit,/api/rep_reviews_collect'],
-    'scan.cols': [scan.cols.join(','), 'Negative terms,Page one,Locations'],
-    'scan.counts': [scan.counts.join(','), '3,3,3'],
+    'scan.cols': [scan.cols.join(','),
+      'Negative terms,Page one,Auto-suggest,Locations'],
+    // Every column is fed from its own key. A zero in any of these means the
+    // pane is reading a key the scanner does not send.
+    'scan.counts': [scan.counts.join(','), '3,3,1,3 \u00b7 by website'],
     'scan.firstTerm': [scan.firstTerm, 'sage dental reviews'],
     'scan.namesTheListing': [/Google lists them as/.test(scan.prog), true],
     'scan.reportsWhatItFound': [scan.prog.split(' · ').slice(1, 4).join(' · '),
@@ -171,7 +190,14 @@ const QUOTE = {
     'quote.sitesCounted': [`${(quoteCall.body.articles || {}).standard}/${(quoteCall.body.articles || {}).premium}`, '2/1'],
     'quote.volumeCarried': [(quoteCall.body.search || {}).volume, 1030],
     'quote.locationsCarried': [(quoteCall.body.shield || {}).locations, 3],
-    'quote.pagesCarried': [((quoteCall.body.articles || {}).pages || []).length, 3],
+    // TWO OF THE THREE PAGE-ONE RESULTS, NOT THREE. sage-dental.com is the
+    // client's own site and the scan tags it owned, so it is not a page
+    // anybody quotes a removal for. The quote asks for 3 (2 standard + 1
+    // premium) and gets the 2 that exist.
+    'quote.pagesCarried': [((quoteCall.body.articles || {}).pages || []).length, 2],
+    'quote.ownPageNotQuotedForRemoval':
+      [((quoteCall.body.articles || {}).pages || []).some(x => /sage-dental\.com/.test(x.domain)),
+       false],
     'quote.marginIsFraction': [quoteCall.body.margin_pct, 0.35],
     'order.strategyTravels': [res.stratRow.join(' | '),
       'Strategystrategy | 4 · Review Removals, Site/Article Removals, Reactive, Proactive'],

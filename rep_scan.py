@@ -335,14 +335,15 @@ def scan_locations(brand, limit=200, domain=None):
     listing even when its name differs from the client name."""
     dom = (domain or "").lower().strip()
     dom = re.sub(r"^https?://", "", dom).split("/")[0].replace("www.", "")
-    attempts = [
-        {"title": brand, "limit": limit,
-         "order_by": ["rating.votes_count,desc"]},
-        {"filters": [["title", "like", f"%{brand.title()}%"]], "limit": limit,
-         "order_by": ["rating.votes_count,desc"]},
-        {"filters": [["title", "like", f"%{brand.lower()}%"]], "limit": limit,
-         "order_by": ["rating.votes_count,desc"]},
-    ]
+    # THE DOMAIN GOES FIRST, NOT LAST. A listing pointing at the client's own
+    # website IS the client; a listing whose name contains the client's words
+    # is a guess. The domain attempts used to sit at the end of this list, so
+    # they only ran when every name search had come back empty -- and a generic
+    # name never comes back empty. "City Heating and Air" (cityheatandair.com)
+    # matched 45 unrelated HVAC companies by name, the review pull ran on all
+    # 45, and the quote priced 130 flagged reviews belonging to other people's
+    # businesses. (2026-09-17)
+    attempts = []
     if dom:
         attempts += [
             {"filters": [["domain", "=", dom]], "limit": limit,
@@ -350,8 +351,23 @@ def scan_locations(brand, limit=200, domain=None):
             {"filters": [["url", "like", f"%{dom}%"]], "limit": limit,
              "order_by": ["rating.votes_count,desc"], "_via_domain": True},
         ]
+    attempts += [
+        {"title": brand, "limit": limit,
+         "order_by": ["rating.votes_count,desc"]},
+        {"filters": [["title", "like", f"%{brand.title()}%"]], "limit": limit,
+         "order_by": ["rating.votes_count,desc"]},
+        {"filters": [["title", "like", f"%{brand.lower()}%"]], "limit": limit,
+         "order_by": ["rating.votes_count,desc"]},
+    ]
     last_err = None
-    b_tokens = [w for w in brand.lower().split() if len(w) > 1]
+    # THE BRAND AS A PHRASE, NOT AS LOOSE WORDS. The gate used to ask whether
+    # every token appeared ANYWHERE in the title, in any order, as a substring
+    # -- so "city", "heating", "and", "air" all land inside "Twin City Heating
+    # Air and Electric Blaine" and inside "City Air Experts Heating and
+    # Cooling". Squashing both sides and asking for one contiguous run drops
+    # both, and still tolerates the punctuation and spacing differences the
+    # name matching exists for ("Hot Tubs Etc." -> hottubsetc).
+    b_key = _squash(brand)
     for payload in attempts:
         via_domain = payload.pop("_via_domain", False)
         try:
@@ -365,9 +381,10 @@ def scan_locations(brand, limit=200, domain=None):
             locs = []
             for it in items:
                 title = (it.get("title") or "")
-                # Title searches must contain the brand tokens; domain matches
-                # skip that gate — a name mismatch is exactly what they solve.
-                if not via_domain and not all(tok in title.lower() for tok in b_tokens):
+                # Title searches must carry the brand as a phrase; domain
+                # matches skip that gate — a name mismatch is exactly what
+                # they solve.
+                if not via_domain and len(b_key) > 3 and b_key not in _squash(title):
                     continue
                 rat = it.get("rating") or {}
                 locs.append({

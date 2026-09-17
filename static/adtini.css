@@ -646,6 +646,23 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .kbrow .f label{margin:0;white-space:normal;text-align:left;flex:1}
 .kbrow .yn{flex:0 0 auto}
 
+/* THE BRAND SCAN'S FIELDS ARE TEXT, NOT TOGGLES. The row rule above was
+   written for the keyword builder, where every .kbrow .f holds a Yes/No pill
+   -- so the scan's two inputs were laid out label-left, input-right and got
+   squeezed to a third of the panel. And the modal's input styling is scoped to
+   `form`, which the scan pane is not inside, so they rendered as bare browser
+   boxes next to fields that are rounded and filled everywhere else. */
+.kbrow.stack .f{flex-direction:column;align-items:stretch;gap:6px}
+.kbrow.stack .f label{flex:0 0 auto}
+.kbrow input[type=text],.kbrow input[type=number]{
+  width:100%;background:var(--card);border:1px solid transparent;border-radius:10px;
+  padding:10px 12px;font-family:inherit;font-size:13px;color:var(--text);min-height:41px;
+}
+.kbrow input:focus{outline:2px solid var(--blue-lt);outline-offset:-1px}
+.cols.quad4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1000px){.cols.quad4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:820px){.cols.quad4{grid-template-columns:1fr}}
+
 /* the built list is editable */
 .col li{position:relative;padding-right:14px}
 .col li .kwrm{position:absolute;right:0;top:0;color:#B3261E;font-weight:700;cursor:pointer;

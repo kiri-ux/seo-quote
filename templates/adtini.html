@@ -233,7 +233,7 @@
         <section class="kbside">
           <h4>Brand</h4>
           <p class="hint">What Google is asked about. Everything below is read off it.</p>
-          <div class="kbrow">
+          <div class="kbrow stack">
             <div class="f"><label>Brand name</label><input type="text" id="scBrand"></div>
             <div class="f"><label>Client website</label><input type="text" id="scDomain"></div>
           </div>
@@ -242,7 +242,8 @@
         </section>
         <section class="kbmain">
           <div class="paneltop"><h4 id="scHead">Reputation snapshot</h4></div>
-          <div class="cols" id="scCols"></div>
+          <p class="hint" id="scEmpty" style="margin:0">Not scanned yet.</p>
+          <div class="cols quad4" id="scCols"></div>
         </section>
       </div>
     </div>
@@ -1186,8 +1187,8 @@ const SEND_ORM = [
      r => RH(r).partner_brand_shield_monthly],
     ['search_volume', 'Search Volume', 'prop', r => RH(r).search_volume],
     ['locations', '# of Locations', 'prop', r => RH(r).locations],
-    ['negative_terms', 'Negative Terms Array', 'prop', r => (SC(r).terms || {}).rows],
-    ['page_one', 'Top Google Results Array', 'prop', r => (SC(r).serp || {}).rows],
+    ['negative_terms', 'Negative Terms Array', 'prop', r => (SC(r).terms || {}).terms],
+    ['page_one', 'Top Google Results Array', 'prop', r => (SC(r).serp || {}).organic],
     ['location_reviews', 'Location & Review Array', 'prop',
      r => (SC(r).locations || {}).locations],
     ['review_breakdown', 'Review Breakdown Array', 'prop', r => SC(r).stars],
@@ -1979,6 +1980,23 @@ function show(view){
       const sh = document.querySelector('#paneKw .seedhint');
       if (sh) sh.innerHTML = seedLegend(r);
     }
+  }
+  // BRAND AND SITE ARE THE SAME TWO FIELDS ON BOTH PANES. They were copied
+  // from the form once, when the modal opened, so a brand typed on the form
+  // reached the scan only after a save -- the scan opened blank on a row that
+  // had the brand on screen, and the first thing it asks for is the thing the
+  // planner just typed. Carried on every switch, in whichever direction the
+  // switch goes, so a correction made on either pane is on both.
+  if (ROW != null && (ROWS[ROW] || {}).kind === 'orm' && view !== VIEW
+      && (view === 'scan' || VIEW === 'scan')) {
+    const f = formOf(ROWS[ROW]);
+    [['brand', 'scBrand'], ['site', 'scDomain']].forEach(([k, id]) => {
+      const fld = f.querySelector('[data-k="' + k + '"]');
+      if (!fld) return;
+      if (view === 'scan') $(id).value = fld.value.trim();
+      // An empty scan box does not wipe a filled form field.
+      else if ($(id).value.trim()) fld.value = $(id).value.trim();
+    });
   }
   VIEW = view;
   document.querySelector('.sheet .top h2').textContent = PANE_TITLE[view] || PANE_TITLE.form;
@@ -2975,21 +2993,42 @@ function scanLoad(r){
 }
 function scanDraw(r){
   const sc = r.scan;
+  $('scEmpty').hidden = !!sc;
   if (!sc) { $('scCols').innerHTML = ''; $('scHead').textContent = 'Reputation snapshot'; return; }
-  const terms = ((sc.terms || {}).rows || []).slice(0, 8);
-  const serp = ((sc.serp || {}).rows || []).slice(0, 8);
-  const locs = ((sc.locations || {}).locations || []).slice(0, 8);
+  // THE KEYS THE SCANNER ACTUALLY RETURNS. These two columns read `.rows` on
+  // objects that have never carried a `rows` key -- scan_terms returns
+  // `terms`, scan_serp returns `organic` -- so Negative terms and Page one
+  // rendered 0 and empty on every scan ever run here, and the brand volume the
+  // form is filled from summed an empty list to 0. (2026-09-17)
+  const allTerms = (sc.terms || {}).terms || [];
+  const flagged = allTerms.filter(t => t['class'] === 'negative' || t['class'] === 'watch');
+  const organic = (sc.serp || {}).organic || [];
+  const forums = (sc.serp || {}).forums || [];
+  const page1 = organic.concat(forums);
+  const locs = ((sc.locations || {}).locations || []);
+  // Auto-suggest was scanned and then thrown away: nothing on this pane read
+  // sc.autocomplete, so a negative suggestion never reached the screen.
+  const sugg = [];
+  Object.keys(sc.autocomplete || {}).forEach(k => {
+    ((sc.autocomplete[k] || {}).negative || []).forEach(x => sugg.push(x));
+  });
   const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5><ul>${body}</ul></div>`;
   $('scHead').textContent = `Reputation snapshot — ${r.data.brand || ''}`;
+  const how = {domain: 'by website', title: 'by name', filter: 'by name'}[
+    (sc.locations || {}).strategy] || '';
   $('scCols').innerHTML =
-    col('Negative terms', ((sc.terms || {}).rows || []).length,
-      terms.map(t => `<li><span>${esc(t.keyword || t.term || '')}</span>`
+    col('Negative terms', flagged.length,
+      (flagged.length ? flagged : allTerms).slice(0, 8).map(t =>
+        `<li><span>${esc(t.term || t.keyword || '')}</span>`
         + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
-    + col('Page one', ((sc.serp || {}).rows || []).length,
-      serp.map(x => `<li><span>${esc(x.domain || x.url || '')}</span>`
-        + `<span class="v">${x.pos == null ? '' : '#' + x.pos}</span></li>`).join(''))
-    + col('Locations', ((sc.locations || {}).locations || []).length,
-      locs.map(x => `<li><span>${esc(x.title || '')}</span>`
+    + col('Page one', page1.length,
+      page1.slice(0, 8).map(x => `<li><span>${esc(x.domain || x.url || '')}</span>`
+        + `<span class="v">${x.owned ? 'owned' : esc(x.tactic || '')}`
+        + `${x.pos == null ? '' : ' · #' + x.pos}</span></li>`).join(''))
+    + col('Auto-suggest', sugg.length,
+      sugg.slice(0, 8).map(x => `<li><span>${esc(x)}</span></li>`).join(''))
+    + col('Locations', locs.length + (how ? ' · ' + how : ''),
+      locs.slice(0, 8).map(x => `<li><span>${esc(x.title || '')}</span>`
         + `<span class="v">${x.reviews || 0} reviews</span></li>`).join(''));
 }
 
@@ -3050,7 +3089,7 @@ $('scRun').onclick = async () => {
   const d = r.data;
   if (sc.stars) { d.reviews = sc.stars.flagged; d.locations = sc.stars.locations; }
   else if ((sc.locations || {}).locations) d.locations = sc.locations.locations.length;
-  const vol = ((sc.terms || {}).rows || []).reduce((z, x) => z + (x.volume || 0), 0);
+  const vol = ((sc.terms || {}).terms || []).reduce((z, x) => z + (x.volume || 0), 0);
   if (vol) d.volume = vol;
   load(formOf(r), d);
   scanDraw(r);
@@ -3067,7 +3106,15 @@ async function generateOrm(){
   if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
   const d = r.data, strat = d.strategy || [];
   const sc = r.scan || {};
-  const pages = ((sc.serp || {}).rows || []);
+  // PAGE ONE, MINUS THE CLIENT'S OWN. This read (sc.serp||{}).rows, a key
+  // scan_serp does not return, so `pages` was [] on every quote -- and
+  // removal_pages and suppression_pages, which are what the order form and
+  // Brendan's proposal list the URLs from, went over empty every time.
+  // Owned results are dropped: a removal quote for the client's own page is
+  // not a thing, and the scan already tags them. (2026-09-17)
+  const pages = ((sc.serp || {}).organic || [])
+    .concat((sc.serp || {}).forums || [])
+    .filter(x => !x.owned);
   const payload = {
     campaign: strat.includes('Proactive') && strat.includes('Reactive') ? 'bundle'
             : strat.includes('Proactive') ? 'proactive' : 'reactive',
