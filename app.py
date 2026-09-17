@@ -1151,6 +1151,28 @@ CFG = {
     # 30 -> 20 (2026-09-16): the same floor the axis choice and the industry
     # gap-finder use, just above Google's 10/mo for thin terms. At 30 a real
     # "<service> near me" at 20/mo lost to nothing.
+    # SITE CONDITION AS A PRICE INPUT (2026-09-17, at Kiri's direction).
+    #
+    # This supersedes the standing decision on /api/market_signals -- "NOTHING
+    # HERE TOUCHES THE PRICE ... reported first, across a real spread of
+    # clients, and banded only once there is a range to band against". That
+    # decision was right and the reason behind it still stands: difficulty was
+    # banded by analogy and turned out to be measuring the wrong quantity
+    # entirely. THESE NUMBERS ARE THE SAME KIND OF GUESS. They are set low on
+    # purpose so a wrong band costs a little rather than a lot, and they are
+    # per-quote editable so a real spread can correct them.
+    #
+    # Banded on the COUNT of failed checks rather than onpage_score. The score
+    # has two known ways of reading 0/100 on a site with nothing wrong -- a
+    # blocked crawler and an unfetchable page -- and both have needed guards.
+    # A failure list is the thing a human can check.
+    # Never a discount: a clean site is par, not cheaper.
+    "site_debt_tiers": [
+        [8, 5],    # 8+ of the 18 checks failing -> +5%
+        [5, 3],    # 5-7 -> +3%
+        [3, 1],    # 3-4 -> +1%
+        [0, 0],    # under 3 -> par
+    ],
     "near_me_min_volume": 20,
     # What the floor drops to when the whole vertical is thin -- Google's own
     # reported floor for a term that is searched but barely. 0 disables the
@@ -1248,6 +1270,15 @@ def _cfg_apply(d, target):
     if "bid_score_breaks" in d:
         target["bid_score_breaks"] = [float(x) for x in d["bid_score_breaks"]]
     # zero_ranking_tiers: [[pct_not_ranking, uplift_pct], ...] sorted high-to-low
+    if "site_debt_tiers" in d and isinstance(d["site_debt_tiers"], list):
+        tiers = []
+        for pair in d["site_debt_tiers"]:
+            try:
+                tiers.append([int(pair[0]), float(pair[1])])
+            except Exception:                                 # noqa: BLE001
+                continue
+        if tiers:
+            target["site_debt_tiers"] = sorted(tiers, key=lambda p: -p[0])
     if "zero_ranking_tiers" in d and isinstance(d["zero_ranking_tiers"], list):
         tiers = []
         for pair in d["zero_ranking_tiers"]:
@@ -11679,7 +11710,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False,
                  national_demand=False, geo_override=None, addon_override=None,
-                 goal="", pageone_rank=None, site_rebuild="",
+                 goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  _formula_pass=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
@@ -11833,13 +11864,27 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if extras_off and zr_uplift:
         zr_uplift = zr_uplift * _mult
 
+    # --- tiered site-condition uplift (count of failed on-page checks) ---
+    # ONLY WHEN IT WAS MEASURED. None means the site was never checked -- no
+    # domain, a blocked crawler, a page that returned nothing -- and an
+    # unmeasured site must price neither as clean nor as broken. Zero is a
+    # measurement and means clean, which is par.
+    sd_uplift = 0
+    if site_debt is not None:
+        sd_uplift = _tier_uplift(int(site_debt), CFG.get("site_debt_tiers", []))
+        if extras_off and sd_uplift:
+            sd_uplift = sd_uplift * _mult
+
     # MANUAL OVERRIDE: set the hard base directly; the ladder recomputes from it.
     manual_base = base_override is not None and str(base_override) != ""
     if manual_base:
         base = r50(float(base_override))
-        zr_uplift = 0; vol_add = 0
+        zr_uplift = 0; vol_add = 0; sd_uplift = 0
     else:
-        base = r50(base_pre * (1.0 + zr_uplift / 100.0))
+        # Both uplifts are shares of the same pre-uplift base, added rather
+        # than compounded: a 7% and a 5% is 12%, not 12.35%. Compounding two
+        # independently-banded percentages multiplies two guesses together.
+        base = r50(base_pre * (1.0 + (zr_uplift + sd_uplift) / 100.0))
 
     flat = CFG.get("tier_step_flat")
     if manual_base:
@@ -12248,6 +12293,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                 "pageone_anchor_add": int(pageone_add or 0),
                 "volume_add": int(vol_add or 0),
                 "zero_ranking_uplift_pct": zr_uplift,
+                "site_debt_uplift_pct": sd_uplift, "site_debt": site_debt,
                 "total_volume": total_volume,
                 "manual_base": manual_base,
             },
@@ -12257,6 +12303,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                               and total_volume
                               < int(CFG.get("price_no_demand_below", 500))),
             "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
+            "site_debt_uplift_pct": sd_uplift, "site_debt": site_debt,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
             "hard_addon_per_market": hard_addon, "client_addon_per_market": client_addon,
@@ -15164,6 +15211,9 @@ def api_price():
     markup = float(markup) if markup not in (None, "") else None
     pct_not_ranking = d.get("pct_not_ranking", None)
     pct_not_ranking = float(pct_not_ranking) if pct_not_ranking not in (None, "") else None
+    # None means never measured, which prices as neither clean nor broken.
+    site_debt = d.get("site_debt", None)
+    site_debt = int(site_debt) if site_debt not in (None, "") else None
     total_volume = d.get("total_volume", None)
     total_volume = int(total_volume) if total_volume not in (None, "") else None
     base_override = d.get("base_override", None)
@@ -15175,6 +15225,7 @@ def api_price():
     pageone_rank = int(pageone_rank) if pageone_rank not in (None, "") else None
     p = stage4_price(band, adder, zero, addon, markup, pageone_rank=pageone_rank,
                      pct_not_ranking=pct_not_ranking, total_volume=total_volume,
+                     site_debt=site_debt,
                      base_override=base_override, ecommerce=bool(d.get("ecommerce")),
                      industry=(d.get("industry") or ""),
                      ai_search=bool(d.get("ai_search")),

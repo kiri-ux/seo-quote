@@ -384,7 +384,11 @@ const CFG = {
     'kb.widenText': [kb.widenText, 'One term is 77% of measured demand.'],
     'kb.srcTags': [srcTags.join(','), '[seed],[grid],[site]'],
     // steps 2-4
-    'run.order': [seq.slice(6, 9).join(','), '/api/metrics,/api/rankings,/api/price'],
+    // market_signals joined the run between the rank check and pricing: it reads
+    // the client's own on-page condition, which now bands into the price and
+    // which this tab never fetched at all.
+    'run.order': [seq.slice(6, 10).join(','),
+      '/api/metrics,/api/rankings,/api/market_signals,/api/price'],
     'run.headTerms': [(metCall.body.head || []).join(','), 'dental implants'],
     'run.rankBatched': [rankCalls.length, 1],
     'run.rankBatchSize': [(rankCalls[0].body.batch || []).length, 3],
