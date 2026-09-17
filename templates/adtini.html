@@ -77,11 +77,6 @@
         <div class="f"><label>Website Needing SEO <span class="i" data-tip="Pulled from the order" aria-label="Pulled from the order">i</span></label>
           <input type="text" data-k="site"></div>
 
-        <div class="f"><label>Order ID <span class="i" data-tip="Names the proposal file and shows on the workflow page" aria-label="Names the proposal file and shows on the workflow page">i</span></label>
-          <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
-        <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
-          <input type="text" data-k="partner"></div>
-
         <div class="f wide"><label>Product/Vertical Focus <span class="i" data-tip="Built on the Keyword Builder page" aria-label="Built on the Keyword Builder page">i</span></label>
           <div class="box" data-chips="focus"></div></div>
 
@@ -130,6 +125,20 @@
           <span class="hint" id="pastReportName"></span></div>
 
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
+
+        <!-- IN ADTINI THESE ARRIVE WITH THE ORDER. They sat third and fourth in
+             the form, ahead of what the client sells, and a planner working a
+             real order never touches either. Folded away where the ORM form
+             already keeps them. (2026-09-17) -->
+        <details class="f wide demofold">
+          <summary>Fields for demo tool only</summary>
+          <div class="grid">
+            <div class="f"><label>Order ID <span class="i" data-tip="Names the proposal file and shows on the workflow page" aria-label="Names the proposal file and shows on the workflow page">i</span></label>
+              <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
+            <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
+              <input type="text" data-k="partner"></div>
+          </div>
+        </details>
       </div>
     </form>
 
@@ -1222,7 +1231,17 @@ function sendValue(v, key){
          .join(' \u00b7 ') : null;
   }
   if (typeof v === 'number') return cash ? money(v) : v.toLocaleString();
-  return String(v);
+  // A SCREENSHOT IS NOT A VALUE. serp/serp_shots carry the image itself as a
+  // base64 data URI, and printing it put 440,000 characters with no spaces in
+  // one table cell -- an unbreakable token, so the table stretched to 3.5
+  // MILLION pixels and took the whole open quote's layout with it. Opening the
+  // Proposal fold on any quote with a captured SERP broke the page. What the
+  // planner is checking is whether the image is there, so say that and give the
+  // size, which is the only part of it anyone can read. (2026-09-17)
+  const str = String(v);
+  if (/^data:/.test(str))
+    return `captured \u00b7 ${Math.round(str.length / 1366)} KB`;
+  return str;
 }
 // ONE LIST PER DESTINATION. The fields are the same fields; splitting them by
 // where they go is what a planner checking a quote actually needs -- everything
@@ -1515,7 +1534,6 @@ function runSettings(r){
       : (((r.result || {}).addon || {}).suggested != null
          ? `${r.result.addon.suggested} — recommended` : ''),
     overrides: [cfg.ov_core && `Core SEO ${money(cfg.ov_core)}`,
-                cfg.ov_step && `Step ${money(cfg.ov_step)}/tier`,
                 cfg.ov_ai && `AI Search ${money(cfg.ov_ai)}`,
                 cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,
                 cfg.ov_review && `Review removal ${money(cfg.ov_review)}`,
@@ -1557,8 +1575,18 @@ function resultsHtml(r, full){
     ? {'Monthly': t.monthly, 'Removals — max': t.removals_max}
     : ordered.reduce((z, k) => (z[TIER[k] || k] = pkg[k], z), {});
   const ord = sendList(r, 'order'), pro = sendList(r, 'prop');
+  // WHAT THE TIER COSTS US, UNDER WHAT IT SELLS FOR. The partner figure is on
+  // the quote already -- it is what Billing charges and what the margin is
+  // measured from -- and reading it meant opening the Order form fold and
+  // finding the Partner Hard Cost row. It is the number a planner checks
+  // against the price they are about to say out loud. (2026-09-17)
+  const TIER_KEY = {Base: 'base', Intermediate: 'intermediate', Advanced: 'advanced',
+                    Monthly: 'monthly'};
+  const hardOf = t => (h.partner_hard_cost || {})[TIER_KEY[t]];
   const tileRow = `<div class="qtiles">${Object.keys(tiers).map(t =>
-    `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b></div>`).join('')}</div>`;
+    `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b>`
+    + (hardOf(t) != null ? `<u>${money(hardOf(t))} cost</u>` : '')
+    + `</div>`).join('')}</div>`;
   // DETAILS IS THE OVERVIEW. The whole quote -- its keyword list, its capture,
   // its settings and both payloads -- belongs to the run that made it, and runs
   // live on History.
@@ -2207,11 +2235,6 @@ const CFG_SEO = [
   ['markup','Markup %','text',''], ['min_term','Minimum term (months)','number',''],
   ['addon_markets','Add-on markets — override the recommendation','number','recommended'],
   ['ov_core','Override partner Core SEO','number','formula'],
-  // THE SECOND NUMBER OF A HAND-QUOTED CARD. Overriding the base alone forced a
-  // 38% step on top of it, so Brendan's $6,950/$8,250/$9,950 came out
-  // $6,950/$9,550/$12,200 -- the field for reproducing a manual quote could not
-  // reproduce one.
-  ['ov_step','Override partner step per tier','number','formula'],
   ['ov_ai','Override partner AI Search','number','formula'],
   ['ov_addon','Override partner add-on market','number','formula'],
   ['ov_reason','Reason for the override','text','required with any override'],
@@ -3766,7 +3789,6 @@ async function generate(){
       pct_not_ranking, total_volume, industry,
       national_demand: band === 'nationwide', cfg: r.over,
       base_override: r.cfg.ov_core || '',
-      step_override: r.cfg.ov_step || '',
       // The page-one median comes off the market signals pass, which this tab
       // does not run yet. Null, not a guess -- the SEO tab sends null too.
       // Site condition, banded in CFG.site_debt_tiers. Only sent when it was
@@ -4166,8 +4188,7 @@ async function recheckRanks(i){
         || ((work.kw || {}).total_volume || 0),
       industry: (d.industry || []).join(', '),
       national_demand: band === 'nationwide', cfg: r.over || {},
-      base_override: (r.cfg || {}).ov_core || '',
-      step_override: (r.cfg || {}).ov_step || '', pageone_rank: null};
+      base_override: (r.cfg || {}).ov_core || '', pageone_rank: null};
     const req = Object.assign({}, base, {
       pct_not_ranking: pct,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
