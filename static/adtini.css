@@ -391,6 +391,11 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 .qtile{background:var(--fill);border-radius:12px;padding:12px 14px}
 .qtile small{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;
   letter-spacing:.06em;color:var(--muted)}
+/* The partner figure, small and under the price it belongs to. Never bold and
+   never the same size -- it is a reference, and the tile's job is still the
+   number the client is quoted. (2026-09-17) */
+.qtile u{display:block;margin-top:3px;font-size:11px;font-weight:600;
+  text-decoration:none;color:var(--muted);letter-spacing:.01em}
 .qtile b{font-size:22px;font-weight:600;color:var(--navy);line-height:1.25;
   letter-spacing:-.01em}
 .qfold{background:var(--fill);border-radius:12px;margin-bottom:10px;overflow:hidden}
@@ -438,7 +443,14 @@ table.send{width:calc(100% - 28px);border-collapse:collapse;background:var(--car
 table.send th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
   color:var(--muted);font-weight:700;padding:9px 12px;border-bottom:1px solid var(--line)}
 table.send thead th:nth-child(3),table.send thead th:nth-child(4){width:84px;text-align:center}
-table.send td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+/* NO SINGLE VALUE MAY BLOW OUT THE TABLE. A base64 data URI is one
+   unbreakable token; before the value side learned not to print one, a
+   captured SERP stretched this table to 3.5 million pixels and broke the
+   open quote's layout. Belt and braces, because the next long token will
+   not be a screenshot. (2026-09-17) */
+table.send{table-layout:fixed}
+table.send td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top;
+  overflow-wrap:anywhere;word-break:break-word}
 table.send td:nth-child(3),table.send td:nth-child(4){text-align:center;color:var(--blue)}
 table.send td:first-child{width:34%;font-weight:600}
 table.send td:first-child span{display:block;font-weight:400;color:var(--muted);

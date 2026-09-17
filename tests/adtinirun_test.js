@@ -475,8 +475,14 @@ const CFG = {
       'Not saved — saving is off for this deploy. · '
       + 'SERP captured for “dental implants boca raton”.'],
     'serp.onTheQuote': [serp.onQuote, true],
-    'serp.reachesTheProposal': [serp.serpRow.join(' | '),
-      'SERP — screenshotserp | data:image/png;base64,iVBORw0KGgo='],
+    // A SCREENSHOT IS NOT A VALUE. This row printed the image itself -- a
+    // base64 data URI, 440,000 characters with no spaces on a real capture --
+    // and one unbreakable token in a table cell stretched the table to 3.5
+    // million pixels and broke the open quote's layout. The row's job is to say
+    // whether the capture is there; the image reaches the document off
+    // r.result.shot, which serp.onTheQuote above still proves. (2026-09-17)
+    'serp.reachesTheProposal': [serp.serpRow.join(' | ').replace(/\d+ KB/, 'n KB'),
+      'SERP — screenshotserp | captured · n KB'],
     'serp.namesItsTerm': [serp.termRow.join(' | '),
       'SERP — keyword it was captured onserp_keyword | dental implants boca raton'],
     // pay-for-performance stays on the legacy tab; the slide copy is not data

@@ -328,10 +328,7 @@ const BASE = "http://127.0.0.1:5203";
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
     'preview.opensConfig': [kw.previewOpensConfig, true],
     'preview.cfgFields': [kw.cfgFields.join(','),
-      // ov_step is the second number of a hand-quoted card. The base override
-      // alone forced a 38% step on top of it, so Brendan's $6,950/$8,250/$9,950
-      // came out $6,950/$9,550/$12,200. (2026-09-17)
-      'markup,min_term,addon_markets,ov_core,ov_step,ov_ai,ov_addon,ov_reason'],
+      'markup,min_term,addon_markets,ov_core,ov_ai,ov_addon,ov_reason'],
     'adtini.opensForm': [kw.adtiniOpensForm, true],
     'kw.staysInModal': [kw.stayedPut, true],
     'kw.pane': [kw.kwPane, true],

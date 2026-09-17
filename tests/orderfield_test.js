@@ -31,6 +31,17 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   // Typed values round-trip through collect/load.
   await p.evaluate(() => { open(0, 'form'); });
   await p.waitForTimeout(300);
+  // BOTH FORMS NOW FOLD THESE AWAY. In adtini they arrive with the order and a
+  // planner working a real one never touches either, so they sit under "Fields
+  // for demo tool only" -- where the ORM form has always kept them and where
+  // the SEO form put them on 2026-09-17. Closed, so they have to be opened
+  // before they can be typed in.
+  await p.evaluate(() =>
+    document.querySelectorAll('details.demofold').forEach(d => { d.open = true; }));
+  say('foldedOnBothForms',
+      (await p.$$('details.demofold [data-k="order_no"]')).length === 2);
+  say('andNothingLeftLoose',
+      (await p.$$('[data-k="order_no"]:not(details.demofold [data-k="order_no"])')).length === 0);
   await p.fill('#fseo [data-k="order_no"]', '56310');
   await p.fill('#fseo [data-k="partner"]', 'Vici Media');
   const got = await p.evaluate(() => collect(document.getElementById('fseo')));
