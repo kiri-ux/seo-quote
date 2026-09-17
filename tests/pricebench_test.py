@@ -65,18 +65,36 @@ for name in ("Visit Central PA", "Keller Builds", "Red Shoes"):
     check("%s is still an exact ladder" % name,
           [got[t] for t in bench.TIERS], list(by[name]["actual"]))
 
+# AND THE ONE THE RESHAPE WAS FOR. Seascape was $3,150 under at the old
+# constants; the 2026-09-17 volume curve brings it inside $150 of the base
+# Brendan wrote. Pinned as a range, not a number, because the point is that the
+# shipping curve reaches him -- if a later change drops it back to $3,800 this
+# has to fail rather than quietly print a table.
 sea, _ = bench.quote(by["Seascape Inc"])
-check("Seascape is still short at the shipping constants",
-      sea["base"] < by["Seascape Inc"]["actual"][0], True)
+want = by["Seascape Inc"]["actual"][0]
+check("Seascape lands within $500 of his base at the shipping constants",
+      abs(sea["base"] - want) <= 500, True)
+check("and not at the old capped price", sea["base"] > 4000, True)
 
 # ---------------------------------------------- a patch actually moves it
 raw = subprocess.run([sys.executable, "tools/pricebench.py", "--quiet-gaps",
                       "--patch", json.dumps({"volume_add_cap": 2500})],
                      capture_output=True, text=True, cwd=SRCDIR).stdout
 check("a patch prints a before and an after", raw.count("total error"), 3)
-check("and the proposal on file is valid json and loads",
-      isinstance(json.load(open(os.path.join(
-          SRCDIR, "tools", "proposals", "seascape_volume.json"))), dict), True)
+# THE OLD CURVE IS KEPT AS A PATCH, NOT AS A COMMENT. Reverting the reshape, or
+# showing anyone what it changed, is one command.
+prev = json.load(open(os.path.join(
+    SRCDIR, "tools", "proposals", "pre_seascape_volume.json")))
+check("the pre-change curve is on file", isinstance(prev, dict), True)
+check("and it is the curve that shipped before",
+      prev["volume_add_cap"], 450)
+check("which is not the curve that ships now",
+      bench.app.CFG["volume_add_cap"] != prev["volume_add_cap"], True)
+back = subprocess.run([sys.executable, "tools/pricebench.py", "--quiet-gaps",
+                       "--patch", "@tools/proposals/pre_seascape_volume.json"],
+                      capture_output=True, text=True, cwd=SRCDIR)
+check("and running it puts Seascape back where it was", back.returncode, 0)
+check("at the old total error", "$15,515" in back.stdout, True)
 
 # ---------------------------------------------- the gap is named, not hidden
 check("the clients it cannot reconstruct are listed",
