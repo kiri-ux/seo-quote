@@ -220,6 +220,7 @@
           </div>
           <p class="hint" id="kbNote"></p>
           <p class="hint" id="kbAxisNote"></p>
+          <p class="hint" id="kbMarketNote"></p>
           <div class="cols" id="kbCols"></div>
           <div class="widen" id="kbWiden" hidden></div>
         </section>
@@ -2467,6 +2468,39 @@ function kbDraw(r){
           : `Budget on geography \u00b7 seeds repeated across `
             + `${ev.cities_scored || 0} markets`)
         + (ev.by_hand ? ' \u00b7 set by hand' : '');
+  }
+  // WHICH TOWN THE QUOTE IS BUILT ON, AND WHETHER THAT WAS MEASURED.
+  //
+  // The primary market sets the grid suffix, the rank-check location AND the
+  // price, and nothing on this screen said which town won or why. ENT
+  // Consultants is an Oxford practice (entoxford.com) whose whole quote came
+  // back suffixed "greenwood", and the only way to find out why was to read the
+  // source. The legacy form has warned on this since Ooten Law was priced on
+  // Blount County for a Knoxville firm; this one never got the line.
+  //
+  // The numbers are already in the response as city_selection -- kept carries
+  // every probed market and its score. This prints them. (2026-09-16)
+  const csEl = document.getElementById('kbMarketNote');
+  if (csEl) {
+    const cs = kw.city_selection || {};
+    const kept = cs.kept || [];
+    const primary = (kw.grid_cities || [])[0] || (kept[0] || [])[0] || '';
+    if (!primary || !kept.length) {
+      csEl.textContent = '';
+    } else {
+      const top = Math.max(...kept.map(k => Number(k[1]) || 0), 0);
+      const floor = Number(cs.measure_floor) || 0;
+      csEl.innerHTML = `Built on <b>${esc(primary)}</b> \u00b7 `
+        + (cs.ranked_on_demand
+            ? `${top}/mo, highest of ${kept.length} markets probed`
+            : `${kept.length} markets probed, none above ${floor}/mo`)
+        + ` <button type="button" class="lnkbtn" id="kbMarketWhy">scores</button>`;
+      const why = document.getElementById('kbMarketWhy');
+      if (why) why.onclick = () => {
+        const rows = kept.map(k => `${esc(k[0])} ${Number(k[1]) || 0}/mo`).join(' \u00b7 ');
+        csEl.innerHTML = `Built on <b>${esc(primary)}</b> \u00b7 ${rows}`;
+      };
+    }
   }
   const w = kw.widen;
   // NOT ONE TERM MEASURED IN THESE MARKETS. Either every figure came from a
