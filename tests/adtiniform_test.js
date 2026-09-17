@@ -316,8 +316,11 @@ const BASE = "http://127.0.0.1:5203";
     'form.toggleKept': [form.toggleKept, '1'],
     'form.chipRemoved': [form.chipRemoved, 3],
     'lists.industryIsTheRzList': [form.industryIsAList, true],
+    // TWO PRODUCTS, NOT THREE OPTIONS. "Core SEO + AI Search" named two
+    // products in one chip, so AI Search could only be bought bolted to Core
+    // SEO. The field is multi-select; the pair is both chips. (2026-09-17)
     'lists.strategyOptions': [form.stratOptions.join(','),
-      'Core SEO,Core SEO + AI Search,Website Audit'],
+      'Core SEO,AI Search,Website Audit'],
     'lists.goalOptions': [form.goalOptions, 11],
     'lists.pickAddsAChip': [form.industryPicked.join(','), 'Healthcare,Plumbing'],
     'form.opensOrm': [form.opensOrm, true],

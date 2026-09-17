@@ -22,7 +22,12 @@ say('addonGated', /if \(h\.addon_markets\)/.test(body));
 
 // Strategy is its own widget, and Core SEO drops out when it is the only one.
 say('strategyCard', /add\('Strategy'/.test(body));
-say('coreOnlyGuard', /coreOnly/.test(body) && /if \(!coreOnly\) add\('Core SEO'/.test(body));
+say('coreOnlyGuard', /coreOnly/.test(body)
+    && /if \(!coreOnly\)\s*\n?\s*add\(aiOnly \? 'Core SEO basis' : 'Core SEO'/.test(body));
+// AI Search prices off the Core SEO figure whether or not Core SEO is sold, so
+// on a solo quote that row is a basis and must not read as a line being bought.
+say('aiOnlyNamesTheBasis', /aiOnly = h\.core_seo_sold === false/.test(body)
+    && /'Core SEO basis'/.test(body));
 
 // The ranking denominator is the measured count, not the list length.
 say('ranking.usesOkChecks', /okChecks/.test(body));

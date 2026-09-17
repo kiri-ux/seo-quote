@@ -99,14 +99,17 @@ const QUOTE = {
   });
 
   await p.click('#gen');                              // Generate Quote
-  await p.waitForSelector('.prod[data-row="2"] .qres', { timeout: 15000 });
+  await p.waitForSelector('.prod[data-row="2"] .qres',
+                          { state: 'attached', timeout: 15000 });
   const res = await p.evaluate(() => {
     const R = {};
     const prod = document.querySelector('.prod[data-row="2"]');
     R.briefHasNoFolds = !prod.querySelector('[data-pane="details"] .qfold');
     prod.querySelector('.ptabs button[data-tab="history"]').click();
     // The run IS the expander -- no separate collapsed header above the table.
-    prod.querySelector('.hist tr.histrow .btn-open').click();
+    // The build already opened it; clicking again would close it.
+    if (!prod.querySelector('[data-pane="history"] tr.histopen'))
+      prod.querySelector('.hist tr.histrow .btn-open').click();
     const q = document.querySelector(
       '.prod[data-row="2"] [data-pane="history"] tr.histopen');
     R.headline = document.querySelector(

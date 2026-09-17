@@ -11708,7 +11708,7 @@ def _volume_dollar_add(total_volume, free_below, brackets):
 
 def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
-                 ecommerce=False, industry="", ai_search=False,
+                 ecommerce=False, industry="", ai_search=False, core_seo=True,
                  national_demand=False, geo_override=None, addon_override=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  _formula_pass=False):
@@ -12150,8 +12150,18 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     #     (ticket RULE 2.d.v).
     _ai_add = (ai or {}).get("client_add") or {k: 0 for k in client}
     _ai_hard = (ai or {}).get("hard_add") or {k: 0 for k in client}
+    # AI SEARCH ON ITS OWN. The percentage model prices AI Search as a share of
+    # the client's Core SEO number, so the Core SEO figure is computed either
+    # way -- it is the BASIS. What changes when Core SEO is not being sold is
+    # what the client is charged: the AI Search leg alone, not the pair.
+    # client_list is the undiscounted figure where the two differ (card mode and
+    # a manual override carry one); in percentage mode client_add IS the list.
+    _ai_only = bool(ai_search) and not core_seo
+    _ai_solo = ((ai or {}).get("client_list") or _ai_add) if _ai_only else None
     handoff = {
-        "package": {k: client[k] + _ai_add.get(k, 0) for k in client},
+        "package": (dict(_ai_solo) if _ai_only
+                    else {k: client[k] + _ai_add.get(k, 0) for k in client}),
+        "core_seo_sold": bool(core_seo),
         "core_seo_price": dict(client),
         "ai_search_price": {k: _ai_add.get(k, 0) for k in client},
         "ai_search_pct": (ai or {}).get("geo_pct") or 0,
@@ -12192,8 +12202,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # handoff contract.
         # ---- PARTNER COST — WHAT BILLING CHARGES THE PARTNER ---------------
         # Core + AI, per tier, the same $50 figures the Partner card shows.
-        "partner_hard_cost": {k: hard_cost[k] + _ai_hard.get(k, 0) for k in hard_cost},
-        "partner_core_seo_cost": dict(hard_cost),
+        "partner_hard_cost": ({k: _ai_hard.get(k, 0) for k in hard_cost} if _ai_only
+                              else {k: hard_cost[k] + _ai_hard.get(k, 0)
+                                    for k in hard_cost}),
+        # The basis, not a line the client is buying -- read it with
+        # core_seo_sold above.
+        "partner_core_seo_cost": ({k: 0 for k in hard_cost} if _ai_only
+                                  else dict(hard_cost)),
         "partner_ai_search_cost": {k: _ai_hard.get(k, 0) for k in hard_cost},
         # PACKAGE - PARTNER HARD COST, STATED RATHER THAN DERIVED.
         # Package x (1 - Margin %) does NOT return Partner Hard Cost and is not
@@ -12202,9 +12217,11 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # drift is margin, and it is Vici's. Sending the dollars closes the
         # books without anyone reverse-engineering the rounding:
         #     Package $  -  Partner Hard Cost  =  Margin $
-        "margin_dollars": {k: (client[k] + _ai_add.get(k, 0))
-                              - (hard_cost[k] + _ai_hard.get(k, 0))
-                           for k in client},
+        "margin_dollars": ({k: _ai_solo[k] - _ai_hard.get(k, 0) for k in client}
+                           if _ai_only
+                           else {k: (client[k] + _ai_add.get(k, 0))
+                                    - (hard_cost[k] + _ai_hard.get(k, 0))
+                                 for k in client}),
     }
     # ---- THE PRICE THE FORMULA WOULD HAVE GIVEN --------------------------
     # An override REPLACES a component, so the quote it produces is partly the
@@ -12223,7 +12240,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                pct_not_ranking=pct_not_ranking,
                                total_volume=total_volume, base_override=None,
                                ecommerce=ecommerce, industry=industry,
-                               ai_search=ai_search, national_demand=national_demand,
+                               ai_search=ai_search, core_seo=core_seo,
+                               national_demand=national_demand,
                                geo_override=None, addon_override=None, goal=goal,
                                pageone_rank=pageone_rank, site_rebuild=site_rebuild,
                                _formula_pass=True)
@@ -15229,6 +15247,9 @@ def api_price():
                      base_override=base_override, ecommerce=bool(d.get("ecommerce")),
                      industry=(d.get("industry") or ""),
                      ai_search=bool(d.get("ai_search")),
+                     # Absent means yes: every caller that predates the split
+                     # was quoting Core SEO.
+                     core_seo=bool(d.get("core_seo", True)),
                      national_demand=bool(d.get("national_demand")),
                      geo_override=d.get("geo_override"),
                      addon_override=d.get("addon_override"),
@@ -15388,7 +15409,13 @@ def _rz_industries():
         return []
 
 
-STRATEGY_OPTIONS = ["Core SEO", "Core SEO + AI Search", "Website Audit"]
+# TWO PRODUCTS, NOT THREE OPTIONS. "Core SEO + AI Search" was a single chip, so
+# AI Search could only be bought bolted to Core SEO -- there was no way to quote
+# it on its own. The field is multi-select and always was; the combined product
+# is now both chips picked, which is also how a stored quote reads back
+# ("Core SEO + AI Search" splits on " + " into the two chips it names, and joins
+# again on save, so old quotes round-trip unchanged). (2026-09-17)
+STRATEGY_OPTIONS = ["Core SEO", "AI Search", "Website Audit"]
 REP_STRATEGY_OPTIONS = ["Review Removals", "Site/Article Removals",
                         "Reactive", "Proactive"]
 

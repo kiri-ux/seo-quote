@@ -231,7 +231,9 @@ const CFG = {
   // ---------------- steps 2-4: generate forecast ----------------
   await p.click('#gen');                       // applies the list, back on the form
   await p.click('#gen');                       // runs the forecast
-  await p.waitForSelector('.prod[data-row="0"] .qres', { timeout: 15000 });
+  // Attached, not visible: a finished build lands on History with the run open.
+  await p.waitForSelector('.prod[data-row="0"] .qres',
+                          { state: 'attached', timeout: 15000 });
 
   const res = await p.evaluate(() => {
     const R = {};
@@ -246,7 +248,9 @@ const CFG = {
     R.briefHasNoKeywordList = !brief.querySelector('.pvkw');
     // the run holds the whole quote
     prod.querySelector('.ptabs button[data-tab="history"]').click();
-    prod.querySelector('.hist tr.histrow .btn-open').click();
+    // The build landed here with the run already open; clicking would close it.
+    if (!prod.querySelector('[data-pane="history"] tr.histopen'))
+      prod.querySelector('.hist tr.histrow .btn-open').click();
     const q = document.querySelector(
       '.prod[data-row="0"] [data-pane="history"] tr.histopen');
     R.headline = document.querySelector(
@@ -308,7 +312,7 @@ const CFG = {
     const prod = document.querySelector('.prod[data-row="0"]');
     prod.querySelector('.ptabs button[data-tab="history"]').click();
     const openBtn = prod.querySelector('.hist [data-hist]');
-    if (!prod.querySelector('[data-pane="history"] .qres')) openBtn.click();
+    if (!prod.querySelector('[data-pane="history"] tr.histopen')) openBtn.click();
     prod.querySelectorAll('.qfold').forEach(f => f.open = true);
     const R = {msg: prod.querySelector('.rowmsg').textContent.trim(),
                onQuote: !!prod.querySelector('.pvserp img')};
