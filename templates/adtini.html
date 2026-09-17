@@ -1550,11 +1550,13 @@ function resultsHtml(r, full){
       + (strat.length
          ? `<span class="qsums">${strat.map(x => `<b>${esc(x)}</b>`).join('')}</span>` : '')
       + `</span></summary>
-    <div class="qbody">${tileRow}${plannerView(r, true)}${priceFold(r)}</div>
+    <div class="qbody">${tileRow}${plannerView(r, true)}</div>
   </details>`;
   }
   return `
     <div class="qbody">
+      <p class="hint qnote" data-row="${r.i}"${r.note ? '' : ' hidden'}>${esc(
+        [r.saveNote, r.note].filter(Boolean).join(' \u00b7 '))}</p>
       <div class="qacts">
         <button class="btn" type="button" data-prop="${r.i}">Download proposal</button>
         <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>
@@ -1562,10 +1564,11 @@ function resultsHtml(r, full){
       </div>
       ${tileRow}
       ${plannerView(r)}
-      ${priceFold(r)}
 
       <details class="qfold"><summary>Settings for this run</summary>
         ${runSettings(r)}</details>
+
+      ${priceFold(r)}
 
       <details class="qfold"><summary>Order form &mdash;
         ${ord.have} of ${ord.n} fields</summary>${ord.html}</details>
@@ -3192,29 +3195,56 @@ async function generate(){
     const ranks = {};
     const table = [];              // the proposal's own rank table
     let ranked = 0, errored = 0;
-    // TWENTY, NOT TEN. These batches are awaited one after another, so the batch
-    // size IS the number of sequential round trips: 39 terms was four of them,
-    // and Step 3 is the slowest thing in a build. Throughput was never the
-    // limit -- SERP sits in the 300/min family and a build spends about 39 --
-    // it was the waiting. Twenty halves the trips, and the server still fans
-    // each batch out across rank_check_workers (12) internally.
-    // Left sequential on purpose: running the batches concurrently would be
-    // faster again, but gunicorn runs one worker with eight threads and the
-    // progress counter below would stop being ordered. This is the half of the
-    // win that costs nothing. (2026-09-17)
+    // TWENTY, NOT TEN. Ten meant four round trips for a 39-term build, and the
+    // server fans each batch out across rank_check_workers (12) internally, so
+    // ten never used the fan-out it was given. (2026-09-17)
     const RANK_BATCH = 20;
-    for (let i = 0; i < live.length; i += RANK_BATCH) {
-      const batch = live.slice(i, i + RANK_BATCH).map(x => ({kw: x.kw}));
-      const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
-                                null, say);
-      (rk.results || []).forEach(x => {
-        ranks[String(x.kw).toLowerCase()] = x.pos;
-        table.push(x);
-        if (x.ranked_top) ranked++;
-        if (x.error) errored++;
-      });
-      say(`Step 3 — checking rankings… ${Math.min(i + RANK_BATCH, live.length)}/${live.length}`);
-    }
+    // ALL THE BATCHES AT ONCE. Awaiting them one after another made the batch
+    // size the number of sequential round trips, and Step 3 the slowest part of
+    // a build. Throughput was never the limit: SERP sits in the 300/min family
+    // and a build spends about 39. It was the waiting.
+    //
+    // Safe at this size. Two batches of twenty is two requests, each fanned out
+    // server-side across rank_check_workers (12), so at most 24 SERP calls are
+    // in flight against a 300/min cap. rank_check_cap is 60, which is three
+    // batches -- the ceiling this can ever reach.
+    //
+    // The counter counts COMPLETIONS, not position, because the batches no
+    // longer finish in order. Results are written back by keyword rather than
+    // by index for the same reason, and the table is sorted back into the
+    // caller's order afterwards so the proposal is not in completion order.
+    // (2026-09-17)
+    const batches = [];
+    for (let i = 0; i < live.length; i += RANK_BATCH)
+      batches.push(live.slice(i, i + RANK_BATCH).map(x => ({kw: x.kw})));
+    let doneN = 0;
+    // A batch that failed is still a batch that finished. Counting it only on
+    // success left the line reading 25/45 with nothing left running.
+    const tick = batch => {
+      doneN += batch.length;
+      say(`Step 3 — checking rankings… ${Math.min(doneN, live.length)}/${live.length}`);
+    };
+    const settled = await Promise.all(batches.map(batch =>
+      postWait('/api/rankings', Object.assign({}, common, {batch}), null, say)
+        .then(rk => { tick(batch); return rk; })
+        // ONE BATCH FAILING IS NOT THE WHOLE CHECK FAILING. Sequentially a
+        // throw aborted the loop and lost every batch after it; here the other
+        // batches have already run, so their rows are kept and only this one's
+        // terms go to the unmeasured rerun.
+        .catch(() => {
+          tick(batch);
+          return {results: batch.map(x => ({kw: x.kw, pos: '\u2014', error: true}))};
+        })));
+    settled.forEach(rk => (rk.results || []).forEach(x => {
+      ranks[String(x.kw).toLowerCase()] = x.pos;
+      table.push(x);
+      if (x.ranked_top) ranked++;
+      if (x.error) errored++;
+    }));
+    // Back into the order the keywords were asked in.
+    const askedAt = new Map(live.map((x, i) => [String(x.kw).toLowerCase(), i]));
+    table.sort((a, b) => (askedAt.get(String(a.kw).toLowerCase()) ?? 1e9)
+                       - (askedAt.get(String(b.kw).toLowerCase()) ?? 1e9));
     // A FAILED SERP CALL IS NOT A KEYWORD THAT DOESN'T RANK. Errored rows leave
     // the denominator, and a run where every call failed prices with no ranking
     // adjustment at all rather than the maximum uplift.
@@ -3318,10 +3348,19 @@ async function generate(){
     // The capture is a queued screenshot and takes up to two minutes, so the
     // quote is finished and on the row first. It lands on the row when it
     // arrives, reporting on the row rather than holding the modal.
+    // BOTH PLACES, BECAUSE THE QUOTE IS OPENABLE WHILE THIS IS STILL RUNNING.
+    // The recheck and the capture are detached: the build finishes, the row
+    // says "Rechecking 16 unmeasured terms...", and a planner who opens the
+    // quote to look sees nothing about it at all -- which reads as a job that
+    // died rather than one still going. Same text, both surfaces.
     const note = t => {
       r.note = t;
-      const n = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"] .rowmsg`);
-      if (n) n.textContent = [r.saveNote, t].filter(Boolean).join(' · ');
+      const line = [r.saveNote, t].filter(Boolean).join(' \u00b7 ');
+      const i = ROWS.indexOf(r);
+      const n = document.querySelector(`.prod[data-row="${i}"] .rowmsg`);
+      if (n) n.textContent = line;
+      document.querySelectorAll(`.qnote[data-row="${i}"]`)
+        .forEach(el => { el.textContent = line; el.hidden = !line; });
     };
     // THE UNMEASURED RERUN THEMSELVES. A failed lookup is a timeout, not a
     // verdict, and the answer was always "press Recheck" -- so the run presses

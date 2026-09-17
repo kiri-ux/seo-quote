@@ -86,11 +86,14 @@
             <th style="width:40px"></th>
             <th>Planner</th>
             <th>Built</th>
-            <th>Partner</th>
-            <th>Order ID</th>
+            <!-- Order ID is a short number and was taking a full column's width;
+                 Partner reads better beside Strategies than between Built and
+                 the order number. -->
+            <th style="width:92px">Order ID</th>
             <th>Client</th>
             <th>Products</th>
             <th>Strategies</th>
+            <th>Partner</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -200,12 +203,12 @@ function draw(){
       <td>${pick(PLANNERS, r.planner, 'who sel', i, 'planner')
         .replace('class="who sel"', `class="who sel" style="color:${fg};background:${bg}"`)}</td>
       <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${r.built}</span></td>
-      <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
       <td><input class="cell ord" data-i="${i}" data-f="order_no" value="${esc(r.order || '')}"
                  placeholder="\u2014"></td>
       <td class="lnk"><a href="${fcUrl(r)}">${esc(r.client)}</a></td>
       <td><div class="tags">${chips}</div></td>
       <td><div class="tags">${strat}</div></td>
+      <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
       <td>${pick(STATUSES, r.status, 'stat sel', i, 'status')}</td>
     </tr>`;
   }).join('');
