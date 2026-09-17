@@ -1339,7 +1339,11 @@ function plannerView(r, brief){
   const shot = (r.result || {}).shot;
   const all = (r.kw || {}).all || [];
   const ranks = (r.result || {}).ranks || {};
-  const list = r.kind === 'orm' ? '' : `
+  // THE SNAPSHOT SITS WHERE THE KEYWORD LIST DOES. It was folded away at the
+  // foot of the quote, and the .pvsplit's left column was empty -- which is why
+  // the capture beside it read as an enormous white box. Same placement, same
+  // size, same scroll as the SEO row's keyword list.
+  const list = r.kind === 'orm' ? snapshotPanel(r) : `
     <div class="pvkw">
       <h5>Keywords<button class="pvmini" type="button" data-recheck="${r.i}">${
         Object.keys(ranks).filter(k => ranks[k] === '\u2014').length
@@ -1580,8 +1584,6 @@ function resultsHtml(r, full){
       </div>
       ${tileRow}
       ${plannerView(r)}
-
-      ${r.kind === 'orm' ? snapshotFold(r) : ''}
 
       <details class="qfold"><summary>Settings for this run</summary>
         ${runSettings(r)}</details>
@@ -3299,13 +3301,15 @@ function scanDraw(r){
 // THE QUOTE PAGE'S COPY. What the price was built on, as a record: same
 // panels, no controls, because changing a count here would not reprice
 // anything that has already been quoted.
-function snapshotFold(r){
+function snapshotPanel(r){
   if (!r.scan) return '';
   const P = snapshotParts(r, false);
   if (!(P.warn || P.cols || P.serp || P.locs)) return '';
-  return `<details class="qfold"><summary>${esc(P.head)}</summary>
-    <div class="scfold">${P.warn}${P.cols ? `<div class="cols quad4">${P.cols}</div>` : ''}`
-    + `${P.serp}${P.locs}</div></details>`;
+  return `<div class="pvkw scfold"><h5>Reputation snapshot<span>${
+      esc(P.head.replace(/^Reputation snapshot — ?/, ''))}</span></h5>
+    <div class="pvscroll">${P.warn}`
+    + `${P.cols ? `<div class="cols quad4">${P.cols}</div>` : ''}`
+    + `${P.serp}${P.locs}</div></div>`;
 }
 
 // WHAT THE SCAN DECIDED, WRITTEN ONTO THE FORM. The legacy page turned each
@@ -3475,6 +3479,29 @@ async function generateOrm(){
     close();
     const prod = document.querySelector(`.prod[data-row="${ROWS.indexOf(r)}"]`);
     if (prod) prod.scrollIntoView({block: 'start'});
+    // THE CAPTURE FIRES ITSELF HERE TOO. It is the exhibit every reputation
+    // proposal opens with -- the page one the client is losing -- and it was
+    // the one thing left that needed somebody to remember a button. Detached,
+    // the same way the SEO build does it: the quote is finished and on the row
+    // first, and the capture lands when it arrives.
+    const note = t => {
+      r.note = t;
+      const line = [r.saveNote, t].filter(Boolean).join(' \u00b7 ');
+      const i = ROWS.indexOf(r);
+      const n = document.querySelector(`.prod[data-row="${i}"] .rowmsg`);
+      if (n) n.textContent = line;
+      document.querySelectorAll(`.qnote[data-row="${i}"]`)
+        .forEach(el => { el.textContent = line; el.hidden = !line; });
+    };
+    autoSerp(r, d, {}, note).then(async shot => {
+      if (shot && shot.img) {
+        r.result.shot = shot.img;
+        r.result.serp = {kw: shot.kw, basis: shot.basis};
+        await persist(r);
+      }
+      note('');
+      draw();
+    }).catch(() => note(''));
   } catch (e) { $('saved').textContent = e.message; }
   $('gen').disabled = false;
 }
