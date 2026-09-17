@@ -232,15 +232,41 @@ const SERP = {
   say('aMatchingPairIsNotFlagged', !/do not match/.test(mismatch.gone),
       mismatch.gone.slice(0, 120));
 
-  // ============================================ the quote shows the scan
-  // It was folded away at the foot of the quote, and the split's left column
-  // was empty -- which is why the capture beside it read as an enormous white
-  // box. Same placement as the SEO row's keyword list.
-  await p.route('**/api/serp_queue', route =>
-    route.fulfill({status: 200, contentType: 'application/json',
-                   body: JSON.stringify({error: 'stubbed'})}));
+  // ============================================ the capture fires itself
+  // It never captured on a reputation quote: autoSerp read r.kw.ultra, which
+  // an ORM row does not have. Then the reason was swallowed -- a refusal, a
+  // timeout and an error all ended at note(''), which looks exactly like a
+  // capture that never ran.
+  const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+  let queued = null, fetched = 0;
+  await p.route('**/api/serp_queue', route => {
+    try { queued = JSON.parse(route.request().postData() || '{}'); } catch (e) {}
+    return json(route, {task_id: 'T1', device: 'desktop', width: 1600,
+                        height: 1400, scale: 1});
+  });
+  await p.route('**/api/serp_fetch', route => {
+    fetched++;
+    return json(route, {ready: true, data_url: PNG});
+  });
   await p.click('#gen');
   await p.waitForSelector('.prod[data-row="2"] .qres', {state: 'attached', timeout: 20000});
+  await p.waitForFunction(() => (ROWS[2].result || {}).shot, {timeout: 30000})
+    .catch(() => {});
+  const cap = await p.evaluate(() => ({
+    shot: !!(ROWS[2].result || {}).shot,
+    kw: ((ROWS[2].result || {}).serp || {}).kw,
+    note: ROWS[2].note || '',
+  }));
+  say('theCaptureFiresWithoutBeingAsked', cap.shot, cap.note);
+  // The exhibit is the page the scan already ran: the brand's reviews.
+  say('itPhotographsTheBrandsReviewsPage',
+      cap.kw === 'bright dental co reviews', cap.kw);
+  say('andItQueuedThatKeyword', (queued || {}).keyword === 'bright dental co reviews',
+      JSON.stringify(queued));
+  say('theQueueGotTheMarketToo', ((queued || {}).geo_values || []).length > 0,
+      JSON.stringify((queued || {}).geo_values));
+  say('andItPolledForTheImage', fetched > 0, String(fetched));
+  say('theRowSaysItCaptured', /SERP captured/.test(cap.note), cap.note);
   const fold = await p.evaluate(() => {
     const prod = document.querySelector('.prod[data-row="2"]');
     prod.querySelector('.ptabs button[data-tab="history"]').click();
@@ -288,6 +314,18 @@ const SERP = {
   say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
   say('relatedSaysWhichBlockItCameFrom', fold.relatedLabel);
   say('theQuotesCheckboxesAreInert', fold.boxesInert);
+
+  // ============================================ and it says why when it fails
+  await p.unroute('**/api/serp_queue');
+  await p.route('**/api/serp_queue', route =>
+    json(route, {error: 'DataForSEO refused the task'}));
+  await p.evaluate(() => { ROWS[2].result.shot = null; });
+  await p.click('.prod[data-row="2"] [data-serp="2"]');
+  await p.waitForFunction(() => /not captured|Not captured/.test(
+    (document.querySelector('.serpmsg[data-serpmsg="2"]') || {}).textContent || ''),
+    {timeout: 20000}).catch(() => {});
+  const why = await p.textContent('.serpmsg[data-serpmsg="2"]');
+  say('aFailedCaptureSaysWhy', /refused the task/.test(why || ''), why);
 
   // ============================================ nothing spills out
   const fits = await p.evaluate(() => {
