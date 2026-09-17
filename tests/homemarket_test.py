@@ -86,9 +86,11 @@ def probe(scores):
 # ------------------------------------------------- the client's own market
 check("Oxford is recognised as the home market",
       app.home_market_rank("oxford, ms", "MS", HOME), 0)
+# 2, not 1: unnamed is now the third tier, below a market the client at least
+# serves. With no primary hint there is no middle tier to land in.
 check("and the others are not",
       [app.home_market_rank(c, "MS", HOME) for c in MARKETS if not c.startswith("oxford")],
-      [1] * 7)
+      [2] * 7)
 
 # ------------------------------------------------- the reported failure
 # Greenwood 10, everything else 0. Under the old all-zero test this ranked
@@ -188,6 +190,64 @@ cities, pick = build(lambda k: (90 if "hearing aids" in k else 10) if "greenwood
 check("e2e: one genuinely strong term is enough to rank a market",
       pick.get("ranked_on_demand"), True)
 check("e2e: and that market leads", cities[0], "greenwood, ms")
+
+# ------------- AND THE SIGNAL WAS BEING DESTROYED BY THE DATA MEANT TO HELP IT
+# The panel finally showed the readings: Oxford 10, Greenwood 10, Grenada 10,
+# Batesville 0, Hernando 0. A TIE, not Greenwood measuring higher -- so nothing
+# above was wrong, and none of it mattered, because home_rank was not breaking
+# the tie either.
+#
+# The hint handed to it is brand + domain PLUS every location scraped off the
+# site and every service area entered. For a practice that lists the eight towns
+# it covers, all eight matched and all eight ranked 0. The tiebreak meant to name
+# the client's own market answered "all of them", the sort fell through to
+# alphabetical, and g sorts before o.
+PRIMARY = "ENT Consultants of North MS entoxford.com"
+SERVED = PRIMARY + " Oxford Greenwood Batesville Grenada Hernando Cleveland"
+
+check("the flagship is tier 0", app.home_market_rank("oxford, ms", "MS", SERVED, PRIMARY), 0)
+check("a market they merely serve is tier 1",
+      app.home_market_rank("greenwood, ms", "MS", SERVED, PRIMARY), 1)
+check("and one they never name is tier 2",
+      app.home_market_rank("tupelo, ms", "MS", SERVED, PRIMARY), 2)
+# A served market still beats an unnamed one. The full hint is worth something;
+# it is just not the flagship.
+check("served still outranks unnamed",
+      app.home_market_rank("greenwood, ms", "MS", SERVED, PRIMARY)
+      < app.home_market_rank("tupelo, ms", "MS", SERVED, PRIMARY), True)
+# The shipped bug, kept as a check so the collapse is visible if it returns.
+check("one bag makes every served town look like home",
+      [app.home_market_rank(c, "MS", SERVED) for c in ("oxford, ms", "greenwood, ms")],
+      [0, 0])
+# Callers that pass no primary hint keep the old two-tier behaviour.
+check("no primary hint, no third tier",
+      app.home_market_rank("tupelo, ms", "MS", SERVED), 2)
+check("and the named one is still 0",
+      app.home_market_rank("oxford, ms", "MS", SERVED), 0)
+
+# End to end on the readings the panel actually printed.
+TIE = {"oxford": 10, "greenwood": 10, "grenada": 10, "batesville": 0, "hernando": 0}
+TIE_MK = ["oxford, ms", "greenwood, ms", "batesville, ms", "grenada, ms", "hernando, ms"]
+
+
+def tie_build(primary):
+    real = app.dfs_post
+    app.dfs_post = lambda path, payload, *a, **kw: {"tasks": [{
+        "status_code": 20000,
+        "result": [{"keyword": k, "search_volume":
+                    next((v for t, v in TIE.items() if t in str(k).lower()), 0)}
+                   for k in ((payload[0] or {}).get("keywords") or [])]}]}
+    try:
+        return app.choose_build_markets(list(TIE_MK), "MS", SEEDS, SERVED,
+                                        primary_hint=primary)[0]
+    finally:
+        app.dfs_post = real
+
+
+check("e2e: the real tie resolves to the client's own town",
+      tie_build(PRIMARY)[0], "oxford, ms")
+check("e2e: and without the flagship it does not",
+      tie_build("")[0] != "oxford, ms", True)
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))

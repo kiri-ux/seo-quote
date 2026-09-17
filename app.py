@@ -6887,7 +6887,7 @@ def market_anchor(group, state=""):
                                         len(str(m)), str(m).lower()))[0]
 
 
-def markets_by_size(markets, state="", home_hint=""):
+def markets_by_size(markets, state="", home_hint="", primary_hint=""):
     """The entered markets, biggest first, off the bundled ZIP index -- no call.
 
     The client's own market leads whatever its size: a Sevierville firm that
@@ -6898,7 +6898,8 @@ def markets_by_size(markets, state="", home_hint=""):
     cities = [str(m).strip() for m in (markets or []) if m and str(m).strip()]
     if state:
         cities = [c for c in cities if c.lower() != state.strip().lower()]
-    return sorted(cities, key=lambda c: (home_market_rank(c, state, home_hint),
+    return sorted(cities, key=lambda c: (home_market_rank(c, state, home_hint,
+                                                          primary_hint),
                                          -city_size(c, state),
                                          1 if county_key(c, state) else 0,
                                          c.lower()))
@@ -7331,8 +7332,23 @@ def group_by_metro(vectors, min_terms=2):
     return groups
 
 
-def home_market_rank(market, state, home_hint):
-    """0 when the client's name, domain or site names this market, else 1.
+def home_market_rank(market, state, home_hint, primary_hint=""):
+    """0 the client's own town, 1 a market they merely serve, 2 neither.
+
+    TWO TIERS WAS ONE TOO FEW, and it cost ENT Consultants its whole quote.
+    The hint this is handed is brand + domain PLUS every location scraped off
+    the site and every service area entered -- so for a practice that lists the
+    eight towns it covers, all eight matched and all eight ranked 0. The
+    tiebreak meant to name the client's own market answered "all of them", the
+    sort fell through to alphabetical, and an Oxford practice (entoxford.com)
+    was built and priced on Greenwood because g sorts before o.
+    Oxford and Greenwood had both measured 10/mo, so nothing else separated
+    them. (2026-09-17)
+
+    `primary_hint` is the brand and domain alone -- the flagship signal. The
+    full hint stays worth something: a market the client names on their own site
+    is still a better guess than one they never mention. It is just not their
+    home. Callers that pass no primary_hint get the old two-tier behaviour.
 
     Matching the WHOLE market string ("clarendon hills, il") against the hint
     could never succeed: a domain is "clarendonchiro.com", with no space, no
@@ -7340,24 +7356,34 @@ def home_market_rank(market, state, home_hint):
     city, on its de-spaced form, and on its first token -- which is what a
     domain almost always carries (2026-08-04). Shared by the demand ranking's
     tiebreak and the size order, so both agree on whose market it is."""
-    hint_raw = (home_hint or "").lower()
-    hint_squashed = re.sub(r"[^a-z0-9]", "", hint_raw)
     bare = (parse_market(market, state)[0] or market).strip().lower()
     if not bare:
-        return 1
-    squashed = re.sub(r"[^a-z0-9]", "", bare)
-    if len(squashed) > 3 and squashed in hint_squashed:
-        return 0                       # "clarendonhills" in the hint
-    if len(bare) > 3 and bare in hint_raw:
-        return 0                       # "clarendon hills" spelled out
-    first = bare.split()[0]
-    if len(first) >= 5 and first in hint_squashed:
-        return 0                       # "clarendon" in clarendonchiro
-    return 1
+        return 2
+
+    def _named_in(hint):
+        hint_raw = (hint or "").lower()
+        if not hint_raw:
+            return False
+        hint_squashed = re.sub(r"[^a-z0-9]", "", hint_raw)
+        squashed = re.sub(r"[^a-z0-9]", "", bare)
+        if len(squashed) > 3 and squashed in hint_squashed:
+            return True                # "clarendonhills" in the hint
+        if len(bare) > 3 and bare in hint_raw:
+            return True                # "clarendon hills" spelled out
+        first = bare.split()[0]
+        if len(first) >= 5 and first in hint_squashed:
+            return True                # "clarendon" in clarendonchiro
+        return False
+
+    if primary_hint and _named_in(primary_hint):
+        return 0
+    if _named_in(home_hint):
+        return 0 if not primary_hint else 1
+    return 2
 
 
 def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
-                    home_hint=""):
+                    home_hint="", primary_hint=""):
     """`explain` is an optional dict that gets filled with WHY these cities won.
 
     Selection quietly discards markets the partner entered, which is the kind
@@ -7548,7 +7574,7 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # compare on the bare city, on its de-spaced form, and on its first
         # token — which is what a domain almost always carries (2026-08-04).
         def home_rank(c):
-            return home_market_rank(c, state, home_hint)
+            return home_market_rank(c, state, home_hint, primary_hint)
         # A county is coverage, not a search target: "junk removal jefferson
         # county tn" is not a phrase anyone types, and a county only earns a grid
         # slot when no town of its market is available to stand for it.
@@ -7661,7 +7687,7 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         return cities[:limit]
 
 
-def choose_build_markets(markets, state, seeds, home_hint=""):
+def choose_build_markets(markets, state, seeds, home_hint="", primary_hint=""):
     """WHICH MARKETS GET MEASURED. The seeds decide how many. (2026-09-16)
 
     The grid measured up to grid_max_cities markets whatever the seed list
@@ -7683,12 +7709,13 @@ def choose_build_markets(markets, state, seeds, home_hint=""):
     seed_markets, measured, and widened_from when it happened."""
     cap = int(CFG.get("grid_max_cities", 5))
     probe = list(seeds or [])
-    by_size = markets_by_size(markets, state, home_hint)
+    by_size = markets_by_size(markets, state, home_hint, primary_hint)
     if not by_size:
         # No markets: same call as before, so a national build reads the same.
         pick = {}
         cities = pick_grid_cities(markets, state, cap, probe_term=probe,
-                                  explain=pick, home_hint=home_hint)
+                                  explain=pick, home_hint=home_hint,
+                                  primary_hint=primary_hint)
         pick.update({"by_size": [], "seed_markets": 0,
                      "seeds": len(probe), "measured": []})
         return cities, pick
@@ -7696,7 +7723,8 @@ def choose_build_markets(markets, state, seeds, home_hint=""):
     pool = by_size[:n]
     pick = {}
     cities = pick_grid_cities(pool, state, n, probe_term=probe,
-                              explain=pick, home_hint=home_hint)
+                              explain=pick, home_hint=home_hint,
+                                  primary_hint=primary_hint)
     floor = int(CFG.get("axis_city_volume_floor", 20))
     live = [c for c, v in (pick.get("kept") or []) if int(v or 0) >= floor]
     facts = {"by_size": [[c, city_size(c, state)] for c in by_size],
@@ -7711,7 +7739,8 @@ def choose_build_markets(markets, state, seeds, home_hint=""):
     if not live and not pick.get("nothing_measured") and len(by_size) > len(pool):
         wide = {}
         cities = pick_grid_cities(list(by_size), state, cap, probe_term=probe,
-                                  explain=wide, home_hint=home_hint)
+                                  explain=wide, home_hint=home_hint,
+                                  primary_hint=primary_hint)
         wide.update(facts)
         wide["measured"] = list(by_size)
         wide["widened_from"] = list(pool)
@@ -9340,12 +9369,17 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # Location pages and named service areas are direct evidence of where
         # the client actually operates — better than the domain alone, which
         # only ever names one town.
-        _home = " ".join([brand or "", domain or ""]
+        # THE FLAGSHIP IS THE BRAND AND THE DOMAIN, KEPT SEPARATE FROM THE REST.
+        # Folding the scraped site locations and the entered service areas into
+        # one hint made every town a client SERVES look like the town they ARE.
+        _home_primary = " ".join([brand or "", domain or ""])
+        _home = " ".join([_home_primary]
                          + [str(x) for x in (site_locations or [])]
                          + [str(x) for x in (service_areas or [])])
         # As many markets as the seeds leave room for, biggest first -- see
         # choose_build_markets. The cap is a ceiling, not the count.
-        cities, city_pick = choose_build_markets(markets, state, seeds, _home)
+        cities, city_pick = choose_build_markets(markets, state, seeds, _home,
+                                                 primary_hint=_home_primary)
         # Search-phrase geos ("south jersey", "fox cities") cross into keyword
         # TEXT exactly like cities, but never touch a location API — no volume
         # lookup, no validation, no rank-check location. Keeps Brendan-style
