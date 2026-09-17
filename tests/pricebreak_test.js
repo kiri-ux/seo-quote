@@ -35,10 +35,11 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     // A FOLD, NOT MORE TILES. The tile row is the headline and four more cards
     // buried it; this is the working, read when a number is being questioned
     // and ignored the rest of the time.
-    const view = (pricing, metrics) => {
+    const view = (pricing, metrics, health) => {
       const r = {kind: 'seo', band: 'contiguous_region', data: {strategy: ['Core SEO']},
                  kw: {all: []},
-                 result: {pricing, metrics, ranks: {}, quote: {totals: {}, handoff: {}}}};
+                 result: {pricing, metrics, health: (health || {}),
+                          ranks: {}, quote: {totals: {}, handoff: {}}}};
       return priceFold(r);
     };
     return {
@@ -59,13 +60,32 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
                   pct_not_ranking: 10, volume_add: 0, total_volume: 180}, {}),
       // A quote priced before this panel shipped: real adder, no stored basis.
       legacy: view({anchor: 5450, competitive_adder: 550, zero_ranking_uplift_pct: 0,
-                    pct_not_ranking: 10, volume_add: 0, total_volume: 4690}, {}),
+                    pct_not_ranking: 10, volume_add: 0, total_volume: 4690}, {}, {}),
       // An ORM quote has no geo anchor and must not grow empty rows.
       orm: (() => {
         const r = {kind: 'orm', data: {}, kw: {},
                    result: {pricing: {}, quote: {totals: {}, handoff: {}}}};
         return priceFold(r);
       })(),
+      // SITE CONDITION. A measured site names the count and the worst offenders;
+      // an unmeasured one says so rather than reading as clean, because a
+      // blocked crawler and a spotless site are not the same fact.
+      dirty: view({anchor: 1850, competitive_adder: 0, zero_ranking_uplift_pct: 0,
+                   pct_not_ranking: 6.2, volume_add: 0, total_volume: 180,
+                   site_debt: 6, site_debt_uplift_pct: 3},
+                  {adder_basis: 'cpc', cpc_used: 2.1},
+                  {checked: 18, score: 62.5,
+                   failed: ['no H1', 'missing title', 'broken links', 'slow load',
+                            'thin content']}),
+      clean: view({anchor: 1850, competitive_adder: 0, zero_ranking_uplift_pct: 0,
+                   pct_not_ranking: 6.2, volume_add: 0, total_volume: 180,
+                   site_debt: 0, site_debt_uplift_pct: 0},
+                  {adder_basis: 'cpc', cpc_used: 2.1},
+                  {checked: 18, score: 96.0, failed: []}),
+      unchecked: view({anchor: 1850, competitive_adder: 0, zero_ranking_uplift_pct: 0,
+                       pct_not_ranking: 6.2, volume_add: 0, total_volume: 180},
+                      {adder_basis: 'cpc', cpc_used: 2.1},
+                      {error: 'the page returned nothing to check'}),
       // The tile row must NOT carry them any more -- that is the whole change.
       tiles: (() => {
         const r = {kind: 'seo', band: 'contiguous_region', data: {strategy: ['Core SEO']},
@@ -108,9 +128,18 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   // -- every quote priced before this panel existed -- must not be labelled
   // "not measured"; $550 measured as nothing is a contradiction, and it is
   // what the first version of this line printed.
+  // Scoped to the adder row: "not measured" legitimately appears further down
+  // for a site that was never checked, which is a different row and a
+  // different fact.
+  const adderRow = h => (h.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+    .match(/Competitive adder adder ([^·]*?)(?: Zero-ranking| Site condition| Volume)/) || [])[1] || '';
   say('a real adder with no stored basis claims nothing',
-      has(out.legacy, '$550') && !has(out.legacy, 'not measured'),
-      out.legacy.slice(0, 300));
+      adderRow(out.legacy).includes('$550')
+      && !adderRow(out.legacy).includes('not measured'), adderRow(out.legacy));
+  // And a base that was never stored is omitted, not printed as $0.
+  say('an unknown base is omitted rather than shown as $0',
+      !/Base base \$0\b/.test(out.legacy.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')),
+      out.legacy.slice(-200));
 
   say('volume shows the add and the demand behind it',
       has(out.oxford, 'Volume add') && has(out.oxford, '180/mo'), out.oxford.slice(0, 400));
@@ -118,6 +147,18 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('an ORM quote grows no pricing rows',
       !has(out.orm, 'Geo anchor') && !has(out.orm, 'Competitive adder'),
       out.orm.slice(0, 200));
+  say('a site with debt names the count and the uplift',
+      has(out.dirty, '+3%') && has(out.dirty, '6 of 18 checks failing'),
+      out.dirty.slice(0, 400));
+  say('and the worst offenders, so it can be checked',
+      has(out.dirty, 'no H1') && has(out.dirty, 'broken links'), out.dirty.slice(0, 500));
+  say('a clean site is par, not a discount',
+      has(out.clean, '0 of 18 checks failing') && has(out.clean, '96/100')
+      && !/Site condition[^|]*[+-]\d+%/.test(out.clean.replace(/<[^>]*>/g, ' ')),
+      out.clean.slice(0, 400));
+  // The whole reason site_debt is nullable.
+  say('an unchecked site says so rather than reading as clean',
+      has(out.unchecked, 'not measured'), out.unchecked.slice(0, 400));
   // It is a fold, and it is closed until someone wants it.
   say('it renders as a collapsible fold',
       out.oxford.includes('<details') && has(out.oxford, 'Pricing'), out.oxford.slice(0, 120));

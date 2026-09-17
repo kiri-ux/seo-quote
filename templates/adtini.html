@@ -1445,7 +1445,29 @@ function priceRows(r){
       'uplift'],
     ['Volume add', money(p.volume_add || 0)
       + ` \u00b7 ${(p.total_volume || 0).toLocaleString()}/mo`, 'volume'],
-    ['Base', money(p.base != null ? p.base : (t2(r) || 0)), 'base'],
+    // SITE CONDITION. Unmeasured says so rather than reading as clean -- a
+    // blocked crawler and a spotless site are not the same fact, and the
+    // difference is the whole reason site_debt is nullable.
+    ['Site condition', (() => {
+      const h = (r.result || {}).health || {};
+      if (p.site_debt == null)
+        return h.error || !h.checked ? 'not measured' : '';
+      const n = p.site_debt;
+      const pctv = p.site_debt_uplift_pct;
+      return (pctv > 0 ? `+${pctv}% \u00b7 ` : '')
+        + `${n} of ${h.checked || 18} checks failing`
+        + (h.score != null ? ` \u00b7 ${h.score}/100` : '')
+        + (n && (h.failed || []).length
+           ? ` \u00b7 ${h.failed.slice(0, 4).join(', ')}`
+             + ((h.failed || []).length > 4 ? ` +${h.failed.length - 4} more` : '') : '');
+    })(), 'site'],
+    // A BASE OF $0 IS NOT A BASE. Quotes stored before this panel carry no
+    // p.base, and printing $0 for one reads as a priced total rather than a
+    // missing field. Omitted instead.
+    ['Base', (() => {
+      const v = p.base != null ? p.base : t2(r);
+      return v == null || v === '' ? '' : money(v);
+    })(), 'base'],
   ].filter(x => x[1] !== '');
   return `<table class="send"><thead><tr><th>Component</th><th>This quote</th></tr>
     </thead><tbody>${rows.map(([label, v, k]) =>
@@ -3170,8 +3192,19 @@ async function generate(){
     const ranks = {};
     const table = [];              // the proposal's own rank table
     let ranked = 0, errored = 0;
-    for (let i = 0; i < live.length; i += 10) {
-      const batch = live.slice(i, i + 10).map(x => ({kw: x.kw}));
+    // TWENTY, NOT TEN. These batches are awaited one after another, so the batch
+    // size IS the number of sequential round trips: 39 terms was four of them,
+    // and Step 3 is the slowest thing in a build. Throughput was never the
+    // limit -- SERP sits in the 300/min family and a build spends about 39 --
+    // it was the waiting. Twenty halves the trips, and the server still fans
+    // each batch out across rank_check_workers (12) internally.
+    // Left sequential on purpose: running the batches concurrently would be
+    // faster again, but gunicorn runs one worker with eight threads and the
+    // progress counter below would stop being ordered. This is the half of the
+    // win that costs nothing. (2026-09-17)
+    const RANK_BATCH = 20;
+    for (let i = 0; i < live.length; i += RANK_BATCH) {
+      const batch = live.slice(i, i + RANK_BATCH).map(x => ({kw: x.kw}));
       const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
                                 null, say);
       (rk.results || []).forEach(x => {
@@ -3180,7 +3213,7 @@ async function generate(){
         if (x.ranked_top) ranked++;
         if (x.error) errored++;
       });
-      say(`Step 3 — checking rankings… ${Math.min(i + 10, live.length)}/${live.length}`);
+      say(`Step 3 — checking rankings… ${Math.min(i + RANK_BATCH, live.length)}/${live.length}`);
     }
     // A FAILED SERP CALL IS NOT A KEYWORD THAT DOESN'T RANK. Errored rows leave
     // the denominator, and a run where every call failed prices with no ranking
@@ -3215,6 +3248,27 @@ async function generate(){
     const addonOv = String((r.cfg || {}).addon_markets || '').trim();
     const addonN = addonOv === '' ? (+addon.suggested || 0) : (+addonOv || 0);
 
+    // THE CLIENT'S OWN SITE, WHICH THIS TAB HAS NEVER LOOKED AT.
+    // /api/market_signals reads ~18 on-page checks off one instant_pages call
+    // -- no H1, missing title, broken links, 4xx, thin content, slow load and
+    // the rest -- and the legacy form has shown them since August. This tab
+    // never called the route, so the data was not even being fetched.
+    // Fired here rather than earlier so it costs nothing a planner waits on
+    // that they were not already waiting on, and it never fails a build.
+    let signals = {};
+    if (d.site) {
+      try {
+        signals = await post('/api/market_signals',
+          {domain: d.site, rivals: [], cfg: r.over});
+      } catch (e) { signals = {}; }
+    }
+    const health = signals.health || {};
+    // null when the site was never checked -- no domain, a blocked crawler, a
+    // page that returned nothing. An unmeasured site prices as neither clean
+    // nor broken, so it must not become 0.
+    const siteDebt = (health && Array.isArray(health.failed) && health.checked)
+      ? health.failed.length : null;
+
     say('Step 4 — pricing…');
     const total_volume = r.kw.total_volume != null
       ? Number(r.kw.total_volume)
@@ -3232,10 +3286,17 @@ async function generate(){
       base_override: r.cfg.ov_core || '',
       // The page-one median comes off the market signals pass, which this tab
       // does not run yet. Null, not a guess -- the SEO tab sends null too.
+      // Site condition, banded in CFG.site_debt_tiers. Only sent when it was
+      // actually measured.
+      site_debt: siteDebt,
+      // The page-one median also comes off this pass now, but wiring it would
+      // change a SECOND pricing input in the same commit. Left null
+      // deliberately; the SEO tab sends null too.
       pageone_rank: null};
     const price = await post('/api/price', priceReq);
 
     r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
+      signals, health,
       rankReq: {common, geo, st, band},
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {}};
     // One place builds the headline, so the row, the summary and the history
