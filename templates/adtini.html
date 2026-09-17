@@ -1292,43 +1292,6 @@ function plannerView(r, brief){
         + (h.addon_market_discount_pct ? ` · ${pct(h.addon_market_discount_pct)} off` : '')
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
            : (sug.basis ? ` · ${sug.basis}` : '')));
-    // WHAT THE PRICE IS MADE OF. Every number here was already in hand --
-    // pricing carries the anchor, the adder, the uplift and the volume add, and
-    // /api/metrics returns twenty-five fields of which this screen used one
-    // (met.adder). So a planner asking why one run priced $150 over another had
-    // nothing to read. Two runs of ENT Consultants an hour apart came out
-    // $3,100 and $2,950 and the whole difference was the zero-ranking band.
-    // The legacy form has shown this since July. (2026-09-17)
-    const met = (r.result || {}).metrics || {};
-    if (p.anchor != null) {
-      add('Geo anchor', money(p.anchor)
-        + (r.band ? ' \u00b7 ' + String(BANDS[r.band] || r.band).toLowerCase() : ''));
-      // The adder has three possible bases and they are not interchangeable:
-      // a measured bid, organic difficulty when no bids exist anywhere, or a
-      // flat score. Naming which one ran is the difference between "this
-      // vertical is cheap" and "nobody could measure it".
-      const basis = met.adder_basis === 'cpc'
-        ? `median top-of-page bid $${Number(met.cpc_used || 0).toFixed(2)}`
-          + (met.cpc_n_bids ? ` \u00b7 ${met.cpc_n_bids} bid${met.cpc_n_bids === 1 ? '' : 's'}` : '')
-        : met.adder_basis === 'kd'
-        ? `organic difficulty ${met.median_kd}/100 \u00b7 no bid data`
-        : (met.adder_basis ? `bid score ${met.score}` : '');
-      // "not measured" beside a $550 adder is a contradiction, and saying it
-      // was what an earlier version of this line did on any quote whose stored
-      // metrics predate this panel. An unknown basis says nothing; only a $0
-      // with no basis is worth calling out, because that is the case where the
-      // vertical was never priced rather than priced at zero.
-      add('Competitive adder', money(p.competitive_adder || 0)
-        + (basis ? ' \u00b7 ' + basis
-           : (p.competitive_adder ? '' : ' \u00b7 not measured')));
-      if (p.zero_ranking_uplift_pct != null)
-        add('Zero-ranking uplift', (p.zero_ranking_uplift_pct > 0 ? '+' : '')
-          + p.zero_ranking_uplift_pct + '%'
-          + (p.pct_not_ranking != null
-             ? ` \u00b7 ${Math.round(p.pct_not_ranking)}% of measured terms not ranking` : ''));
-      add('Volume add', money(p.volume_add || 0)
-        + ` \u00b7 ${(p.total_volume || 0).toLocaleString()}/mo`);
-    }
     const rk = (r.result || {}).ranks || {};
     const nTerms = (kw.all || []).length;
     const checked = Object.keys(rk).length;
@@ -1437,6 +1400,63 @@ const RUN_ORM = [
 ];
 const YN = v => v ? 'Yes' : 'No';
 
+// WHAT THE PRICE IS MADE OF.
+//
+// Every number here was already in hand: `pricing` carries the anchor, the
+// adder, the uplift and the volume add, and /api/metrics returns twenty-five
+// fields of which this screen used exactly one (met.adder). Two runs of ENT
+// Consultants an hour apart came out $3,100 and $2,950 and nothing said which
+// row differed -- it was the zero-ranking band, because the first was built on
+// a town the client does not operate in.
+//
+// A FOLD RATHER THAN MORE TILES. The tile row is the headline and four more
+// cards buried it; this is the working, which is read when a number is being
+// questioned and ignored the rest of the time. (2026-09-17)
+function priceFold(r){
+  const t = priceRows(r);
+  return t ? `<details class="qfold"><summary>Pricing</summary>${t}</details>` : '';
+}
+function priceRows(r){
+  const p = (r.result || {}).pricing || {};
+  const met = (r.result || {}).metrics || {};
+  if (r.kind === 'orm' || p.anchor == null) return '';
+  // The adder has three possible bases and they are not interchangeable: a
+  // measured bid, organic difficulty when no bids exist anywhere, or a flat
+  // score. "$0 because clicks are cheap" is a different fact from "$0 because
+  // nothing could be measured", and the row has to say which.
+  const basis = met.adder_basis === 'cpc'
+    ? `median top-of-page bid $${Number(met.cpc_used || 0).toFixed(2)}`
+      + (met.cpc_n_bids ? ` \u00b7 ${met.cpc_n_bids} bid${met.cpc_n_bids === 1 ? '' : 's'}` : '')
+    : met.adder_basis === 'kd'
+    ? `organic difficulty ${met.median_kd}/100 \u00b7 no bid data`
+    : (met.adder_basis ? `bid score ${met.score}` : '');
+  // An adder with an unknown basis claims nothing -- "$550, not measured" is a
+  // contradiction, and it is what every quote priced before this panel stored.
+  const adder = money(p.competitive_adder || 0)
+    + (basis ? ' \u00b7 ' + basis : (p.competitive_adder ? '' : ' \u00b7 not measured'));
+  const rows = [
+    ['Geo anchor', money(p.anchor)
+      + (r.band ? ' \u00b7 ' + String(BANDS[r.band] || r.band).toLowerCase() : ''), 'anchor'],
+    ['Competitive adder', adder, 'adder'],
+    ['Zero-ranking uplift', p.zero_ranking_uplift_pct == null ? ''
+      : (p.zero_ranking_uplift_pct > 0 ? '+' : '') + p.zero_ranking_uplift_pct + '%'
+        + (p.pct_not_ranking != null
+           ? ` \u00b7 ${Math.round(p.pct_not_ranking)}% of measured terms not ranking` : ''),
+      'uplift'],
+    ['Volume add', money(p.volume_add || 0)
+      + ` \u00b7 ${(p.total_volume || 0).toLocaleString()}/mo`, 'volume'],
+    ['Base', money(p.base != null ? p.base : (t2(r) || 0)), 'base'],
+  ].filter(x => x[1] !== '');
+  return `<table class="send"><thead><tr><th>Component</th><th>This quote</th></tr>
+    </thead><tbody>${rows.map(([label, v, k]) =>
+      `<tr><td>${label}<span>${k}</span></td><td>${esc(v)}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+// The base off the tier row, for quotes whose stored pricing predates p.base.
+function t2(r){
+  return (((r.result || {}).quote || {}).totals || {}).base;
+}
+
 function runSettings(r){
   const d = ((r.result || {}).settings) || r.data || {};
   const cfg = ((r.result || {}).cfg) || r.cfg || {};
@@ -1508,7 +1528,7 @@ function resultsHtml(r, full){
       + (strat.length
          ? `<span class="qsums">${strat.map(x => `<b>${esc(x)}</b>`).join('')}</span>` : '')
       + `</span></summary>
-    <div class="qbody">${tileRow}${plannerView(r, true)}</div>
+    <div class="qbody">${tileRow}${plannerView(r, true)}${priceFold(r)}</div>
   </details>`;
   }
   return `
@@ -1520,6 +1540,7 @@ function resultsHtml(r, full){
       </div>
       ${tileRow}
       ${plannerView(r)}
+      ${priceFold(r)}
 
       <details class="qfold"><summary>Settings for this run</summary>
         ${runSettings(r)}</details>
