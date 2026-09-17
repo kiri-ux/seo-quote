@@ -549,17 +549,58 @@ CFG = {
     # Skidmore 88 and MPG 100 -> full) with no discontinuity in between.
     "vol_add_ramp": [40, 60],           # [no opportunity, full opportunity] % not ranking
     "vol_free_below": 10000,            # normalized: base already covers this
-    "volume_add_cap": 450,              # max partner $ from volume: Brendan's quotes
-                                        # flex a few hundred for market size, never
-                                        # thousands (Waytek: his +$500 total vs the
-                                        # formula's former +$1,400-4,500 vol adds)
+    # RESHAPED 2026-09-17 (Seascape, Brendan) — cap 450 -> 2500 and the rates
+    # re-banded. Scored by tools/pricebench.py: total error 15,515 -> 5,115
+    # across the eleven reconstructible actuals, with every previously-fitted
+    # client landing on exactly the same three numbers it did before.
+    #
+    # THE CAP WAS THE CURVE. At 450 the brackets below stopped mattering at
+    # 20,000/mo: 20k raw was 702, 51k was 1,931, 500k was 13,722, and all three
+    # were served 450. Seascape, Inc — 51,690/mo, nothing ranking, a $6.12
+    # median bid across 13 bidders — came out $3,800/$4,800/$5,800 against the
+    # $6,950/$8,250/$9,950 Brendan would have written by hand, and volume was
+    # the only lever that could reach it: a $6.12 bid earns $15.91 of
+    # competitive adder, so no re-tune of the CPC curve was worth $50 on it.
+    #
+    # RAISING THE CAP ALONE WAS NOT THE ANSWER. At 2,000 it also handed
+    # Skidmore and MPG (24-25k, both quoted 3,950/5,450/6,950) an extra
+    # $550-900 a tier. The rates had to be re-banded with it: unchanged through
+    # the range his book actually covers, steep in the range only Seascape
+    # occupies.
+    #
+    # THE OLD CAP WAS A ZERO-RATE BRACKET AND IS NOW WRITTEN AS ONE. At $450 the
+    # cap bound from 16,411/mo up, so the shipping curve really was .0702 to
+    # 16,411 and then flat. A first attempt at this reshape replaced both with a
+    # single low rate hitting $481 at 25k -- which matched at the ends and
+    # sagged in the middle, quietly cutting every 12-22k client by up to $193
+    # partner ($300 client). The bench did not catch it: no calibration client
+    # sits in that band with demand still uncaptured. A full sweep of the input
+    # space did. Spelling the old cap out as its own bracket makes the promise
+    # exact -- below 25,000/mo not one quote moves by a dollar.
+    #
+    # THE TOP BAND IS ONE DATAPOINT AND THE COMMENT SHOULD SAY SO. Above
+    # 25,000/mo there is no calibration data other than Seascape itself, and the
+    # only other high-volume client in the book points the other way —
+    # Susquehanna at 135k/mo was quoted at the floor. The two reconcile through
+    # vol_add_ramp (Susquehanna already ranks for 60% of its head terms, so its
+    # add ramps to zero) and that reconciliation is the whole argument for this
+    # shape. It is one datapoint each. Applied at Kiri's direction 2026-09-17
+    # with that stated; get two or three more high-volume, nothing-ranking
+    # actuals from Brendan and re-run the bench before trusting the .0680.
+    "volume_add_cap": 2500,             # max partner $ from volume
     # Rates are PARTNER $ per search (scaled from the old basis rates by 0.8775
     # when the constants were converted, 2026-08-13).
     "volume_brackets": [
-        [10000, 20000, 0.0702],
-        [20000, 35000, 0.0439],
-        [35000, 50000, 0.0351],
-        [50000, None,  0.0263],         # open-ended top bracket so it keeps escalating
+        # The fitted range, reproduced to the dollar: the old .0702 rate, then
+        # the flat stretch the old $450 cap created. The knee is 16,411 and not
+        # 16,410.26 because a bracket bound is a whole search -- rounded UP, so
+        # the band closes at $450.05 rather than $449.98 and no client can come
+        # out a hair cheaper than they did yesterday.
+        [10000, 16411, 0.0702],
+        [16411, 25000, 0.0],
+        # And steep above it. Fitted on Seascape alone — see the note above.
+        [25000, 60000, 0.0680],
+        [60000, None,  0.0200],         # open-ended top bracket so it keeps escalating
     ],
     # NATIONWIDE service clients (Skidmore Studio datapoint, 2026-07-20):
     # Brendan's national ladder $3,950/$5,450/$6,950 backs out to hard

@@ -1,0 +1,10 @@
+{
+  "_": "The volume curve as it shipped BEFORE 2026-09-17. Run the bench with this to see what the Seascape reshape changed: python3.12 tools/pricebench.py --patch @tools/proposals/pre_seascape_volume.json",
+  "volume_add_cap": 450,
+  "volume_brackets": [
+    [10000, 20000, 0.0702],
+    [20000, 35000, 0.0439],
+    [35000, 50000, 0.0351],
+    [50000, null,  0.0263]
+  ]
+}

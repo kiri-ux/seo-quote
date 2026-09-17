@@ -187,7 +187,8 @@ def main():
         raw = a.patch
         if raw.startswith("@"):
             raw = open(os.path.join(SRCDIR, raw[1:]), encoding="utf-8").read()
-        patch = json.loads(raw)
+        # A leading underscore is a note to the reader, not a constant.
+        patch = {k: v for k, v in json.loads(raw).items() if not k.startswith("_")}
         print()
         print("patch: %s" % json.dumps(patch))
         app.CFG.update(patch)
