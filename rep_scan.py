@@ -381,7 +381,14 @@ def scan_autocomplete(brand, location=None):
 
 
 # ---------------------------------------------------------------- locations
-def scan_locations(brand, limit=200, domain=None):
+def _market_city(location):
+    """The city out of a DataForSEO location string, lowercased.
+    'Knoxville,Tennessee,United States' -> 'knoxville'."""
+    head = str(location or "").split(",")[0].strip().lower()
+    return head if len(head) > 2 else ""
+
+
+def scan_locations(brand, limit=200, domain=None, location=None):
     """Google Business location discovery via the Business Listings database
     (instant, no scrape). Tries the `title` search field, filter fallbacks,
     and — when the client website is known — a domain match, which finds the
@@ -413,6 +420,7 @@ def scan_locations(brand, limit=200, domain=None):
          "order_by": ["rating.votes_count,desc"]},
     ]
     last_err = None
+    city = _market_city(location)
     # THE BRAND AS A PHRASE, NOT AS LOOSE WORDS. The gate used to ask whether
     # every token appeared ANYWHERE in the title, in any order, as a substring
     # -- so "city", "heating", "and", "air" all land inside "Twin City Heating
@@ -448,11 +456,23 @@ def scan_locations(brand, limit=200, domain=None):
                     "rating": rat.get("value"),
                     "reviews": rat.get("votes_count") or 0,
                 })
+            strategy = ("domain" if via_domain
+                        else ("title" if "title" in payload else "filter"))
+            # A NAME MATCH THAT IS ALSO IN THEIR TOWN. The domain match is
+            # identity and needs no help; the name fallback is a guess, and a
+            # brand made of common words still collects Green City, Queen City
+            # and River City after the phrase gate. When the order names a
+            # market, keep the listings in it. If that empties the panel the
+            # market is wrong or they trade elsewhere, so the unfiltered list
+            # stands rather than nothing -- and `strategy` says which.
+            if locs and not via_domain and city:
+                near = [l for l in locs if city in (l.get("address") or "").lower()]
+                if near:
+                    locs, strategy = near, "title+market"
             if locs:
                 return {"locations": locs,
                         "total_reviews": sum(l["reviews"] for l in locs),
-                        "strategy": "domain" if via_domain
-                                    else ("title" if "title" in payload else "filter")}
+                        "strategy": strategy}
         except Exception as e:
             last_err = str(e)
     if last_err:

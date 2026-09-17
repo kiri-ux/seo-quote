@@ -946,9 +946,6 @@ def build_rep_quote(payload):
         _strategy.append("Proactive")
 
     handoff = {
-        # Carried, not priced: the ORM rate card does not vary by industry, but
-        # the order form has the field and somebody has to fill it.
-        "industry": payload.get("industry") or [],
         "review_removals": bool(rev),
         "reviews_count": (rev or {}).get("qty") or 0,
         "price_per_review_removal": (rev or {}).get("unit") or 0,

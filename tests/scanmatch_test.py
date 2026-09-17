@@ -224,6 +224,47 @@ check("not by absolute position on the page",
 check("a forum block keeps its position on the page",
       [f["pos"] for f in sr["forums"]], [11])
 
+# ------------------------------------------------- A NAME MATCH IN THEIR TOWN
+# The domain match is identity and needs no help. The name fallback is a guess,
+# and a brand made of common words still collects Green City, Queen City and
+# River City after the phrase gate -- all of them real companies, none of them
+# in Knoxville.
+IN_AND_OUT = [
+    listing("City Heating and Air", 88, pid="theirs"),
+    listing("Green City Heating and Air Conditioning", 546, pid="g"),
+    listing("River City Heating and Air", 274, pid="r"),
+]
+IN_AND_OUT[0]["address"] = "3111 NW Park Dr, Knoxville, TN 37921"
+IN_AND_OUT[1]["address"] = "8898 Hwy 99, Seattle, WA 98103"
+IN_AND_OUT[2]["address"] = "1200 Front St, Memphis, TN 38103"
+
+_post, seen = fake(lambda p: IN_AND_OUT)
+rep_scan.init(_post)
+r = rep_scan.scan_locations("City Heating and Air",
+                            location="Knoxville,Tennessee,United States")
+check("only the listings in their market survive a name match",
+      [l["place_id"] for l in r["locations"]], ["theirs"])
+check("and the panel says the market did it", r["strategy"], "title+market")
+
+# WRONG MARKET, OR THEY TRADE ELSEWHERE: the unfiltered list stands rather
+# than nothing, and `strategy` says which.
+_post, seen = fake(lambda p: IN_AND_OUT)
+rep_scan.init(_post)
+r = rep_scan.scan_locations("City Heating and Air",
+                            location="Boise,Idaho,United States")
+check("a market that matches nothing does not empty the panel",
+      len(r["locations"]), 3)
+check("and it says so", r["strategy"], "title")
+
+# A DOMAIN MATCH IS IDENTITY, so the market does not narrow it.
+_post, seen = fake(lambda p: BY_DOMAIN if is_domain_query(p) else IN_AND_OUT)
+rep_scan.init(_post)
+r = rep_scan.scan_locations("City Heating and Air", domain="cityheatandair.com",
+                            location="Boise,Idaho,United States")
+check("the website match is not second-guessed by the market",
+      r["strategy"], "domain")
+check("and it is still their listing", len(r["locations"]), 1)
+
 # ------------------------------------------------- THE SCAN ASKS FROM THE
 # CLIENT'S MARKET
 #

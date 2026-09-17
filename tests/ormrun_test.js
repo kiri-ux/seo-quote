@@ -89,7 +89,8 @@ const QUOTE = {
   const pane = await p.evaluate(() => ({
     secondPaneHidden: document.getElementById('kwBuilder').hidden,
     gen: document.getElementById('gen').textContent.trim(),
-    runOnForm: !!document.querySelector('#form #scRun'),
+    runInTopBar: !!document.querySelector('.toppills #scRun')
+                 && !document.getElementById('scRun').hidden,
     noScanPane: !document.getElementById('paneScan'),
     brand: document.querySelector('#form [data-k="brand"]').value,
   }));
@@ -167,7 +168,8 @@ const QUOTE = {
   const quoteCall = calls.find(c => c.url === '/api/rep_quote') || { body: {} };
 
   const want = {
-    'orm.stepOneIsOnTheForm': [pane.runOnForm, true],
+    // Step 1 is the pill top right, where the SEO row's Keyword Builder sits.
+    'orm.stepOneIsThePillTopRight': [pane.runInTopBar, true],
     'orm.generateIsAQuote': [pane.gen, 'Generate Quote'],
     'orm.noSeparateScanPane': [pane.noScanPane, true],
     'orm.noKeywordBuilderButton': [pane.secondPaneHidden, true],
