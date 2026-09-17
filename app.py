@@ -1152,6 +1152,10 @@ CFG = {
     # gap-finder use, just above Google's 10/mo for thin terms. At 30 a real
     # "<service> near me" at 20/mo lost to nothing.
     "near_me_min_volume": 20,
+    # What the floor drops to when the whole vertical is thin -- Google's own
+    # reported floor for a term that is searched but barely. 0 disables the
+    # relaxation and near_me_min_volume always holds.
+    "near_me_thin_floor": 10,
     # SINGULAR OR PLURAL — see pick_service_forms. Nothing chose between them,
     # and Amare shipped "home for rent" where Brendan's list leads with "homes
     # for rent". A variant has to clearly win before the operator's phrasing is
@@ -1326,6 +1330,9 @@ def _cfg_apply(d, target):
                         ("ecom_anchor_add", int),
                         ("pin_head_terms", int),
                         ("pin_min_volume", int),
+                        ("near_me_terms", int),
+                        ("near_me_min_volume", int),
+                        ("near_me_thin_floor", int),
                         # PACING IS A GUESS UNTIL IT IS MEASURED. Google Ads
                         # LIVE allows 12 a minute and this paces at 10 for
                         # headroom, but nobody has ever tried 11 or 12 against
@@ -10121,6 +10128,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             _ranked = sorted(
                 ((clean_kw(f"{nm} near me"), nm) for nm in svc_names),
                 key=lambda fn: -int((vols or {}).get(fn[0], 0) or 0))
+            # A FLOOR SET JUST ABOVE GOOGLE'S IS A FLOOR THAT REFUSES EVERYTHING
+            # IN A SMALL MARKET. near_me_min_volume is 20, deliberately just
+            # over the 10/mo Google reports for a thin term -- which is the
+            # right cut where the vertical has real demand somewhere and the
+            # 10s are the dregs. In North Mississippi every reading IS 10, so
+            # it refused every near-me form on the list. ENT Consultants ran a
+            # build with none at all, and the count had already been raised to
+            # eight that same day for the same complaint: the lever was never
+            # the count.
+            #
+            # Same test the industry gap-finder already uses for this exact
+            # question (expand_thin_market_mult): if the BEST near-me form in
+            # this build cannot reach a multiple of the floor, the whole market
+            # is small and the floor is refusing the only terms that exist. Then
+            # it steps down to Google's own floor. A form measuring nothing is
+            # still nothing. (2026-09-17)
+            _best_nm = max([int((vols or {}).get(f, 0) or 0) for f, _ in _ranked] or [0])
+            _mult = float(CFG.get("expand_thin_market_mult", 10) or 10)
+            if _best_nm and _best_nm < _nfloor * _mult:
+                _nfloor = min(_nfloor, int(CFG.get("near_me_thin_floor", 10)))
             for f, nm in _ranked[:near_n]:
                 if f not in near_forms:
                     continue
