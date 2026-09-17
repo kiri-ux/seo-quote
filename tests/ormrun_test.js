@@ -103,7 +103,11 @@ const QUOTE = {
     prog: document.getElementById('scProg').textContent,
     cols: [...document.querySelectorAll('#paneScan .col h5')].map(h => h.childNodes[0].textContent.trim()),
     counts: [...document.querySelectorAll('#paneScan .col h5 span')].map(s => s.textContent),
-    firstTerm: (document.querySelector('#paneScan .col li span') || {}).textContent,
+    firstTerm: document.querySelector('#paneScan .col li > span').firstChild.textContent,
+    // Page one and Locations are tables now, not columns — they carry
+    // ratings, tactics and the per-location star split.
+    serpHead: (document.querySelector('#scSerp .scth') || {}).textContent,
+    locsHead: (document.querySelector('#scLocs .scth') || {}).textContent,
   }));
 
   // the scan filled the form, so the quote prices what was measured
@@ -173,12 +177,14 @@ const QUOTE = {
       '/api/rep_scan_locations,/api/rep_scan_terms,/api/rep_scan_serp,/api/rep_scan_autocomplete'],
     'scan.countsReviews': [seq.slice(4, 6).join(','),
       '/api/rep_reviews_submit,/api/rep_reviews_collect'],
-    'scan.cols': [scan.cols.join(','),
-      'Negative terms,Page one,Auto-suggest,Locations'],
-    // Every column is fed from its own key. A zero in any of these means the
+    'scan.cols': [scan.cols.join(','), 'Negative terms,Auto-suggest'],
+    // Every panel is fed from its own key. A zero in any of these means the
     // pane is reading a key the scanner does not send.
-    'scan.counts': [scan.counts.join(','), '3,3,1,3 \u00b7 by website'],
+    'scan.counts': [scan.counts.join(','), '3,1'],
     'scan.firstTerm': [scan.firstTerm, 'sage dental reviews'],
+    'scan.pageOneIsATable': [/1 of 3 client-controlled/.test(scan.serpHead || ''), true],
+    'scan.locationsSayHowTheyMatched':
+      [/3 of 3 \u00b7 by website/.test(scan.locsHead || ''), true],
     'scan.namesTheListing': [/Google lists them as/.test(scan.prog), true],
     'scan.reportsWhatItFound': [scan.prog.split(' · ').slice(1, 4).join(' · '),
       '14 flagged reviews · 3 locations · 1,030/mo brand volume'],
