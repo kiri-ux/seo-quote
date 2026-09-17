@@ -87,7 +87,7 @@ prev = json.load(open(os.path.join(
     SRCDIR, "tools", "proposals", "pre_seascape_volume.json")))
 check("the pre-change curve is on file", isinstance(prev, dict), True)
 check("and it is the curve that shipped before",
-      prev["volume_add_cap"], 450)
+      (prev["volume_add_cap"], prev["vol_add_ramp"]), (450, [40, 60]))
 check("which is not the curve that ships now",
       bench.app.CFG["volume_add_cap"] != prev["volume_add_cap"], True)
 back = subprocess.run([sys.executable, "tools/pricebench.py", "--quiet-gaps",
