@@ -895,6 +895,11 @@ CFG = {
     # miles of any city in the other. Wider than market_radius_miles on purpose:
     # 25 miles is "same market", 60 is "same trade area".
     "scope_join_radius_miles": 60,
+    # A county is placed at its seat, which is its middle. This is how far its
+    # edge reaches from there, added to the join radius at each county end of a
+    # comparison -- without it, two counties that share a border read as two
+    # separate regions and price on the more expensive anchor.
+    "scope_county_reach_miles": 40,
     # A service name below this many monthly searches (summed across the
     # client's markets) is treated as a phrase nobody types, and is replaced by a
     # higher-volume term from the operator's own list in the same topic. Set to 0
@@ -7250,6 +7255,15 @@ def suggest_geo_scope(markets, state="", national_demand=False,
     pts, unlocated = {}, []
     for m in mk:
         c = city_coords(m, state)
+        # A COUNTY HAS NO COORDINATES, so every county market landed in
+        # `unlocated` and two counties read as "could not place these on the
+        # map" -- no band at all. Its principal city is where it is, and the
+        # seats are already indexed for the keyword build. (2026-09-17)
+        if not c:
+            for seat in county_cities(m, state, limit=1):
+                c = city_coords(seat, market_state(m, state) or state)
+                if c:
+                    break
         (pts.__setitem__(m, c) if c else unlocated.append(m))
 
     states = sorted({market_state(m, state) for m in mk if market_state(m, state)})
@@ -7263,6 +7277,21 @@ def suggest_geo_scope(markets, state="", national_demand=False,
         # without coordinates, and guessing a band that sets the anchor is worse
         # than saying so.
         if len(mk) == 1:
+            # A COUNTY IS NOT A CITY. Seascape, Inc was entered as "San Diego
+            # County" -- 4,500 square miles and 3.3 million people -- and came
+            # back "Single city", which is the cheapest anchor there is. The
+            # builder's own fallback had this right (g_county reads as a
+            # region); the server overruled it, because one entered market
+            # counted as one city without ever asking what kind of place it
+            # named. The band is the pricing anchor, so this was a wrong price
+            # and not a wrong caption. (2026-09-17)
+            if county_key(mk[0], state) or _COUNTY_SUFFIX.search(
+                    str(parse_market(mk[0], state)[0] or "").strip().lower()):
+                out.update(suggested="contiguous_region", confidence="high",
+                           reason="One county entered, which is a region of "
+                                  "many cities rather than a single market.")
+                out["evidence"]["county"] = True
+                return out
             out.update(suggested="single_city", confidence="high",
                        reason="One market entered.")
         elif unlocated:
@@ -7271,12 +7300,26 @@ def suggest_geo_scope(markets, state="", national_demand=False,
                               "from them.")
         return out
 
+    # A COUNTY IS PLACED AT ITS SEAT, WHICH IS ITS MIDDLE, NOT ITS EDGE. Two
+    # counties that share a border have seats 60-100 miles apart -- San Diego to
+    # Santa Ana is 86 -- so the city-sized join radius called two touching
+    # counties "non-contiguous", which is a MORE expensive anchor than the one
+    # they earn. Each county end of a comparison gets its own reach.
+    _bonus = float(CFG.get("scope_county_reach_miles", 40))
+    _is_county = {m: bool(county_key(m, state)
+                          or _COUNTY_SUFFIX.search(
+                              str(parse_market(m, state)[0] or "").strip().lower()))
+                  for m in pts}
+    def _reach(a, b):
+        return join_r + _bonus * (int(_is_county.get(a, False))
+                                  + int(_is_county.get(b, False)))
+
     # Single-link chain at the join radius: which clusters actually touch.
     names = list(pts)
     chains = []
     for m in names:
         joined = [c for c in chains
-                  if any(miles_between(pts[m], pts[o]) <= join_r for o in c)]
+                  if any(miles_between(pts[m], pts[o]) <= _reach(m, o) for o in c)]
         if not joined:
             chains.append([m])
         else:
@@ -12150,22 +12193,26 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     #     (ticket RULE 2.d.v).
     _ai_add = (ai or {}).get("client_add") or {k: 0 for k in client}
     _ai_hard = (ai or {}).get("hard_add") or {k: 0 for k in client}
-    # AI SEARCH ON ITS OWN. The percentage model prices AI Search as a share of
-    # the client's Core SEO number, so the Core SEO figure is computed either
-    # way -- it is the BASIS. What changes when Core SEO is not being sold is
-    # what the client is charged: the AI Search leg alone, not the pair.
-    # client_list is the undiscounted figure where the two differ (card mode and
-    # a manual override carry one); in percentage mode client_add IS the list.
+    # AI SEARCH ON ITS OWN IS FULL PRICE (Kiri, 2026-09-17). The percentage is
+    # the BUNDLE discount -- what AI Search costs when it rides along with a
+    # Core SEO campaign that has already done the research, the audit and the
+    # content. Sold alone it carries all of that itself, so it prices exactly as
+    # Core SEO does: same anchor, same adder, same ladder. The percentage tiers
+    # do not apply, because there is nothing to discount against.
     _ai_only = bool(ai_search) and not core_seo
-    _ai_solo = ((ai or {}).get("client_list") or _ai_add) if _ai_only else None
+    _ai_solo = dict(client) if _ai_only else None
     handoff = {
         "package": (dict(_ai_solo) if _ai_only
                     else {k: client[k] + _ai_add.get(k, 0) for k in client}),
         "core_seo_sold": bool(core_seo),
-        "core_seo_price": dict(client),
-        "ai_search_price": {k: _ai_add.get(k, 0) for k in client},
-        "ai_search_pct": (ai or {}).get("geo_pct") or 0,
-        "ai_search_pct_effective": (ai or {}).get("geo_pct_effective") or {},
+        # Nothing is being sold as Core SEO on a solo quote; the ladder it would
+        # have cost is what the AI Search line is charged.
+        "core_seo_price": ({k: 0 for k in client} if _ai_only else dict(client)),
+        "ai_search_price": (dict(_ai_solo) if _ai_only
+                            else {k: _ai_add.get(k, 0) for k in client}),
+        "ai_search_pct": (100 if _ai_only else ((ai or {}).get("geo_pct") or 0)),
+        "ai_search_pct_effective": ({k: 100 for k in client} if _ai_only
+                                    else (ai or {}).get("geo_pct_effective") or {}),
         "margin_pct": markup_pct,
         "addon_market_price": dict(client_addon),
         "partner_addon_market_cost": dict(hard_addon),
@@ -12202,14 +12249,15 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # handoff contract.
         # ---- PARTNER COST — WHAT BILLING CHARGES THE PARTNER ---------------
         # Core + AI, per tier, the same $50 figures the Partner card shows.
-        "partner_hard_cost": ({k: _ai_hard.get(k, 0) for k in hard_cost} if _ai_only
+        "partner_hard_cost": ({k: hard_cost[k] for k in hard_cost} if _ai_only
                               else {k: hard_cost[k] + _ai_hard.get(k, 0)
                                     for k in hard_cost}),
-        # The basis, not a line the client is buying -- read it with
-        # core_seo_sold above.
+        # Billing bills the line that was sold. On a solo quote the whole job is
+        # the AI Search line, at the Core SEO cost, because it is the same job.
         "partner_core_seo_cost": ({k: 0 for k in hard_cost} if _ai_only
                                   else dict(hard_cost)),
-        "partner_ai_search_cost": {k: _ai_hard.get(k, 0) for k in hard_cost},
+        "partner_ai_search_cost": (dict(hard_cost) if _ai_only
+                                   else {k: _ai_hard.get(k, 0) for k in hard_cost}),
         # PACKAGE - PARTNER HARD COST, STATED RATHER THAN DERIVED.
         # Package x (1 - Margin %) does NOT return Partner Hard Cost and is not
         # meant to: the client figure rounds UP to $50 and each partner figure
@@ -12217,7 +12265,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # drift is margin, and it is Vici's. Sending the dollars closes the
         # books without anyone reverse-engineering the rounding:
         #     Package $  -  Partner Hard Cost  =  Margin $
-        "margin_dollars": ({k: _ai_solo[k] - _ai_hard.get(k, 0) for k in client}
+        "margin_dollars": ({k: _ai_solo[k] - hard_cost[k] for k in client}
                            if _ai_only
                            else {k: (client[k] + _ai_add.get(k, 0))
                                     - (hard_cost[k] + _ai_hard.get(k, 0))
