@@ -243,6 +243,9 @@ const CFG = {
     R.briefHeadline = brief.querySelector('summary').textContent.trim();
     R.briefCards = [...brief.querySelectorAll('.pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
+    R.briefTiles = [...brief.querySelectorAll('.qtile')].map(t =>
+      t.querySelector('small').textContent + ' ' + t.querySelector('b').textContent);
+    R.briefHasNoCost = !brief.querySelector('.qtile u');
     R.briefFolds = [...brief.querySelectorAll('.qfold > summary')]
       .map(n => n.textContent.replace(/\s+/g, ' ').trim());
     R.briefHasNoKeywordList = !brief.querySelector('.pvkw');
@@ -416,15 +419,17 @@ const CFG = {
     // the page-one median comes off the signals pass, which this tab does not run
     'run.pageoneNotGuessed': [priceCall.body.pageone_rank, null],
     // the row opens to the quote
-    // Core SEO alone needs no card -- the three tiles above ARE Core SEO. A
-    // workstream that is off, and an add-on count of zero, have no card at all.
-    // The pricing breakdown is a FOLD, not a tile -- see pricebreak_test. The
-    // headline cards are unchanged by it.
-    'details.cards': [res.briefCards.join(' | '),
-      'Strategy: Core SEO'
-      + ' | Keywords: 3 terms'
-      + ' | Measured demand: 4,690/mo · 1 answered from Florida'
-      + ' | Ranking: 1 of 3 measured terms ranking'],
+    // DETAILS IS THE THREE PRICES AND NOTHING UNDER THEM (2026-09-17). It used
+    // to repeat the open quote's four cards -- Strategy, Keywords, Measured
+    // demand, Ranking -- one screen out, which made the glance a second summary
+    // of the summary. The headline above the tiles already carries the term
+    // count, the demand and the ranking fraction.
+    'details.noCardsUnderTheTiles': [res.briefCards.join(' | '), ''],
+    'details.tiles': [res.briefTiles.join(' / '),
+      'Base $5,450 / Intermediate $6,450 / Advanced $7,750'],
+    // AND NO PARTNER FIGURE. Details is what the client is quoted; the cost
+    // sits with the working on the open quote, one screen in.
+    'details.noHardCost': [res.briefHasNoCost, true],
     'details.overviewOnly': [res.briefHeadline,
       'Quote results$5,450 / $6,450 / $7,750/mo · 3 terms · 4,690/mo · ranking for 1 of 3 termsCore SEO'],
     // NO FOLDS ON DETAILS. Pricing shipped here on 2026-09-17 on the argument
