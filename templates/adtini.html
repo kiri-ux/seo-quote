@@ -1385,7 +1385,8 @@ function plannerView(r, brief){
                : '<div class="shotwrap empty"><span>Not captured</span></div>'}
         ${((r.result || {}).serp || {}).kw
           ? `<p class="hint" style="margin:6px 0 0">“${esc(r.result.serp.kw)}”</p>` : ''}
-        <p class="hint serpmsg" data-serpmsg="${r.i}" style="margin:6px 0 0"></p>
+        <p class="hint serpmsg" data-serpmsg="${r.i}" style="margin:6px 0 0">${
+          esc(r.note && /SERP/.test(r.note) ? r.note : '')}</p>
       </div>
     </div>`;
 }
@@ -3493,15 +3494,23 @@ async function generateOrm(){
       document.querySelectorAll(`.qnote[data-row="${i}"]`)
         .forEach(el => { el.textContent = line; el.hidden = !line; });
     };
+    // WHY IT DIDN'T COME BACK, ON THE SCREEN. This swallowed the reason: a
+    // failure and a success both ended at note(''), so a capture that the
+    // service refused, or that timed out, or that errored, all looked
+    // identical to one that never ran. autoSerp RETURNS {error}, it does not
+    // throw, so the catch never saw them either. Same reporting the SEO build
+    // does. (2026-09-17)
     autoSerp(r, d, {}, note).then(async shot => {
-      if (shot && shot.img) {
-        r.result.shot = shot.img;
-        r.result.serp = {kw: shot.kw, basis: shot.basis};
-        await persist(r);
+      if (!shot || !shot.img) {
+        note('SERP not captured' + (shot && shot.error ? ` — ${shot.error}` : '') + '.');
+        return;
       }
-      note('');
+      r.result.shot = shot.img;
+      r.result.serp = {kw: shot.kw, basis: shot.basis};
+      await persist(r);
       draw();
-    }).catch(() => note(''));
+      note(`SERP captured for “${shot.kw}”.`);
+    }).catch(e => note('SERP not captured — ' + e.message));
   } catch (e) { $('saved').textContent = e.message; }
   $('gen').disabled = false;
 }

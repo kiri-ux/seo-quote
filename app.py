@@ -2757,6 +2757,20 @@ def loc_string(markets, state):
         # below it is US-only — so the country IS the location.
         if not is_domestic():
             return country_name()
+        # THE PROVIDER'S DATABASE IS TITLE CASE, AND SO IS THE STATE ABOVE.
+        # The city was passed through exactly as the planner typed it, so
+        # "knoxville, TN" queued a capture against
+        # "knoxville,Tennessee,United States" -- not a place in DataForSEO's
+        # database, which accepts the task and then fails it when it runs.
+        # /serp/screenshot answers 40401 for that exactly as it does for a task
+        # that never existed, so the capture polled a dead id for three minutes
+        # and reported "the task was not there". Only cased up when the planner
+        # typed it flat: only a MIXED-case string is left alone, because that
+        # is the shape of a provider spelling (McAllen, DeSoto). All-lower and
+        # all-upper are both the planner's typing. (2026-09-17)
+        if city and not (any(c.isupper() for c in city)
+                         and any(c.islower() for c in city)):
+            city = city.title()
         if city and st:
             return f"{city},{st},United States"
         if city:                      # city without state — still localizes
