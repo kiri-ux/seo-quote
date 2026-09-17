@@ -409,8 +409,18 @@ const CFG = {
     // the row opens to the quote
     // Core SEO alone needs no card -- the three tiles above ARE Core SEO. A
     // workstream that is off, and an add-on count of zero, have no card at all.
+    // WHAT THE PRICE IS MADE OF now sits between the strategy and the keyword
+    // count: the anchor, the adder with the basis it was measured from, the
+    // zero-ranking uplift and the volume add. Two runs of the same client an
+    // hour apart came out $3,100 and $2,950 and nothing on this screen said
+    // which row differed. This fixture's metrics carry no basis, so the adder
+    // claims none -- $550 "not measured" is a contradiction.
     'details.cards': [res.briefCards.join(' | '),
-      'Strategy: Core SEO | Keywords: 3 terms'
+      'Strategy: Core SEO'
+      + ' | Geo anchor: $5,450 · single city'
+      + ' | Competitive adder: $550'
+      + ' | Volume add: $0 · 4,690/mo'
+      + ' | Keywords: 3 terms'
       + ' | Measured demand: 4,690/mo · 1 answered from Florida'
       + ' | Ranking: 1 of 3 measured terms ranking'],
     'details.overviewOnly': [res.briefHeadline,
@@ -424,7 +434,7 @@ const CFG = {
       'Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
     'history.foldsStartClosed': [res.closed, true],
     'history.plannerView': [res.planner.slice(0, 2).join(' | '),
-      'Strategy: Core SEO | Keywords: 3 terms'],
+      'Strategy: Core SEO | Geo anchor: $5,450 · single city'],
     // The panel offers a capture, because one that failed had no way to retry.
     'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERPCapture Not captured'],
     // the settings the run was made with, snapshotted
