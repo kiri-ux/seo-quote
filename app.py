@@ -11753,6 +11753,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  pct_not_ranking=None, total_volume=None, base_override=None,
                  ecommerce=False, industry="", ai_search=False, core_seo=True,
                  national_demand=False, geo_override=None, addon_override=None,
+                 step_override=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  _formula_pass=False):
     if markup_pct is None:
@@ -11930,7 +11931,17 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         base = r50(base_pre * (1.0 + (zr_uplift + sd_uplift) / 100.0))
 
     flat = CFG.get("tier_step_flat")
-    if manual_base:
+    # A HAND-QUOTED CARD IS THREE NUMBERS AND THE OVERRIDE SET ONE. Overriding
+    # the base to reach Brendan's Seascape entry price of $6,950 forced 38%
+    # steps on top of it and landed $9,550/$12,200 against the $8,250/$9,950 he
+    # wrote -- so the one field that exists to reproduce a hand-quoted card
+    # could not reproduce one. The step is the second number and the third
+    # follows from it, because every ladder in his book is evenly spaced.
+    # Partner dollars, like every other override on this screen. (2026-09-17)
+    manual_step = step_override is not None and str(step_override) != ""
+    if manual_step:
+        step = r50(float(step_override))
+    elif manual_base:
         # A manual override is the operator setting a Brendan-style base
         # directly — his premium cards ($3,950/$5,450/$6,950: Serene, Skidmore)
         # step at 38% of base, so the override ladder should too. Overriding to
@@ -12282,11 +12293,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # calls, and only computed when something was actually overridden.
     _formula = None
     if not _formula_pass and any(x not in (None, "") for x in
-                                 (base_override, geo_override, addon_override)):
+                                 (base_override, geo_override, addon_override,
+                                  step_override)):
         try:
             _fp = stage4_price(band, adder, zero_ranking, addon_markets, markup_pct,
                                pct_not_ranking=pct_not_ranking,
                                total_volume=total_volume, base_override=None,
+                               step_override=None,
                                ecommerce=ecommerce, industry=industry,
                                ai_search=ai_search, core_seo=core_seo,
                                national_demand=national_demand,
@@ -12303,6 +12316,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             app.logger.exception("formula-price pass failed")
             _formula = None
     return {"anchor": anchor, "base": base, "base_pre_uplift": base_pre, "step": step,
+            "manual_step": manual_step,
             "handoff": handoff,
             "formula": _formula,
             "hard_true_tiers": hard_true,
@@ -15301,6 +15315,7 @@ def api_price():
                      national_demand=bool(d.get("national_demand")),
                      geo_override=d.get("geo_override"),
                      addon_override=d.get("addon_override"),
+                     step_override=d.get("step_override"),
                      goal=(d.get("goal") or ""),
                      site_rebuild=(d.get("site_rebuild") or ""))
     return jsonify({"anchor": p["anchor"], "adder": adder,
@@ -15316,6 +15331,7 @@ def api_price():
                     "industry_anchor_add": p.get("industry_anchor_add", 0),
                     "ai_search": p.get("ai_search"),
                     "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
+                    "manual_step": p.get("manual_step", False),
                     "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
                     "volume_add": p["volume_add"],
                     "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
