@@ -1503,6 +1503,7 @@ function runSettings(r){
       : (((r.result || {}).addon || {}).suggested != null
          ? `${r.result.addon.suggested} — recommended` : ''),
     overrides: [cfg.ov_core && `Core SEO ${money(cfg.ov_core)}`,
+                cfg.ov_step && `Step ${money(cfg.ov_step)}/tier`,
                 cfg.ov_ai && `AI Search ${money(cfg.ov_ai)}`,
                 cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,
                 cfg.ov_review && `Review removal ${money(cfg.ov_review)}`,
@@ -2188,6 +2189,11 @@ const CFG_SEO = [
   ['markup','Markup %','text',''], ['min_term','Minimum term (months)','number',''],
   ['addon_markets','Add-on markets — override the recommendation','number','recommended'],
   ['ov_core','Override partner Core SEO','number','formula'],
+  // THE SECOND NUMBER OF A HAND-QUOTED CARD. Overriding the base alone forced a
+  // 38% step on top of it, so Brendan's $6,950/$8,250/$9,950 came out
+  // $6,950/$9,550/$12,200 -- the field for reproducing a manual quote could not
+  // reproduce one.
+  ['ov_step','Override partner step per tier','number','formula'],
   ['ov_ai','Override partner AI Search','number','formula'],
   ['ov_addon','Override partner add-on market','number','formula'],
   ['ov_reason','Reason for the override','text','required with any override'],
@@ -3344,6 +3350,7 @@ async function generate(){
       pct_not_ranking, total_volume, industry,
       national_demand: band === 'nationwide', cfg: r.over,
       base_override: r.cfg.ov_core || '',
+      step_override: r.cfg.ov_step || '',
       // The page-one median comes off the market signals pass, which this tab
       // does not run yet. Null, not a guess -- the SEO tab sends null too.
       // Site condition, banded in CFG.site_debt_tiers. Only sent when it was
@@ -3747,7 +3754,8 @@ async function recheckRanks(i){
         || ((work.kw || {}).total_volume || 0),
       industry: (d.industry || []).join(', '),
       national_demand: band === 'nationwide', cfg: r.over || {},
-      base_override: (r.cfg || {}).ov_core || '', pageone_rank: null};
+      base_override: (r.cfg || {}).ov_core || '',
+      step_override: (r.cfg || {}).ov_step || '', pageone_rank: null};
     const req = Object.assign({}, base, {
       pct_not_ranking: pct,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
