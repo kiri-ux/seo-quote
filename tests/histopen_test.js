@@ -26,7 +26,9 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('rowMarked', (await p.$$eval(`${hist} .histrow.on`, n => n.length)) === 1);
   say('closeLabel', (await p.textContent(`${hist} .histrow .btn-open`)).trim() === 'Close');
   say('quoteInside', (await p.$$eval(`${hist} .histopen .qbody`, n => n.length)) === 1);
-  say('foldsInside', (await p.$$eval(`${hist} .histopen .qfold`, n => n.length)) === 3);
+  // Four now: Pricing joined Settings, Order form and Proposal. It explains a
+  // number that is in the tile row directly above it.
+  say('foldsInside', (await p.$$eval(`${hist} .histopen .qfold`, n => n.length)) === 4);
   say('noDuplicateHeader', await p.$$eval(`${hist} > .qres`, n => n.length) === 0);
 
   // Clicking again closes it.

@@ -32,12 +32,14 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   };
 
   const out = await p.evaluate(() => {
+    // A FOLD, NOT MORE TILES. The tile row is the headline and four more cards
+    // buried it; this is the working, read when a number is being questioned
+    // and ignored the rest of the time.
     const view = (pricing, metrics) => {
       const r = {kind: 'seo', band: 'contiguous_region', data: {strategy: ['Core SEO']},
                  kw: {all: []},
                  result: {pricing, metrics, ranks: {}, quote: {totals: {}, handoff: {}}}};
-      const v = plannerView(r, false);
-      return (v && v.html) || String(v);
+      return priceFold(r);
     };
     return {
       // The Oxford run: a real bid, no uplift.
@@ -62,6 +64,17 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
       orm: (() => {
         const r = {kind: 'orm', data: {}, kw: {},
                    result: {pricing: {}, quote: {totals: {}, handoff: {}}}};
+        return priceFold(r);
+      })(),
+      // The tile row must NOT carry them any more -- that is the whole change.
+      tiles: (() => {
+        const r = {kind: 'seo', band: 'contiguous_region', data: {strategy: ['Core SEO']},
+                   kw: {all: []},
+                   result: {pricing: {anchor: 1850, competitive_adder: 0,
+                                      zero_ranking_uplift_pct: 0, pct_not_ranking: 6.2,
+                                      volume_add: 0, total_volume: 180},
+                            metrics: {adder_basis: 'cpc', cpc_used: 2.1},
+                            ranks: {}, quote: {totals: {}, handoff: {}}}};
         const v = plannerView(r, false);
         return (v && v.html) || String(v);
       })(),
@@ -105,6 +118,14 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('an ORM quote grows no pricing rows',
       !has(out.orm, 'Geo anchor') && !has(out.orm, 'Competitive adder'),
       out.orm.slice(0, 200));
+  // It is a fold, and it is closed until someone wants it.
+  say('it renders as a collapsible fold',
+      out.oxford.includes('<details') && has(out.oxford, 'Pricing'), out.oxford.slice(0, 120));
+  say('and does not start open', !out.oxford.includes('<details open'), out.oxford.slice(0, 120));
+  // The headline tiles stay the headline.
+  say('the tile row no longer carries the breakdown',
+      !has(out.tiles, 'Geo anchor') && !has(out.tiles, 'Competitive adder'),
+      out.tiles.slice(0, 300));
   say('no page errors', errs.length === 0, errs);
 
   console.log(bad ? 'failed=' + bad : 'ok all');

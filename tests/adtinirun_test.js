@@ -241,7 +241,8 @@ const CFG = {
     R.briefHeadline = brief.querySelector('summary').textContent.trim();
     R.briefCards = [...brief.querySelectorAll('.pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
-    R.briefHasNoFolds = !brief.querySelector('.qfold');
+    R.briefFolds = [...brief.querySelectorAll('.qfold > summary')]
+      .map(n => n.textContent.replace(/\s+/g, ' ').trim());
     R.briefHasNoKeywordList = !brief.querySelector('.pvkw');
     // the run holds the whole quote
     prod.querySelector('.ptabs button[data-tab="history"]').click();
@@ -409,32 +410,31 @@ const CFG = {
     // the row opens to the quote
     // Core SEO alone needs no card -- the three tiles above ARE Core SEO. A
     // workstream that is off, and an add-on count of zero, have no card at all.
-    // WHAT THE PRICE IS MADE OF now sits between the strategy and the keyword
-    // count: the anchor, the adder with the basis it was measured from, the
-    // zero-ranking uplift and the volume add. Two runs of the same client an
-    // hour apart came out $3,100 and $2,950 and nothing on this screen said
-    // which row differed. This fixture's metrics carry no basis, so the adder
-    // claims none -- $550 "not measured" is a contradiction.
+    // The pricing breakdown is a FOLD, not a tile -- see pricebreak_test. The
+    // headline cards are unchanged by it.
     'details.cards': [res.briefCards.join(' | '),
       'Strategy: Core SEO'
-      + ' | Geo anchor: $5,450 · single city'
-      + ' | Competitive adder: $550'
-      + ' | Volume add: $0 · 4,690/mo'
       + ' | Keywords: 3 terms'
       + ' | Measured demand: 4,690/mo · 1 answered from Florida'
       + ' | Ranking: 1 of 3 measured terms ranking'],
     'details.overviewOnly': [res.briefHeadline,
       'Quote results$5,450 / $6,450 / $7,750/mo · 3 terms · 4,690/mo · ranking for 1 of 3 termsCore SEO'],
-    'details.noFoldsOnDetails': [res.briefHasNoFolds, true],
+    // ONE FOLD ON DETAILS NOW, AND ONLY ONE. The rule was that a run's settings
+    // and both payloads belong to History, and that still holds -- those three
+    // are not here. Pricing is different: it explains a number that is ON this
+    // screen, in the tile row directly above it, and asking a planner to open
+    // History to find out why the base moved $150 is the gap this closes. Kept
+    // as a fold rather than four more tiles so the headline stays the headline.
+    'details.foldsOnDetails': [res.briefFolds.join(' / '), 'Pricing'],
     'details.noKeywordListOnDetails': [res.briefHasNoKeywordList, true],
     'history.opensTheWholeQuote': [res.openedFromHistory, true],
     'history.tiles': [res.tiles.join(' / '),
       'Base $5,450 / Intermediate $6,450 / Advanced $7,750'],
-    'history.threeFolds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
-      'Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
+    'history.folds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
+      'Pricing / Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
     'history.foldsStartClosed': [res.closed, true],
     'history.plannerView': [res.planner.slice(0, 2).join(' | '),
-      'Strategy: Core SEO | Geo anchor: $5,450 · single city'],
+      'Strategy: Core SEO | Keywords: 3 terms'],
     // The panel offers a capture, because one that failed had no way to retry.
     'history.serpNamed': [res.serpLine.replace(/\s+/g, ' '), 'SERPCapture Not captured'],
     // the settings the run was made with, snapshotted
