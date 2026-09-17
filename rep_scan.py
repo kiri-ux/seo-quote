@@ -245,7 +245,14 @@ def scan_serp(brand, domain=""):
         if t == "organic":
             rat = (it.get("rating") or {})
             organic.append({
-                "pos": it.get("rank_absolute"),
+                # THE ORGANIC RANK, NOT THE ABSOLUTE ONE. rank_absolute counts
+                # every element on the page -- ads, the local pack, the AI
+                # overview, image strips -- so the first organic result came
+                # back as #6 and a top-10 pull read 6 through 14. Nobody can
+                # tell whether that is page one. app.py's own rank check
+                # already prefers rank_group; this is the same read.
+                # (2026-09-17)
+                "pos": it.get("rank_group") or it.get("rank_absolute"),
                 "title": it.get("title"),
                 "domain": _domain(it.get("domain")),
                 # THE PAGE, NOT JUST ITS HOST. A removal is quoted per page and
@@ -266,6 +273,8 @@ def scan_serp(brand, domain=""):
             for el in (it.get("items") or [])[:6]:
                 dom = _domain(el.get("domain") or el.get("source"))
                 forums.append({
+                    # A block's own position on the page: it has no organic
+                    # rank of its own, so absolute is the only reading.
                     "pos": it.get("rank_absolute"),
                     "domain": dom,
                     "title": el.get("title"),

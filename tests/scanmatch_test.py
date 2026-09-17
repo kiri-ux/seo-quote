@@ -195,6 +195,35 @@ check("and it is one term", len(out["terms"]), 1)
 check("the seven other companies are gone",
       [t["term"] for t in out["terms"]], ["city heating and air"])
 
+# ------------------------------------------------- PAGE ONE STARTS AT ONE
+# rank_absolute counts every element on the page -- ads, the local pack, the AI
+# overview, image strips -- so the first organic result came back as #6 and a
+# top-10 pull read "Page one: 6 through 14". Nobody can tell whether that is
+# page one. app.py's own rank check already prefers rank_group.
+def serp_post(path, payload, timeout=None):
+    return {"tasks": [{"result": [{"items": [
+        {"type": "organic", "rank_group": 1, "rank_absolute": 6,
+         "domain": "ripoffreport.com", "url": "https://r/1", "title": "t"},
+        {"type": "organic", "rank_group": 2, "rank_absolute": 7,
+         "domain": "yelp.com", "url": "https://y/2", "title": "t"},
+        {"type": "organic", "rank_group": 9, "rank_absolute": 14,
+         "domain": "angi.com", "url": "https://a/3", "title": "t"},
+        {"type": "discussions_and_forums", "rank_absolute": 11,
+         "items": [{"domain": "reddit.com", "url": "https://x", "title": "t"}]},
+    ]}]}]}
+
+
+rep_scan.init(serp_post)
+sr = rep_scan.scan_serp("City Heating and Air", "cityheatandair.com")
+check("page one is numbered by organic rank",
+      [o["pos"] for o in sr["organic"]], [1, 2, 9])
+check("not by absolute position on the page",
+      [o["pos"] for o in sr["organic"]] != [6, 7, 14], True)
+# A FORUM BLOCK HAS NO ORGANIC RANK OF ITS OWN, so absolute is the only
+# reading there and stays.
+check("a forum block keeps its position on the page",
+      [f["pos"] for f in sr["forums"]], [11])
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

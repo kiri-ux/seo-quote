@@ -111,14 +111,15 @@ const QUOTE = {
   }));
 
   // the scan filled the form, so the quote prices what was measured
-  const form = await p.evaluate(() => {
-    document.getElementById('gen').click();          // scan pane -> form
-    return {reviews: document.querySelector('#form [data-k="reviews"]').value,
-            locations: document.querySelector('#form [data-k="locations"]').value,
-            volume: document.querySelector('#form [data-k="volume"]').value};
-  });
+  const form = await p.evaluate(() => ({
+    reviews: document.querySelector('#form [data-k="reviews"]').value,
+    locations: document.querySelector('#form [data-k="locations"]').value,
+    volume: document.querySelector('#form [data-k="volume"]').value,
+  }));
 
-  await p.click('#gen');                              // Generate Quote
+  // ONE PRESS. Generate Quote on the scan pane used to step back to the form
+  // and stop, so the planner pressed the same button twice for one quote.
+  await p.click('#gen');
   await p.waitForSelector('.prod[data-row="2"] .qres',
                           { state: 'attached', timeout: 15000 });
   const res = await p.evaluate(() => {
@@ -217,7 +218,8 @@ const QUOTE = {
     'res.runHeadline': [/\$3,100\/mo/.test(res.headline)
       && /Close/.test(res.headline), true],
     'res.tiles': [res.tiles.join(' / '),
-      'Monthly $3,100 / Removals — max $1,000 / Total $19,600'],
+      // NO SINGLE TOTAL: a monthly and a pay-on-success maximum do not add up.
+      'Monthly $3,100 / Removals — max $1,000'],
     'res.noKeywordFold': [res.folds.some(f => /Keyword table/.test(f)), false],
     'details.overviewOnly': [res.briefHasNoFolds, true],
     'res.plannerView': [res.planner.slice(0, 3).join(' | '),
