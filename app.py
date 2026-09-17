@@ -18723,7 +18723,9 @@ def api_rep_scan_serp():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        return jsonify(rep_scan.scan_serp(brand, (d.get("domain") or "").strip()))
+        return jsonify(rep_scan.scan_serp(
+            brand, (d.get("domain") or "").strip(),
+            location=_rep_market(d)))
     except Exception as e:
         return jsonify({"error": f"SERP scan failed: {e}"}), 502
 
@@ -18737,9 +18739,27 @@ def api_rep_scan_autocomplete():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        return jsonify(rep_scan.scan_autocomplete(brand))
+        return jsonify(rep_scan.scan_autocomplete(brand, location=_rep_market(d)))
     except Exception as e:
         return jsonify({"error": f"Autocomplete scan failed: {e}"}), 502
+
+def _rep_market(d):
+    """The client's market as DataForSEO names it, or None for the US.
+
+    The Geographic Targeting Areas on the ORM form did nothing: every scan call
+    was hardcoded to location_code 2840, the whole country. So a Knoxville
+    client's page one came back with HVAC companies in Charlotte and Tucson,
+    and those pages were counted as theirs and priced for removal.
+    """
+    geo = [str(x).strip() for x in (d.get("geo_values") or []) if str(x).strip()]
+    if not geo:
+        return None
+    try:
+        loc = loc_string(geo, (d.get("state") or "").strip())
+    except Exception:
+        return None
+    return loc if loc and loc != country_name() else None
+
 
 @app.route("/api/rep_scan_locations", methods=["POST"])
 @_json_error_guard

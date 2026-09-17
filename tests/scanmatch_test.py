@@ -224,6 +224,55 @@ check("not by absolute position on the page",
 check("a forum block keeps its position on the page",
       [f["pos"] for f in sr["forums"]], [11])
 
+# ------------------------------------------------- THE SCAN ASKS FROM THE
+# CLIENT'S MARKET
+#
+# Every scan call was hardcoded to location_code 2840, the whole country, so
+# the Geographic Targeting Areas on the form did nothing -- and a Knoxville
+# client's page one came back with HVAC companies in Charlotte, Tucson and
+# Blaine, which were then counted as theirs and priced for removal.
+seen_payloads = []
+
+
+def where_post(path, payload, timeout=None):
+    seen_payloads.append((path, payload[0]))
+    return {"tasks": [{"result": [{"items": []}]}]}
+
+
+rep_scan.init(where_post)
+rep_scan.scan_serp("City Heating and Air", "cityheatandair.com",
+                   location="Knoxville,Tennessee,United States")
+check("the SERP is pulled from the client's market",
+      seen_payloads[-1][1].get("location_name"), "Knoxville,Tennessee,United States")
+check("and not from the whole country",
+      "location_code" in seen_payloads[-1][1], False)
+
+rep_scan.scan_serp("City Heating and Air", "cityheatandair.com")
+check("with no market on the order it falls back to the US",
+      seen_payloads[-1][1].get("location_code"), 2840)
+
+rep_scan.init(where_post)
+try:
+    rep_scan.scan_autocomplete("City Heating and Air",
+                               location="Knoxville,Tennessee,United States")
+except Exception:
+    pass
+check("auto-suggest asks from the same market",
+      any(p.get("location_name") == "Knoxville,Tennessee,United States"
+          for _, p in seen_payloads if "autocomplete" in _), True)
+
+# A BRAND'S OWN DEMAND IS NOT LOCAL. The term universe stays national: whoever
+# is looking for this brand is looking wherever they are, and the Search
+# Protection bases were fitted on national volume (Sage at 51,330/mo).
+seen_payloads.clear()
+rep_scan.init(where_post)
+try:
+    rep_scan.scan_terms("City Heating and Air")
+except Exception:
+    pass
+check("the term universe stays national",
+      seen_payloads[0][1].get("location_code"), 2840)
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

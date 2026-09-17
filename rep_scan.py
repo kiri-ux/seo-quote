@@ -127,6 +127,10 @@ def scan_terms(brand):
     works around) — so '{brand} lawsuit' can vanish into the parent term and
     silently undercount negative volume. The probe re-pulls those terms from
     the Labs keyword database, which returns per-term exact volume."""
+    # NATIONAL ON PURPOSE. A brand term is searched by whoever is looking for
+    # that brand, wherever they are, and the Search Protection bases were
+    # fitted on national volume (Sage at 51,330/mo). The SERP and auto-suggest
+    # are localized because a page one is local; a brand's own demand is not.
     b = brand.lower()
     payload = [{"keywords": [b], "location_code": 2840,
                 "language_code": "en", "sort_by": "search_volume"}]
@@ -229,13 +233,23 @@ def _rating_from_text(*texts):
     return None
 
 
-def scan_serp(brand, domain=""):
+def _where(location):
+    """Ask Google from the client's market when we know it, the US when we do
+    not. A reputation problem is local: scanning "City Heating and Air reviews"
+    nationally returned HVAC companies in Charlotte, Tucson and Blaine, and
+    those pages were then counted as this client's page one and priced for
+    removal. (2026-09-17)"""
+    return ({"location_name": location} if location
+            else {"location_code": 2840})
+
+
+def scan_serp(brand, domain="", location=None):
     """Top-10 for '{brand} reviews': organic results (with ratings parsed from
     snippet text when Google omits star markup), the Reddit/forums block, the
     AI Overview, related searches — owned tagging against the client domain."""
     kw = f"{brand} reviews".lower()
-    payload = [{"keyword": kw, "location_code": 2840,
-                "language_code": "en", "depth": 10}]
+    payload = [dict({"keyword": kw, "language_code": "en", "depth": 10},
+                    **_where(location))]
     data = _post("/serp/google/organic/live/advanced", payload, timeout=45)
     own = _domain(domain)
     organic, related, forums, pasf = [], [], [], []
@@ -311,7 +325,7 @@ def scan_serp(brand, domain=""):
             "owned_in_top10": owned_top10}
 
 
-def scan_autocomplete(brand):
+def scan_autocomplete(brand, location=None):
     """Auto-suggest for the brand and '{brand} reviews' — negative flags.
     Uses client=gws-wiz (the actual Google search-box client; the DFS default
     returns a thinner set). Terms that come back empty get a fallback pass:
@@ -320,8 +334,9 @@ def scan_autocomplete(brand):
     kws = [brand.lower(), f"{brand} reviews".lower()]
 
     def _pull(keywords):
-        payload = [{"keyword": k, "location_code": 2840, "language_code": "en",
-                    "client": "gws-wiz"} for k in keywords]
+        payload = [dict({"keyword": k, "language_code": "en",
+                         "client": "gws-wiz"}, **_where(location))
+                   for k in keywords]
         data = _post("/serp/google/autocomplete/live/advanced", payload,
                      timeout=30)
         res = {}
