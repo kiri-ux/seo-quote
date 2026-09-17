@@ -38,7 +38,7 @@ const SERP = {
   const say = (n, ok, extra = '') => { if (!ok) { bad++; console.log('FAIL', n, extra); } };
   const json = (route, body) =>
     route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(body)});
-  let serpCalls = 0;
+  let serpCalls = 0, serpBody = {};
 
   await p.route('**/api/rep_scan_**', route => {
     const url = new URL(route.request().url()).pathname;
@@ -53,7 +53,11 @@ const SERP = {
               {term: 'bright dental co reviews', volume: 90, 'class': 'watch'},
               {term: 'bright dental co hours', volume: 40, 'class': 'neutral'}],
       total_volume: 390, negative_volume: 260, watch_volume: 90});
-    if (url === '/api/rep_scan_serp') { serpCalls++; return json(route, SERP); }
+    if (url === '/api/rep_scan_serp') {
+      serpCalls++;
+      try { serpBody = JSON.parse(route.request().postData() || '{}'); } catch (e) {}
+      return json(route, SERP);
+    }
     if (url === '/api/rep_scan_autocomplete') return json(route, {
       'bright dental co': {suggestions: ['bright dental co sued', 'bright dental co hours'],
                            negative: ['bright dental co sued']},
@@ -86,13 +90,30 @@ const SERP = {
     back: document.getElementById('back').hidden,
   }));
   say('scanRunsFromTheForm', step1.runOnForm);
+  // AUTO-SUGGEST / RELATED WAS A CHOICE THAT DOES NOT EXIST: Search Protection
+  // is priced as one bundle that always includes it, and nothing read the flag.
+  say('noAutoSuggestToggle',
+      await p.evaluate(() => !document.querySelector('#form [data-k="autosuggest"]')));
+  // "# of Sites" reads like a thing you type; it is a count the scan flags.
+  say('theSiteCountIsCalledFlaggedSites',
+      await p.evaluate(() => [...document.querySelectorAll('#form label')]
+        .some(l => /^Flagged Sites/.test(l.textContent.trim()))));
   say('theSeparatePaneIsGone', step1.noScanPane);
   say('andSoIsItsButton', step1.noSecondPaneButton);
   say('generateIsTheOnlyOtherStep', step1.gen === 'Generate Quote', step1.gen);
   say('noBackToAPaneThatIsGone', step1.back);
 
+  say('theButtonSaysRun', (await p.textContent('#scRun')).trim() === 'Run brand scan',
+      await p.textContent('#scRun'));
   await p.click('#scRun');
   await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent), {timeout: 30000});
+  // ONE BUTTON. Results and auto-suggest had their own re-pulls, which asked
+  // the planner to work out which half of a scan they wanted.
+  say('andRerunAfterwards', (await p.textContent('#scRun')).trim() === 'Re-run scan',
+      await p.textContent('#scRun'));
+  say('noPartialRepullButtons',
+      await p.evaluate(() => !document.getElementById('scRepullSerp')
+                          && !document.getElementById('scRepullAc')));
 
   // ============================================ 1. the scan fills the form
   const form = await p.evaluate(() => ({
@@ -114,6 +135,11 @@ const SERP = {
         .every(x => form.strategy.includes(x)), form.strategy.join(','));
   say('progressNamesTheRemovablePages', /2 removable pages/.test(
       await p.textContent('#scProg')), await p.textContent('#scProg'));
+  // THE GEOGRAPHIC TARGETING AREAS DO SOMETHING NOW. Every scan call was
+  // hardcoded to the whole country, so a local client's page one came back
+  // full of companies in other states.
+  say('theScanIsToldWhichMarket',
+      (serpBody.geo_values || []).length > 0, JSON.stringify(serpBody.geo_values));
 
   // ============================================ the form carries what changes the price
   const onForm = await p.evaluate(() => ({
@@ -122,25 +148,18 @@ const SERP = {
     // these are a record, not a control: they belong on the quote
     noTermsHere: !document.querySelector('#form .col'),
     noPageOneHere: !/PAGE ONE/i.test(document.getElementById('form').textContent),
-    hasThreshold: !!document.getElementById('scTh'),
     boxes: document.querySelectorAll('#scLocs .sclx').length,
   }));
   say('negativeVolumeCalloutOnTheForm', /260\/mo on negative terms/.test(onForm.warn), onForm.warn);
   say('aiOverviewOnTheForm', /AI Overview/.test(onForm.warn), onForm.warn);
   say('locationsAreOnTheForm', /2 of 2 · by website/.test(onForm.locs), onForm.locs);
   say('withAStarSplit', /18/.test(onForm.locs) && /12/.test(onForm.locs), onForm.locs);
-  say('andAThreshold', onForm.hasThreshold);
+  // FLAGGED IS 1-2 STAR: the threshold dropdown had two settings and nobody
+  // picked the other one.
+  say('noThresholdDropdown',
+      await p.evaluate(() => !document.getElementById('scTh')));
   say('andACheckboxPerLocation', onForm.boxes === 2, String(onForm.boxes));
   say('theRecordPanelsAreNotOnTheForm', onForm.noTermsHere && onForm.noPageOneHere);
-
-  // one star only: 18 + 3
-  await p.selectOption('#scTh', '1');
-  await p.waitForTimeout(200);
-  say('thresholdChangesTheCount',
-      (await p.inputValue('#form [data-k="reviews"]')) === '21',
-      await p.inputValue('#form [data-k="reviews"]'));
-  await p.selectOption('#scTh', '12');
-  await p.waitForTimeout(200);
 
   // ============================================ excluding a location
   await p.uncheck('#scLocs .sclx[data-pid="p2"]');
@@ -158,13 +177,14 @@ const SERP = {
   say('checkingItBackRestoresTheCount',
       (await p.inputValue('#form [data-k="reviews"]')) === '32');
 
-  // ============================================ re-pull one call
+  // ============================================ a re-run is a whole scan
   const before = serpCalls;
-  await p.click('#scRepullSerp');
-  await p.waitForFunction(() => /re-pulled/.test(scProg.textContent), {timeout: 15000});
-  say('rePullHitsTheSerpOnce', serpCalls === before + 1, `${before} -> ${serpCalls}`);
-  say('andNothingElseReRan',
-      (await p.inputValue('#form [data-k="volume"]')) === '390');
+  await p.click('#scRun');
+  await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent), {timeout: 30000});
+  say('aRerunPullsPageOneAgain', serpCalls === before + 1, `${before} -> ${serpCalls}`);
+  say('andTheCountsSurvive',
+      (await p.inputValue('#form [data-k="volume"]')) === '390',
+      await p.inputValue('#form [data-k="volume"]'));
 
   // ============================================ brand / domain mismatch
   const mismatch = await p.evaluate(() => {

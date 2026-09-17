@@ -147,8 +147,6 @@
              found reads back on the quote. -->
         <div class="f wide scanbar">
           <button class="btn2 scgo" type="button" id="scRun">Run brand scan</button>
-          <button class="btn2 scsm" type="button" id="scRepullSerp" hidden>&#8635; Re-pull results</button>
-          <button class="btn2 scsm" type="button" id="scRepullAc" hidden>&#8635; Re-pull auto-suggest</button>
           <span class="hint" id="scProg"></span>
         </div>
         <div class="f wide" id="scWarn"></div>
@@ -170,7 +168,7 @@
         <div class="f"><label># of Locations <span class="i" data-tip="Drives the Brand Shield per-location add" aria-label="Drives the Brand Shield per-location add">i</span></label>
           <input type="number" data-k="locations"></div>
 
-        <div class="f"><label># of Sites <span class="i" data-tip="Pages quoted for removal" aria-label="Pages quoted for removal">i</span></label>
+        <div class="f"><label>Flagged Sites <span class="i" data-tip="Page-one results the scan routes to site removal" aria-label="Page-one results the scan routes to site removal">i</span></label>
           <input type="number" data-k="std"></div>
 
         <div class="f"><label>Search Volume <span class="i" data-tip="What the Search Protection rate is priced off" aria-label="What the Search Protection rate is priced off">i</span></label>
@@ -193,8 +191,13 @@
         <div class="f" data-geo="g_country"><label>Country</label>
           <div class="box" data-chips="countries"></div></div>
 
-        <div class="f"><label>Auto-Suggest / Related</label>
-          <div class="yn" data-k="autosuggest"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
+        <!-- AUTO-SUGGEST / RELATED WAS A CHOICE THAT DOES NOT EXIST
+             (2026-09-17, Kiri). build_rep_quote prices Search Protection as
+             one bundle, which always includes Auto-Suggest & Related Search
+             Manipulation -- the line says so in its own notes. Nothing read
+             the toggle; it only implied you could buy the bundle without it.
+             The per-tactic pricer that took the flag is still in rep_pricing
+             for a hand-built blend. -->
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
 
       </div>
@@ -470,7 +473,7 @@ const ROWS = [
     reviews:161, locations:3, std:2, volume:8000,
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:['Boca Raton, FL'], county:[], state:[], countries:[],
-    industry:[], autosuggest:1, markup:'35'}},
+    industry:[], markup:'35'}},
 ];
 
 // ---------------------------------------------------------------- rows
@@ -698,7 +701,7 @@ function adopt(got){
              reviews: +f.nReviews || 0, locations: +f.nLocations || 1,
              std: (+f.nArtStd || 0) + (+f.nArtPrem || 0), volume: +f.volume || 0,
              markup: String(Math.round(frac(parseFloat(f.clientMargin) || 0.35) * 100)),
-             industry: [], autosuggest: 1},
+             industry: []},
       scan: {terms: sc.terms || null, serp: sc.serp || null,
              locations: sc.locations || null, autocomplete: sc.autocomplete || null,
              stars: ((pay.scan || {}).negDone || []).length
@@ -878,7 +881,7 @@ function fromQuery(){
            std: '', volume: '', industry: [],
            g_city: false, g_county: false, g_state: false,
            g_country: false, city: [], county: [], state: [], countries: [],
-           autosuggest: 0, markup: '35'}
+           markup: '35'}
         : {brand: client || '', site: '', business_desc: '', focus: [], negatives: [],
            order_no: order || '', partner: '',
            g_city: true, g_county: false, g_state: false, g_country: false,
@@ -1160,7 +1163,7 @@ const SEND_ORM = [
      r => RH(r).site_article_removals === undefined ? undefined
         : (RH(r).site_article_removals ? 'Yes' : 'No')],
     ['industry', 'Industry', 'order', r => RH(r).industry || r.data.industry],
-    ['standard_sites', '# of Sites', 'order', r => ifSite(r, RH(r).standard_sites)],
+    ['standard_sites', 'Flagged Sites', 'order', r => ifSite(r, RH(r).standard_sites)],
     ['price_per_standard_site_removal', 'Price per Site Removal', 'order',
      r => ifSite(r, RH(r).price_per_standard_site_removal)],
     ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
@@ -1404,10 +1407,10 @@ const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
   ['industry', 'Industry'],
-  ['locations', '# of locations'], ['std', '# of sites'],
+  ['locations', '# of locations'], ['std', 'Flagged sites'],
   ['volume', 'Brand search volume'],
   ['geo', 'Geographic targeting'],
-  ['autosuggest', 'Auto-suggest / related'], ['markup', 'Markup %'],
+  ['markup', 'Markup %'],
   ['overrides', 'Pricing overrides'],
 ];
 const YN = v => v ? 'Yes' : 'No';
@@ -1504,7 +1507,7 @@ function runSettings(r){
     past: YN(d.past), past_details: d.past_details, spend: d.spend,
     markup: d.markup ? d.markup + '%' : '',
     reviews: d.reviews, locations: d.locations, std: d.std,
-    volume: d.volume, autosuggest: YN(d.autosuggest),
+    volume: d.volume,
     addon_markets: cfg.addon_markets
       ? `${cfg.addon_markets} — set in Config`
       : (((r.result || {}).addon || {}).suggested != null
@@ -3237,12 +3240,10 @@ function snapshotParts(r, live){
     + ((sc.negDone || []).length
         ? ` · ${c.flagged.toLocaleString()} flagged · ${c.weak.toLocaleString()} at 3★` : '')
     + `</span></div>`
-    + ((sc.negDone || []).length
-        ? `<div class="scth2">Flag threshold
-             <select id="scTh">
-               <option value="12"${(r.negTh || '12') === '12' ? ' selected' : ''}>1–2★ reviews</option>
-               <option value="1"${r.negTh === '1' ? ' selected' : ''}>1★ only</option>
-             </select></div>` : '')
+    // FLAGGED IS 1-2 STAR (2026-09-17, Kiri). The threshold was a dropdown
+    // with two settings, one of which nobody picks: a 2-star review is a
+    // negative review. scanCounts still reads r.negTh so a quote saved on the
+    // 1-star setting keeps its own count.
     + `<table><tr><th></th><th>Location</th><th class="n">Profile</th>`
     + `<th class="n">1★</th><th class="n">2★</th><th class="n">3★</th></tr>`
     + locs.map(l => {
@@ -3267,8 +3268,11 @@ function snapshotParts(r, live){
 // so they read back on the quote where the price they produced is.
 function scanDraw(r){
   const sc = r.scan;
-  $('scRepullSerp').hidden = !sc;
-  $('scRepullAc').hidden = !sc;
+  // ONE BUTTON (2026-09-17, Kiri). Results and auto-suggest had their own
+  // re-pulls because they are the cheap, fast half of the scan and page one
+  // moves between pulls. Three buttons asked the planner to work out which
+  // half of a scan they wanted; the whole thing is a few cents and a minute.
+  $('scRun').textContent = sc ? 'Re-run scan' : 'Run brand scan';
   const P = snapshotParts(r, true);
   $('scWarn').innerHTML = P.warn;
   $('scLocs').innerHTML = P.locs;
@@ -3283,8 +3287,6 @@ function scanDraw(r){
     load(formOf(r), r.data);
     scanDraw(r);
   };
-  const th = $('scTh');
-  if (th) th.onchange = () => { r.negTh = th.value; scanApply(r); };
   [...document.querySelectorAll('#scLocs .sclx')].forEach(cb => {
     cb.onchange = () => {
       r.scanOff = r.scanOff || {};
@@ -3356,10 +3358,12 @@ $('scRun').onclick = async () => {
     sc.terms = await post('/api/rep_scan_terms', {brand});
   });
   await step('3/4 — "' + brand + ' reviews" SERP…', async () => {
-    sc.serp = await post('/api/rep_scan_serp', {brand, domain});
+    sc.serp = await post('/api/rep_scan_serp',
+      {brand, domain, geo_values: geoOf(r.data), state: stateOf(r.data)});
   });
   await step('4/4 — auto-suggest…', async () => {
-    sc.autocomplete = await post('/api/rep_scan_autocomplete', {brand});
+    sc.autocomplete = await post('/api/rep_scan_autocomplete',
+      {brand, geo_values: geoOf(r.data), state: stateOf(r.data)});
   });
   // Star breakdown: the review pull is queued and collected, so it is polled.
   const pids = ((sc.locations || {}).locations || [])
@@ -3404,30 +3408,6 @@ $('scRun').onclick = async () => {
   $('scRun').disabled = false;
 };
 
-// RE-PULL ONE CALL, NOT THE WHOLE SCAN. Google's page one and its suggestions
-// both move between pulls, and re-running the scan to see a change spends the
-// keyword and review calls again.
-function scRepull(btn, path, key, label){
-  $(btn).onclick = async () => {
-    const r = ROWS[ROW];
-    const brand = scBrand(r).trim(), domain = scSite(r).trim();
-    if (!brand || !r.scan) return;
-    $(btn).disabled = true;
-    $('scProg').textContent = `Re-pulling ${label}…`;
-    try {
-      r.scan[key] = await post(path, {brand, domain});
-      scanRecommend(r);
-      load(formOf(r), r.data);
-      scanDraw(r);
-      $('scProg').textContent = `${label} re-pulled.`;
-    } catch (e) {
-      $('scProg').textContent = `${label} re-pull failed — ${e.message}`;
-    }
-    $(btn).disabled = false;
-  };
-}
-scRepull('scRepullSerp', '/api/rep_scan_serp', 'serp', 'results');
-scRepull('scRepullAc', '/api/rep_scan_autocomplete', 'autocomplete', 'auto-suggest');
 
 // ---------------------------------------------------------------- ORM quote
 async function generateOrm(){
@@ -3466,7 +3446,7 @@ async function generateOrm(){
     // brand volume the scan had measured. (2026-09-17)
     search: {volume: +d.volume || 0, bundle: strat.includes('Reactive'),
              suppression: strat.includes('Reactive'),
-             autosuggest: !!d.autosuggest, term_sets: 1,
+             term_sets: 1,
              pages: pages.slice(0, 10).map(x => ({pos: x.pos, domain: x.domain,
                                                   url: x.url || '', title: x.title || ''}))},
     shield: {locations: +d.locations || 1},
