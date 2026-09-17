@@ -423,19 +423,21 @@ const CFG = {
       + ' | Ranking: 1 of 3 measured terms ranking'],
     'details.overviewOnly': [res.briefHeadline,
       'Quote results$5,450 / $6,450 / $7,750/mo · 3 terms · 4,690/mo · ranking for 1 of 3 termsCore SEO'],
-    // ONE FOLD ON DETAILS NOW, AND ONLY ONE. The rule was that a run's settings
-    // and both payloads belong to History, and that still holds -- those three
-    // are not here. Pricing is different: it explains a number that is ON this
-    // screen, in the tile row directly above it, and asking a planner to open
-    // History to find out why the base moved $150 is the gap this closes. Kept
-    // as a fold rather than four more tiles so the headline stays the headline.
-    'details.foldsOnDetails': [res.briefFolds.join(' / '), 'Pricing'],
+    // NO FOLDS ON DETAILS. Pricing shipped here on 2026-09-17 on the argument
+    // that it explains a number in the tile row directly above it. In use that
+    // was the wrong screen: Details is the glance, and the breakdown is read
+    // when a number is being argued over, which happens with the quote open.
+    // The rule the fold was an exception to -- settings and payloads live on
+    // the open quote -- turned out to cover it too.
+    'details.foldsOnDetails': [res.briefFolds.join(' / '), ''],
     'details.noKeywordListOnDetails': [res.briefHasNoKeywordList, true],
     'history.opensTheWholeQuote': [res.openedFromHistory, true],
     'history.tiles': [res.tiles.join(' / '),
       'Base $5,450 / Intermediate $6,450 / Advanced $7,750'],
+    // Settings first: it is what the run was asked for, and Pricing is what came
+    // back out of it.
     'history.folds': [res.folds.map(f => f.replace(/\s+/g, ' ').replace(/\d+/g, 'n')).join(' / '),
-      'Pricing / Settings for this run / Order form — n of n fields / Proposal — n of n fields'],
+      'Settings for this run / Pricing / Order form — n of n fields / Proposal — n of n fields'],
     'history.foldsStartClosed': [res.closed, true],
     'history.plannerView': [res.planner.slice(0, 2).join(' | '),
       'Strategy: Core SEO | Keywords: 3 terms'],

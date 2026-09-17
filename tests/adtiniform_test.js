@@ -247,8 +247,11 @@ const BASE = "http://127.0.0.1:5203";
 
   const want = {
     'home.heading': [home.heading, 'Quotes'],
+    // THE ORDER ID IS A HANDOFF FIELD, NOT AN IDENTIFIER. It sat third, ahead of
+    // the client name, and took the width of one. Partner reads with Strategies
+    // -- both answer "who is this for" -- so it moved next to it, 2026-09-17.
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Partner|Order ID|Client|Products|Strategies|Status'],
+      'Planner|Built|Order ID|Client|Products|Strategies|Partner|Status'],
     'home.rows': [home.rows, 8],
     'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
     'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],

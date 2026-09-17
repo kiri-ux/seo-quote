@@ -200,8 +200,9 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
   const want = {
     'home.oneRowPerClient': [home.rows, 2],
     'home.sampleRowsGone': [home.noSamples, true],
-    // built, client, products -- in the columns they now sit in.
-    'home.rowFromTheStore': [[home.first[2], home.first[5], home.first[6]].join(' | '),
+    // built, client, products -- in the columns they now sit in. Partner moved
+    // right of Strategies on 2026-09-17, which shifts everything between.
+    'home.rowFromTheStore': [[home.first[2], home.first[4], home.first[5]].join(' | '),
       '2026-09-10 | Drainify | SEO2'],
     'home.quoteCountPerProduct': [home.countPerProduct.join(','), 'SEO2'],
     'home.plannerFromTheStore': [home.plannerFromStore, 'Stacy'],

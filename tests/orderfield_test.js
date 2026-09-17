@@ -80,9 +80,13 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   await p.waitForSelector('#rows tr', {timeout:15000});
   const heads = await p.$$eval('thead th', ns => ns.map(n => n.textContent.trim()));
   say('orderColumnExists', heads.includes('Order ID'), JSON.stringify(heads));
-  // Planner, Built, Partner, Order ID, Client, Products, Strategies, Status.
-  say('partnerBeforeOrder',
-      heads.indexOf('Partner') === heads.indexOf('Order ID') - 1, JSON.stringify(heads));
+  // Planner, Built, Order ID, Client, Products, Strategies, Partner, Status.
+  // Partner moved right of Strategies on 2026-09-17: the two are read together
+  // and the order number is a handoff detail, not the row's name.
+  say('partnerAfterStrategies',
+      heads.indexOf('Partner') === heads.indexOf('Strategies') + 1, JSON.stringify(heads));
+  say('orderBeforeClient',
+      heads.indexOf('Order ID') === heads.indexOf('Client') - 1, JSON.stringify(heads));
   const ords = await p.$$eval('#rows [data-f="order_no"]', ns => ns.map(n => n.value));
   say('everyRowHasTheCell', ords.length > 0, ords.length + ' cells');
   say('noInventedNumbers', ords.every(v => v === ''), JSON.stringify(ords));
