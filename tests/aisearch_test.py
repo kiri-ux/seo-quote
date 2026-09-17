@@ -12,11 +12,13 @@ form, the proposal and the list column, and /api/price was never told, so an
 adtini quote that said "Core SEO + AI Search" was priced as Core SEO and the AI
 Search leg was a label with no money behind it.
 
-AND A SOLO QUOTE HAD TO PRICE THE LEG, NOT THE PAIR. AI Search is a percentage
-of the client's own Core SEO number, so that number is computed either way --
-it is the BASIS. What changes is what is charged, and what Billing is handed:
-a partner billed for a Core SEO campaign nobody bought is a real invoice, so
-partner_hard_cost drops the leg too and margin_dollars follows it.
+AND A SOLO QUOTE HAD TO CHARGE FULL PRICE (Kiri). The percentage is the BUNDLE
+discount -- what AI Search costs when it rides along with a Core SEO campaign
+that has already done the research, the audit and the content. Sold alone it
+carries all of that itself, so it prices exactly as Core SEO does: same anchor,
+same adder, same ladder, and the tiers do not apply because there is nothing to
+discount against. Billing follows: the whole job is the AI Search line, at the
+Core SEO cost, because it is the same job.
 
 Old quotes are not touched: "Core SEO + AI Search" splits on " + " into the two
 chips it names and joins again on save.
@@ -76,26 +78,34 @@ check("both chips price the pair",
 check("and Core SEO alone is unchanged by the split",
       core["package"], price(core_seo=True)["package"])
 
-# THE WHOLE POINT. A solo quote charges the AI Search leg, not the pair.
-check("AI Search alone charges the AI Search leg",
-      solo["package"], both["ai_search_price"])
-check("and not the pair", solo["package"]["base"] == both["package"]["base"], False)
-check("nor the Core SEO figure",
-      solo["package"]["base"] == core["package"]["base"], False)
+# THE WHOLE POINT. Alone, AI Search costs what Core SEO costs.
+check("AI Search alone is priced as Core SEO",
+      solo["package"], core["package"])
+check("and not at the bundled rate",
+      solo["package"]["base"] == both["ai_search_price"]["base"], False)
+check("nor as the pair", solo["package"]["base"] == both["package"]["base"], False)
+check("the money is on the AI Search line", solo["ai_search_price"], solo["package"])
+check("at parity, not a discount", solo["ai_search_pct"], 100)
+# The discount is what bundling buys, and it only exists when bundled.
+check("the bundled leg is cheaper than the solo one",
+      both["ai_search_price"]["base"] < solo["package"]["base"], True)
+check("and the bundle rate is under parity", both["ai_search_pct"] < 100, True)
 
-# The basis is still reported, because the percentage is of something.
-check("the Core SEO basis is still carried",
-      solo["core_seo_price"], core["core_seo_price"])
+# Nothing is being sold as Core SEO.
+check("the Core SEO line is empty on a solo quote",
+      set(solo["core_seo_price"].values()), {0})
 check("and it is flagged as not sold", solo["core_seo_sold"], False)
 check("while the pair is", both["core_seo_sold"], True)
 check("and so is a Core SEO quote", core["core_seo_sold"], True)
 
 # ---------------------------------------------- what Billing is handed
-# A partner billed for a Core SEO campaign nobody bought is a real invoice.
-check("Billing is not charged for the leg nobody bought",
+# Billing bills the line that was sold, and the job is the same size either way.
+check("Billing sees the whole job on the AI Search line",
       solo["partner_hard_cost"], solo["partner_ai_search_cost"])
 check("and the Core SEO partner line is zero",
       set(solo["partner_core_seo_cost"].values()), {0})
+check("at the same cost a Core SEO campaign would have run",
+      solo["partner_hard_cost"], core["partner_core_seo_cost"])
 check("the pair still bills both legs",
       both["partner_hard_cost"]["base"],
       both["partner_core_seo_cost"]["base"] + both["partner_ai_search_cost"]["base"])

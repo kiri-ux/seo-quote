@@ -1282,15 +1282,15 @@ function plannerView(r, brief){
     // Core SEO is the whole quote when it is the only strategy -- the tiles
     // above already carry those three numbers.
     const coreOnly = strat.length === 1 && /^core seo$/i.test(strat[0]);
-    // AI Search prices as a percentage of the Core SEO figure whether or not
-    // Core SEO is being sold, so on a solo quote that figure is a basis and not
-    // a line. Naming it stops it reading as something the client is buying.
+    // AI Search sold on its own is the whole quote and prices at the Core SEO
+    // rate -- the percentage is the bundle discount, and there is no bundle. So
+    // there is no Core SEO line to show and no percentage worth printing.
     const aiOnly = h.core_seo_sold === false;
-    if (!coreOnly)
-      add(aiOnly ? 'Core SEO basis' : 'Core SEO', inTier(h.core_seo_price));
+    if (!coreOnly && !aiOnly) add('Core SEO', inTier(h.core_seo_price));
     // A workstream this quote did not buy has nothing to report.
     if (h.ai_search_pct)
-      add('AI Search', inTier(h.ai_search_price) + ` · ${pct(h.ai_search_pct)} of Core SEO`);
+      add('AI Search', inTier(h.ai_search_price)
+          + (aiOnly ? '' : ` · ${pct(h.ai_search_pct)} of Core SEO`));
     const sug = (r.result || {}).addon || {};
     if (h.addon_markets)
       add('Add-on markets', `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
