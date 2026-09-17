@@ -187,7 +187,13 @@ const QUOTE = {
     'form.volumeFilled': [form.volume, '1030'],
     'quote.campaignFromStrategy': [quoteCall.body.campaign, 'bundle'],
     'quote.reviewsCounted': [(quoteCall.body.reviews || {}).count, 14],
-    'quote.sitesCounted': [`${(quoteCall.body.articles || {}).standard}/${(quoteCall.body.articles || {}).premium}`, '2/1'],
+    // ONE SITE-REMOVAL CHANNEL (2026-09-17, Kiri). The form no longer offers a
+    // premium tier, so the quote sends the count and a premium of 0 -- the key
+    // stays so rep_pricing and the order form keep their shape.
+    'quote.sitesCounted': [`${(quoteCall.body.articles || {}).standard}/${(quoteCall.body.articles || {}).premium}`, '2/0'],
+    'quote.everyPageIsOneTier':
+      [[...new Set(((quoteCall.body.articles || {}).pages || []).map(x => x.tier))].join(','),
+       'standard'],
     'quote.volumeCarried': [(quoteCall.body.search || {}).volume, 1030],
     'quote.locationsCarried': [(quoteCall.body.shield || {}).locations, 3],
     // TWO OF THE THREE PAGE-ONE RESULTS, NOT THREE. sage-dental.com is the

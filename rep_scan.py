@@ -73,11 +73,40 @@ NEG_MODIFIERS = {
 WATCH_MODIFIERS = {"reviews", "review", "legit", "rating", "ratings",
                    "is it good", "safe"}
 
+# Words that may sit in FRONT of the brand and still leave the phrase about
+# this client: question words, articles, and the modifiers people search with.
+LEADERS = {"is", "are", "was", "the", "a", "an", "does", "do", "did", "who",
+           "what", "why", "how", "where", "when", "best", "worst", "about",
+           "for", "of", "at", "near", "reviews", "review", "rating", "ratings",
+           "complaints", "complaint", "lawsuit", "lawsuits", "scam", "scams"}
+
+
 def classify_term(term, brand):
+    """Which class of brand term is this, or None if it is not the client's.
+
+    A BRAND NAME MADE OF COMMON WORDS IS NOT A BRAND FILTER. This asked only
+    whether the brand appeared ANYWHERE in the term, so a scan of "City Heating
+    and Air" claimed holy city heating and air (590/mo), river city (390), bold
+    city (260), twin city (260), forest city (260), queen city (170) and
+    central city (110) as this client's brand universe. Their own term is
+    480/mo. The other 2,710 belong to seven other companies, and Search
+    Protection is priced off that total -- a 6.6x overcharge that nobody could
+    see, because the old snapshot only ever displayed the flagged terms and
+    every one of these classified neutral.
+
+    So the words in FRONT of the brand have to be words a searcher would put
+    there. Anything else is a different company whose name happens to contain
+    these words. What comes AFTER is left alone: "city heating and air
+    conditioning" is how Google lists this very client. (2026-09-17)
+    """
     t = term.lower()
     b = brand.lower()
-    if b not in t:
+    i = t.find(b)
+    if i < 0:
         return None                       # not a brand term
+    lead = [w for w in t[:i].split() if w]
+    if any(w not in LEADERS for w in lead):
+        return None                       # someone else's name
     rest = t.replace(b, " ")
     for m in NEG_MODIFIERS:
         if m in rest:

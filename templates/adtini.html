@@ -153,9 +153,8 @@
         <div class="f"><label># of Locations <span class="i" data-tip="Drives the Brand Shield per-location add" aria-label="Drives the Brand Shield per-location add">i</span></label>
           <input type="number" data-k="locations"></div>
 
-        <div class="f"><label># of Standard Sites</label><input type="number" data-k="std"></div>
-        <div class="f"><label># of Premium Sites <span class="i" data-tip="News and high-authority — its own rate" aria-label="News and high-authority — its own rate">i</span></label>
-          <input type="number" data-k="prem"></div>
+        <div class="f"><label># of Sites <span class="i" data-tip="Pages quoted for removal" aria-label="Pages quoted for removal">i</span></label>
+          <input type="number" data-k="std"></div>
 
         <div class="f"><label>Search Volume <span class="i" data-tip="What the Search Protection rate is priced off" aria-label="What the Search Protection rate is priced off">i</span></label>
           <input type="number" data-k="volume"></div>
@@ -478,7 +477,7 @@ const ROWS = [
   {id:'137028', kind:'orm', name:'Online Reputation Management', built:'9/16/26', data:{
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
-    reviews:161, locations:3, std:2, prem:1, volume:8000,
+    reviews:161, locations:3, std:2, volume:8000,
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:['Boca Raton, FL'], county:[], state:[], countries:[],
     country:'United States', autosuggest:1, markup:'35'}},
@@ -707,7 +706,7 @@ function adopt(got){
       data: {brand: f.brand || got.client || '', site: f.domain || '',
              strategy: STRAT_FROM(f),
              reviews: +f.nReviews || 0, locations: +f.nLocations || 1,
-             std: +f.nArtStd || 0, prem: +f.nArtPrem || 0, volume: +f.volume || 0,
+             std: (+f.nArtStd || 0) + (+f.nArtPrem || 0), volume: +f.volume || 0,
              markup: String(Math.round(frac(parseFloat(f.clientMargin) || 0.35) * 100)),
              country: 'United States', autosuggest: 1},
       scan: {terms: sc.terms || null, serp: sc.serp || null,
@@ -886,7 +885,7 @@ function fromQuery(){
       data: kind === 'orm'
         ? {brand: client || '', site: '', strategy: ['Reactive'], reviews: '', locations: 1,
            order_no: order || '', partner: '',
-           std: '', prem: '', volume: '', g_city: false, g_county: false, g_state: false,
+           std: '', volume: '', g_city: false, g_county: false, g_state: false,
            g_country: false, city: [], county: [], state: [], countries: [],
            country: 'United States', autosuggest: 0, markup: '35'}
         : {brand: client || '', site: '', business_desc: '', focus: [], negatives: [],
@@ -1158,12 +1157,9 @@ const SEND_ORM = [
     ['site_article_removals', 'Site/Article Removals', 'order',
      r => RH(r).site_article_removals === undefined ? undefined
         : (RH(r).site_article_removals ? 'Yes' : 'No')],
-    ['standard_sites', '# of Standard Sites', 'order', r => RH(r).standard_sites],
-    ['price_per_standard_site_removal', 'Price per Standard Site Removal', 'order',
+    ['standard_sites', '# of Sites', 'order', r => RH(r).standard_sites],
+    ['price_per_standard_site_removal', 'Price per Site Removal', 'order',
      r => RH(r).price_per_standard_site_removal],
-    ['premium_sites', '# of Premium Sites', 'order', r => RH(r).premium_sites],
-    ['price_per_premium_site_removal', 'Price per Premium Site Removal', 'order',
-     r => RH(r).price_per_premium_site_removal],
     ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
     ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
     ['strategy', 'Strategy', 'order', r => RH(r).strategy || r.data.strategy],
@@ -1173,10 +1169,8 @@ const SEND_ORM = [
      r => RH(r).partner_monthly_cost],
     ['partner_review_removals_total', 'Partner Total Review Removal Cost', 'order',
      r => RH(r).partner_review_removals_total],
-    ['partner_standard_sites_total', 'Partner Total Standard Site Removal Cost', 'order',
+    ['partner_standard_sites_total', 'Partner Total Site Removal Cost', 'order',
      r => RH(r).partner_standard_sites_total],
-    ['partner_premium_sites_total', 'Partner Total Premium Site Removal Cost', 'order',
-     r => RH(r).partner_premium_sites_total],
     ['margin_dollars_monthly', 'Margin $ — monthly', 'order',
      r => RH(r).margin_dollars_monthly],
   ]],
@@ -1267,10 +1261,8 @@ function plannerView(r, brief){
       ? money(rh.brand_shield_monthly) + '/mo' : 'not on this quote');
     add('Review removals', rh.reviews_count
       ? `${rh.reviews_count} × ${money(rh.price_per_review_removal)}` : 'none');
-    add('Site removals', (rh.standard_sites || rh.premium_sites)
-      ? `${rh.standard_sites || 0} standard × ${money(rh.price_per_standard_site_removal)}`
-        + ` · ${rh.premium_sites || 0} premium × ${money(rh.price_per_premium_site_removal)}`
-      : 'none');
+    add('Site removals', rh.standard_sites
+      ? `${rh.standard_sites} × ${money(rh.price_per_standard_site_removal)}` : 'none');
     add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
     add('Locations', rh.locations);
     add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
@@ -1398,8 +1390,8 @@ const RUN_SEO = [
 const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
-  ['locations', '# of locations'], ['std', '# of standard sites'],
-  ['prem', '# of premium sites'], ['volume', 'Brand search volume'],
+  ['locations', '# of locations'], ['std', '# of sites'],
+  ['volume', 'Brand search volume'],
   ['geo', 'Geographic targeting'], ['country', 'Country'],
   ['autosuggest', 'Auto-suggest / related'], ['markup', 'Markup %'],
   ['overrides', 'Pricing overrides'],
@@ -1497,7 +1489,7 @@ function runSettings(r){
     industry: d.industry, strategy: d.strategy, goals: d.goals,
     past: YN(d.past), past_details: d.past_details, spend: d.spend,
     markup: d.markup ? d.markup + '%' : '',
-    reviews: d.reviews, locations: d.locations, std: d.std, prem: d.prem,
+    reviews: d.reviews, locations: d.locations, std: d.std,
     volume: d.volume, autosuggest: YN(d.autosuggest),
     addon_markets: cfg.addon_markets
       ? `${cfg.addon_markets} — set in Config`
@@ -1509,8 +1501,7 @@ function runSettings(r){
                 cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,
                 cfg.ov_review && `Review removal ${money(cfg.ov_review)}`,
                 cfg.ov_monthly && `Monthly ${money(cfg.ov_monthly)}`,
-                cfg.ov_std && `Standard site ${money(cfg.ov_std)}`,
-                cfg.ov_prem && `Premium site ${money(cfg.ov_prem)}`,
+                cfg.ov_std && `Site removal ${money(cfg.ov_std)}`,
                 cfg.ov_reason && `— ${cfg.ov_reason}`].filter(Boolean),
   };
   const rows = (r.kind === 'orm' ? RUN_ORM : RUN_SEO).map(([k, label]) => {
@@ -2220,8 +2211,7 @@ const CFG_ORM = [
   ['markup','Markup %','text',''],
   ['ov_review','Review removal — hard $/review','number','formula'],
   ['ov_monthly','Monthly cost — hard $/mo','number','formula'],
-  ['ov_std','Standard site removal — hard $/page','number','formula'],
-  ['ov_prem','Premium site removal — hard $/page','number','formula'],
+  ['ov_std','Site removal — hard $/page','number','formula'],
   ['ov_reason','Reason for the override','text','required with any override'],
 ];
 function cfgLoad(r){
@@ -3012,23 +3002,32 @@ function scanDraw(r){
   Object.keys(sc.autocomplete || {}).forEach(k => {
     ((sc.autocomplete[k] || {}).negative || []).forEach(x => sugg.push(x));
   });
-  const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5><ul>${body}</ul></div>`;
-  $('scHead').textContent = `Reputation snapshot — ${r.data.brand || ''}`;
+  // AN EMPTY COLUMN SAYS SO. A bare panel under a heading reads as a thing
+  // still loading.
+  const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5>`
+    + (body ? `<ul>${body}</ul>` : `<p class="none">None</p>`) + `</div>`;
+  const vol = (sc.terms || {}).total_volume || 0;
+  $('scHead').textContent = `Reputation snapshot — ${r.data.brand || ''}`
+    + (vol ? ` · ${vol.toLocaleString()}/mo brand volume` : '');
   const how = {domain: 'by website', title: 'by name', filter: 'by name'}[
     (sc.locations || {}).strategy] || '';
   $('scCols').innerHTML =
+    // THE COUNT AND THE LIST ARE THE SAME THING. This headed the column with
+    // the flagged count and then listed the NEUTRAL terms when there were no
+    // flagged ones, so the panel read "NEGATIVE TERMS 0" above eight terms.
+    // The brand universe is a volume, and it is in the heading above.
     col('Negative terms', flagged.length,
-      (flagged.length ? flagged : allTerms).slice(0, 8).map(t =>
+      flagged.slice(0, 10).map(t =>
         `<li><span>${esc(t.term || t.keyword || '')}</span>`
         + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
     + col('Page one', page1.length,
-      page1.slice(0, 8).map(x => `<li><span>${esc(x.domain || x.url || '')}</span>`
+      page1.slice(0, 12).map(x => `<li><span>${esc(x.domain || x.url || '')}</span>`
         + `<span class="v">${x.owned ? 'owned' : esc(x.tactic || '')}`
         + `${x.pos == null ? '' : ' · #' + x.pos}</span></li>`).join(''))
     + col('Auto-suggest', sugg.length,
-      sugg.slice(0, 8).map(x => `<li><span>${esc(x)}</span></li>`).join(''))
+      sugg.slice(0, 10).map(x => `<li><span>${esc(x)}</span></li>`).join(''))
     + col('Locations', locs.length + (how ? ' · ' + how : ''),
-      locs.slice(0, 8).map(x => `<li><span>${esc(x.title || '')}</span>`
+      locs.slice(0, 10).map(x => `<li><span>${esc(x.title || '')}</span>`
         + `<span class="v">${x.reviews || 0} reviews</span></li>`).join(''));
 }
 
@@ -3089,7 +3088,8 @@ $('scRun').onclick = async () => {
   const d = r.data;
   if (sc.stars) { d.reviews = sc.stars.flagged; d.locations = sc.stars.locations; }
   else if ((sc.locations || {}).locations) d.locations = sc.locations.locations.length;
-  const vol = ((sc.terms || {}).terms || []).reduce((z, x) => z + (x.volume || 0), 0);
+  const vol = (sc.terms || {}).total_volume
+    || ((sc.terms || {}).terms || []).reduce((z, x) => z + (x.volume || 0), 0);
   if (vol) d.volume = vol;
   load(formOf(r), d);
   scanDraw(r);
@@ -3121,10 +3121,14 @@ async function generateOrm(){
     margin_pct: parseFloat(String(r.cfg && r.cfg.markup || d.markup || 35)) / 100,
     reviews: strat.includes('Review Removals') ? {count: +d.reviews || 0} : {count: 0},
     articles: strat.includes('Site/Article Removals')
-      ? {standard: +d.std || 0, premium: +d.prem || 0,
-         pages: pages.slice(0, (+d.std || 0) + (+d.prem || 0)).map((x, n) => ({
+      // ONE SITE REMOVAL, NOT TWO TIERS (2026-09-17, Kiri). Standard and
+      // premium were separate counts at separate rates; the product sells one
+      // removal. `premium: 0` is still sent so rep_pricing and the order
+      // form's own fields keep their shape.
+      ? {standard: +d.std || 0, premium: 0,
+         pages: pages.slice(0, +d.std || 0).map(x => ({
            pos: x.pos, domain: x.domain, url: x.url || '', title: x.title || '',
-           tier: n < (+d.prem || 0) ? 'premium' : 'standard'}))}
+           tier: 'standard'}))}
       : {standard: 0, premium: 0, pages: []},
     search: {volume: +d.volume || 0, suppression: strat.includes('Reactive'),
              autosuggest: !!d.autosuggest, term_sets: 1,

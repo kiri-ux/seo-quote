@@ -30,7 +30,8 @@ const BASE = 'http://127.0.0.1:5203';
     if (url === '/api/rep_scan_terms') return json(route, {
       terms: [{term: 'bright dental lawsuit', volume: 260, 'class': 'negative'},
               {term: 'bright dental reviews', volume: 90, 'class': 'watch'},
-              {term: 'bright dental hours', volume: 40, 'class': 'neutral'}]});
+              {term: 'bright dental hours', volume: 40, 'class': 'neutral'}],
+      total_volume: 390, negative_volume: 260, watch_volume: 90});
     if (url === '/api/rep_scan_serp') return json(route, {
       organic: [{pos: 1, domain: 'ripoffreport.com', url: 'https://r/1', tactic: 'site removal'},
                 {pos: 2, domain: 'brightdental.com', url: 'https://brightdental.com', owned: true,
@@ -120,6 +121,35 @@ const BASE = 'http://127.0.0.1:5203';
   say('autoSuggestReachesTheScreen', cols.counts[2] === '1', cols.counts[2]);
   say('locationsSayHowTheyMatched', cols.counts[3] === '1 · by website', cols.counts[3]);
   say('negativeTermLeads', cols.firstTerm === 'bright dental lawsuit', cols.firstTerm);
+
+  // THE COUNT AND THE LIST AGREE. The heading used to carry the flagged count
+  // while the list fell back to the NEUTRAL terms when nothing was flagged, so
+  // a real scan printed "NEGATIVE TERMS 0" above eight terms.
+  const agree = await p.evaluate(() => {
+    const c = document.querySelectorAll('#scCols .col')[0];
+    return {n: c.querySelector('h5 span').textContent.trim(),
+            rows: c.querySelectorAll('li').length,
+            neutralShown: /bright dental hours/.test(c.textContent)};
+  });
+  say('flaggedCountMatchesTheList', agree.n === String(agree.rows), JSON.stringify(agree));
+  say('neutralTermsAreNotListedAsNegative', !agree.neutralShown);
+
+  // the brand universe is a volume, and it is in the heading
+  say('headingCarriesBrandVolume',
+      /390\/mo brand volume/.test(await p.textContent('#scHead')),
+      await p.textContent('#scHead'));
+
+  // an empty column says so rather than sitting blank
+  const empties = await p.evaluate(() => [...document.querySelectorAll('#scCols .col')]
+    .filter(c => c.querySelector('h5 span').textContent.trim() === '0')
+    .map(c => (c.querySelector('.none') || {}).textContent));
+  say('anEmptyColumnSaysNone', empties.length === 0 || empties.every(t => t === 'None'),
+      JSON.stringify(empties));
+
+  // two across, not four: four columns in this sheet are ~190px and wrap
+  const across = await p.evaluate(() =>
+    getComputedStyle(document.getElementById('scCols')).gridTemplateColumns.split(' ').length);
+  say('twoColumnsAcross', across === 2, String(across));
 
   // the brand volume the form is filled from is the one that was measured
   say('volumeFilledFromTheTerms',

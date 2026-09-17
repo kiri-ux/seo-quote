@@ -659,9 +659,14 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
   padding:10px 12px;font-family:inherit;font-size:13px;color:var(--text);min-height:41px;
 }
 .kbrow input:focus{outline:2px solid var(--blue-lt);outline-offset:-1px}
-.cols.quad4{grid-template-columns:repeat(4,1fr)}
-@media(max-width:1000px){.cols.quad4{grid-template-columns:repeat(2,1fr)}}
+/* FOUR ACROSS DOES NOT FIT. The sheet is 1180px and the scan's side panel
+   takes 380 of it, so four columns are ~190px each and a term like "holy city
+   heating and air" wraps to three lines next to its number. Two across gives
+   each panel ~370px, which is the width the keyword builder's columns get. */
+.cols.quad4{grid-template-columns:repeat(2,1fr)}
 @media(max-width:820px){.cols.quad4{grid-template-columns:1fr}}
+.col .none{margin:0;color:var(--muted);font-size:12.5px}
+.col li > span:first-child{min-width:0;overflow-wrap:anywhere}
 
 /* the built list is editable */
 .col li{position:relative;padding-right:14px}
