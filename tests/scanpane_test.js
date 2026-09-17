@@ -268,6 +268,30 @@ const SERP = {
       await p.textContent('#scHead'));
   say('twoColumnsAcross', cols.across === 2, String(cols.across));
 
+  // ============================================ the form, and the pane's margins
+  const formShape = await p.evaluate(() => {
+    const f = document.getElementById('form');
+    const pane = document.getElementById('paneScan');
+    const cs = getComputedStyle(pane);
+    return {
+      hasIndustry: !!f.querySelector('[data-chips="industry"]'),
+      hasCountrySelect: !!f.querySelector('select[data-k="country"]'),
+      // the geo block still asks the same question, once
+      hasGeoCountry: !!f.querySelector('[data-chips="countries"]'),
+      padLeft: cs.paddingLeft, padTop: cs.paddingTop,
+    };
+  });
+  say('industryIsOnTheForm', formShape.hasIndustry);
+  // COUNTRY WAS ASKED TWICE: a select, and the Geographic Targeting Areas
+  // "Country" box. Nothing in the ORM quote read the select.
+  say('countrySelectIsGone', !formShape.hasCountrySelect);
+  say('geoCountryStillThere', formShape.hasGeoCountry);
+  // #paneScan was the one pane in the modal with no padding, so the side panel
+  // sat on the sheet's left edge.
+  say('theScanPaneHasMargins',
+      parseInt(formShape.padLeft, 10) >= 20 && parseInt(formShape.padTop, 10) >= 16,
+      formShape.padLeft + ' / ' + formShape.padTop);
+
   // ============================================ nothing spills out of the sheet
   // The sheet is overflow:hidden, so anything wider than it is simply gone --
   // which is how the ratings column and the whole star split came to be

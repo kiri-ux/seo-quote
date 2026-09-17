@@ -145,6 +145,9 @@
         <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
           <input type="text" data-k="partner"></div>
 
+        <div class="f wide"><label>Industry <span class="i" data-tip="Shows on the workflow page and the order form" aria-label="Shows on the workflow page and the order form">i</span></label>
+          <div class="box" data-chips="industry"></div></div>
+
         <div class="f wide"><label>Strategy <span class="i" data-tip="Every workstream this quote carries" aria-label="Every workstream this quote carries">i</span></label>
           <div class="box" data-chips="strategy"></div></div>
 
@@ -158,12 +161,6 @@
 
         <div class="f"><label>Search Volume <span class="i" data-tip="What the Search Protection rate is priced off" aria-label="What the Search Protection rate is priced off">i</span></label>
           <input type="number" data-k="volume"></div>
-        <div class="f"><label>Country</label>
-          <select data-k="country">
-            <option>United States</option><option>United Kingdom</option><option>Canada</option>
-            <option>Australia</option><option>Ireland</option><option>New Zealand</option>
-          </select></div>
-
         <div class="f wide">
           <div class="geohead">Geographic Targeting Areas</div>
           <div class="checks">
@@ -487,7 +484,7 @@ const ROWS = [
     reviews:161, locations:3, std:2, volume:8000,
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:['Boca Raton, FL'], county:[], state:[], countries:[],
-    country:'United States', autosuggest:1, markup:'35'}},
+    industry:[], autosuggest:1, markup:'35'}},
 ];
 
 // ---------------------------------------------------------------- rows
@@ -715,7 +712,7 @@ function adopt(got){
              reviews: +f.nReviews || 0, locations: +f.nLocations || 1,
              std: (+f.nArtStd || 0) + (+f.nArtPrem || 0), volume: +f.volume || 0,
              markup: String(Math.round(frac(parseFloat(f.clientMargin) || 0.35) * 100)),
-             country: 'United States', autosuggest: 1},
+             industry: [], autosuggest: 1},
       scan: {terms: sc.terms || null, serp: sc.serp || null,
              locations: sc.locations || null, autocomplete: sc.autocomplete || null,
              stars: ((pay.scan || {}).negDone || []).length
@@ -892,9 +889,10 @@ function fromQuery(){
       data: kind === 'orm'
         ? {brand: client || '', site: '', strategy: ['Reactive'], reviews: '', locations: 1,
            order_no: order || '', partner: '',
-           std: '', volume: '', g_city: false, g_county: false, g_state: false,
+           std: '', volume: '', industry: [],
+           g_city: false, g_county: false, g_state: false,
            g_country: false, city: [], county: [], state: [], countries: [],
-           country: 'United States', autosuggest: 0, markup: '35'}
+           autosuggest: 0, markup: '35'}
         : {brand: client || '', site: '', business_desc: '', focus: [], negatives: [],
            order_no: order || '', partner: '',
            g_city: true, g_county: false, g_state: false, g_country: false,
@@ -1164,6 +1162,7 @@ const SEND_ORM = [
     ['site_article_removals', 'Site/Article Removals', 'order',
      r => RH(r).site_article_removals === undefined ? undefined
         : (RH(r).site_article_removals ? 'Yes' : 'No')],
+    ['industry', 'Industry', 'order', r => RH(r).industry || r.data.industry],
     ['standard_sites', '# of Sites', 'order', r => RH(r).standard_sites],
     ['price_per_standard_site_removal', 'Price per Site Removal', 'order',
      r => RH(r).price_per_standard_site_removal],
@@ -1397,9 +1396,10 @@ const RUN_SEO = [
 const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
+  ['industry', 'Industry'],
   ['locations', '# of locations'], ['std', '# of sites'],
   ['volume', 'Brand search volume'],
-  ['geo', 'Geographic targeting'], ['country', 'Country'],
+  ['geo', 'Geographic targeting'],
   ['autosuggest', 'Auto-suggest / related'], ['markup', 'Markup %'],
   ['overrides', 'Pricing overrides'],
 ];
@@ -1538,7 +1538,11 @@ function resultsHtml(r, full){
     .filter(k => pkg[k] != null)
     .concat(Object.keys(pkg).filter(k => !TIER[k]));
   const tiers = r.kind === 'orm'
-    ? {'Monthly': t.monthly, 'Removals — max': t.removals_max, 'Total': t.total}
+    // NO SINGLE TOTAL. A recurring monthly and a pay-on-success maximum do not
+    // add up to a number anyone can quote, `totals.total` was never sent, and
+    // the tile printed a dash on every quote. The legacy page showed the rate
+    // and the monthly side by side and claimed no sum.
+    ? {'Monthly': t.monthly, 'Removals — max': t.removals_max}
     : ordered.reduce((z, k) => (z[TIER[k] || k] = pkg[k], z), {});
   const ord = sendList(r, 'order'), pro = sendList(r, 'prop');
   const tileRow = `<div class="qtiles">${Object.keys(tiers).map(t =>
@@ -3411,11 +3415,17 @@ async function generateOrm(){
            pos: x.pos, domain: x.domain, url: x.url || '', title: x.title || '',
            tier: 'standard'}))}
       : {standard: 0, premium: 0, pages: []},
-    search: {volume: +d.volume || 0, suppression: strat.includes('Reactive'),
+    // `bundle` IS THE KEY build_rep_quote GATES ON. This sent `suppression`,
+    // which nothing reads, so Search Protection was never priced: a Reactive
+    // quote came back "not on this quote" with a $0 monthly, however much
+    // brand volume the scan had measured. (2026-09-17)
+    search: {volume: +d.volume || 0, bundle: strat.includes('Reactive'),
+             suppression: strat.includes('Reactive'),
              autosuggest: !!d.autosuggest, term_sets: 1,
              pages: pages.slice(0, 10).map(x => ({pos: x.pos, domain: x.domain,
                                                   url: x.url || '', title: x.title || ''}))},
     shield: {locations: +d.locations || 1},
+    industry: d.industry || [],
     overrides: {},
   };
   $('gen').disabled = true;
@@ -3795,8 +3805,10 @@ $('save').onclick = async () => {
   draw();
 };
 $('gen').onclick = () => {
-  if (ROWS[ROW].kind === 'orm' && VIEW === 'scan') { show('form'); return; }
-  if (ROWS[ROW].kind === 'orm') { generateOrm(); return; }
+  // THE BUTTON SAYS GENERATE QUOTE, SO IT GENERATES. On the scan pane it used
+  // to step back to the form instead, and the planner pressed the same button
+  // twice to get one quote.
+  if (ROWS[ROW].kind === 'orm') { if (VIEW === 'scan') show('form'); generateOrm(); return; }
   if (VIEW === 'kw') {
     const r = ROWS[ROW];
     r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]

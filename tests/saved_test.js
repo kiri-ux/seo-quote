@@ -243,7 +243,10 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
       'base: $2,470 · intermediate: $3,412 · advanced: $4,355'],
     'orm.readAsOrm': [/^Online Reputation Management/.test(orm.name), true],
     'orm.tiles': [orm.tiles.join(' / '),
-      'Monthly $12,550 / Removals — max $95,250 / Total $133,000'],
+      // NO SINGLE TOTAL. A monthly and a pay-on-success maximum do not add up to
+    // a number anyone can quote; totals.total was never sent and the tile
+    // printed a dash on every quote.
+    'Monthly $12,550 / Removals — max $95,250'],
     'orm.plannerView': [orm.planner.slice(0, 3).join(' | '),
       'Reactive — Search Protection: not on this quote'
       + ' | Proactive — Brand Shield: not on this quote'

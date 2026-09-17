@@ -327,7 +327,10 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 }
 
 /* ---- keyword builder + config, inside the modal ------------------------- */
-#paneKw,#paneCfg{padding:18px 22px 6px}
+/* #paneScan was never in this list, so the brand scan was the one pane in the
+   modal with no padding: the side panel sat on the sheet's left edge and the
+   page-one and locations tables ran into both. */
+#paneKw,#paneCfg,#paneScan{padding:20px 26px 10px}
 .kbwrap{display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start}
 @media(max-width:900px){.kbwrap{grid-template-columns:1fr}}
 .kbside,.kbmain{background:var(--fill);border-radius:14px;padding:16px}

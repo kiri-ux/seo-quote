@@ -865,6 +865,17 @@ def build_rep_quote(payload):
         "monthly":   sum(l["total"] for l in lines if l["kind"] == "monthly"),
         "per_asset": sum(l["total"] for l in lines if l["kind"] == "per_asset"),
     }
+    # THE NAME THE SCREEN READS. Every removal line is pay on success, so the
+    # per-asset sum is a MAXIMUM rather than a committed spend -- which is what
+    # the tile is labelled and what the line notes already say. It was never
+    # sent under this name, so the Removals tile printed a dash on every quote
+    # and the saved record stored a one-time of 0. (2026-09-17)
+    #
+    # There is deliberately no single "total". A recurring monthly and a
+    # pay-on-success maximum do not add up to a number anyone can quote, and
+    # the legacy page never claimed one -- it showed the rate per removal and
+    # the monthly, side by side.
+    totals["removals_max"] = totals["per_asset"]
     # ---- WHAT THE IO PULLS FROM THIS QUOTE -------------------------------
     # Named the way the ORM product form names its fields, so nobody has to map
     # our line labels onto theirs. Same idea as the SEO tool's handoff block.
@@ -935,6 +946,9 @@ def build_rep_quote(payload):
         _strategy.append("Proactive")
 
     handoff = {
+        # Carried, not priced: the ORM rate card does not vary by industry, but
+        # the order form has the field and somebody has to fill it.
+        "industry": payload.get("industry") or [],
         "review_removals": bool(rev),
         "reviews_count": (rev or {}).get("qty") or 0,
         "price_per_review_removal": (rev or {}).get("unit") or 0,
