@@ -247,16 +247,15 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     // a number anyone can quote; totals.total was never sent and the tile
     // printed a dash on every quote.
     'Monthly $12,550 / Removals — max $95,250'],
+    // A WORKSTREAM THIS QUOTE DID NOT BUY GETS NO TILE. This read "not on
+    // this quote" twice on a quote that bought one thing.
     'orm.plannerView': [orm.planner.slice(0, 3).join(' | '),
-      'Reactive — Search Protection: not on this quote'
-      + ' | Proactive — Brand Shield: not on this quote'
-      + ' | Review removals: 31 × $100'],
+      'Review removals: 31 × $100 | Locations: 2 | Margin: 0% · —/mo'],
     'orm.strategyRead': [orm.strategy.join(','),
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
     'orm.countsRead': [`${orm.reviews}/${orm.locations}`, '31/2'],
     // The snapshot is two columns and two tables now: Page one and Locations
     // carry ratings, tactics and the star split, so they are not columns.
-    'orm.scanKept': [orm.scanCols.join(','), '1,0'],
     'orm.scanLocationsKept': [/2 of 2 \u00b7 by name/.test(orm.scanLocs), true],
   };
 

@@ -140,6 +140,20 @@
         <div class="f"><label>Client Website <span class="i" data-tip="Tags a result as owned" aria-label="Tags a result as owned">i</span></label>
           <input type="text" data-k="site"></div>
 
+        <!-- STEP 1 LIVES ON THE FORM. The scan was a second pane you had to
+             open, scan in, and come back from, and the only parts of it that
+             change the price -- which locations are this client's, and the
+             flag threshold -- were stranded over there. Everything the scan
+             found reads back on the quote. -->
+        <div class="f wide scanbar">
+          <button class="btn2 scgo" type="button" id="scRun">Run brand scan</button>
+          <button class="btn2 scsm" type="button" id="scRepullSerp" hidden>&#8635; Re-pull results</button>
+          <button class="btn2 scsm" type="button" id="scRepullAc" hidden>&#8635; Re-pull auto-suggest</button>
+          <span class="hint" id="scProg"></span>
+        </div>
+        <div class="f wide" id="scWarn"></div>
+        <div class="f wide" id="scLocs"></div>
+
         <div class="f"><label>Order ID <span class="i" data-tip="Names the proposal file and shows on the workflow page" aria-label="Names the proposal file and shows on the workflow page">i</span></label>
           <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
         <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
@@ -219,34 +233,6 @@
           <p class="hint" id="kbMarketNote"></p>
           <div class="cols" id="kbCols"></div>
           <div class="widen" id="kbWiden" hidden></div>
-        </section>
-      </div>
-    </div>
-
-    <!-- ---------------- brand scan, the ORM row's step 1 ---------------- -->
-    <div id="paneScan" hidden>
-      <div class="kbwrap">
-        <section class="kbside">
-          <h4>Brand</h4>
-          <p class="hint">What Google is asked about. Everything below is read off it.</p>
-          <div class="kbrow stack">
-            <div class="f"><label>Brand name</label><input type="text" id="scBrand"></div>
-            <div class="f"><label>Client website</label><input type="text" id="scDomain"></div>
-          </div>
-          <button class="btn build" type="button" id="scRun">Run brand scan</button>
-          <p class="hint" id="scProg" style="margin:12px 0 0"></p>
-        </section>
-        <section class="kbmain">
-          <div class="paneltop">
-            <h4 id="scHead">Reputation snapshot</h4>
-            <button class="btn2 scsm" type="button" id="scRepullSerp" hidden>&#8635; Re-pull results</button>
-            <button class="btn2 scsm" type="button" id="scRepullAc" hidden>&#8635; Re-pull auto-suggest</button>
-          </div>
-          <p class="hint" id="scEmpty" style="margin:0">Not scanned yet.</p>
-          <div id="scWarn"></div>
-          <div class="cols quad4" id="scCols"></div>
-          <div id="scSerp"></div>
-          <div id="scLocs"></div>
         </section>
       </div>
     </div>
@@ -1151,21 +1137,32 @@ const SEND_SEO = [
   ]],
 ];
 
+// A FIELD FOR A WORKSTREAM THIS QUOTE DID NOT BUY IS NOT A GAP. It used to
+// print "0" or "$0" and count against the "13 of 14 fields" tally, so a quote
+// that bought one thing looked half-filled. SKIP drops the row entirely and
+// does not count; `not captured` stays for a field that SHOULD be here and
+// is not.
+const SKIP = Symbol('skip');
+const ifRev = (r, v) => RH(r).reviews_count ? v : SKIP;
+const ifSite = (r, v) => RH(r).standard_sites ? v : SKIP;
+const ifSearch = (r, v) => RH(r).search_protection_monthly ? v : SKIP;
+const ifShield = (r, v) => RH(r).brand_shield_monthly ? v : SKIP;
+
 const SEND_ORM = [
   ['Product card', [
     ['review_removals', 'Review Removals', 'order',
      r => RH(r).review_removals === undefined ? undefined
         : (RH(r).review_removals ? 'Yes' : 'No')],
-    ['reviews_count', '# of Reviews', 'order', r => RH(r).reviews_count],
+    ['reviews_count', '# of Reviews', 'order', r => ifRev(r, RH(r).reviews_count)],
     ['price_per_review_removal', 'Price per Review Removal', 'order',
-     r => RH(r).price_per_review_removal],
+     r => ifRev(r, RH(r).price_per_review_removal)],
     ['site_article_removals', 'Site/Article Removals', 'order',
      r => RH(r).site_article_removals === undefined ? undefined
         : (RH(r).site_article_removals ? 'Yes' : 'No')],
     ['industry', 'Industry', 'order', r => RH(r).industry || r.data.industry],
-    ['standard_sites', '# of Sites', 'order', r => RH(r).standard_sites],
+    ['standard_sites', '# of Sites', 'order', r => ifSite(r, RH(r).standard_sites)],
     ['price_per_standard_site_removal', 'Price per Site Removal', 'order',
-     r => RH(r).price_per_standard_site_removal],
+     r => ifSite(r, RH(r).price_per_standard_site_removal)],
     ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
     ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
     ['strategy', 'Strategy', 'order', r => RH(r).strategy || r.data.strategy],
@@ -1174,18 +1171,18 @@ const SEND_ORM = [
     ['partner_monthly_cost', 'Partner Hard Cost — per month', 'order',
      r => RH(r).partner_monthly_cost],
     ['partner_review_removals_total', 'Partner Total Review Removal Cost', 'order',
-     r => RH(r).partner_review_removals_total],
+     r => ifRev(r, RH(r).partner_review_removals_total)],
     ['partner_standard_sites_total', 'Partner Total Site Removal Cost', 'order',
-     r => RH(r).partner_standard_sites_total],
+     r => ifSite(r, RH(r).partner_standard_sites_total)],
     ['margin_dollars_monthly', 'Margin $ — monthly', 'order',
      r => RH(r).margin_dollars_monthly],
   ]],
   ['Proposal payload', [
     ['partner_search_protection_monthly', 'Reactive Partner Hard Cost', 'prop',
-     r => RH(r).partner_search_protection_monthly],
+     r => ifSearch(r, RH(r).partner_search_protection_monthly)],
     ['partner_brand_shield_monthly', 'Proactive Partner Hard Cost', 'prop',
-     r => RH(r).partner_brand_shield_monthly],
-    ['search_volume', 'Search Volume', 'prop', r => RH(r).search_volume],
+     r => ifShield(r, RH(r).partner_brand_shield_monthly)],
+    ['search_volume', 'Search Volume', 'prop', r => ifSearch(r, RH(r).search_volume)],
     ['locations', '# of Locations', 'prop', r => RH(r).locations],
     ['negative_terms', 'Negative Terms Array', 'prop', r => (SC(r).terms || {}).terms],
     ['page_one', 'Top Google Results Array', 'prop', r => (SC(r).serp || {}).organic],
@@ -1193,9 +1190,10 @@ const SEND_ORM = [
      r => (SC(r).locations || {}).locations],
     ['review_breakdown', 'Review Breakdown Array', 'prop', r => SC(r).stars],
     ['serp_shots', 'SERP screenshot', 'prop', r => SC(r).shots || (r.result || {}).shot],
-    ['removal_pages', 'Pages quoted for removal', 'prop', r => RH(r).removal_pages],
+    ['removal_pages', 'Pages quoted for removal', 'prop',
+     r => ifSite(r, RH(r).removal_pages)],
     ['suppression_pages', 'Pages quoted for suppression', 'prop',
-     r => RH(r).suppression_pages],
+     r => ifSearch(r, RH(r).suppression_pages)],
   ]],
 ];
 
@@ -1234,8 +1232,11 @@ function sendList(r, want){
     const body = rows.map(([k, label, dest, get, manual]) => {
       const [toOrd, toPr] = DEST[dest];
       if (!(want === 'order' ? toOrd : toPr)) return '';
+      let raw;
+      try { raw = get(r); } catch (e) { raw = null; }
+      if (raw === SKIP) return '';        // not on this quote, so not a gap
       let v = null;
-      try { v = sendValue(get(r), k); } catch (e) { v = null; }
+      try { v = sendValue(raw, k); } catch (e) { v = null; }
       if (!manual) { n++; if (v) have++; }
       const gap = !v && !manual;
       return `<tr class="${gap ? 'gap' : ''}">
@@ -1261,15 +1262,21 @@ function plannerView(r, brief){
   const rows = [];
   const add = (k, v) => { if (v) rows.push([k, v]); };
   if (r.kind === 'orm') {
-    add('Reactive — Search Protection', rh.search_protection_monthly
-      ? money(rh.search_protection_monthly) + '/mo' : 'not on this quote');
-    add('Proactive — Brand Shield', rh.brand_shield_monthly
-      ? money(rh.brand_shield_monthly) + '/mo' : 'not on this quote');
-    add('Review removals', rh.reviews_count
-      ? `${rh.reviews_count} × ${money(rh.price_per_review_removal)}` : 'none');
-    add('Site removals', rh.standard_sites
-      ? `${rh.standard_sites} × ${money(rh.price_per_standard_site_removal)}` : 'none');
-    add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
+    // A WORKSTREAM THIS QUOTE DID NOT BUY GETS NO TILE. These read "not on this
+    // quote" and "none", which is four tiles of nothing on a quote that bought
+    // one thing. `add` already drops a falsy value; they were passing a string.
+    if (rh.search_protection_monthly)
+      add('Reactive — Search Protection', money(rh.search_protection_monthly) + '/mo');
+    if (rh.brand_shield_monthly)
+      add('Proactive — Brand Shield', money(rh.brand_shield_monthly) + '/mo');
+    if (rh.reviews_count)
+      add('Review removals', `${rh.reviews_count} × ${money(rh.price_per_review_removal)}`);
+    if (rh.standard_sites)
+      add('Site removals', `${rh.standard_sites} × ${money(rh.price_per_standard_site_removal)}`);
+    // Brand volume is what Search Protection is priced off, so it belongs to
+    // that line rather than standing on its own.
+    if (rh.search_protection_monthly)
+      add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
     add('Locations', rh.locations);
     add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
   } else {
@@ -1573,6 +1580,8 @@ function resultsHtml(r, full){
       </div>
       ${tileRow}
       ${plannerView(r)}
+
+      ${r.kind === 'orm' ? snapshotFold(r) : ''}
 
       <details class="qfold"><summary>Settings for this run</summary>
         ${runSettings(r)}</details>
@@ -1965,7 +1974,7 @@ function open(i, view){
   show(view || 'form');
 }
 const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder',
-                    scan:'Brand Scan', cfg:'Pricing Config'};
+                    cfg:'Pricing Config'};
 function show(view){
   // SEED TERMS ARE PRODUCT/VERTICAL FOCUS, WHICHEVER PANE THEY WERE TYPED ON.
   // They were copied from the form once, when the modal opened, so a focus
@@ -1983,32 +1992,16 @@ function show(view){
       if (sh) sh.innerHTML = seedLegend(r);
     }
   }
-  // BRAND AND SITE ARE THE SAME TWO FIELDS ON BOTH PANES. They were copied
-  // from the form once, when the modal opened, so a brand typed on the form
-  // reached the scan only after a save -- the scan opened blank on a row that
-  // had the brand on screen, and the first thing it asks for is the thing the
-  // planner just typed. Carried on every switch, in whichever direction the
-  // switch goes, so a correction made on either pane is on both.
-  if (ROW != null && (ROWS[ROW] || {}).kind === 'orm' && view !== VIEW
-      && (view === 'scan' || VIEW === 'scan')) {
-    const f = formOf(ROWS[ROW]);
-    [['brand', 'scBrand'], ['site', 'scDomain']].forEach(([k, id]) => {
-      const fld = f.querySelector('[data-k="' + k + '"]');
-      if (!fld) return;
-      if (view === 'scan') $(id).value = fld.value.trim();
-      // An empty scan box does not wipe a filled form field.
-      else if ($(id).value.trim()) fld.value = $(id).value.trim();
-    });
-  }
   VIEW = view;
   document.querySelector('.sheet .top h2').textContent = PANE_TITLE[view] || PANE_TITLE.form;
   $('paneForm').hidden = view !== 'form';
   $('paneKw').hidden   = view !== 'kw';
-  $('paneScan').hidden = view !== 'scan';
   $('paneCfg').hidden  = view !== 'cfg';
-  $('kwBuilder').classList.toggle('pressed', view === 'kw' || view === 'scan');
+  $('kwBuilder').classList.toggle('pressed', view === 'kw');
+  // An ORM row has no second pane: the scan is on the form.
   const orm = ROW != null && ROWS[ROW].kind === 'orm';
-  $('kwBuilder').innerHTML = orm ? '&#9906; Brand Scan' : '&#9998; Keyword Builder';
+  $('kwBuilder').hidden = orm;
+  $('kwBuilder').innerHTML = '&#9998; Keyword Builder';
   // A QUOTE THAT EXISTS IS REGENERATED, NOT GENERATED. The button read the same
   // before and after a run, so there was nothing to say the next press replaces
   // what is on screen.
@@ -2021,7 +2014,7 @@ function show(view){
   // A WAY OUT THAT IS NOT "APPLY". The builder and the brand scan are side
   // panes of the form, and the only button on them committed the work -- so
   // looking at a list you did not want meant closing the whole modal.
-  $('back').hidden = !(view === 'kw' || view === 'scan' || view === 'cfg');
+  $('back').hidden = !(view === 'kw' || view === 'cfg');
 }
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
@@ -2987,11 +2980,11 @@ $('kbCols').addEventListener('keydown', e => {
 // RUN BRAND SCAN, THEN GENERATE QUOTE. The scan is what the Reputation
 // Snapshot slide is made of and what the counts on the order form are read
 // from; the quote is the pricing pass over those counts.
-function scanLoad(r){
-  $('scBrand').value = r.data.brand || '';
-  $('scDomain').value = r.data.site || '';
-  scanDraw(r);
-}
+// Brand and website are the form's own fields now, so there is nothing to
+// copy: the scan reads them where the planner typed them.
+function scanLoad(r){ scanDraw(r); }
+const scBrand = r => (formOf(r).querySelector('[data-k="brand"]') || {}).value || '';
+const scSite = r => (formOf(r).querySelector('[data-k="site"]') || {}).value || '';
 // ---------------------------------------------------------------------------
 // THE SNAPSHOT. Ported back from the legacy Reputation page (2026-09-17, Kiri).
 // The rebuild kept four counts and dropped everything the counts were read
@@ -3071,6 +3064,22 @@ function namesClient(phrase, brand, domain){
   return keys.some(k => ph.indexOf(k) >= 0);
 }
 const onBrand = (l, b, d) => (l || []).filter(x => namesClient(x, b, d));
+// Mirror of LEADERS/classify_term in rep_scan.py. Google autocompletes the
+// WORDS, not the business, so a brand made of common ones comes back with
+// other companies' suggestions. Only leader words may sit in front of it.
+const LEADERS = new Set(['is','are','was','the','a','an','does','do','did','who',
+  'what','why','how','where','when','best','worst','about','for','of','at','near',
+  'reviews','review','rating','ratings','complaints','complaint','lawsuit',
+  'lawsuits','scam','scams']);
+function leadsWithBrand(list, brand){
+  const b = String(brand || '').toLowerCase();
+  if (b.length <= 3) return list || [];
+  return (list || []).filter(x => {
+    const t = String(x).toLowerCase(), i = t.indexOf(b);
+    if (i < 0) return false;
+    return t.slice(0, i).split(/\s+/).filter(Boolean).every(w => LEADERS.has(w));
+  });
+}
 const offBrand = (l, b, d) => (l || []).filter(x => !namesClient(x, b, d));
 // The modifier is the part that matters, so it is the part in bold.
 function boldMod(text, brand){
@@ -3109,16 +3118,13 @@ function scanApply(r){
   scanDraw(r);
 }
 
-function scanDraw(r){
+// ONE SNAPSHOT, TWO SCREENS. The scan pane draws it live, with the location
+// checkboxes and the flag threshold wired up; the quote page draws the same
+// thing as a record of what the price was built on, with the controls off.
+// `live` is what tells them apart.
+function snapshotParts(r, live){
   const sc = r.scan;
-  $('scEmpty').hidden = !!sc;
-  $('scRepullSerp').hidden = !sc;
-  $('scRepullAc').hidden = !sc;
-  if (!sc) {
-    ['scWarn', 'scCols', 'scSerp', 'scLocs'].forEach(id => { $(id).innerHTML = ''; });
-    $('scHead').textContent = 'Reputation snapshot';
-    return;
-  }
+  if (!sc) return {warn: '', cols: '', serp: '', locs: '', head: 'Reputation snapshot'};
   const brand = r.data.brand || '', domain = r.data.site || '';
   // THE KEYS THE SCANNER ACTUALLY RETURNS: scan_terms sends `terms`, scan_serp
   // sends `organic` and `forums`.
@@ -3134,7 +3140,7 @@ function scanDraw(r){
   const relNeg = onBrand([...(S.negative_related || []), ...(S.negative_pasf || [])],
                          brand, domain);
   const vol = T.total_volume || 0;
-  $('scHead').textContent = `Reputation snapshot — ${brand}`
+  const head = `Reputation snapshot — ${brand}`
     + (vol ? ` · ${vol.toLocaleString()}/mo brand volume` : '');
 
   // ---------------------------------------------------------------- warnings
@@ -3146,7 +3152,8 @@ function scanDraw(r){
                    + `${bd.dist === 1 ? '' : 's'} apart.`
                  : 'The client name is not in the website.')
       + ` <b>${esc(brand)}</b> · <b>${esc(domain)}</b>`
-      + ` <a href="#" id="scUseDomain">Use the name from the website</a></div>`;
+      + (live ? ` <a href="#" id="scUseDomain">Use the name from the website</a>` : '')
+      + `</div>`;
   }
   if (T.negative_volume) {
     w += `<div class="scw bad">${T.negative_volume.toLocaleString()}/mo on negative terms`
@@ -3169,43 +3176,43 @@ function scanDraw(r){
        + ` — they name a different company: `
        + offb.map(x => '“' + esc(x) + '”').join(' · ') + `</div>`;
   }
-  $('scWarn').innerHTML = w;
-  const ud = $('scUseDomain');
-  if (ud) ud.onclick = e => {
-    e.preventDefault();
-    const stem = domainStem(domain);
-    if (!stem) return;
-    const name = stem.charAt(0).toUpperCase() + stem.slice(1);
-    $('scBrand').value = name;
-    r.data.brand = name;
-    load(formOf(r), r.data);
-    scanDraw(r);
-  };
-
   // ------------------------------------------------------------- two columns
   const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5>`
     + (body ? `<ul>${body}</ul>` : `<p class="none">None</p>`) + `</div>`;
   const acRows = [];
+  let acN = 0;
   Object.keys(sc.autocomplete || {}).forEach(k => {
     const a = sc.autocomplete[k] || {};
-    (a.suggestions || []).slice(0, 8).forEach(x => acRows.push(
-      `<li class="ac${(a.negative || []).indexOf(x) >= 0 ? ' neg' : ''}">`
-      + `<span class="mag">&#128269;</span><span>${boldMod(x, brand)}</span></li>`));
+    // SAME GATE THE TERMS GET. Google autocompletes the words, not the
+    // business, so "city heating and air" came back with holy city, bold city,
+    // river city, rose city and peak city -- five other companies' suggestions
+    // presented as this client's exposure. What sits in front of the brand has
+    // to be a word a searcher would put there.
+    leadsWithBrand(a.suggestions || [], brand).slice(0, 10).forEach(x => {
+      acN++;
+      acRows.push(`<li class="ac${(a.negative || []).indexOf(x) >= 0 ? ' neg' : ''}">`
+        + `<span class="mag">&#128269;</span><span>${boldMod(x, brand)}</span></li>`);
+    });
   });
-  relNeg.forEach(x => acRows.push(
-    `<li class="ac neg"><span class="mag">&#128269;</span>`
-    + `<span>${boldMod(x, brand)}</span><span class="v">related</span></li>`));
-  $('scCols').innerHTML =
+  // FROM THE RELATED-SEARCHES BLOCK, NOT THE SUGGEST DROPDOWN. The tag used to
+  // read "related", which does not say related to what.
+  leadsWithBrand(relNeg, brand).forEach(x => {
+    acN++;
+    acRows.push(`<li class="ac neg"><span class="mag">&#128269;</span>`
+      + `<span>${boldMod(x, brand)}</span>`
+      + `<span class="v">related search</span></li>`);
+  });
+  const cols =
     col('Negative terms', flagged.length,
       flagged.slice(0, 10).map(t =>
         `<li><span>${esc(t.term || t.keyword || '')}`
         + `<i class="tg ${t['class'] === 'negative' ? 'bad' : ''}">${esc(t['class'] || '')}</i></span>`
         + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
-    + col('Auto-suggest', sugg.length + relNeg.length, acRows.join(''));
+    + col('Auto-suggest &amp; related', acN, acRows.join(''));
 
   // ------------------------------------------------------------- page one
   const rated = x => x.rating ? `${x.rating}★${x.votes ? ' (' + x.votes.toLocaleString() + ')' : ''}` : '';
-  $('scSerp').innerHTML = !page1.length ? '' :
+  const serp = !page1.length ? '' :
     `<div class="sctbl"><div class="scth">Page one`
     + `<span>${S.owned_in_top10 || 0} of ${organic.length} client-controlled</span></div>`
     + `<table><tr><th>#</th><th>Result</th><th class="n">Rating</th></tr>`
@@ -3224,7 +3231,7 @@ function scanDraw(r){
   const how = {domain: 'by website', title: 'by name', filter: 'by name'}[
     (sc.locations || {}).strategy] || '';
   const c = scanCounts(r);
-  $('scLocs').innerHTML = !locs.length ? '' :
+  const locsHtml = !locs.length ? '' :
     `<div class="sctbl"><div class="scth">Locations`
     + `<span>${c.locations} of ${locs.length}${how ? ' · ' + how : ''}`
     + ((sc.negDone || []).length
@@ -3250,6 +3257,32 @@ function scanDraw(r){
           + `<td class="n">${n.weak_3 == null ? '—' : n.weak_3}</td></tr>`;
       }).join('')
     + `</table></div>`;
+  return {warn: w, cols, serp, locs: locsHtml, head};
+}
+
+// The scan pane's copy: same snapshot, controls live.
+// ON THE FORM: ONLY WHAT CHANGES THE PRICE. The name-mismatch warning and the
+// locations table -- which listings are this client's, and the flag threshold.
+// Negative terms, auto-suggest and page one are a record of what was found,
+// so they read back on the quote where the price they produced is.
+function scanDraw(r){
+  const sc = r.scan;
+  $('scRepullSerp').hidden = !sc;
+  $('scRepullAc').hidden = !sc;
+  const P = snapshotParts(r, true);
+  $('scWarn').innerHTML = P.warn;
+  $('scLocs').innerHTML = P.locs;
+  if (!sc) return;
+  const ud = $('scUseDomain');
+  if (ud) ud.onclick = e => {
+    e.preventDefault();
+    const stem = domainStem(scSite(r));
+    if (!stem) return;
+    const name = stem.charAt(0).toUpperCase() + stem.slice(1);
+    r.data.brand = name;
+    load(formOf(r), r.data);
+    scanDraw(r);
+  };
   const th = $('scTh');
   if (th) th.onchange = () => { r.negTh = th.value; scanApply(r); };
   [...document.querySelectorAll('#scLocs .sclx')].forEach(cb => {
@@ -3259,6 +3292,18 @@ function scanDraw(r){
       scanApply(r);
     };
   });
+}
+
+// THE QUOTE PAGE'S COPY. What the price was built on, as a record: same
+// panels, no controls, because changing a count here would not reprice
+// anything that has already been quoted.
+function snapshotFold(r){
+  if (!r.scan) return '';
+  const P = snapshotParts(r, false);
+  if (!(P.warn || P.cols || P.serp || P.locs)) return '';
+  return `<details class="qfold"><summary>${esc(P.head)}</summary>
+    <div class="scfold">${P.warn}${P.cols ? `<div class="cols quad4">${P.cols}</div>` : ''}`
+    + `${P.serp}${P.locs}</div></details>`;
 }
 
 // WHAT THE SCAN DECIDED, WRITTEN ONTO THE FORM. The legacy page turned each
@@ -3287,7 +3332,7 @@ function scanRecommend(r){
 $('scRun').onclick = async () => {
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
-  const brand = $('scBrand').value.trim(), domain = $('scDomain').value.trim();
+  const brand = scBrand(r).trim(), domain = scSite(r).trim();
   if (!brand) { $('scProg').textContent = 'Brand name first.'; return; }
   r.data.brand = brand; r.data.site = domain;
   const sc = r.scan = {};
@@ -3365,7 +3410,7 @@ $('scRun').onclick = async () => {
 function scRepull(btn, path, key, label){
   $(btn).onclick = async () => {
     const r = ROWS[ROW];
-    const brand = $('scBrand').value.trim(), domain = $('scDomain').value.trim();
+    const brand = scBrand(r).trim(), domain = scSite(r).trim();
     if (!brand || !r.scan) return;
     $(btn).disabled = true;
     $('scProg').textContent = `Re-pulling ${label}…`;
@@ -3460,14 +3505,27 @@ async function generateOrm(){
 // one. The term is recommended off the measured table, so the exhibit is a page
 // one they are NOT on.
 async function autoSerp(r, d, ranks, say){
-  const head = [...(r.kw.ultra || []).map(x => ({kw: x.kw, comp: 'Ultra'})),
-                ...(r.kw.competitive || []).map(x => ({kw: x.kw, comp: 'Competitive'}))];
-  if (!head.length) return null;
-  let kw = head[0].kw, basis = '';
-  try {
-    const rr = await post('/api/serp_recommend', {head, ranks, geo_values: geoOf(d)});
-    if (rr.recommended) { kw = rr.recommended; basis = rr.basis || ''; }
-  } catch (e) { /* the first head term is a reasonable exhibit */ }
+  let kw = '', basis = '';
+  if (r.kind === 'orm') {
+    // AN ORM ROW HAS NO KEYWORD BUILD. This read r.kw.ultra on every row, so
+    // pressing Capture on a reputation quote threw "Cannot read properties of
+    // null (reading 'ultra')" and the proposal shipped without its exhibit.
+    // The exhibit for a reputation proposal is the page the scan already ran:
+    // what someone sees when they search the brand's reviews. (2026-09-17)
+    kw = ((r.scan || {}).serp || {}).query
+      || ((d.brand || '') + ' reviews').trim().toLowerCase();
+    if (!kw || kw === 'reviews') return {error: 'no brand name to search'};
+    basis = 'the query the brand scan ran';
+  } else {
+    const head = [...((r.kw || {}).ultra || []).map(x => ({kw: x.kw, comp: 'Ultra'})),
+                  ...((r.kw || {}).competitive || []).map(x => ({kw: x.kw, comp: 'Competitive'}))];
+    if (!head.length) return null;
+    kw = head[0].kw;
+    try {
+      const rr = await post('/api/serp_recommend', {head, ranks, geo_values: geoOf(d)});
+      if (rr.recommended) { kw = rr.recommended; basis = rr.basis || ''; }
+    } catch (e) { /* the first head term is a reasonable exhibit */ }
+  }
   // WHY IT DIDN'T COME BACK. "No capture came back" covers a queue that refused
   // the task, a task that expired and one that is simply still rendering --
   // three different things to do next, reported as one.
@@ -3805,10 +3863,7 @@ $('save').onclick = async () => {
   draw();
 };
 $('gen').onclick = () => {
-  // THE BUTTON SAYS GENERATE QUOTE, SO IT GENERATES. On the scan pane it used
-  // to step back to the form instead, and the planner pressed the same button
-  // twice to get one quote.
-  if (ROWS[ROW].kind === 'orm') { if (VIEW === 'scan') show('form'); generateOrm(); return; }
+  if (ROWS[ROW].kind === 'orm') { generateOrm(); return; }
   if (VIEW === 'kw') {
     const r = ROWS[ROW];
     r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -3827,10 +3882,7 @@ $('gen').onclick = () => {
   generate();
 };
 
-$('kwBuilder').onclick = () => {
-  const step1 = ROWS[ROW].kind === 'orm' ? 'scan' : 'kw';
-  show(VIEW === step1 ? 'form' : step1);
-};
+$('kwBuilder').onclick = () => { show(VIEW === 'kw' ? 'form' : 'kw'); };
 $('revert').onclick = $('reset').onclick = () => {
   const r = ROWS[ROW];
   r.over = {};

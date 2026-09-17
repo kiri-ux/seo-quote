@@ -1,4 +1,4 @@
-// THE BRAND SCAN PANE: CARRY-THROUGH, AND THE TEN THINGS THE REBUILD DROPPED.
+// STEP 1 IS ON THE FORM, AND THE SNAPSHOT READS BACK ON THE QUOTE.
 //
 // The rebuild kept four counts and dropped everything the counts were read off
 // — ratings, tactics, the AI Overview, related searches, the per-location star
@@ -72,59 +72,29 @@ const SERP = {
   await p.click('[data-open="2"][data-view="form"]');            // the ORM row
   await p.waitForSelector('#form [data-k="brand"]');
 
-  // ============================================ carry-through, both directions
+  // ============================================ step 1 is on the form
+  // The scan used to be a second pane you opened, scanned in, and came back
+  // from -- and the only parts of it that change the price, which listings are
+  // this client's and the flag threshold, were stranded over there.
   await p.fill('#form [data-k="brand"]', 'Bright Dental Co');
   await p.fill('#form [data-k="site"]', 'https://www.brightdental.com/');
-  await p.click('#kwBuilder');
-  await p.waitForTimeout(200);
-  let v = await p.evaluate(() => ({b: scBrand.value, d: scDomain.value}));
-  say('brandFollowsToScan', v.b === 'Bright Dental Co', v.b);
-  say('siteFollowsToScan', v.d === 'https://www.brightdental.com/', v.d);
+  const step1 = await p.evaluate(() => ({
+    runOnForm: !!document.querySelector('#form #scRun'),
+    noScanPane: !document.getElementById('paneScan'),
+    noSecondPaneButton: document.getElementById('kwBuilder').hidden,
+    gen: document.getElementById('gen').textContent.trim(),
+    back: document.getElementById('back').hidden,
+  }));
+  say('scanRunsFromTheForm', step1.runOnForm);
+  say('theSeparatePaneIsGone', step1.noScanPane);
+  say('andSoIsItsButton', step1.noSecondPaneButton);
+  say('generateIsTheOnlyOtherStep', step1.gen === 'Generate Quote', step1.gen);
+  say('noBackToAPaneThatIsGone', step1.back);
 
-  await p.fill('#scBrand', 'Bright Dental Group');
-  await p.click('#back');
-  await p.waitForTimeout(200);
-  say('correctionReachesForm',
-      (await p.inputValue('#form [data-k="brand"]')) === 'Bright Dental Group');
-
-  await p.click('#kwBuilder');
-  await p.waitForTimeout(150);
-  await p.fill('#scDomain', '');
-  await p.click('#back');
-  await p.waitForTimeout(200);
-  say('blankDoesNotWipe',
-      (await p.inputValue('#form [data-k="site"]')) === 'https://www.brightdental.com/');
-
-  await p.fill('#form [data-k="brand"]', 'Bright Dental Co');
-  await p.click('#kwBuilder');
-  await p.waitForTimeout(200);
-  say('aLaterEditStillFollows', (await p.inputValue('#scBrand')) === 'Bright Dental Co');
-
-  // ============================================ the pane reads as a form
-  const look = await p.evaluate(() => {
-    const i = document.getElementById('scBrand');
-    const lab = i.closest('.f').querySelector('label');
-    const cs = getComputedStyle(i);
-    const ri = i.getBoundingClientRect(), rl = lab.getBoundingClientRect();
-    const panel = document.querySelector('#paneScan .kbside');
-    return {w: Math.round(ri.width), side: Math.round(panel.getBoundingClientRect().width),
-            radius: cs.borderRadius, bg: cs.backgroundColor,
-            panelBg: getComputedStyle(panel).backgroundColor,
-            stacked: rl.bottom <= ri.top + 1};
-  });
-  say('labelSitsAboveTheField', look.stacked, JSON.stringify(look));
-  say('fieldFillsThePanel', look.w > look.side * 0.8, look.w + ' of ' + look.side);
-  say('fieldIsRounded', look.radius === '10px', look.radius);
-  say('fieldStandsOutFromThePanel',
-      look.bg !== 'rgba(0, 0, 0, 0)' && look.bg !== look.panelBg,
-      look.bg + ' on ' + look.panelBg);
-
-  say('saysItHasNotScanned', await p.isVisible('#scEmpty'));
   await p.click('#scRun');
   await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent), {timeout: 30000});
-  say('emptyStateGoesAway', !(await p.isVisible('#scEmpty')));
 
-  // ============================================ 1. the scan fills the counts
+  // ============================================ 1. the scan fills the form
   const form = await p.evaluate(() => ({
     reviews: document.querySelector('#form [data-k="reviews"]').value,
     locations: document.querySelector('#form [data-k="locations"]').value,
@@ -145,59 +115,23 @@ const SERP = {
   say('progressNamesTheRemovablePages', /2 removable pages/.test(
       await p.textContent('#scProg')), await p.textContent('#scProg'));
 
-  // ============================================ 8. the volume callout
-  const warn = await p.textContent('#scWarn');
-  say('negativeVolumeCallout', /260\/mo on negative terms/.test(warn), warn);
-  say('watchVolumeCallout', /90\/mo on watch terms/.test(warn), warn);
-
-  // ============================================ 2. the AI Overview
-  say('aiOverviewShown', /AI Overview/.test(warn) && /billing practices/.test(warn), warn);
-  say('aiOverviewNegativeNamed', /lawsuit/.test(warn), warn);
-
-  // ============================================ 3. related searches
-  const acCol = await p.evaluate(() => {
-    const c = [...document.querySelectorAll('#scCols .col')]
-      .find(x => /Auto-suggest/.test(x.querySelector('h5').textContent));
-    return {n: c.querySelector('h5 span').textContent.trim(), text: c.textContent,
-            negRows: c.querySelectorAll('li.ac.neg').length,
-            magnifiers: c.querySelectorAll('li.ac .mag').length};
-  });
-  say('negativeRelatedReachesTheScreen', /complaints/.test(acCol.text), acCol.text);
-  // ============================================ 9. the facsimile
-  say('autoSuggestRendersAsSearchRows', acCol.magnifiers >= 2, String(acCol.magnifiers));
-  say('negativeSuggestionsAreMarked', acCol.negRows >= 2, String(acCol.negRows));
-  say('offBrandPhraseIsNamedNotHidden',
-      /shiny smiles dental reviews/.test(warn) && /different company/.test(warn), warn);
-
-  // ============================================ 6. ratings and tags
-  const serp = await p.evaluate(() => {
-    const t = document.querySelector('#scSerp');
-    return {head: t.querySelector('.scth').textContent,
-            rows: [...t.querySelectorAll('tbody tr, table tr')].slice(1).map(tr =>
-              [...tr.children].map(td => td.textContent.trim()).join(' | '))};
-  });
-  say('pageOneCountsControlled', /1 of 4 client-controlled/.test(serp.head), serp.head);
-  say('ownedIsTagged', /brightdental\.com.*owned/.test(serp.rows[1]), serp.rows[1]);
-  say('thirdPartyIsTagged', /ripoffreport\.com.*3rd party/.test(serp.rows[0]), serp.rows[0]);
-  say('tacticIsOnTheRow', /site removal/.test(serp.rows[0]), serp.rows[0]);
-  say('ratingIsShown', /1\.4★ \(90\)/.test(serp.rows[0]), serp.rows[0]);
-  say('forumsRankWithIt', serp.rows.some(x => /reddit\.com/.test(x)), serp.rows.join(' // '));
-
-  // ============================================ 4. the star breakdown
-  const locs = await p.evaluate(() => {
-    const t = document.querySelector('#scLocs');
-    return {head: t.querySelector('.scth').textContent,
-            rows: [...t.querySelectorAll('table tr')].slice(1).map(tr =>
-              [...tr.children].map(td => td.textContent.trim()).join('|')),
-            hasThreshold: !!document.getElementById('scTh')};
-  });
-  say('locationsSayHowTheyMatched', /2 of 2 · by website/.test(locs.head), locs.head);
-  say('flaggedAndWeakAreBothStated',
-      /32 flagged/.test(locs.head) && /16 at 3★/.test(locs.head), locs.head);
-  say('starSplitPerLocation', /\|18\|9\|12$/.test(locs.rows[0]), locs.rows[0]);
-  say('profileRatingPerLocation', /3\.9★ \/ 212/.test(locs.rows[0]), locs.rows[0]);
-  say('addressIsShown', /12 Main St/.test(locs.rows[0]), locs.rows[0]);
-  say('thresholdIsOffered', locs.hasThreshold);
+  // ============================================ the form carries what changes the price
+  const onForm = await p.evaluate(() => ({
+    warn: document.getElementById('scWarn').textContent,
+    locs: document.getElementById('scLocs').textContent,
+    // these are a record, not a control: they belong on the quote
+    noTermsHere: !document.querySelector('#form .col'),
+    noPageOneHere: !/PAGE ONE/i.test(document.getElementById('form').textContent),
+    hasThreshold: !!document.getElementById('scTh'),
+    boxes: document.querySelectorAll('#scLocs .sclx').length,
+  }));
+  say('negativeVolumeCalloutOnTheForm', /260\/mo on negative terms/.test(onForm.warn), onForm.warn);
+  say('aiOverviewOnTheForm', /AI Overview/.test(onForm.warn), onForm.warn);
+  say('locationsAreOnTheForm', /2 of 2 · by website/.test(onForm.locs), onForm.locs);
+  say('withAStarSplit', /18/.test(onForm.locs) && /12/.test(onForm.locs), onForm.locs);
+  say('andAThreshold', onForm.hasThreshold);
+  say('andACheckboxPerLocation', onForm.boxes === 2, String(onForm.boxes));
+  say('theRecordPanelsAreNotOnTheForm', onForm.noTermsHere && onForm.noPageOneHere);
 
   // one star only: 18 + 3
   await p.selectOption('#scTh', '1');
@@ -208,7 +142,7 @@ const SERP = {
   await p.selectOption('#scTh', '12');
   await p.waitForTimeout(200);
 
-  // ============================================ 5. excluding a location
+  // ============================================ excluding a location
   await p.uncheck('#scLocs .sclx[data-pid="p2"]');
   await p.waitForTimeout(200);
   const after = await p.evaluate(() => ({
@@ -224,7 +158,7 @@ const SERP = {
   say('checkingItBackRestoresTheCount',
       (await p.inputValue('#form [data-k="reviews"]')) === '32');
 
-  // ============================================ 7. re-pull one call
+  // ============================================ re-pull one call
   const before = serpCalls;
   await p.click('#scRepullSerp');
   await p.waitForFunction(() => /re-pulled/.test(scProg.textContent), {timeout: 15000});
@@ -232,13 +166,14 @@ const SERP = {
   say('andNothingElseReRan',
       (await p.inputValue('#form [data-k="volume"]')) === '390');
 
-  // ============================================ 10. brand / domain mismatch
+  // ============================================ brand / domain mismatch
   const mismatch = await p.evaluate(() => {
     const r = ROWS[ROW];
+    const keep = r.data.brand;
     r.data.brand = 'Acme Roofing';
     scanDraw(r);
     const t = document.getElementById('scWarn').textContent;
-    r.data.brand = 'Bright Dental Co';
+    r.data.brand = keep;
     scanDraw(r);
     return {warned: t, gone: document.getElementById('scWarn').textContent};
   });
@@ -248,69 +183,59 @@ const SERP = {
   say('aMatchingPairIsNotFlagged', !/do not match/.test(mismatch.gone),
       mismatch.gone.slice(0, 120));
 
-  // ============================================ the columns still agree
-  const cols = await p.evaluate(() => ({
-    heads: [...document.querySelectorAll('#scCols .col h5')].map(h => h.childNodes[0].textContent.trim()),
-    negN: document.querySelector('#scCols .col h5 span').textContent.trim(),
-    negRows: document.querySelectorAll('#scCols .col:first-child li').length,
-    firstTerm: document.querySelector('#scCols .col li > span').firstChild.textContent,
-    neutralShown: /hours/.test(document.querySelector('#scCols .col').textContent),
-    across: getComputedStyle(document.getElementById('scCols'))
-      .gridTemplateColumns.split(' ').length,
-  }));
-  say('twoColumns', cols.heads.join(',') === 'Negative terms,Auto-suggest', cols.heads.join(','));
-  say('flaggedCountMatchesTheList', cols.negN === String(cols.negRows),
-      cols.negN + ' vs ' + cols.negRows);
-  say('neutralTermsAreNotListedAsNegative', !cols.neutralShown);
-  say('negativeTermLeads', cols.firstTerm === 'bright dental co lawsuit', cols.firstTerm);
-  say('headingCarriesBrandVolume',
-      /390\/mo brand volume/.test(await p.textContent('#scHead')),
-      await p.textContent('#scHead'));
-  say('twoColumnsAcross', cols.across === 2, String(cols.across));
-
-  // ============================================ the form, and the pane's margins
-  const formShape = await p.evaluate(() => {
-    const f = document.getElementById('form');
-    const pane = document.getElementById('paneScan');
-    const cs = getComputedStyle(pane);
+  // ============================================ the quote shows the scan
+  await p.click('#gen');
+  await p.waitForSelector('.prod[data-row="2"] .qres', {state: 'attached', timeout: 20000});
+  const fold = await p.evaluate(() => {
+    const prod = document.querySelector('.prod[data-row="2"]');
+    prod.querySelector('.ptabs button[data-tab="history"]').click();
+    if (!prod.querySelector('[data-pane="history"] tr.histopen'))
+      prod.querySelector('.hist tr.histrow .btn-open').click();
+    const q = document.querySelector('.prod[data-row="2"] [data-pane="history"] tr.histopen');
+    const f = [...q.querySelectorAll('.qfold > summary')]
+      .find(x => /Reputation snapshot/.test(x.textContent));
+    if (!f) return {missing: true};
+    f.click();
+    const box = f.parentNode.querySelector('.scfold');
     return {
-      hasIndustry: !!f.querySelector('[data-chips="industry"]'),
-      hasCountrySelect: !!f.querySelector('select[data-k="country"]'),
-      // the geo block still asks the same question, once
-      hasGeoCountry: !!f.querySelector('[data-chips="countries"]'),
-      padLeft: cs.paddingLeft, padTop: cs.paddingTop,
+      head: f.textContent,
+      cols: [...box.querySelectorAll('.col h5')].map(h => h.childNodes[0].textContent.trim()),
+      pageOne: /PAGE ONE/i.test(box.textContent),
+      locations: /LOCATIONS/i.test(box.textContent),
+      firstTerm: box.querySelector('.col li > span').firstChild.textContent,
+      ratingShown: /1\.4★ \(90\)/.test(box.textContent),
+      tacticShown: /SITE REMOVAL/i.test(box.textContent),
+      relatedLabel: /related search/.test(box.textContent),
+      // the checkboxes are a record here, not a control
+      boxesInert: getComputedStyle(box.querySelector('.sclx')).pointerEvents === 'none',
+      tiles: [...q.querySelectorAll('.qtile small')].map(t => t.textContent),
+      planner: [...q.querySelectorAll('.pv tr, .plannerview tr')].map(t =>
+        t.textContent.replace(/\s+/g, ' ').trim()),
     };
   });
-  say('industryIsOnTheForm', formShape.hasIndustry);
-  // COUNTRY WAS ASKED TWICE: a select, and the Geographic Targeting Areas
-  // "Country" box. Nothing in the ORM quote read the select.
-  say('countrySelectIsGone', !formShape.hasCountrySelect);
-  say('geoCountryStillThere', formShape.hasGeoCountry);
-  // #paneScan was the one pane in the modal with no padding, so the side panel
-  // sat on the sheet's left edge.
-  say('theScanPaneHasMargins',
-      parseInt(formShape.padLeft, 10) >= 20 && parseInt(formShape.padTop, 10) >= 16,
-      formShape.padLeft + ' / ' + formShape.padTop);
+  say('theQuoteCarriesTheSnapshot', !fold.missing);
+  say('headNamesTheBrandAndItsVolume', /Bright Dental Co · 390\/mo/.test(fold.head || ''),
+      fold.head);
+  say('bothColumnsAreThere',
+      (fold.cols || []).join(',') === 'Negative terms,Auto-suggest & related',
+      (fold.cols || []).join(','));
+  say('pageOneIsOnTheQuote', fold.pageOne);
+  say('locationsAreOnTheQuote', fold.locations);
+  say('withRatings', fold.ratingShown);
+  say('withTactics', fold.tacticShown);
+  say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
+  // "related" did not say related to what.
+  say('relatedSaysWhichBlockItCameFrom', fold.relatedLabel);
+  say('theQuotesCheckboxesAreInert', fold.boxesInert);
 
-  // ============================================ nothing spills out of the sheet
-  // The sheet is overflow:hidden, so anything wider than it is simply gone --
-  // which is how the ratings column and the whole star split came to be
-  // off-screen. Two rules did it: .kbmain is the 1fr grid track and would not
-  // shrink below its content, and the global table{min-width:1080px} written
-  // for the workflow table applied to these two as well.
+  // ============================================ nothing spills out
   const fits = await p.evaluate(() => {
-    const sheet = document.querySelector('.sheet');
-    const right = sheet.getBoundingClientRect().right;
-    const over = [...document.querySelectorAll('#paneScan *')]
-      .filter(e => e.getBoundingClientRect().width
-                && e.getBoundingClientRect().right > right + 1)
-      .map(e => (e.id || e.className || e.tagName) + '@'
-                + Math.round(e.getBoundingClientRect().right));
-    return {over, scroll: sheet.scrollWidth, client: sheet.clientWidth};
+    const over = [...document.querySelectorAll('.qfold .scfold *')]
+      .filter(e => e.scrollWidth > e.clientWidth + 2 && /TABLE/.test(e.tagName))
+      .map(e => e.tagName);
+    return over;
   });
-  say('nothingIsWiderThanTheSheet', fits.over.length === 0, fits.over.join(', '));
-  say('andTheSheetDoesNotScrollSideways', fits.scroll <= fits.client,
-      fits.scroll + ' vs ' + fits.client);
+  say('theFoldsTablesFit', fits.length === 0, fits.join(','));
 
   await b.close();
   console.log(bad ? 'failed=' + bad : 'ok all');
