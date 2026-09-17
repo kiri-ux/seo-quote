@@ -153,9 +153,8 @@
         <div class="f"><label># of Locations <span class="i" data-tip="Drives the Brand Shield per-location add" aria-label="Drives the Brand Shield per-location add">i</span></label>
           <input type="number" data-k="locations"></div>
 
-        <div class="f"><label># of Standard Sites</label><input type="number" data-k="std"></div>
-        <div class="f"><label># of Premium Sites <span class="i" data-tip="News and high-authority — its own rate" aria-label="News and high-authority — its own rate">i</span></label>
-          <input type="number" data-k="prem"></div>
+        <div class="f"><label># of Sites <span class="i" data-tip="Pages quoted for removal" aria-label="Pages quoted for removal">i</span></label>
+          <input type="number" data-k="std"></div>
 
         <div class="f"><label>Search Volume <span class="i" data-tip="What the Search Protection rate is priced off" aria-label="What the Search Protection rate is priced off">i</span></label>
           <input type="number" data-k="volume"></div>
@@ -241,9 +240,16 @@
           <p class="hint" id="scProg" style="margin:12px 0 0"></p>
         </section>
         <section class="kbmain">
-          <div class="paneltop"><h4 id="scHead">Reputation snapshot</h4></div>
+          <div class="paneltop">
+            <h4 id="scHead">Reputation snapshot</h4>
+            <button class="btn2 scsm" type="button" id="scRepullSerp" hidden>&#8635; Re-pull results</button>
+            <button class="btn2 scsm" type="button" id="scRepullAc" hidden>&#8635; Re-pull auto-suggest</button>
+          </div>
           <p class="hint" id="scEmpty" style="margin:0">Not scanned yet.</p>
+          <div id="scWarn"></div>
           <div class="cols quad4" id="scCols"></div>
+          <div id="scSerp"></div>
+          <div id="scLocs"></div>
         </section>
       </div>
     </div>
@@ -478,7 +484,7 @@ const ROWS = [
   {id:'137028', kind:'orm', name:'Online Reputation Management', built:'9/16/26', data:{
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
-    reviews:161, locations:3, std:2, prem:1, volume:8000,
+    reviews:161, locations:3, std:2, volume:8000,
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:['Boca Raton, FL'], county:[], state:[], countries:[],
     country:'United States', autosuggest:1, markup:'35'}},
@@ -707,7 +713,7 @@ function adopt(got){
       data: {brand: f.brand || got.client || '', site: f.domain || '',
              strategy: STRAT_FROM(f),
              reviews: +f.nReviews || 0, locations: +f.nLocations || 1,
-             std: +f.nArtStd || 0, prem: +f.nArtPrem || 0, volume: +f.volume || 0,
+             std: (+f.nArtStd || 0) + (+f.nArtPrem || 0), volume: +f.volume || 0,
              markup: String(Math.round(frac(parseFloat(f.clientMargin) || 0.35) * 100)),
              country: 'United States', autosuggest: 1},
       scan: {terms: sc.terms || null, serp: sc.serp || null,
@@ -886,7 +892,7 @@ function fromQuery(){
       data: kind === 'orm'
         ? {brand: client || '', site: '', strategy: ['Reactive'], reviews: '', locations: 1,
            order_no: order || '', partner: '',
-           std: '', prem: '', volume: '', g_city: false, g_county: false, g_state: false,
+           std: '', volume: '', g_city: false, g_county: false, g_state: false,
            g_country: false, city: [], county: [], state: [], countries: [],
            country: 'United States', autosuggest: 0, markup: '35'}
         : {brand: client || '', site: '', business_desc: '', focus: [], negatives: [],
@@ -1158,12 +1164,9 @@ const SEND_ORM = [
     ['site_article_removals', 'Site/Article Removals', 'order',
      r => RH(r).site_article_removals === undefined ? undefined
         : (RH(r).site_article_removals ? 'Yes' : 'No')],
-    ['standard_sites', '# of Standard Sites', 'order', r => RH(r).standard_sites],
-    ['price_per_standard_site_removal', 'Price per Standard Site Removal', 'order',
+    ['standard_sites', '# of Sites', 'order', r => RH(r).standard_sites],
+    ['price_per_standard_site_removal', 'Price per Site Removal', 'order',
      r => RH(r).price_per_standard_site_removal],
-    ['premium_sites', '# of Premium Sites', 'order', r => RH(r).premium_sites],
-    ['price_per_premium_site_removal', 'Price per Premium Site Removal', 'order',
-     r => RH(r).price_per_premium_site_removal],
     ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
     ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
     ['strategy', 'Strategy', 'order', r => RH(r).strategy || r.data.strategy],
@@ -1173,10 +1176,8 @@ const SEND_ORM = [
      r => RH(r).partner_monthly_cost],
     ['partner_review_removals_total', 'Partner Total Review Removal Cost', 'order',
      r => RH(r).partner_review_removals_total],
-    ['partner_standard_sites_total', 'Partner Total Standard Site Removal Cost', 'order',
+    ['partner_standard_sites_total', 'Partner Total Site Removal Cost', 'order',
      r => RH(r).partner_standard_sites_total],
-    ['partner_premium_sites_total', 'Partner Total Premium Site Removal Cost', 'order',
-     r => RH(r).partner_premium_sites_total],
     ['margin_dollars_monthly', 'Margin $ — monthly', 'order',
      r => RH(r).margin_dollars_monthly],
   ]],
@@ -1267,10 +1268,8 @@ function plannerView(r, brief){
       ? money(rh.brand_shield_monthly) + '/mo' : 'not on this quote');
     add('Review removals', rh.reviews_count
       ? `${rh.reviews_count} × ${money(rh.price_per_review_removal)}` : 'none');
-    add('Site removals', (rh.standard_sites || rh.premium_sites)
-      ? `${rh.standard_sites || 0} standard × ${money(rh.price_per_standard_site_removal)}`
-        + ` · ${rh.premium_sites || 0} premium × ${money(rh.price_per_premium_site_removal)}`
-      : 'none');
+    add('Site removals', rh.standard_sites
+      ? `${rh.standard_sites} × ${money(rh.price_per_standard_site_removal)}` : 'none');
     add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
     add('Locations', rh.locations);
     add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
@@ -1398,8 +1397,8 @@ const RUN_SEO = [
 const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
-  ['locations', '# of locations'], ['std', '# of standard sites'],
-  ['prem', '# of premium sites'], ['volume', 'Brand search volume'],
+  ['locations', '# of locations'], ['std', '# of sites'],
+  ['volume', 'Brand search volume'],
   ['geo', 'Geographic targeting'], ['country', 'Country'],
   ['autosuggest', 'Auto-suggest / related'], ['markup', 'Markup %'],
   ['overrides', 'Pricing overrides'],
@@ -1497,7 +1496,7 @@ function runSettings(r){
     industry: d.industry, strategy: d.strategy, goals: d.goals,
     past: YN(d.past), past_details: d.past_details, spend: d.spend,
     markup: d.markup ? d.markup + '%' : '',
-    reviews: d.reviews, locations: d.locations, std: d.std, prem: d.prem,
+    reviews: d.reviews, locations: d.locations, std: d.std,
     volume: d.volume, autosuggest: YN(d.autosuggest),
     addon_markets: cfg.addon_markets
       ? `${cfg.addon_markets} — set in Config`
@@ -1509,8 +1508,7 @@ function runSettings(r){
                 cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,
                 cfg.ov_review && `Review removal ${money(cfg.ov_review)}`,
                 cfg.ov_monthly && `Monthly ${money(cfg.ov_monthly)}`,
-                cfg.ov_std && `Standard site ${money(cfg.ov_std)}`,
-                cfg.ov_prem && `Premium site ${money(cfg.ov_prem)}`,
+                cfg.ov_std && `Site removal ${money(cfg.ov_std)}`,
                 cfg.ov_reason && `— ${cfg.ov_reason}`].filter(Boolean),
   };
   const rows = (r.kind === 'orm' ? RUN_ORM : RUN_SEO).map(([k, label]) => {
@@ -2220,8 +2218,7 @@ const CFG_ORM = [
   ['markup','Markup %','text',''],
   ['ov_review','Review removal — hard $/review','number','formula'],
   ['ov_monthly','Monthly cost — hard $/mo','number','formula'],
-  ['ov_std','Standard site removal — hard $/page','number','formula'],
-  ['ov_prem','Premium site removal — hard $/page','number','formula'],
+  ['ov_std','Site removal — hard $/page','number','formula'],
   ['ov_reason','Reason for the override','text','required with any override'],
 ];
 function cfgLoad(r){
@@ -2991,45 +2988,296 @@ function scanLoad(r){
   $('scDomain').value = r.data.site || '';
   scanDraw(r);
 }
+// ---------------------------------------------------------------------------
+// THE SNAPSHOT. Ported back from the legacy Reputation page (2026-09-17, Kiri).
+// The rebuild kept four counts and dropped everything the counts were read
+// off: ratings, tactics, the AI Overview, related searches, the per-location
+// star split, and every control that let a planner disagree with the scan.
+// ---------------------------------------------------------------------------
+
+// A BRAND NAME AND A DOMAIN THAT DO NOT MATCH. Same check the legacy page ran:
+// a near miss is the dangerous one, because everything below is about
+// whichever business the name matched.
+const _BRAND_STOP = ['the','a','an','of','and','llc','pllc','inc','pc','llp',
+                     'corp','co','company','group','firm','law','attorney',
+                     'attorneys','lawyer','lawyers','associates','dental',
+                     'clinic','center','centre','services','solutions'];
+const brandStem = n => {
+  const toks = String(n || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const core = toks.filter(t => _BRAND_STOP.indexOf(t) < 0);
+  return (core.length ? core : toks).join('');
+};
+const brandWhole = n => String(n || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const domainStem = u => {
+  let d = String(u || '').trim().toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[\/?#]/)[0];
+  return d ? d.split('.')[0].replace(/[^a-z0-9]/g, '') : '';
+};
+function domainCore(stemmed){
+  let d = String(stemmed || '');
+  _BRAND_STOP.slice().sort((a, b) => b.length - a.length).forEach(w => {
+    if (w.length < 2) return;
+    const next = d.split(w).join('');
+    if (next.length >= 3) d = next;
+  });
+  return d || String(stemmed || '');
+}
+function editDistance(a, b){
+  const m = a.length, n = b.length;
+  const d = Array.from({length: m + 1}, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1,
+                       d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[m][n];
+}
+function brandDomainCheck(brand, url){
+  const bs = brandStem(brand), ds = domainStem(url);
+  if (!bs || !ds) return null;
+  if (ds.includes(bs) || bs.includes(ds)) return null;
+  const bw = brandWhole(brand), dc = domainCore(ds);
+  if (dc && (dc.includes(bs) || bs.includes(dc))) return null;
+  if (bw && (ds.includes(bw) || bw.includes(ds))) return null;
+  const pairs = [[bs, ds]];
+  if (dc) pairs.push([bs, dc]);
+  if (bw) pairs.push([bw, ds]);
+  let best = pairs[0], dist = editDistance(pairs[0][0], pairs[0][1]);
+  pairs.slice(1).forEach(pr => {
+    const dd = editDistance(pr[0], pr[1]);
+    if (dd < dist) { dist = dd; best = pr; }
+  });
+  return {brand, site: url, dist,
+          near: dist > 0 && dist <= Math.max(2,
+                Math.round(Math.max(best[0].length, best[1].length) * 0.25))};
+}
+
+// Mirror of names_client() in rep_scan.py. The server filters on a fresh pull;
+// a quote saved before the filter existed still carries the old phrases, so
+// filtering at render time fixes those for free.
+function namesClient(phrase, brand, domain){
+  const sq = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const keys = [];
+  const b = sq(brand);
+  if (b.length > 3) keys.push(b);
+  const host = String(domain || '').split('//').pop().split('/')[0].replace(/^www\./, '');
+  const d = sq(host.indexOf('.') >= 0 ? host.slice(0, host.lastIndexOf('.')) : host);
+  if (d.length > 3 && keys.indexOf(d) < 0) keys.push(d);
+  if (!keys.length) return true;
+  const ph = sq(phrase);
+  return keys.some(k => ph.indexOf(k) >= 0);
+}
+const onBrand = (l, b, d) => (l || []).filter(x => namesClient(x, b, d));
+const offBrand = (l, b, d) => (l || []).filter(x => !namesClient(x, b, d));
+// The modifier is the part that matters, so it is the part in bold.
+function boldMod(text, brand){
+  const b = String(brand || '').toLowerCase(), t = String(text).toLowerCase();
+  return (b && t.startsWith(b))
+    ? esc(text.slice(0, b.length)) + '<b>' + esc(text.slice(b.length)) + '</b>'
+    : esc(text);
+}
+
+// WHICH LOCATIONS ARE BEING QUOTED. A scan returns every listing it matched;
+// the planner decides which are this client's. Unchecking one drops it from
+// the flagged total, the location count and the quote.
+function scOn(r, pid){
+  return ((r.scanOff || {})[pid]) !== true;
+}
+function scanCounts(r){
+  const sc = r.scan || {};
+  const th = r.negTh || '12';
+  const done = (sc.negDone || []).filter(x => scOn(r, x.place_id));
+  const flagged = done.reduce((z, x) =>
+    z + (th === '1' ? (x.neg_1 || 0) : (x.neg_1_2 || 0)), 0);
+  const locs = ((sc.locations || {}).locations || []).filter(l => scOn(r, l.place_id));
+  return {flagged, locations: locs.length, done, locs, weak: done.reduce(
+    (z, x) => z + (x.weak_3 || 0), 0)};
+}
+// The counts are the quote's inputs, so a change here reaches the form.
+function scanApply(r){
+  const c = scanCounts(r);
+  const d = r.data;
+  if ((r.scan || {}).negDone) d.reviews = c.flagged;
+  if (c.locations) d.locations = c.locations;
+  const sc = r.scan || {};
+  sc.stars = {locations: c.locations, flagged: c.flagged,
+              one_star: c.done.reduce((z, x) => z + (x.neg_1 || 0), 0)};
+  load(formOf(r), d);
+  scanDraw(r);
+}
+
 function scanDraw(r){
   const sc = r.scan;
   $('scEmpty').hidden = !!sc;
-  if (!sc) { $('scCols').innerHTML = ''; $('scHead').textContent = 'Reputation snapshot'; return; }
-  // THE KEYS THE SCANNER ACTUALLY RETURNS. These two columns read `.rows` on
-  // objects that have never carried a `rows` key -- scan_terms returns
-  // `terms`, scan_serp returns `organic` -- so Negative terms and Page one
-  // rendered 0 and empty on every scan ever run here, and the brand volume the
-  // form is filled from summed an empty list to 0. (2026-09-17)
-  const allTerms = (sc.terms || {}).terms || [];
+  $('scRepullSerp').hidden = !sc;
+  $('scRepullAc').hidden = !sc;
+  if (!sc) {
+    ['scWarn', 'scCols', 'scSerp', 'scLocs'].forEach(id => { $(id).innerHTML = ''; });
+    $('scHead').textContent = 'Reputation snapshot';
+    return;
+  }
+  const brand = r.data.brand || '', domain = r.data.site || '';
+  // THE KEYS THE SCANNER ACTUALLY RETURNS: scan_terms sends `terms`, scan_serp
+  // sends `organic` and `forums`.
+  const T = sc.terms || {}, S = sc.serp || {};
+  const allTerms = T.terms || [];
   const flagged = allTerms.filter(t => t['class'] === 'negative' || t['class'] === 'watch');
-  const organic = (sc.serp || {}).organic || [];
-  const forums = (sc.serp || {}).forums || [];
+  const organic = S.organic || [], forums = S.forums || [];
   const page1 = organic.concat(forums);
-  const locs = ((sc.locations || {}).locations || []);
-  // Auto-suggest was scanned and then thrown away: nothing on this pane read
-  // sc.autocomplete, so a negative suggestion never reached the screen.
   const sugg = [];
   Object.keys(sc.autocomplete || {}).forEach(k => {
     ((sc.autocomplete[k] || {}).negative || []).forEach(x => sugg.push(x));
   });
-  const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5><ul>${body}</ul></div>`;
-  $('scHead').textContent = `Reputation snapshot — ${r.data.brand || ''}`;
-  const how = {domain: 'by website', title: 'by name', filter: 'by name'}[
-    (sc.locations || {}).strategy] || '';
+  const relNeg = onBrand([...(S.negative_related || []), ...(S.negative_pasf || [])],
+                         brand, domain);
+  const vol = T.total_volume || 0;
+  $('scHead').textContent = `Reputation snapshot — ${brand}`
+    + (vol ? ` · ${vol.toLocaleString()}/mo brand volume` : '');
+
+  // ---------------------------------------------------------------- warnings
+  let w = '';
+  const bd = brandDomainCheck(brand, domain);
+  if (bd) {
+    w += `<div class="scw ${bd.near ? 'bad' : ''}">`
+      + (bd.near ? `The client name and the website do not match — ${bd.dist} character`
+                   + `${bd.dist === 1 ? '' : 's'} apart.`
+                 : 'The client name is not in the website.')
+      + ` <b>${esc(brand)}</b> · <b>${esc(domain)}</b>`
+      + ` <a href="#" id="scUseDomain">Use the name from the website</a></div>`;
+  }
+  if (T.negative_volume) {
+    w += `<div class="scw bad">${T.negative_volume.toLocaleString()}/mo on negative terms`
+       + (T.watch_volume ? ` · ${T.watch_volume.toLocaleString()}/mo on watch terms` : '')
+       + `. Auto-suggest holds only while positive volume exceeds it.</div>`;
+  } else if (T.watch_volume) {
+    w += `<div class="scw">No negative-term demand · `
+       + `${T.watch_volume.toLocaleString()}/mo on watch terms.</div>`;
+  }
+  if (S.ai_overview) {
+    const neg = S.ai_negative || [];
+    w += `<div class="scw ${neg.length ? 'bad' : ''}"><b>AI Overview</b>`
+       + (neg.length ? ` — ${neg.map(esc).join(', ')}` : '')
+       + `<div class="scq">${esc(S.ai_overview.slice(0, 300))}…</div></div>`;
+  }
+  const offb = (S.off_brand_phrases && S.off_brand_phrases.length) ? S.off_brand_phrases
+    : offBrand([...(S.related || []), ...(S.pasf || [])], brand, domain);
+  if (offb.length) {
+    w += `<div class="scw">${offb.length} phrase${offb.length === 1 ? '' : 's'} excluded`
+       + ` — they name a different company: `
+       + offb.map(x => '“' + esc(x) + '”').join(' · ') + `</div>`;
+  }
+  $('scWarn').innerHTML = w;
+  const ud = $('scUseDomain');
+  if (ud) ud.onclick = e => {
+    e.preventDefault();
+    const stem = domainStem(domain);
+    if (!stem) return;
+    const name = stem.charAt(0).toUpperCase() + stem.slice(1);
+    $('scBrand').value = name;
+    r.data.brand = name;
+    load(formOf(r), r.data);
+    scanDraw(r);
+  };
+
+  // ------------------------------------------------------------- two columns
+  const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5>`
+    + (body ? `<ul>${body}</ul>` : `<p class="none">None</p>`) + `</div>`;
+  const acRows = [];
+  Object.keys(sc.autocomplete || {}).forEach(k => {
+    const a = sc.autocomplete[k] || {};
+    (a.suggestions || []).slice(0, 8).forEach(x => acRows.push(
+      `<li class="ac${(a.negative || []).indexOf(x) >= 0 ? ' neg' : ''}">`
+      + `<span class="mag">&#128269;</span><span>${boldMod(x, brand)}</span></li>`));
+  });
+  relNeg.forEach(x => acRows.push(
+    `<li class="ac neg"><span class="mag">&#128269;</span>`
+    + `<span>${boldMod(x, brand)}</span><span class="v">related</span></li>`));
   $('scCols').innerHTML =
     col('Negative terms', flagged.length,
-      (flagged.length ? flagged : allTerms).slice(0, 8).map(t =>
-        `<li><span>${esc(t.term || t.keyword || '')}</span>`
+      flagged.slice(0, 10).map(t =>
+        `<li><span>${esc(t.term || t.keyword || '')}`
+        + `<i class="tg ${t['class'] === 'negative' ? 'bad' : ''}">${esc(t['class'] || '')}</i></span>`
         + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
-    + col('Page one', page1.length,
-      page1.slice(0, 8).map(x => `<li><span>${esc(x.domain || x.url || '')}</span>`
-        + `<span class="v">${x.owned ? 'owned' : esc(x.tactic || '')}`
-        + `${x.pos == null ? '' : ' · #' + x.pos}</span></li>`).join(''))
-    + col('Auto-suggest', sugg.length,
-      sugg.slice(0, 8).map(x => `<li><span>${esc(x)}</span></li>`).join(''))
-    + col('Locations', locs.length + (how ? ' · ' + how : ''),
-      locs.slice(0, 8).map(x => `<li><span>${esc(x.title || '')}</span>`
-        + `<span class="v">${x.reviews || 0} reviews</span></li>`).join(''));
+    + col('Auto-suggest', sugg.length + relNeg.length, acRows.join(''));
+
+  // ------------------------------------------------------------- page one
+  const rated = x => x.rating ? `${x.rating}★${x.votes ? ' (' + x.votes.toLocaleString() + ')' : ''}` : '';
+  $('scSerp').innerHTML = !page1.length ? '' :
+    `<div class="sctbl"><div class="scth">Page one`
+    + `<span>${S.owned_in_top10 || 0} of ${organic.length} client-controlled</span></div>`
+    + `<table><tr><th>#</th><th>Result</th><th class="n">Rating</th></tr>`
+    + page1.map(x => `<tr><td class="n">${x.pos == null ? '—' : x.pos}</td>`
+        + `<td>${esc(x.domain || x.url || '')}`
+        + `<i class="tg ${x.owned ? 'own' : ''}">${x.owned ? 'owned' : '3rd party'}</i>`
+        + (x.tactic ? `<i class="tg ${/leave|boost/.test(x.tactic) ? 'ok' : 'act'}">${esc(x.tactic)}</i>` : '')
+        + (x.title ? `<div class="scq">${esc(x.title)}</div>` : '')
+        + `</td><td class="n">${rated(x) || '—'}</td></tr>`).join('')
+    + `</table></div>`;
+
+  // ------------------------------------------------------------- locations
+  const locs = (sc.locations || {}).locations || [];
+  const byPid = {};
+  (sc.negDone || []).forEach(x => { byPid[x.place_id] = x; });
+  const how = {domain: 'by website', title: 'by name', filter: 'by name'}[
+    (sc.locations || {}).strategy] || '';
+  const c = scanCounts(r);
+  $('scLocs').innerHTML = !locs.length ? '' :
+    `<div class="sctbl"><div class="scth">Locations`
+    + `<span>${c.locations} of ${locs.length}${how ? ' · ' + how : ''}`
+    + ((sc.negDone || []).length
+        ? ` · ${c.flagged.toLocaleString()} flagged · ${c.weak.toLocaleString()} at 3★` : '')
+    + `</span></div>`
+    + ((sc.negDone || []).length
+        ? `<div class="scth2">Flag threshold
+             <select id="scTh">
+               <option value="12"${(r.negTh || '12') === '12' ? ' selected' : ''}>1–2★ reviews</option>
+               <option value="1"${r.negTh === '1' ? ' selected' : ''}>1★ only</option>
+             </select></div>` : '')
+    + `<table><tr><th></th><th>Location</th><th class="n">Profile</th>`
+    + `<th class="n">1★</th><th class="n">2★</th><th class="n">3★</th></tr>`
+    + locs.map(l => {
+        const n = byPid[l.place_id] || {};
+        return `<tr><td><input type="checkbox" class="sclx" data-pid="${esc(l.place_id || '')}"`
+          + `${scOn(r, l.place_id) ? ' checked' : ''}></td>`
+          + `<td>${esc(l.title || '')}${n.truncated ? '<i class="tg">more beyond depth</i>' : ''}`
+          + (l.address ? `<div class="scq">${esc(l.address)}</div>` : '') + `</td>`
+          + `<td class="n">${l.rating || '—'}★ / ${(l.reviews || 0).toLocaleString()}</td>`
+          + `<td class="n">${n.neg_1 == null ? '—' : n.neg_1}</td>`
+          + `<td class="n">${n.neg_2 == null ? '—' : n.neg_2}</td>`
+          + `<td class="n">${n.weak_3 == null ? '—' : n.weak_3}</td></tr>`;
+      }).join('')
+    + `</table></div>`;
+  const th = $('scTh');
+  if (th) th.onchange = () => { r.negTh = th.value; scanApply(r); };
+  [...document.querySelectorAll('#scLocs .sclx')].forEach(cb => {
+    cb.onchange = () => {
+      r.scanOff = r.scanOff || {};
+      r.scanOff[cb.dataset.pid] = !cb.checked;
+      scanApply(r);
+    };
+  });
+}
+
+// WHAT THE SCAN DECIDED, WRITTEN ONTO THE FORM. The legacy page turned each
+// tactic on and filled its count; the rebuild filled three numbers and left
+// the planner to read the page-one column and type the rest.
+function scanRecommend(r){
+  const sc = r.scan || {}, d = r.data;
+  const S = sc.serp || {}, T = sc.terms || {};
+  const page1 = (S.organic || []).concat(S.forums || []);
+  const removable = page1.filter(x => x.tactic === 'site removal');
+  d.std = removable.length;
+  const strat = new Set(d.strategy || []);
+  if (d.reviews > 0) strat.add('Review Removals');
+  if (removable.length) strat.add('Site/Article Removals');
+  // Reactive covers suppression and auto-suggest. Any of: negative search
+  // demand, a thin page one, a negative suggestion, a negative AI Overview.
+  const negSugg = Object.keys(sc.autocomplete || {})
+    .reduce((z, k) => z + ((sc.autocomplete[k] || {}).negative || []).length, 0);
+  if (T.negative_volume || negSugg || (S.negative_related || []).length
+      || (S.ai_negative || []).length
+      || (S.organic || []).length && (S.owned_in_top10 || 0) <= 2) strat.add('Reactive');
+  d.strategy = [...strat];
+  return {removable: removable.length, strategy: d.strategy};
 }
 
 $('scRun').onclick = async () => {
@@ -3080,6 +3328,10 @@ $('scRun').onclick = async () => {
         pending = got.pending || [];
         say(`Counting 1–2 star reviews… ${done.length} done · ${pending.length} pending`);
       }
+      // THE PER-LOCATION ROWS, NOT JUST THE TOTALS. Only the three summary
+      // numbers were kept, so the star split the pull already paid for was
+      // thrown away and a location could not be excluded from the count.
+      sc.negDone = done;
       sc.stars = {locations: ((sc.locations || {}).locations || []).length,
                   flagged: done.reduce((z, x) => z + (x.neg_1_2 || 0), 0),
                   one_star: done.reduce((z, x) => z + (x.neg_1 || 0), 0)};
@@ -3087,17 +3339,46 @@ $('scRun').onclick = async () => {
   }
   // The form follows the scan: the counts are what the quote prices.
   const d = r.data;
+  r.scanOff = {};
   if (sc.stars) { d.reviews = sc.stars.flagged; d.locations = sc.stars.locations; }
   else if ((sc.locations || {}).locations) d.locations = sc.locations.locations.length;
-  const vol = ((sc.terms || {}).terms || []).reduce((z, x) => z + (x.volume || 0), 0);
+  const vol = (sc.terms || {}).total_volume
+    || ((sc.terms || {}).terms || []).reduce((z, x) => z + (x.volume || 0), 0);
   if (vol) d.volume = vol;
+  const rec = scanRecommend(r);
   load(formOf(r), d);
   scanDraw(r);
   say(`Scan complete · ${d.reviews || 0} flagged reviews · ${d.locations || 0} locations`
       + ` · ${(d.volume || 0).toLocaleString()}/mo brand volume`
+      + ` · ${rec.removable} removable page${rec.removable === 1 ? '' : 's'}`
       + ((sc.locations || {}).listed ? ` · Google lists them as “${sc.locations.listed}”` : ''));
   $('scRun').disabled = false;
 };
+
+// RE-PULL ONE CALL, NOT THE WHOLE SCAN. Google's page one and its suggestions
+// both move between pulls, and re-running the scan to see a change spends the
+// keyword and review calls again.
+function scRepull(btn, path, key, label){
+  $(btn).onclick = async () => {
+    const r = ROWS[ROW];
+    const brand = $('scBrand').value.trim(), domain = $('scDomain').value.trim();
+    if (!brand || !r.scan) return;
+    $(btn).disabled = true;
+    $('scProg').textContent = `Re-pulling ${label}…`;
+    try {
+      r.scan[key] = await post(path, {brand, domain});
+      scanRecommend(r);
+      load(formOf(r), r.data);
+      scanDraw(r);
+      $('scProg').textContent = `${label} re-pulled.`;
+    } catch (e) {
+      $('scProg').textContent = `${label} re-pull failed — ${e.message}`;
+    }
+    $(btn).disabled = false;
+  };
+}
+scRepull('scRepullSerp', '/api/rep_scan_serp', 'serp', 'results');
+scRepull('scRepullAc', '/api/rep_scan_autocomplete', 'autocomplete', 'auto-suggest');
 
 // ---------------------------------------------------------------- ORM quote
 async function generateOrm(){
@@ -3121,10 +3402,14 @@ async function generateOrm(){
     margin_pct: parseFloat(String(r.cfg && r.cfg.markup || d.markup || 35)) / 100,
     reviews: strat.includes('Review Removals') ? {count: +d.reviews || 0} : {count: 0},
     articles: strat.includes('Site/Article Removals')
-      ? {standard: +d.std || 0, premium: +d.prem || 0,
-         pages: pages.slice(0, (+d.std || 0) + (+d.prem || 0)).map((x, n) => ({
+      // ONE SITE REMOVAL, NOT TWO TIERS (2026-09-17, Kiri). Standard and
+      // premium were separate counts at separate rates; the product sells one
+      // removal. `premium: 0` is still sent so rep_pricing and the order
+      // form's own fields keep their shape.
+      ? {standard: +d.std || 0, premium: 0,
+         pages: pages.slice(0, +d.std || 0).map(x => ({
            pos: x.pos, domain: x.domain, url: x.url || '', title: x.title || '',
-           tier: n < (+d.prem || 0) ? 'premium' : 'standard'}))}
+           tier: 'standard'}))}
       : {standard: 0, premium: 0, pages: []},
     search: {volume: +d.volume || 0, suppression: strat.includes('Reactive'),
              autosuggest: !!d.autosuggest, term_sets: 1,

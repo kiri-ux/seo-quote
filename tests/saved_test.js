@@ -201,6 +201,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     // the scan that priced it is still on the quote
     document.getElementById('kwBuilder').click();
     R.scanCols = [...document.querySelectorAll('#paneScan .col h5 span')].map(s => s.textContent);
+    R.scanLocs = (document.querySelector('#scLocs .scth') || {}).textContent || '';
     return R;
   });
 
@@ -250,7 +251,10 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'orm.strategyRead': [orm.strategy.join(','),
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
     'orm.countsRead': [`${orm.reviews}/${orm.locations}`, '31/2'],
-    'orm.scanKept': [orm.scanCols.join(','), '1,1,0,2 \u00b7 by name'],
+    // The snapshot is two columns and two tables now: Page one and Locations
+    // carry ratings, tactics and the star split, so they are not columns.
+    'orm.scanKept': [orm.scanCols.join(','), '1,0'],
+    'orm.scanLocationsKept': [/2 of 2 \u00b7 by name/.test(orm.scanLocs), true],
   };
 
   let bad = 0;

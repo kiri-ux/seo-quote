@@ -385,8 +385,8 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
         merged_tl = (f"{min(week_nums)}\u2013{max(week_nums)} weeks"
                      if all_weeks and week_nums else cfg["timeline"])
         lines.append({
-            "service": "Negative Website/Article Removals \u2014 Standard",
-            "detail": f"{n} standard page{'s' if n != 1 else ''} @ ${unit:,}/page",
+            "service": "Negative Website/Article Removals",
+            "detail": f"{n} page{'s' if n != 1 else ''} @ ${unit:,}/page",
             "qty": n, "unit": unit, "kind": "per_asset",
             "total": unit * n, "timeline": merged_tl,
             "estimated": True,
@@ -408,8 +408,8 @@ def price_articles(n_standard, n_premium, classes=None, margin_pct=None,
             hard = _art_hard(per35)
         per = _art_client(hard, m)
         lines.append({
-            "service": "Negative Website/Article Removals \u2014 Standard",
-            "detail": f"{n} standard site{'s' if n != 1 else ''} @ ${per:,}/removed",
+            "service": "Negative Website/Article Removals",
+            "detail": f"{n} site{'s' if n != 1 else ''} @ ${per:,}/removed",
             "qty": n, "unit": per, "kind": "per_asset", "total": per * n,
             "timeline": cfg["timeline"],
             "notes": (["\u2699 Manual hard-cost override active \u2014 formula/rate card bypassed for this quote."] if hard_std_override else [])
@@ -888,6 +888,9 @@ def build_rep_quote(payload):
         return round(float(ln["unit"]) * (1 - mg), 2)
 
     rev = _find(lambda l: l["service"].startswith("Negative Review Removals"))
+    # ONE SITE-REMOVAL CHANNEL (2026-09-17, Kiri). The premium pricer below is
+    # kept: $12,500 top-tier news is a real rate for a hand-built quote. The
+    # form no longer offers the tier, so prm is normally None.
     std = _find(lambda l: "Website/Article Removals" in l["service"]
                 and "Premium" not in l["service"])
     prm = _find(lambda l: "Website/Article Removals" in l["service"]

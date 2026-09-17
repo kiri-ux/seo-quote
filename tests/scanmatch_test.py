@@ -139,6 +139,62 @@ check("and the name gate still applies there",
       "City Air Experts Heating and Cooling" in [l["title"] for l in r["locations"]],
       False)
 
+# ------------------------------------------------- and the same brand name
+# does the same damage to the TERM universe
+#
+# Search Protection is priced off total brand volume. classify_term asked only
+# whether the brand appeared anywhere in the term, so this client's universe
+# came back 3,190/mo -- of which 480 was theirs and 2,710 belonged to seven
+# other companies with "city", "heating" and "air" in their names.
+BRAND = "City Heating and Air"
+THEIRS = ["city heating and air",
+          "city heating and air reviews",
+          "city heating and air complaints",
+          "is city heating and air legit",
+          "reviews for city heating and air",
+          "city heating and air conditioning"]
+SOMEBODY_ELSE = ["holy city heating and air", "river city heating and air",
+                 "bold city heating and air", "twin city heating and air",
+                 "forest city heating and air", "central city heating and air",
+                 "queen city heating and air conditioning"]
+for t in THEIRS:
+    check("theirs: %s" % t, rep_scan.classify_term(t, BRAND) is not None, True)
+for t in SOMEBODY_ELSE:
+    check("not theirs: %s" % t, rep_scan.classify_term(t, BRAND), None)
+check("the modifier still decides the class",
+      [rep_scan.classify_term(t, BRAND) for t in
+       ("city heating and air", "city heating and air reviews",
+        "city heating and air lawsuit")],
+      ["neutral", "watch", "negative"])
+# WHAT COMES AFTER THE BRAND IS LEFT ALONE. Google lists this very client as
+# "City Heating & Air Conditioning", so a trailing word is not a different
+# company.
+check("a trailing word does not disqualify a term",
+      rep_scan.classify_term("city heating and air conditioning", BRAND), "neutral")
+
+# and the volume that reaches the quote is only theirs
+_post, seen = fake(lambda p: [])
+
+
+def term_post(path, payload, timeout=None):
+    if "keywords_for_keywords" in path:
+        rows = [{"keyword": t, "search_volume": v} for t, v in
+                [("holy city heating and air", 590), ("city heating and air", 480),
+                 ("river city heating and air", 390), ("bold city heating and air", 260),
+                 ("twin city heating and air", 260), ("forest city heating and air", 260),
+                 ("queen city heating and air conditioning", 170),
+                 ("central city heating and air", 110)]]
+        return {"tasks": [{"result": rows}]}
+    raise RuntimeError("probe not stubbed")
+
+
+rep_scan.init(term_post)
+out = rep_scan.scan_terms(BRAND)
+check("the brand universe is 480/mo, not 3,190", out["total_volume"], 480)
+check("and it is one term", len(out["terms"]), 1)
+check("the seven other companies are gone",
+      [t["term"] for t in out["terms"]], ["city heating and air"])
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))
