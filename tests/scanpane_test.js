@@ -38,16 +38,19 @@ const SERP = {
   const say = (n, ok, extra = '') => { if (!ok) { bad++; console.log('FAIL', n, extra); } };
   const json = (route, body) =>
     route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(body)});
-  let serpCalls = 0, serpBody = {};
+  let serpCalls = 0, serpBody = {}, locBody = {};
 
   await p.route('**/api/rep_scan_**', route => {
     const url = new URL(route.request().url()).pathname;
-    if (url === '/api/rep_scan_locations') return json(route, {
+    if (url === '/api/rep_scan_locations') {
+      try { locBody = JSON.parse(route.request().postData() || '{}'); } catch (e) {}
+      return json(route, {
       strategy: 'domain', total_reviews: 300, locations: [
         {title: 'Bright Dental Midtown', place_id: 'p1', reviews: 212, rating: 3.9,
          address: '12 Main St'},
         {title: 'Bright Dental Southside', place_id: 'p2', reviews: 88, rating: 4.4,
          address: '400 South Ave'}]});
+    }
     if (url === '/api/rep_scan_terms') return json(route, {
       terms: [{term: 'bright dental co lawsuit', volume: 260, 'class': 'negative'},
               {term: 'bright dental co reviews', volume: 90, 'class': 'watch'},
@@ -83,18 +86,40 @@ const SERP = {
   await p.fill('#form [data-k="brand"]', 'Bright Dental Co');
   await p.fill('#form [data-k="site"]', 'https://www.brightdental.com/');
   const step1 = await p.evaluate(() => ({
-    runOnForm: !!document.querySelector('#form #scRun'),
+    // The pill sits where the SEO row's Keyword Builder does.
+    runInTopBar: !!document.querySelector('.toppills #scRun')
+                 && !document.getElementById('scRun').hidden,
     noScanPane: !document.getElementById('paneScan'),
     noSecondPaneButton: document.getElementById('kwBuilder').hidden,
     gen: document.getElementById('gen').textContent.trim(),
     back: document.getElementById('back').hidden,
   }));
-  say('scanRunsFromTheForm', step1.runOnForm);
+  say('scanIsThePillTopRight', step1.runInTopBar);
   // AUTO-SUGGEST / RELATED WAS A CHOICE THAT DOES NOT EXIST: Search Protection
   // is priced as one bundle that always includes it, and nothing read the flag.
   say('noAutoSuggestToggle',
       await p.evaluate(() => !document.querySelector('#form [data-k="autosuggest"]')));
   // "# of Sites" reads like a thing you type; it is a count the scan flags.
+  // ORDER ID AND PARTNER ARE ADTINI'S, not this tool's: the demo carries them
+  // for its own record, folded away.
+  const demo = await p.evaluate(() => {
+    const d = document.querySelector('#form details.demofold');
+    return d ? {closed: !d.open, holds: [...d.querySelectorAll('[data-k]')]
+                 .map(x => x.dataset.k).join(',')} : null;
+  });
+  say('demoOnlyFieldsAreFolded', demo && demo.closed, JSON.stringify(demo));
+  say('andHoldOrderIdAndPartner', demo && demo.holds === 'order_no,partner',
+      JSON.stringify(demo));
+  // Strategy first, then the four counts in the order they are read in.
+  const order = await p.evaluate(() => [...document.querySelectorAll('#form .f')]
+    .map(f => (f.querySelector('[data-k],[data-chips]') || {}).dataset)
+    .filter(Boolean).map(d => d.k || d.chips));
+  say('strategySitsUnderBrandAndSite',
+      order.slice(0, 3).join(',') === 'brand,site,strategy', order.slice(0, 5).join(','));
+  say('theFourCountsAreInReadingOrder',
+      order.join(',').includes('volume,locations,reviews,std'), order.join(','));
+  say('noIndustryField',
+      await p.evaluate(() => !document.querySelector('#form [data-chips="industry"]')));
   say('theSiteCountIsCalledFlaggedSites',
       await p.evaluate(() => [...document.querySelectorAll('#form label')]
         .some(l => /^Flagged Sites/.test(l.textContent.trim()))));
@@ -103,13 +128,13 @@ const SERP = {
   say('generateIsTheOnlyOtherStep', step1.gen === 'Generate Quote', step1.gen);
   say('noBackToAPaneThatIsGone', step1.back);
 
-  say('theButtonSaysRun', (await p.textContent('#scRun')).trim() === 'Run brand scan',
+  say('theButtonSaysRun', /Run brand scan/.test(await p.textContent('#scRun')),
       await p.textContent('#scRun'));
   await p.click('#scRun');
   await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent), {timeout: 30000});
   // ONE BUTTON. Results and auto-suggest had their own re-pulls, which asked
   // the planner to work out which half of a scan they wanted.
-  say('andRerunAfterwards', (await p.textContent('#scRun')).trim() === 'Re-run scan',
+  say('andRerunAfterwards', /Re-run scan/.test(await p.textContent('#scRun')),
       await p.textContent('#scRun'));
   say('noPartialRepullButtons',
       await p.evaluate(() => !document.getElementById('scRepullSerp')
@@ -140,6 +165,10 @@ const SERP = {
   // full of companies in other states.
   say('theScanIsToldWhichMarket',
       (serpBody.geo_values || []).length > 0, JSON.stringify(serpBody.geo_values));
+  // The locations lookup gets it too: the website match is identity, but the
+  // name fallback is a guess and the market narrows it.
+  say('soIsTheLocationsLookup',
+      (locBody.geo_values || []).length > 0, JSON.stringify(locBody.geo_values));
 
   // ============================================ the form carries what changes the price
   const onForm = await p.evaluate(() => ({

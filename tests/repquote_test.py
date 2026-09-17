@@ -51,7 +51,6 @@ def payload(strategy, **over):
                 "suppression": "Reactive" in strat,
                 "autosuggest": False, "term_sets": 1, "pages": []},
         shield={"locations": over.get("locations", 1)},
-        industry=over.get("industry", []),
         overrides={},
     )
     if "Proactive" not in strat:
@@ -112,12 +111,6 @@ check("the two recurring bundles go over separately",
 check("and they add to the monthly budget",
       qb["handoff"]["search_protection_monthly"]
       + qb["handoff"]["brand_shield_monthly"], qb["handoff"]["monthly_budget"])
-
-# ---------------------------------------------- industry rides along
-check("industry is carried to the order form",
-      R.build_rep_quote(payload(["Reactive"], volume=500,
-                                industry=["Home Services - HVAC"]))["handoff"]["industry"],
-      ["Home Services - HVAC"])
 
 # ---------------------------------------------- volume moves the monthly
 # The bundle is priced off brand volume, so the terms fix that cut City Heating
