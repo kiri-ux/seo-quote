@@ -57,9 +57,16 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
             handoff: {reviews_count: 31, price_per_review_removal: 100, locations: 2,
                       search_volume: 2400, monthly_budget: 12550,
                       strategy: ['Review Removals', 'Site/Article Removals', 'Reactive', 'Proactive']}},
-    scan: {data: {terms: {rows: [{keyword: 'ski barn reviews', volume: 390}]},
-                  serp: {rows: [{pos: 3, domain: 'yelp.com'}]},
-                  locations: {locations: [{title: 'Ski Barn Wayne', reviews: 412},
+    // rep_scan.py returns `terms` and `organic`, never `rows` -- a saved quote
+    // stores what the scanner sent, so the fixture has to be that shape or
+    // this is testing a reload of something that was never saved.
+    scan: {data: {terms: {terms: [{term: 'ski barn reviews', volume: 390,
+                                   'class': 'watch'}]},
+                  serp: {organic: [{pos: 3, domain: 'yelp.com',
+                                    tactic: 'suppression'}], forums: []},
+                  autocomplete: {'ski barn': {suggestions: [], negative: []}},
+                  locations: {strategy: 'title',
+                              locations: [{title: 'Ski Barn Wayne', reviews: 412},
                                           {title: 'Ski Barn Paramus', reviews: 88}]}},
            negDone: [{neg_1_2: 21}, {neg_1_2: 10, neg_1: 6}]}}};
 
@@ -243,7 +250,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     'orm.strategyRead': [orm.strategy.join(','),
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
     'orm.countsRead': [`${orm.reviews}/${orm.locations}`, '31/2'],
-    'orm.scanKept': [orm.scanCols.join(','), '1,1,2'],
+    'orm.scanKept': [orm.scanCols.join(','), '1,1,0,2 \u00b7 by name'],
   };
 
   let bad = 0;
