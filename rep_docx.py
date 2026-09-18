@@ -303,6 +303,22 @@ def _table(doc, headers, rows, widths=None, right_from=1):
     return tb
 
 
+def _cover(doc, brand, title):
+    """The cover the SEO proposal opens with: the document's name, then whose
+    it is. adtini's document, not a letterhead."""
+    t = doc.add_paragraph()
+    t.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = t.add_run(title)
+    r.bold = True
+    r.font.size = Pt(26)
+    r.font.color.rgb = ATLAS
+    n = doc.add_paragraph()
+    n.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    rn = n.add_run(brand)
+    rn.bold = True
+    rn.font.size = Pt(16)
+
+
 def _letterhead(doc, brand, subject, when=None):
     """Date / Subject / From, then the IP notice — the way both of Brendan's
     reputation proposals open."""
@@ -805,7 +821,10 @@ def build_rep_proposal_docx(d):
     lines = q.get("lines") or []
     totals = q.get("totals") or {}
 
-    _letterhead(doc, brand, "Reputation Management Proposal")
+    # THE SAME COVER THE SEO PROPOSAL OPENS WITH (2026-09-18, Kiri). This
+    # opened on Brendan's letterhead -- Date / Subject / From, and an IP notice
+    # in Simple SEO Group's name -- on a document adtini sends out.
+    _cover(doc, brand, "Reputation Management Proposal")
 
     _head(doc, "Summary")
     _body(doc, COPY["summary"].format(brand=brand))
@@ -836,17 +855,37 @@ def build_rep_proposal_docx(d):
     # maintenance phase fell into.
     if protection or shield:
         _head(doc, "Strategy")
+    def _lines_table(rows):
+        _table(doc, ["Service", "Detail", "Price"],
+               [[l.get("service") or "", l.get("detail") or "",
+                 _money(l.get("total")) + ("/mo" if l.get("kind") == "monthly"
+                                           else "")] for l in rows],
+               widths=[1.9, 3.1, 1.2], right_from=2)
+
+    # EACH STRATEGY CARRIES ITS OWN PRICE. "Search Results, Related Searches
+    # and Auto Suggest" was a section of its own AFTER the removals, which is
+    # the Reactive line described a second time and priced somewhere else --
+    # so the document read as five products rather than the two it sells.
     if protection:
         _head(doc, COPY["reactive_heading"], size=12)
         _body(doc, COPY["reactive_lead"])
         _body(doc, COPY["reactive_bundle_head"], bold=True)
         for name, text in COPY["reactive_items"]:
             _bullet(doc, f"{name}: {text}")
+        _body(doc, COPY["search_basis"])
+        _body(doc, COPY["search_rates"])
+        # Two places on the page, named separately: Brendan's Sage Dental
+        # proposal prices them as two campaigns with two scopes.
+        _body(doc, COPY["related_where"])
+        _body(doc, COPY["suggest_where"])
+        _body(doc, COPY["influence_rule"])
+        _lines_table(protection)
     if shield:
         _head(doc, COPY["proactive_heading"], size=12)
         _body(doc, COPY["proactive_lead"])
         for name, text in COPY["proactive_items"]:
             _bullet(doc, f"{name}: {text}")
+        _lines_table(shield)
 
     # ---- website removals -------------------------------------------------
     if sites:
@@ -887,22 +926,6 @@ def build_rep_proposal_docx(d):
                   bold=True)
         _body(doc, COPY["reviews_capacity"])
 
-    # ---- search results ---------------------------------------------------
-    if search:
-        _head(doc, "Search Results, Related Searches and Auto Suggest")
-        _body(doc, COPY["search_basis"])
-        _body(doc, COPY["search_rates"])
-        # NAMED SEPARATELY, because they are two places on the page and the
-        # heading was the only thing that said so.
-        _body(doc, COPY["related_where"])
-        _body(doc, COPY["suggest_where"])
-        _body(doc, COPY["influence_rule"])
-        _table(doc, ["Service", "Detail", "Price"],
-               [[l.get("service") or "", l.get("detail") or "",
-                 _money(l.get("total")) + ("/mo" if l.get("kind") == "monthly"
-                                           else "")] for l in search],
-               widths=[1.9, 3.1, 1.2], right_from=2)
-
     if other:
         _head(doc, "Additional Services")
         _table(doc, ["Service", "Detail", "Price"],
@@ -928,12 +951,9 @@ def build_rep_proposal_docx(d):
     for w in (q.get("warnings") or []):
         _body(doc, w, italic=True)
 
-    _head(doc, COPY["next_heading"])
-    _body(doc, COPY["next_1"])
-    _body(doc, COPY["next_2"])
-    _body(doc, COPY["next_3"])
-    _footer(doc)
-
+    # NO NEXT STEPS AND NO FOOTER. Both were Simple SEO Group's -- Brendan's
+    # email, their registration link, their phone number and terms -- on a
+    # document that goes out from adtini. (2026-09-18, Kiri)
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
