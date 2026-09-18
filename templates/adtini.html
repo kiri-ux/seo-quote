@@ -237,13 +237,14 @@
         <section class="kbmain">
           <div class="paneltop">
             <h4 id="kbHead">Keyword list</h4>
-            <label class="srctog"><input type="checkbox" id="kbSrc"> sources</label>
           </div>
           <p class="hint" id="kbNote"></p>
           <p class="hint" id="kbAxisNote"></p>
           <p class="hint" id="kbMarketNote"></p>
           <div class="cols" id="kbCols"></div>
           <div class="widen" id="kbWiden" hidden></div>
+          <details class="tmg" id="kbTiming" hidden>
+            <summary>Timing</summary><div id="kbTimingBody"></div></details>
         </section>
       </div>
     </div>
@@ -333,6 +334,17 @@ async function postWait(url, body, method, say){
 // can be read as a list of what it waited for rather than one long spinner.
 let TIMING = [];
 function timingReset(){ TIMING = []; }
+// AT THE BOTTOM, FOLDED. It is read when a build felt slow and never
+// otherwise, and on the status line it was longer than the result.
+function timingDraw(){
+  const box = $('kbTiming');
+  if (!box) return;
+  const body = $('kbTimingBody');
+  const txt = timingLine().replace(/^ \u00b7 /, '');
+  box.hidden = !txt;
+  box.open = false;
+  if (body) body.textContent = txt;
+}
 function timingLine(){
   if (!TIMING.length) return '';
   const total = TIMING.reduce((z, x) => z + x.ms, 0);
@@ -2588,7 +2600,6 @@ function kbDraw(r){
   const kw = r.kw;
   if (!kw) { $('kbCols').innerHTML = ''; $('kbHead').textContent = 'Keyword list';
              $('kbNote').textContent = 'Not built yet.'; $('kbWiden').hidden = true; return; }
-  const src = $('kbSrc').checked;
   // THE NUMBER BESIDE A TERM IS THAT MARKET'S DEMAND FOR THE SERVICE, not the
   // volume of the geo-modified phrase -- local phrasings mostly report zero.
   // A figure Google answered from a wider area says so, because four counties
@@ -2603,7 +2614,7 @@ function kbDraw(r){
   $('kbCols').innerHTML = ['ultra','competitive','long_tail'].map(k => `
     <div class="col"><h5>${KBL[k]}<span>${(kw[k] || []).length}</span></h5>
       <ul>${(kw[k] || []).map((x, i) =>
-        `<li${fromExpansion(x.kw, r.seedSrc) ? ' class="exp"' : ''}><span>${esc(x.kw)}</span>${src && x.src ? `<span class="s">[${esc(x.src)}]</span>` : ''}`
+        `<li${fromExpansion(x.kw, r.seedSrc) ? ' class="exp"' : ''}><span>${esc(x.kw)}</span>`
         + vol(x)
         + `<b class="kwrm" data-bucket="${k}" data-i="${i}" title="Remove">&times;</b></li>`).join('')}
       </ul>
@@ -3022,7 +3033,8 @@ $('kbBuild').onclick = async () => {
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
       $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
-        + expandWhy(grew) + timingLine();
+        + expandWhy(grew);
+    timingDraw();
   } catch (e) {
     $('saved').textContent = e.message;
   }
@@ -3038,7 +3050,6 @@ $('pastReport').onchange = e => {
   $('pastReportName').textContent = f ? f.name : '';
 };
 
-$('kbSrc').onchange = () => kbDraw();
 
 // REMOVE AN OFF-TARGET TERM, ADD ONE THEY ASKED FOR. The edit is the list the
 // quote prices, so it comes out of every bucket the term is in -- head too, or

@@ -217,6 +217,9 @@ const BASE = "http://127.0.0.1:5203";
     // covers the built list.
     R.builtNote = document.getElementById('kbNote').textContent.trim();
     R.hasBuild = !!document.getElementById('kbBuild');
+    // The sources checkbox is gone: it tagged every term with the pass that
+    // proposed it, which is a build detail on a list the planner is reading
+    // as the quote.
     R.hasSourceToggle = !!document.getElementById('kbSrc');
     R.noCountryPicker = !document.getElementById('kbCountry');
     // Lock keyword list is GONE: it was recorded on the quote and enforced
@@ -255,8 +258,10 @@ const BASE = "http://127.0.0.1:5203";
     // THE ORDER ID IS A HANDOFF FIELD, NOT AN IDENTIFIER. It sat third, ahead of
     // the client name, and took the width of one. Partner reads with Strategies
     // -- both answer "who is this for" -- so it moved next to it, 2026-09-17.
+    // The date moved to the right and was renamed for what it has always held
+    // (the newest updated_at), and Price sits with the products it prices.
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Order ID|Client|Products|Strategies|Partner|Status'],
+      'Planner|Order ID|Client|Products|Strategies|Price|Partner|Status|Updated'],
     'home.rows': [home.rows, 8],
     'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
     'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],
@@ -339,7 +344,7 @@ const BASE = "http://127.0.0.1:5203";
     'kw.pane': [kw.kwPane, true],
     'kw.savedListShown': [kw.builtNote, '7,700/mo measured · 3 markets'],
     'kw.hasBuild': [kw.hasBuild, true],
-    'kw.hasSourceToggle': [kw.hasSourceToggle, true],
+    'kw.noSourceToggle': [kw.hasSourceToggle, false],
     'kw.noSecondCountryPicker': [kw.noCountryPicker, true],
     'kw.emptySeedsRefused': [kw.emptyBuild,
       'Add a seed term, or turn Expand on to read their site.'],

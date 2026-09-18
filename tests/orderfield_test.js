@@ -91,11 +91,15 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   await p.waitForSelector('#rows tr', {timeout:15000});
   const heads = await p.$$eval('thead th', ns => ns.map(n => n.textContent.trim()));
   say('orderColumnExists', heads.includes('Order ID'), JSON.stringify(heads));
-  // Planner, Built, Order ID, Client, Products, Strategies, Partner, Status.
-  // Partner moved right of Strategies on 2026-09-17: the two are read together
-  // and the order number is a handoff detail, not the row's name.
-  say('partnerAfterStrategies',
-      heads.indexOf('Partner') === heads.indexOf('Strategies') + 1, JSON.stringify(heads));
+  // Planner, Order ID, Client, Products, Strategies, Price, Partner, Status,
+  // Updated. Partner moved right of Strategies on 2026-09-17: the two are read
+  // together and the order number is a handoff detail, not the row's name.
+  // Price went in between them on 2026-09-18, beside the products it prices.
+  say('priceAfterStrategies',
+      heads.indexOf('Price') === heads.indexOf('Strategies') + 1, JSON.stringify(heads));
+  say('partnerAfterPrice',
+      heads.indexOf('Partner') === heads.indexOf('Price') + 1, JSON.stringify(heads));
+  say('updatedIsLast', heads[heads.length - 1] === 'Updated', JSON.stringify(heads));
   say('orderBeforeClient',
       heads.indexOf('Order ID') === heads.indexOf('Client') - 1, JSON.stringify(heads));
   const ords = await p.$$eval('#rows [data-f="order_no"]', ns => ns.map(n => n.value));

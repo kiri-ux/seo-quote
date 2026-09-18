@@ -33,17 +33,20 @@ def check(name, got, want):
 
 SEO = [
     {"id": 1, "name": "Drainify UK", "client": "Drainify", "strategy": "Core SEO + AI Search",
-     "updated_at": "2026-09-17T10:00:00", "base": 5450},
+     "updated_at": "2026-09-17T10:00:00", "base": 5450, "intermediate": 7150},
     {"id": 2, "name": "Drainify IE", "client": "Drainify", "strategy": "Core SEO",
-     "updated_at": "2026-09-17T09:00:00", "base": 4950},
+     "updated_at": "2026-09-17T09:00:00", "base": 4950, "intermediate": 6450},
     {"id": 3, "name": "Sage implants", "client": "Sage Dental", "strategy": "Core SEO",
-     "updated_at": "2026-09-16T12:00:00", "base": 5450},
+     "updated_at": "2026-09-16T12:00:00", "base": 5450, "intermediate": 6950},
+    {"id": 5, "name": "Renfroe", "client": "Renfroe", "strategy": "Core SEO",
+     "updated_at": "2026-09-14T12:00:00", "base": None},
 ]
 REP = [
     {"id": 9, "name": "Sage reputation", "client": "Sage Dental",
-     "strategy": "Reactive + Proactive", "updated_at": "2026-09-16T13:00:00", "base": 3100},
+     "strategy": "Reactive + Proactive", "updated_at": "2026-09-16T13:00:00",
+     "base": 3100, "intermediate": 4200},
     {"id": 10, "name": "Ski Barn reviews", "client": "Ski Barn", "strategy": "Reactive",
-     "updated_at": "2026-09-15T08:00:00", "base": 2100},
+     "updated_at": "2026-09-15T08:00:00", "base": 2100, "intermediate": 2600},
 ]
 META = {"Sage Dental": {"planner": "Stacy", "partner": "Bay Area Digital Solutions",
                         "status": "Ready for SSG Review", "order_no": "56305"}}
@@ -51,7 +54,8 @@ META = {"Sage Dental": {"planner": "Stacy", "partner": "Bay Area Digital Solutio
 rows = app.group_by_client(SEO, REP, META)
 by = {r["client"]: r for r in rows}
 
-check("one row per client", sorted(by), ["Drainify", "Sage Dental", "Ski Barn"])
+check("one row per client", sorted(by),
+      ["Drainify", "Renfroe", "Sage Dental", "Ski Barn"])
 check("two products merge onto the client",
       (by["Sage Dental"]["seo"], by["Sage Dental"]["orm"]), (1, 1))
 check("a client can hold many quotes of one product", by["Drainify"]["seo"], 2)
@@ -65,9 +69,17 @@ check("partner comes from the client", by["Sage Dental"]["partner"],
       "Bay Area Digital Solutions")
 check("a client with no meta still has a planner", by["Ski Barn"]["planner"], "Kiri")
 check("and a status", by["Ski Barn"]["status"], "Pending")
-check("built is the newest quote on the client", by["Drainify"]["built"], "2026-09-17")
+check("updated is the newest quote on the client", by["Drainify"]["updated"], "2026-09-17")
+# THE PRICE THE LIST SHOWS: the middle tier of the newest priced quote, per
+# product. SEO carries Core SEO + AI Search combined already; ORM's column
+# holds the monthly.
+check("seo price is the newest priced quote", by["Drainify"]["priceSeo"], 7150)
+check("orm price is its own figure", by["Sage Dental"]["priceOrm"], 4200)
+check("a client with one product has no price for the other",
+      by["Ski Barn"]["priceSeo"], None)
+check("an unpriced quote is not a zero", by["Renfroe"]["priceSeo"], None)
 check("newest client first", [r["client"] for r in rows],
-      ["Drainify", "Sage Dental", "Ski Barn"])
+      ["Drainify", "Sage Dental", "Ski Barn", "Renfroe"])
 
 # a quote saved without a client is still reachable
 check("no client is its own row",
