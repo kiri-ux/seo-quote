@@ -219,10 +219,12 @@ const BASE = "http://127.0.0.1:5203";
     R.hasBuild = !!document.getElementById('kbBuild');
     R.hasSourceToggle = !!document.getElementById('kbSrc');
     R.noCountryPicker = !document.getElementById('kbCountry');
-    R.builderToggles = ['kbNat', 'kbLock', 'kbExpand'].every(id => !!document.getElementById(id))
-      && !!document.getElementById('kbRefresh') && !document.getElementById('kbExpandRun');
+    // Lock keyword list is GONE: it was recorded on the quote and enforced
+    // nowhere, so it read as a promise the tool did not keep.
+    R.builderToggles = ['kbNat', 'kbExpand'].every(id => !!document.getElementById(id))
+      && !!document.getElementById('kbRefresh')
+      && !document.getElementById('kbExpandRun') && !document.getElementById('kbLock');
     R.formHasNoToggles = !document.querySelector('#fseo .yn[data-k="expand"]')
-      && !document.querySelector('#fseo .yn[data-k="lock"]')
       && !document.querySelector('#fseo .yn[data-k="national"]')
       && !document.querySelector('#fseo [data-k="markets"]');
     R.seedsFromRow = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -342,7 +344,7 @@ const BASE = "http://127.0.0.1:5203";
     'kw.emptySeedsRefused': [kw.emptyBuild,
       'Add a seed term, or turn Expand on to read their site.'],
     'kw.buildStaysAvailable': [kw.buildStillEnabled, true],
-    'kw.ownsTheThreeToggles': [kw.builderToggles, true],
+    'kw.ownsTheBuilderFields': [kw.builderToggles, true],
     'form.keepsNoneOfThem': [kw.formHasNoToggles, true],
     'kw.seedsFromRow': [kw.seedsFromRow.length > 0, true],
     'kw.applyLabel': [kw.generateBecomesApply, 'Apply to the quote'],

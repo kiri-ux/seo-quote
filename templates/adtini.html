@@ -231,8 +231,6 @@
               <label class="kbchk"><input type="checkbox" id="kbRefresh"> Run it again</label></div>
             <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
               <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
-            <div class="f"><label>Lock keyword list</label>
-              <div class="yn" id="kbLock"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
           </div>
           <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
         </section>
@@ -464,7 +462,7 @@ const ROWS = [
     city:['Boca Raton, FL'], county:[], state:[], countries:[],
     industry:['Healthcare'], strategy:['Core SEO'], goals:['New patient acquisition'],
     past:1, past_details:'', spend:'$6,200',
-    expand:1, lock:0, national:0, addon:1, markets:8, markup:'35'}},
+    expand:1, national:0, addon:1, markets:8, markup:'35'}},
   {id:'137031', kind:'seo', name:'Search Engine Optimization', built:'9/12/26',
    result: Q137031, kw: Q137031.kw,
    history:[{when:'9/12/26 9:15 AM', prompt:'{ band: single_city, adder: 250 }',
@@ -476,7 +474,7 @@ const ROWS = [
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:['Atlanta, GA'], county:[], state:[], countries:[],
     industry:['Healthcare'], strategy:['Core SEO'], goals:[], past:0, past_details:'',
-    spend:'', expand:1, lock:1, national:0, addon:0, markets:3, markup:'35'}},
+    spend:'', expand:1, national:0, addon:0, markets:3, markup:'35'}},
   {id:'137028', kind:'orm', name:'Online Reputation Management', built:'9/16/26', data:{
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
@@ -783,7 +781,7 @@ function adopt(got){
            markup: String(Math.round(frac(i.markup_pct != null ? i.markup_pct : 0.35) * 100)),
            past: i.past_seo ? 1 : 0, past_details: i.past_seo_detail || '',
            spend: i.client_budget ? '$' + Number(i.client_budget).toLocaleString() : '',
-           country: 'United States', expand: 1, lock: 0},
+           country: 'United States', expand: 1},
     kw: pay.kw || null,
     result: pay.pricing ? {
       pricing: Object.assign({addon_markets: i.addon_markets || 0}, pay.pricing),
@@ -911,7 +909,7 @@ function fromQuery(){
            g_city: true, g_county: false, g_state: false, g_country: false,
            city: [], county: [], state: [], countries: [],
            industry: [], strategy: ['Core SEO'], goals: [], past: 0, past_details: '',
-           spend: '', expand: 1, lock: 0, national: 0, markup: '35',
+           spend: '', expand: 1, national: 0, markup: '35',
            country: 'United States'},
       history: [],
     };
@@ -1442,7 +1440,7 @@ const RUN_SEO = [
   ['focus', 'Product / vertical focus'], ['negatives', 'Negative terms'],
   ['geo', 'Geographic targeting'], ['scope', 'Geo scope'],
   ['country', 'Measurement country'], ['national', 'Price on national demand'],
-  ['expand', 'Expand on focus terms'], ['lock', 'Lock keyword list'],
+  ['expand', 'Expand on focus terms'],
   ['industry', 'Industry'], ['strategy', 'Strategy'], ['goals', 'Campaign goals'],
   ['past', 'Has done SEO in the past'], ['past_details', 'Past SEO details'],
   ['spend', "Client's estimated budget"], ['markup', 'Markup %'],
@@ -1546,7 +1544,7 @@ function runSettings(r){
     brand: d.brand, site: d.site, business_desc: d.business_desc,
     focus: d.focus, negatives: d.negatives,
     geo: geoOf(d), scope: BANDS[(r.band || bandOf(d))], country: d.country,
-    national: YN(d.national), expand: YN(d.expand), lock: YN(d.lock),
+    national: YN(d.national), expand: YN(d.expand),
     industry: d.industry, strategy: d.strategy, goals: d.goals,
     past: YN(d.past), past_details: d.past_details, spend: d.spend,
     markup: d.markup ? d.markup + '%' : '',
@@ -2092,7 +2090,7 @@ document.addEventListener('click', e => {
     b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     if (b.parentNode.dataset.k === 'past') pastFields();
     // National demand is a scope decision, so the builder's line follows it.
-    const kbk = {kbNat: 'national', kbLock: 'lock', kbExpand: 'expand'}[b.parentNode.id];
+    const kbk = {kbNat: 'national', kbExpand: 'expand'}[b.parentNode.id];
     if (kbk && ROW != null) {
       ROWS[ROW].data[kbk] = b.dataset.v === '1' ? 1 : 0;
       if (kbk === 'national') kbScopeNote(ROWS[ROW]);
@@ -2534,8 +2532,8 @@ function kbLoad(r){
   if (seedHint) seedHint.innerHTML = seedLegend(r);
   // Expand defaults to ON, including on a quote saved before it was a toggle.
   if (r.data.expand == null) r.data.expand = 1;
-  [['kbNat', 'national'], ['kbLock', 'lock'],
-   ['kbAxis', 'spread'], ['kbExpand', 'expand']].forEach(([id, k]) =>
+  [['kbNat', 'national'], ['kbAxis', 'spread'],
+   ['kbExpand', 'expand']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
   // Refresh is spent by the build that used it; it never opens ticked.
@@ -2949,7 +2947,6 @@ $('kbBuild').onclick = async () => {
     .map(c => c.firstChild.textContent.trim());
   const d = r.data;
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
-  d.lock = $('kbLock').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.spread = $('kbAxis').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.axis = d.spread ? 'geography' : '';
