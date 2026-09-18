@@ -278,6 +278,9 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
     gross_per = r5(hard_per / (1.0 - m))
     total = int(round(gross_per * n))
     hard_total = round(hard_per * n, 2)
+    band = next((f"{b['min']}\u2013{b['max']}" if b.get("max") else f"{b['min']}+"
+                 for b in cfg["brackets"]
+                 if n >= b["min"] and (b["max"] is None or n <= b["max"])), "")
     int_per = next((c["cost"] for c in cfg.get("internal_cost", [])
                     if n >= c["min"] and (c["max"] is None or n <= c["max"])),
                    hard_per * INTERNAL_COST_PCT["pct"])
@@ -287,6 +290,17 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
                   f"{n:,} flagged review{'s' if n != 1 else ''}",
         "qty": n, "unit": gross_per,
         "unit_label": f"${gross_per:,.0f}/removed review",
+        "build": [
+            {"label": "Rate card", "value": (
+                f"manual override \u2014 {_m(hard_per)} hard per review"
+                if overridden else
+                f"whole-order bracket {band} \u2014 {_m(hard_per)} hard per review")},
+            {"label": "Client price per review",
+             "value": f"{_m(hard_per)} \u00f7 (1 \u2212 {m * 100:.0f}%) "
+                      f"\u2192 {_m(gross_per)}"},
+            {"label": "Maximum", "value": f"{n:,} \u00d7 {_m(gross_per)} = "
+                                          f"{_m(total)} \u2014 pay on success"},
+        ],
         "kind": "per_asset", "total": total,
         "timeline": cfg["timeline"],
         "notes": ["Pay on success \u2014 billed per removed review; the total is "
@@ -341,6 +355,13 @@ INTERNAL_COST_PCT = {"pct": 0.20}
 
 # Scan tunables surfaced in the pricing-config panel (rarely edited).
 SCAN_SETTINGS = {"review_pull_depth": 200}
+
+def _m(x):
+    """$1,234 / $1,234.50 — the build rows print what the constant is, and some
+    of them carry halves ($10.40 a backlink)."""
+    x = float(x or 0)
+    return f"${x:,.2f}" if round(x % 1, 2) else f"${x:,.0f}"
+
 
 def _mrows(hard, unit_suffix="", total=None, tbd=False):
     """Two-row internal grid: partner hard cost + internal hard cost. tbd
@@ -570,6 +591,39 @@ def price_search_bundle(volume, margin_pct=None, hard_override=None, phrases=Non
                    f"${r50(SEARCH_BUNDLE['per_extra_phrase_hard'] / (1 - mg)):,}"
                    " each."] if extra_n else []),
         "hard_total": hard,
+        # HOW THE MONTHLY WAS REACHED. The panel showed the line and its total
+        # and nothing in between, so the two components, the bounds and the
+        # margin step were all invisible. (2026-09-18, Kiri)
+        "build": ([{"label": "Manual partner hard cost",
+                    "value": f"{_m(hard)}/mo \u2014 formula bypassed"}]
+                  if hard_override else [
+            {"label": "Organic search suppression",
+             "value": f"{_m(SEARCH_BUNDLE['supp_base'])} base + "
+                      f"{_m(SEARCH_BUNDLE.get('supp_per_1k', 0))}/1K \u00d7 "
+                      f"{volume:,}/mo = {_m(supp_h)}"},
+            {"label": "Auto-suggest & related",
+             "value": f"{_m(SEARCH_BUNDLE['as_base'])} base + "
+                      f"{_m(SEARCH_BUNDLE.get('as_per_1k', 0))}/1K \u00d7 "
+                      f"{volume:,}/mo = {_m(as_h)}"}]
+            + ([{"label": f"{extra_n} phrase{'s' if extra_n != 1 else ''} beyond "
+                          f"the {inc} included",
+                 "value": f"{extra_n} \u00d7 "
+                          f"{_m(SEARCH_BUNDLE.get('per_extra_phrase_hard', 0))} "
+                          f"= {_m(extra_h)}"}] if extra_n else [])
+            + ([{"label": "Minimum monthly",
+                 "value": f"components came to {_m(supp_h + as_h)} \u2014 held at "
+                          f"the {_m(SEARCH_BUNDLE['floor'])} floor"}]
+               if supp_h + as_h < SEARCH_BUNDLE["floor"] else [])
+            + ([{"label": "Capped",
+                 "value": f"formula came to "
+                          f"{_m(max(SEARCH_BUNDLE['floor'], supp_h + as_h) + extra_h)}"
+                          f" \u2014 held at the {_m(SEARCH_BUNDLE['cap'])} ceiling"}]
+               if max(SEARCH_BUNDLE["floor"], supp_h + as_h) + extra_h
+                  > SEARCH_BUNDLE["cap"] else [])
+            + [{"label": "Partner hard cost", "value": f"{_m(hard)}/mo"},
+               {"label": "Client price",
+                "value": f"{_m(hard)} \u00f7 (1 \u2212 {mg * 100:.0f}%) "
+                         f"\u2192 {_m(m)}/mo"}]),
         "internal": {"rows": _mrows(hard, "/mo") + [
             {"label": f"\u26a0 {inc}-phrase inclusion",
              "value": "internal assumption \u2014 Sage actual covered 2; "
@@ -838,6 +892,28 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
         "timeline": "Ongoing \u00b7 6-month minimum",
         "notes": notes,
         "hard_total": hard_total,
+        "build": ([{"label": "Manual partner hard cost",
+                    "value": f"{_m(hard_total)}/mo \u2014 formula bypassed"}]
+                  if hard_override else [
+            {"label": "Monitoring",
+             "value": f"{_m(p['monitor_fixed'])} + {_m(p['monitor_per_keyword'])} "
+                      f"\u00d7 {kw} keyword{'s' if kw != 1 else ''} = {_m(monitor)}"},
+            {"label": "Moat building",
+             "value": f"{_m(p['moat_fixed'])} + {_m(p['moat_per_backlink'])} \u00d7 "
+                      f"{links} backlink{'s' if links != 1 else ''} + "
+                      f"{_m(p['moat_per_asset'])} \u00d7 {assets} asset page"
+                      f"{'s' if assets != 1 else ''} = {_m(moat)}"},
+            {"label": "What it costs to run",
+             "value": f"{_m(internal)}/mo"},
+            {"label": "Client price",
+             "value": f"{_m(internal)} \u00f7 {p['internal_pct_of_retail']:.3g} "
+                      f"\u2192 {_m(total)}/mo"
+                      + (f" \u2014 held at the {_m(p['floor'])} minimum"
+                         if total == p["floor"] else "")},
+            {"label": "Partner hard cost",
+             "value": f"{_m(total)} \u00d7 (1 \u2212 {m * 100:.0f}%) "
+                      f"= {_m(hard_total)}/mo"},
+        ]),
         "internal": {"rows": [
             {"label": "Partner hard cost", "value": f"${hard_total:,.0f}/mo"},
             {"label": "Internal hard cost (measured)",

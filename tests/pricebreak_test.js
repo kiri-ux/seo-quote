@@ -67,6 +67,26 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
                    result: {pricing: {}, quote: {totals: {}, handoff: {}}}};
         return priceFold(r);
       })(),
+      // AND HOW THE MONTHLY WAS REACHED. The ORM fold named each line and its
+      // price and stopped there, so "how did you get to $5,400/mo?" had no
+      // answer on the page. Each line carries its own working now.
+      ormBuild: (() => {
+        const r = {kind: 'orm', data: {}, kw: {}, result: {pricing: {}, quote: {
+          lines: [{service: 'Reactive \u00b7 Search Protection', kind: 'monthly',
+                   detail: '500/mo measured', total: 5400, hard_total: 3480,
+                   build: [{label: 'Organic search suppression',
+                            value: '$1,100 base + $25.80/1K \u00d7 500/mo = $1,150'},
+                           {label: 'Client price',
+                            value: '$3,480 \u00f7 (1 \u2212 35%) \u2192 $5,400/mo'},
+                           {label: 'Nothing to say', value: ''}]},
+                  // A line with no stored working prints none -- quotes built
+                  // before the pricer recorded it must not grow an empty box.
+                  {service: 'Negative Review Removals', kind: 'per_asset',
+                   detail: '11 flagged reviews', total: 9900, hard_total: 6435}],
+          totals: {monthly: 5400, one_time: 9900},
+          handoff: {margin_pct: 0.35, partner_monthly_cost: 3480}}}};
+        return priceFold(r);
+      })(),
       // SITE CONDITION. A measured site names the count and the worst offenders;
       // an unmeasured one says so rather than reading as clean, because a
       // blocked crawler and a spotless site are not the same fact.
@@ -167,6 +187,22 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('the tile row no longer carries the breakdown',
       !has(out.tiles, 'Geo anchor') && !has(out.tiles, 'Competitive adder'),
       out.tiles.slice(0, 300));
+  // THE WORKING, UNDER THE LINE IT BELONGS TO.
+  say('each priced line shows its own arithmetic',
+      has(out.ormBuild, '$1,100 base + $25.80/1K \u00d7 500/mo = $1,150'),
+      out.ormBuild.slice(0, 600));
+  say('including the margin step that reaches the client price',
+      has(out.ormBuild, '$3,480 \u00f7 (1 \u2212 35%) \u2192 $5,400/mo'),
+      out.ormBuild.slice(0, 600));
+  say('a step with no value is left out rather than printed blank',
+      !has(out.ormBuild, 'Nothing to say'), out.ormBuild.slice(0, 600));
+  say('a line with no stored working grows no empty box',
+      (out.ormBuild.match(/tr class="bld"/g) || []).length === 1,
+      out.ormBuild.slice(0, 600));
+  say('and the line itself still reads as before',
+      has(out.ormBuild, 'Reactive \u00b7 Search Protection')
+      && has(out.ormBuild, '$5,400/mo') && has(out.ormBuild, '$9,900'),
+      out.ormBuild.slice(0, 600));
   say('no page errors', errs.length === 0, errs);
 
   console.log(bad ? 'failed=' + bad : 'ok all');

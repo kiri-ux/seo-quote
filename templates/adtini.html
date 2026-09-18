@@ -282,8 +282,12 @@ const $ = id => document.getElementById(id);
 let LISTS = {industries: [], goals: [], strategies: [], rep_strategies: []};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// CENTS COME IN PAIRS. A partner cost of 4487.5 printed as "$4,487.5", which
+// reads as a number with a digit missing rather than as cents.
 const money = v => (v == null || v === '') ? '—'
-  : '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+  : '$' + Number(v).toLocaleString(undefined, Number(v) % 1
+      ? {minimumFractionDigits: 2, maximumFractionDigits: 2}
+      : {maximumFractionDigits: 2});
 // A MARGIN IS 35% OR 0.35 DEPENDING ON WHO SAVED IT. Read as one thing, or a
 // quote saved by the older tab prints 3500%.
 const frac = v => {
@@ -1562,7 +1566,20 @@ function ormPriceRows(r){
     return n == null ? '\u2014' : money(n) + (l.kind === 'monthly' ? '/mo' : '');
   };
   const price = l => money(l.total) + (l.kind === 'monthly' ? '/mo' : '');
-  const rows = lines.map(l => [l.service, l.detail || '', hardOf(l), price(l)]);
+  // THE ARITHMETIC, NOT THE ANSWER. The fold named each line and its price and
+  // stopped there, so "how did you get to $5,400/mo?" had no answer on the
+  // page -- the bases, the per-1K slope, the phrases beyond the bundle and the
+  // margin step were all in the pricer and none of them were printed.
+  // (2026-09-18, Kiri)
+  const build = l => {
+    const b = (l.build || []).filter(x => x && x.value);
+    return b.length
+      ? `<tr class="bld"><td colspan="4"><table>`
+        + b.map(x => `<tr><td>${esc(x.label || '')}</td>`
+                   + `<td>${esc(x.value)}</td></tr>`).join('')
+        + `</table></td></tr>`
+      : '';
+  };
   const mg = h.margin_pct != null ? Math.round(h.margin_pct * 100) : null;
   const sums = [];
   if (tot.monthly) sums.push(['Monthly', '',
@@ -1575,9 +1592,10 @@ function ormPriceRows(r){
     h.margin_dollars_monthly ? money(h.margin_dollars_monthly) + '/mo' : '']);
   return `<table class="send orm"><thead><tr><th>Line</th><th>Priced on</th>`
     + `<th>Partner cost</th><th>Client price</th></tr></thead><tbody>`
-    + rows.concat([]).map(([a, b, c, d]) =>
-        `<tr><td>${esc(a)}</td><td>${esc(b)}</td>`
-        + `<td>${esc(c)}</td><td>${esc(d)}</td></tr>`).join('')
+    + lines.map(l =>
+        `<tr><td>${esc(l.service)}</td><td>${esc(l.detail || '')}</td>`
+        + `<td>${esc(hardOf(l))}</td><td>${esc(price(l))}</td></tr>`
+        + build(l)).join('')
     + sums.map(([a, b, c, d]) =>
         `<tr class="sum"><td><b>${esc(a)}</b></td><td>${esc(b)}</td>`
         + `<td>${esc(c)}</td><td><b>${esc(d)}</b></td></tr>`).join('')
