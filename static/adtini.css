@@ -138,6 +138,11 @@ nav.tabs a.on{background:var(--page);color:var(--navy)}
 }
 .seg button.on{background:#EAF2FE;color:var(--blue);font-weight:600}
 
+/* Quote the client for the other product, from the page that already has
+   their details. */
+h3.products{display:flex;align-items:center;gap:10px}
+.btn2.addprod{font-size:11.5px;padding:6px 14px;border-radius:999px}
+
 /* ---- table -------------------------------------------------------------- */
 .tablecard{background:var(--card);border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(16,40,70,.08)}

@@ -50,7 +50,7 @@
 
 <div class="wrap">
   <p class="crumbs"><a href="/adtini">Workflow Page</a> &rsaquo; Forecast</p>
-  <h3 class="products">Products</h3>
+  <h3 class="products">Products <span id="addProd"></span></h3>
   <div id="prods"></div>
 </div>
 
@@ -548,7 +548,68 @@ function draw(){
   ROWS.forEach((r, i) => { r.i = i; });
   try { siteLink(); } catch (e) {}
   $('prods').innerHTML = ROWS.map(rowHtml).join('');
+  try { addProdButtons(); } catch (e) {}
 }
+
+// THE CLIENT IS ALREADY ON THE PAGE. Quoting them for the other product meant
+// going back to the grid, starting a blank quote and retyping the brand, the
+// website, the markets, the industry and the order number that the quote in
+// front of you already carries. (2026-09-18, Kiri)
+function addProdButtons(){
+  const box = $('addProd');
+  if (!box) return;
+  // Only on a client's own page: a new quote from the grid is its own page and
+  // has nothing to copy from.
+  const have = new Set(ROWS.map(r => r.kind));
+  const known = ROWS.some(r => (r.data || {}).brand);
+  box.innerHTML = (!CLIENT || !known) ? '' :
+    [['seo', 'SEO'], ['orm', 'Reputation']]
+      .filter(([k]) => !have.has(k))
+      .map(([k, label]) =>
+        `<button class="btn2 addprod" type="button" data-add="${k}">+ ${label} quote</button>`)
+      .join('');
+}
+
+// Everything that belongs to the CLIENT rides over; everything that belongs to
+// the product starts empty.
+function addProductRow(kind){
+  const from = ROWS.find(r => (r.data || {}).brand) || ROWS[0] || {};
+  const d = from.data || {};
+  const shared = {
+    brand: d.brand || CLIENT || '', site: d.site || '',
+    order_no: d.order_no || '', partner: d.partner || '',
+    markup: d.markup || '35',
+    g_city: !!d.g_city, g_county: !!d.g_county,
+    g_state: !!d.g_state, g_country: !!d.g_country,
+    city: (d.city || []).slice(), county: (d.county || []).slice(),
+    state: (d.state || []).slice(), countries: (d.countries || []).slice(),
+  };
+  const row = {
+    id: '', qid: newQid(), kind,
+    name: kind === 'orm' ? 'Online Reputation Management'
+                         : 'Search Engine Optimization',
+    built: new Date().toLocaleDateString('en-US', {month: 'numeric', day: 'numeric',
+                                                   year: '2-digit'}),
+    data: kind === 'orm'
+      ? Object.assign({strategy: ['Reactive'], reviews: '', locations: 1,
+                       std: '', volume: ''}, shared)
+      : Object.assign({business_desc: d.business_desc || '', focus: [], negatives: [],
+                       industry: (d.industry || []).slice(),
+                       strategy: ['Core SEO'], goals: [], past: 0, past_details: '',
+                       spend: '', expand: 1, national: 0,
+                       country: d.country || 'United States'}, shared),
+    history: [],
+  };
+  ROWS.push(row);
+  draw();
+  open(ROWS.length - 1, 'form');
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-add]');
+  if (!b) return;
+  e.preventDefault();
+  addProductRow(b.dataset.add === 'orm' ? 'orm' : 'seo');
+});
 
 // SAVING. A quote is stored under its client with the shape the store already
 // uses -- inputs/pricing/rep_totals so the list columns and strategy tag read
