@@ -190,8 +190,13 @@ check("with his pay-on-success terms",
       "payment is only due upon successful removal of the site from Google" in t2, True)
 check("and his timeline", "average of 2-3 months to remove a site" in t2, True)
 check("review removals, his wording", "roughly 50% success rate" in t2, True)
-check("the search campaign is flagged as not performance-based",
-      "not done on a performance basis" in t2, True)
+# The performance-basis sentence is gone (2026-09-18): it was written for a
+# proposal whose other lines were all pay-on-success, and reads on ours as an
+# apology for the one monthly the product is built around.
+check("no apology for the monthly",
+      "not done on a performance basis" in t2, False)
+check("the success rate still stands",
+      "85+% success rate at removal of negative results" in t2, True)
 check("the priced lines survive", "26 flagged reviews" in t2, True)
 check("the shield", "Brand Shield" in t2, True)
 check("the totals", "One-time and per-asset (pay on success)" in t2, True)

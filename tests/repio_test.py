@@ -71,10 +71,16 @@ check("the rates line drops its second sentence",
       D.COPY["search_rates"],
       "We have a 85+% success rate at removal of negative results over a "
       "6 month period.")
-check("the basis line keeps its reason",
-      "ongoing work" in D.COPY["search_basis"], True)
-check("and promises no maintenance",
-      "aintenance" in D.COPY["search_basis"], False)
+# The performance-basis sentence is gone with it (2026-09-18): Brendan wrote it
+# for a proposal whose other lines were all pay-on-success, and on ours it reads
+# as an apology for the one monthly the product is built around.
+check("the basis line is gone", "search_basis" in D.COPY, False)
+_doc = D.build_rep_proposal_docx(
+    {"brand": "Ski Barn", "quote": R.build_rep_quote(SKI_BARN)})
+from docx import Document as _Document          # noqa: E402
+_txt = "\n".join(p.text for p in _Document(_doc).paragraphs)
+check("and nothing prints it",
+      "not done on a performance basis" in _txt, False)
 
 print("\nTHE TWO BUNDLES GO OVER SEPARATELY")
 check("reactive", h["search_protection_monthly"], 6500)
