@@ -52,12 +52,10 @@ say('missing.named', /no industry or business description to go on/.test(t), t);
 // No expansion at all is silent.
 say('off.silent', fn(null) === '', JSON.stringify(fn(null)));
 
-// And the build line uses it.
-// The expansion is its own step now, and its line is what reads the note.
-say('expandLineUsesIt', /expandWhy\(got\)\.replace/.test(s),
-    'the Expand step does not use expandWhy for its status line');
-say('buildLineDoesNot', !/Built \$\{\(r\.kw\.all \|\| \[\]\)\.length\} terms\.`\s*\+ expandWhy/.test(s),
-    'the build message still carries the expansion clause');
+// And the build line uses it: the expansion runs inside the build, so the one
+// line the planner reads at the end of it is where the note belongs.
+say('buildLineUsesIt', /terms\.`\s*\+ expandWhy\(grew\)/.test(s),
+    'the build message does not carry the expansion clause');
 say('countsCollected', /const found = \{site:/.test(s));
 say('failuresCollected', /fails\[key\] =/.test(s));
 

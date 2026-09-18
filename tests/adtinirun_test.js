@@ -179,11 +179,9 @@ const CFG = {
   // ---------------- step 1: the keyword builder ----------------
   await p.click('[data-open="0"][data-view="form"]');
   await p.click('#kwBuilder');
-  // EXPAND FIRST, THEN BUILD. The expansion is its own step, reviewed before
-  // the build rather than after it.
-  await p.click('#kbExpandRun');
-  await p.waitForFunction(() => /proposed|added nothing/.test(document.getElementById('saved').textContent));
-  const expandNote = await p.evaluate(() => document.getElementById('saved').textContent);
+  // THE BUILD EXPANDS FIRST. ✦ Expand on focus terms is a toggle, on by
+  // default, and the expansion runs once per list ahead of the build it
+  // belongs to.
   await p.click('#kbBuild');
   await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent));
 
@@ -344,12 +342,14 @@ const CFG = {
 
   const want = {
     // step 1
-    // EXPAND ON FOCUS TERMS runs before the build and feeds it
-    // The band is resolved when the builder opens and cached, so it does not
-    // reappear in the build sequence.
+    // EXPAND ON FOCUS TERMS runs inside the build, ahead of it, and feeds it.
+    // Three sources, then the gap pass a second time with what they found --
+    // it is the only one that is told the list. The band is resolved when the
+    // builder opens and cached, so it does not reappear in the build sequence.
     'kb.expandsFirst': [seq.slice(0, 4).sort().join(','),
-      '/api/expand_services,/api/rank_seeds,/api/site_services,/api/suggest_regions'],
-    'kb.thenBuildsAndRefines': [seq.slice(4, 6).join(','), '/api/keywords,/api/refine'],
+      '/api/expand_services,/api/expand_services,/api/rank_seeds,/api/site_services'],
+    'kb.thenTheRegions': [seq[4], '/api/suggest_regions'],
+    'kb.thenBuildsAndRefines': [seq.slice(5, 7).join(','), '/api/keywords,/api/refine'],
     // a term they already rank for leads, then by volume
     'kb.seedsGrew': [(kwCall.body.keywords || []).slice(3).join(','),
       'root canal,invisalign,dental crowns,denture repair'],
@@ -367,9 +367,7 @@ const CFG = {
     // The build reports what it waited on, so the note is checked by its
     // meaning rather than character for character.
     'kb.note': [kb.note.split(' · ')[0], 'Built 3 terms.'],
-    'kb.expandNote': [expandNote.split('.')[0], '4 terms proposed, shown dashed'],
-    'kb.noteSaysHowToReject':
-      [/remove any, then build keyword list/i.test(expandNote), true],
+    'kb.buildExpanded': [/4 terms added by expansion/.test(kb.note), true],
     'kb.noteCarriesTiming': [/\d+\.\d+s — /.test(kb.note), true],
     // the measured figure is the pricer's deduplicated total, not a row sum
     'kb.totalIsDeduplicated': [kb.head, 'Keyword list (3 terms)'],
@@ -394,7 +392,7 @@ const CFG = {
     // market_signals joined the run between the rank check and pricing: it reads
     // the client's own on-page condition, which now bands into the price and
     // which this tab never fetched at all.
-    'run.order': [seq.slice(6, 10).join(','),
+    'run.order': [seq.slice(7, 11).join(','),
       '/api/metrics,/api/rankings,/api/market_signals,/api/price'],
     'run.headTerms': [(metCall.body.head || []).join(','), 'dental implants'],
     'run.rankBatched': [rankCalls.length, 1],
