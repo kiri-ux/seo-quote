@@ -196,6 +196,38 @@ check("the rate card runs across the page there",
       in t2, True)
 check("and the footer", "SimpleSEOGroup.com/TOS" in t2, True)
 
+# THE PRODUCT, IN THE WORDS THE DECK USES. It priced four workstreams and
+# described none of them.
+check("the document says what ORM is",
+      "monitors and shapes your brand\u2019s digital footprint" in t2, True)
+check("Reactive is named and described",
+      "suppressing, addressing, or removing them" in t2, True)
+check("with the three components of the bundle",
+      all(x in t2 for x in ("Organic Search Suppression",
+                            "Auto-Suggest & Related Search Manipulation",
+                            "Branded Search Append")), True)
+check("Proactive is named and described",
+      "before any negative content can take hold" in t2, True)
+check("with both of its components",
+      all(x in t2 for x in ("SEO Brand Shield & Asset Building",
+                            "24/7 Brand Monitoring & Threat Detection")), True)
+# Two places on the page, priced as two campaigns in Brendan's own proposals.
+check("related searches is placed",
+      "At the bottom of Google searches" in t2, True)
+check("auto-suggest is placed",
+      "the dropdown that appears under the search bar" in t2, True)
+
+print("\nA WORKSTREAM THE QUOTE DID NOT BUY IS NOT DESCRIBED")
+q4 = rep_pricing.build_rep_quote(
+    {"campaign": "reactive", "brand": "Ski Barn", "margin_pct": 0.35,
+     "reviews": {"count": 0}, "articles": {"standard": 0, "premium": 0},
+     "search": {"volume": 8000, "bundle": True}, "shield": {"locations": 0}})
+t4 = text_of(client.post("/api/rep_proposal.docx",
+                         json={"brand": "Ski Barn", "campaign": "reactive",
+                               "quote": q4, "margin_pct": 0.35}).data)
+check("Reactive is there", "Search Protection Bundle" in t4, True)
+check("Proactive is not", "SEO Brand Shield & Asset Building" in t4, False)
+
 print("\nAN EMPTY QUOTE SAYS SO RATHER THAN FAILING")
 r3 = client.post("/api/rep_proposal.docx",
                  json={"brand": "Nobody", "campaign": "reactive",
