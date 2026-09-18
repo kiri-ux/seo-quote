@@ -290,7 +290,12 @@ const SERP = {
       firstTerm: box.querySelector('.col li > span').firstChild.textContent,
       ratingShown: /1\.4★ \(90\)/.test(box.textContent),
       tacticShown: /SITE REMOVAL/i.test(box.textContent),
-      relatedLabel: /related search/.test(box.textContent),
+      related: (() => {
+        const cols = [...box.querySelectorAll('.col')];
+        const c = cols.find(x => /Related searches/.test(
+          (x.querySelector('h5') || {}).textContent || ''));
+        return c ? c.querySelectorAll('li').length : 0;
+      })(),
       boxesInert: getComputedStyle(box.querySelector('.sclx')).pointerEvents === 'none',
       // one column inside the panel: two across a half-sheet column is a squeeze
       across: getComputedStyle(box.querySelector('.cols.quad4'))
@@ -303,8 +308,10 @@ const SERP = {
   say('andIsNoLongerFoldedAway', fold.notAFold);
   say('headNamesTheBrandAndItsVolume', /Bright Dental Co · 390\/mo/.test(fold.head || ''),
       fold.head);
-  say('bothColumnsAreThere',
-      (fold.cols || []).join(',') === 'Negative terms,Auto-suggest & related',
+  // TWO DIFFERENT PLACES, SOLD AS TWO CAMPAIGNS. Auto-suggest is the dropdown
+  // under the search bar; related searches is the box at the foot of the page.
+  say('threeColumnsAreThere',
+      (fold.cols || []).join(',') === 'Negative terms,Auto-suggest,Related searches',
       (fold.cols || []).join(','));
   say('stackedInOneColumn', fold.across === 1, String(fold.across));
   say('pageOneIsOnTheQuote', fold.pageOne);
@@ -312,7 +319,7 @@ const SERP = {
   say('withRatings', fold.ratingShown);
   say('withTactics', fold.tacticShown);
   say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
-  say('relatedSaysWhichBlockItCameFrom', fold.relatedLabel);
+  say('relatedHasItsOwnColumn', (fold.related || 0) > 0, String(fold.related));
   say('theQuotesCheckboxesAreInert', fold.boxesInert);
 
   // ============================================ and it says why when it fails
