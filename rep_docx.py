@@ -91,10 +91,10 @@ COPY = {
     # search_basis kept its reason for not being performance-based; the
     # maintenance clause became "ongoing work". search_rates lost its second
     # sentence entirely.
-    "search_basis": "This is the only campaign we are proposing which is not "
-                    "done on a performance basis because it requires both "
-                    "initial work as well as several months of ongoing work "
-                    "to hold the removal of the negative result.",
+    # (search_basis is GONE, 2026-09-18. "This is the only campaign we are
+    # proposing which is not done on a performance basis" was Brendan's line
+    # for a proposal whose other lines were all pay-on-success; it reads on
+    # ours as an apology for the one monthly the product is built around.)
     "search_rates": "We have a 85+% success rate at removal of negative "
                     "results over a 6 month period.",
 
@@ -755,7 +755,11 @@ def _snapshot(doc, d, brand):
         _table(doc, ["#", "Result", "Routing", "Rating"], rows,
                widths=[0.5, 2.5, 2.3, 0.9])
 
-    _serp_section(doc, shots, heading=not rows)
+    # THE QUERY IS NAMED ONCE. The page-one table's lead already says which
+    # search this is, so captioning the picture of that same search repeated
+    # it two lines later. (2026-09-18)
+    _serp_section(doc, shots, heading=not rows,
+                  named=(snap.get("query") or "") if rows else "")
 
     # The profiles themselves are printed with the removals they are priced
     # for, not here -- see _locations_block. Only a quote with no removal line
@@ -811,7 +815,7 @@ def _locations_block(doc, locs, snap=None):
     return True
 
 
-def _serp_section(doc, shots, heading=True):
+def _serp_section(doc, shots, heading=True, named=""):
     """The search results as they actually look, which is the evidence every
     one of Brendan's reputation proposals opens its search section with."""
     imgs = serp_images(shots)
@@ -820,8 +824,9 @@ def _serp_section(doc, shots, heading=True):
     # Inside the snapshot the sentence above the image already introduces it.
     if heading:
         _head(doc, "Search Results")
+    skip = str(named or "").strip().lower()
     for query, raw in imgs:
-        if query:
+        if query and str(query).strip().lower() != skip:
             _body(doc, f"\u201c{query}\u201d", italic=True)
         try:
             doc.add_picture(io.BytesIO(raw), width=Inches(6.2))
@@ -911,7 +916,6 @@ def build_rep_proposal_docx(d):
         _body(doc, COPY["reactive_bundle_head"], bold=True)
         for name, text in COPY["reactive_items"]:
             _bullet(doc, f"{name}: {text}")
-        _body(doc, COPY["search_basis"])
         _body(doc, COPY["search_rates"])
         # Two places on the page, named separately: Brendan's Sage Dental
         # proposal prices them as two campaigns with two scopes.
