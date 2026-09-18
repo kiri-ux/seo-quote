@@ -1480,8 +1480,47 @@ const YN = v => v ? 'Yes' : 'No';
 // cards buried it; this is the working, which is read when a number is being
 // questioned and ignored the rest of the time. (2026-09-17)
 function priceFold(r){
-  const t = priceRows(r);
+  const t = r.kind === 'orm' ? ormPriceRows(r) : priceRows(r);
   return t ? `<details class="qfold"><summary>Pricing</summary>${t}</details>` : '';
+}
+// HOW A REPUTATION QUOTE IS BUILT. The SEO side has had this since the panel
+// shipped and the ORM side had nothing: four workstreams, a monthly and a
+// removals maximum, and no way to see which line carried what or what it costs
+// us. Every figure is already on the quote -- each line records its own partner
+// hard cost -- it was never printed. (2026-09-18, Kiri)
+function ormPriceRows(r){
+  const q = (r.result || {}).quote || {};
+  const lines = q.lines || [];
+  if (!lines.length) return '';
+  const tot = q.totals || {}, h = q.handoff || {};
+  const hardOf = l => {
+    const rows = ((l.internal || {}).rows) || [];
+    const row = rows.find(x => /partner hard cost/i.test(x.label || ''));
+    if (row && row.value) return String(row.value);
+    const n = l.hard_total != null ? l.hard_total : (l.internal || {}).hard_total;
+    return n == null ? '\u2014' : money(n) + (l.kind === 'monthly' ? '/mo' : '');
+  };
+  const price = l => money(l.total) + (l.kind === 'monthly' ? '/mo' : '');
+  const rows = lines.map(l => [l.service, l.detail || '', hardOf(l), price(l)]);
+  const mg = h.margin_pct != null ? Math.round(h.margin_pct * 100) : null;
+  const sums = [];
+  if (tot.monthly) sums.push(['Monthly', '',
+    h.partner_monthly_cost != null ? money(h.partner_monthly_cost) + '/mo' : '',
+    money(tot.monthly) + '/mo']);
+  if (tot.one_time) sums.push(['Removals \u2014 pay on success, maximum',
+    'a maximum, not a committed spend', '', money(tot.one_time)]);
+  if (mg != null) sums.push([`Margin \u00b7 ${mg}% of gross`,
+    'agency share \u00b7 everything left of it is partner cost', '',
+    h.margin_dollars_monthly ? money(h.margin_dollars_monthly) + '/mo' : '']);
+  return `<table class="send orm"><thead><tr><th>Line</th><th>Priced on</th>`
+    + `<th>Partner cost</th><th>Client price</th></tr></thead><tbody>`
+    + rows.concat([]).map(([a, b, c, d]) =>
+        `<tr><td>${esc(a)}</td><td>${esc(b)}</td>`
+        + `<td>${esc(c)}</td><td>${esc(d)}</td></tr>`).join('')
+    + sums.map(([a, b, c, d]) =>
+        `<tr class="sum"><td><b>${esc(a)}</b></td><td>${esc(b)}</td>`
+        + `<td>${esc(c)}</td><td><b>${esc(d)}</b></td></tr>`).join('')
+    + `</tbody></table>`;
 }
 function priceRows(r){
   const p = (r.result || {}).pricing || {};
@@ -3270,22 +3309,35 @@ function snapshotParts(r, live){
        + `${offb.length} phrase${offb.length === 1 ? '' : 's'} excluded`
        + ` — they name a different company</div>`;
   }
-  // ------------------------------------------------------------- two columns
-  const col = (h, n, body) => `<div class="col"><h5>${h}<span>${n}</span></h5>`
+  // ------------------------------------------------------------- the lists
+  // WHAT IS WRONG, NOT WHAT IS THERE (2026-09-18, Kiri). Auto-suggest listed
+  // every suggestion the scan pulled, so nine rows carried two negatives and
+  // the two things the campaign is priced to remove sat in a list of ordinary
+  // ones. Only the negatives now, and a list with none does not draw.
+  // AND THE TERM THEY WERE PULLED FOR. Auto-suggest is asked per query -- the
+  // brand and the brand plus "reviews" -- which is also why one suggestion
+  // appeared twice: it came back under both. Deduplicated, and each list says
+  // which query it answers.
+  const col = (h, n, body, sub) => !n ? '' : `<div class="col"><h5>${h}<span>${n}</span></h5>`
+    + (sub ? `<p class="scq">${esc(sub)}</p>` : '')
     + (body ? `<ul>${body}</ul>` : `<p class="none">None</p>`) + `</div>`;
+  const acSeen = new Set();
   const acRows = [];
-  let acN = 0;
+  const acFor = [];
   Object.keys(sc.autocomplete || {}).forEach(k => {
     const a = sc.autocomplete[k] || {};
+    if (k) acFor.push(`\u201c${k}\u201d`);
     // SAME GATE THE TERMS GET. Google autocompletes the words, not the
     // business, so "city heating and air" came back with holy city, bold city,
     // river city, rose city and peak city -- five other companies' suggestions
     // presented as this client's exposure. What sits in front of the brand has
     // to be a word a searcher would put there.
-    leadsWithBrand(a.suggestions || [], brand).slice(0, 10).forEach(x => {
-      acN++;
-      acRows.push(`<li class="ac${(a.negative || []).indexOf(x) >= 0 ? ' neg' : ''}">`
-        + `<span class="mag">&#128269;</span><span>${boldMod(x, brand)}</span></li>`);
+    leadsWithBrand(a.negative || [], brand).forEach(x => {
+      const key = String(x).toLowerCase().trim();
+      if (acSeen.has(key)) return;
+      acSeen.add(key);
+      acRows.push(`<li class="ac neg"><span class="mag">&#128269;</span>`
+        + `<span>${boldMod(x, brand)}</span></li>`);
     });
   });
   // TWO DIFFERENT PLACES, AND THEY ARE SOLD SEPARATELY. Auto-suggest is the
@@ -3293,17 +3345,25 @@ function snapshotParts(r, live){
   // of the results page. Brendan's Sage Dental proposal prices them as two
   // campaigns with two scopes, so a column holding both, with a tag on half
   // the rows, was one list of two things. (2026-09-18)
-  const relRows = leadsWithBrand(relNeg, brand).map(x =>
+  const relSeen = new Set();
+  const relRows = leadsWithBrand(relNeg, brand).filter(x => {
+    const key = String(x).toLowerCase().trim();
+    if (relSeen.has(key)) return false;
+    relSeen.add(key);
+    return true;
+  }).map(x =>
     `<li class="ac neg"><span class="mag">&#128269;</span>`
     + `<span>${boldMod(x, brand)}</span></li>`);
   const cols =
-    col('Negative terms', flagged.length,
+    col('Auto-suggest', acRows.length, acRows.join(''),
+        acFor.length ? acFor.join(' \u00b7 ') : '')
+    + col('Related searches', relRows.length, relRows.join(''),
+          S.query ? `\u201c${S.query}\u201d` : '')
+    + col('Negative terms', flagged.length,
       flagged.slice(0, 10).map(t =>
         `<li><span>${esc(t.term || t.keyword || '')}`
         + `<i class="tg ${t['class'] === 'negative' ? 'bad' : ''}">${esc(t['class'] || '')}</i></span>`
-        + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
-    + col('Auto-suggest', acN, acRows.join(''))
-    + col('Related searches', relRows.length, relRows.join(''));
+        + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''));
 
   // ------------------------------------------------------------- page one
   const rated = x => x.rating ? `${x.rating}★${x.votes ? ' (' + x.votes.toLocaleString() + ')' : ''}` : '';
@@ -3396,11 +3456,14 @@ function snapshotPanel(r){
   if (!r.scan) return '';
   const P = snapshotParts(r, false);
   if (!(P.warn || P.cols || P.serp || P.locs)) return '';
+  // THE ORDER THE QUOTE IS READ IN: which listings are this client's, then
+  // the page they are losing, then the two search surfaces the campaign buys,
+  // then the demand behind them. (2026-09-18)
   return `<div class="pvkw scfold"><h5>Reputation snapshot<span>${
       esc(P.head.replace(/^Reputation snapshot — ?/, ''))}</span></h5>
-    <div class="pvscroll">${P.warn}`
+    <div class="pvscroll">${P.warn}${P.locs}${P.serp}`
     + `${P.cols ? `<div class="cols quad4">${P.cols}</div>` : ''}`
-    + `${P.serp}${P.locs}</div></div>`;
+    + `</div></div>`;
 }
 
 // WHAT THE SCAN DECIDED, WRITTEN ONTO THE FORM. The legacy page turned each
@@ -4048,9 +4111,15 @@ async function recaptureSerp(i){
   const r = ROWS[i];
   if (!r || !r.result) return;
   const btn = document.querySelector(`[data-serp="${i}"]`);
-  const msg = document.querySelector(`[data-serpmsg="${i}"]`);
-  const say = t => { const m = document.querySelector(`[data-serpmsg="${i}"]`);
-                     if (m) m.textContent = t; };
+  // THE REASON LIVES ON THE ROW, NOT IN THE ELEMENT. It was written straight
+  // into the tile, and the tile is rebuilt by every draw -- a save, another
+  // row finishing -- so a capture that failed went back to reading "Not
+  // captured" with nothing said. (2026-09-18, Kiri)
+  const say = t => {
+    r.note = t;
+    const m = document.querySelector(`[data-serpmsg="${i}"]`);
+    if (m) m.textContent = t;
+  };
   if (btn) { btn.disabled = true; btn.textContent = 'Capturing\u2026'; }
   say('Asking Google\u2026');
   try {
@@ -4062,12 +4131,15 @@ async function recaptureSerp(i){
       draw();
       return;
     }
-    say(got && got.error ? `Not captured — ${got.error}`
-                         : 'Not captured. No reason given.');
+    say(got && got.error ? `SERP not captured — ${got.error}`
+                         : 'SERP not captured. No reason given.');
   } catch (e) {
-    say('Capture failed \u2014 ' + e.message);
+    say('SERP capture failed \u2014 ' + e.message);
   }
   if (btn) { btn.disabled = false; btn.textContent = 'Capture'; }
+  // Redrawn with the reason on it, so the tile keeps what it says.
+  await persist(r);
+  draw();
 }
 
 // THE PROPOSAL DOCUMENT. Built from the same quote the fold lists, so what

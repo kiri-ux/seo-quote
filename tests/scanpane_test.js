@@ -287,7 +287,15 @@ const SERP = {
       cols: [...box.querySelectorAll('.col h5')].map(h => h.childNodes[0].textContent.trim()),
       pageOne: /PAGE ONE/i.test(box.textContent),
       locations: /LOCATIONS/i.test(box.textContent),
-      firstTerm: box.querySelector('.col li > span').firstChild.textContent,
+      firstTerm: (() => {
+        const c = [...box.querySelectorAll('.col')].find(x => /Negative terms/.test(
+          (x.querySelector('h5') || {}).textContent || ''));
+        return c ? c.querySelector('li > span').firstChild.textContent : '';
+      })(),
+      // Which query each list answers -- auto-suggest is asked per query, and
+      // one suggestion coming back under two of them is why a row appeared
+      // twice.
+      queries: [...box.querySelectorAll('.col .scq')].map(x => x.textContent.trim()),
       ratingShown: /1\.4★ \(90\)/.test(box.textContent),
       tacticShown: /SITE REMOVAL/i.test(box.textContent),
       related: (() => {
@@ -310,8 +318,10 @@ const SERP = {
       fold.head);
   // TWO DIFFERENT PLACES, SOLD AS TWO CAMPAIGNS. Auto-suggest is the dropdown
   // under the search bar; related searches is the box at the foot of the page.
+  // The order the quote is read in: the two search surfaces the campaign buys,
+  // then the demand behind them. Locations and page one sit above these.
   say('threeColumnsAreThere',
-      (fold.cols || []).join(',') === 'Negative terms,Auto-suggest,Related searches',
+      (fold.cols || []).join(',') === 'Auto-suggest,Related searches,Negative terms',
       (fold.cols || []).join(','));
   say('stackedInOneColumn', fold.across === 1, String(fold.across));
   say('pageOneIsOnTheQuote', fold.pageOne);
@@ -319,6 +329,8 @@ const SERP = {
   say('withRatings', fold.ratingShown);
   say('withTactics', fold.tacticShown);
   say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
+  say('eachListNamesItsQuery', (fold.queries || []).length >= 2,
+      JSON.stringify(fold.queries));
   say('relatedHasItsOwnColumn', (fold.related || 0) > 0, String(fold.related));
   say('theQuotesCheckboxesAreInert', fold.boxesInert);
 
