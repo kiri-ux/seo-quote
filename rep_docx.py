@@ -757,24 +757,57 @@ def _snapshot(doc, d, brand):
 
     _serp_section(doc, shots, heading=not rows)
 
-    if locs:
-        lrows, flagged = [], 0
-        for l in locs:
-            n1 = int(l.get("neg_1") or 0)
-            n2 = int(l.get("neg_2") or 0)
-            flagged += n1 + n2
-            lrows.append([
-                str(l.get("title") or l.get("place_id") or ""),
-                f"{float(l.get('profile_rating') or 0):.1f}\u2605",
-                f"{int(l.get('profile_reviews') or 0):,}",
-                str(n1), str(n2), str(int(l.get("weak_3") or 0)),
-            ])
-        _body(doc, "Google review profiles, by location:")
-        _table(doc, ["Location", "Rating", "Reviews", "1\u2605", "2\u2605", "3\u2605"],
-               lrows, widths=[2.6, 0.8, 0.9, 0.6, 0.6, 0.6])
-        if flagged:
-            _body(doc, f"{flagged:,} review{'s' if flagged != 1 else ''} sit at 1\u20132 stars "
-                       "and are the removal candidates priced below.", bold=True)
+    # The profiles themselves are printed with the removals they are priced
+    # for, not here -- see _locations_block. Only a quote with no removal line
+    # keeps them in the snapshot.
+    if locs and not d.get("_locs_with_removals"):
+        _locations_block(doc, locs, snap)
+    return True
+
+
+def _locations_block(doc, locs, snap=None):
+    """THE PROFILES THE REMOVALS COME OFF. The panel has shown which listings
+    are this client's, how they were matched and the star split per profile
+    since the scan shipped, and the document priced the removals without ever
+    naming a location. Same columns as the panel, address included -- a client
+    with four Knoxville listings needs to see which one is which.
+    (2026-09-18, Kiri)"""
+    locs = [l for l in (locs or []) if isinstance(l, dict)]
+    if not locs:
+        return False
+    snap = snap or {}
+    rows, flagged, weak = [], 0, 0
+    for l in locs:
+        n1 = int(l.get("neg_1") or 0)
+        n2 = int(l.get("neg_2") or 0)
+        n3 = int(l.get("weak_3") or 0)
+        flagged += n1 + n2
+        weak += n3
+        rating = l.get("profile_rating") or l.get("rating")
+        reviews = int(l.get("profile_reviews") or l.get("reviews") or 0)
+        rows.append([
+            str(l.get("title") or l.get("place_id") or "")
+            + (f"\n{l.get('address')}" if l.get("address") else ""),
+            (f"{float(rating):.1f}\u2605 / {reviews:,}" if rating
+             else (f"{reviews:,}" if reviews else "\u2014")),
+            str(n1), str(n2), str(n3),
+        ])
+    how = {"domain": "matched by website", "title": "matched by name",
+           "filter": "matched by name",
+           "title+market": "matched by name, in market"}.get(snap.get("match") or "", "")
+    lead = f"{len(rows)} location{'s' if len(rows) != 1 else ''}"
+    if how:
+        lead += f" \u00b7 {how}"
+    if flagged:
+        lead += f" \u00b7 {flagged:,} flagged at 1\u20132 stars"
+    if weak:
+        lead += f" \u00b7 {weak:,} at 3 stars"
+    _body(doc, lead + ":")
+    _table(doc, ["Location", "Profile", "1\u2605", "2\u2605", "3\u2605"],
+           rows, widths=[3.2, 1.3, 0.55, 0.55, 0.55])
+    if flagged:
+        _body(doc, f"{flagged:,} review{'s' if flagged != 1 else ''} sit at 1\u20132 stars "
+                   "and are the removal candidates priced below.", bold=True)
     return True
 
 
@@ -825,6 +858,12 @@ def build_rep_proposal_docx(d):
     # opened on Brendan's letterhead -- Date / Subject / From, and an IP notice
     # in Simple SEO Group's name -- on a document adtini sends out.
     _cover(doc, brand, "Reputation Management Proposal")
+
+    # The profiles are printed once: with the removals when there are any,
+    # in the snapshot when there are not.
+    d = dict(d, _locs_with_removals=any(
+        str(l.get("service", "")).startswith("Negative Review Removals")
+        for l in lines))
 
     _head(doc, "Summary")
     _body(doc, COPY["summary"].format(brand=brand))
@@ -912,6 +951,10 @@ def build_rep_proposal_docx(d):
     if reviews:
         _head(doc, "Google Review Removals")
         _body(doc, COPY["reviews_intro"])
+        # WHICH PROFILES, AND WHAT IS ON THEM. The rate card was priced against
+        # a flag count with no listings behind it.
+        _locations_block(doc, (d.get("snapshot") or {}).get("locations"),
+                         d.get("snapshot"))
         _body(doc, COPY["reviews_rates"])
         _body(doc, COPY["reviews_terms"])
         card = d.get("brackets")

@@ -4263,7 +4263,20 @@ async function downloadProposal(i){
       query: S.query || ((d.brand || '') + ' reviews').trim().toLowerCase(),
       terms: (T.terms || []).filter(t => t && t['class'] && t['class'] !== 'neutral').slice(0, 10),
       organic: S.organic || [], forums: S.forums || [],
-      locations: sc.locations || [],
+      // THE PROFILES, AS THE PANEL COUNTS THEM. This sent sc.locations, which
+      // is the raw lookup -- an object, not a list -- so the document priced
+      // the removals with no listing behind them. Only the ticked locations,
+      // with the star split the flag count was read off. (2026-09-18, Kiri)
+      match: (sc.locations || {}).strategy || '',
+      locations: (((sc.locations || {}).locations) || [])
+        .filter(l => scOn(r, l.place_id))
+        .map(l => {
+          const n = ((sc.negDone || []).find(x => x.place_id === l.place_id)) || {};
+          return {title: l.title || '', address: l.address || '',
+                  profile_rating: l.rating || null,
+                  profile_reviews: l.reviews || 0,
+                  neg_1: n.neg_1 || 0, neg_2: n.neg_2 || 0, weak_3: n.weak_3 || 0};
+        }),
     },
   }) : JSON.stringify({
     brand: d.brand || '', business_desc: d.business_desc || '',
