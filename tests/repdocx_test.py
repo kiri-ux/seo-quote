@@ -175,8 +175,13 @@ r2 = client.post("/api/rep_proposal.docx",
                        "margin_pct": 0.35})
 check("it builds", r2.status_code, 200)
 t2 = text_of(r2.data)
-check("it opens as a proposal",
-      "Subject: Ski Barn - Reputation Management Proposal" in t2, True)
+# THE SEO PROPOSAL'S COVER, WITH THIS DOCUMENT'S TITLE. It opened on Brendan's
+# letterhead, on a document adtini sends.
+check("it opens on the cover", "Reputation Management Proposal" in t2, True)
+check("with the client on it", "Ski Barn" in t2, True)
+check("and no letterhead", "Subject: Ski Barn" in t2, False)
+check("nobody else's name is on it",
+      any(x in t2 for x in ("Simple SEO Group", "Brendan", "simpleseogroup")), False)
 check("the summary is his", "requesting information to assist in improving "
       "their online reputation" in t2, True)
 check("website removals, his wording",
@@ -190,11 +195,11 @@ check("the search campaign is flagged as not performance-based",
 check("the priced lines survive", "26 flagged reviews" in t2, True)
 check("the shield", "Brand Shield" in t2, True)
 check("the totals", "One-time and per-asset (pay on success)" in t2, True)
-check("next steps", "new-client-registration-contract" in t2, True)
+check("no next steps", "new-client-registration-contract" in t2, False)
 check("the rate card runs across the page there",
       "# Of Reviews Removed | 1-25 | 26-50 | 51-100 | 101-250 | 251-350 | 351-500"
       in t2, True)
-check("and the footer", "SimpleSEOGroup.com/TOS" in t2, True)
+check("and no footer", "SimpleSEOGroup.com/TOS" in t2, False)
 
 # THE PRODUCT, IN THE WORDS THE DECK USES. It priced four workstreams and
 # described none of them.

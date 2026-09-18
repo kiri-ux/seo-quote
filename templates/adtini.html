@@ -3658,8 +3658,7 @@ async function generateOrm(){
         note('SERP not captured' + (shot && shot.error ? ` — ${shot.error}` : '') + '.');
         return;
       }
-      r.result.shot = shot.img;
-      r.result.serp = {kw: shot.kw, basis: shot.basis};
+      putShot(r, shot.img, shot.kw, shot.basis);
       await persist(r);
       draw();
       note(`SERP captured for “${shot.kw}”.`);
@@ -3992,8 +3991,8 @@ async function generate(){
         note('SERP not captured' + (shot && shot.error ? ` — ${shot.error}` : '') + '.');
         return;
       }
-      r.result.serp = shot;
-      r.result.shot = shot.img;
+      putShot(r, shot.img, shot.kw, shot.basis);
+      if (r.result) r.result.serp = Object.assign({}, r.result.serp, shot, {img: undefined});
       await persist(r);
       draw();
       note(`SERP captured for “${shot.kw}”.`);
@@ -4105,6 +4104,21 @@ listsReady();
   });
 })();
 
+// THE OPEN RUN RENDERS ITS OWN COPY OF THE QUOTE. A quote reloaded from
+// storage deserialises history[n].quote as a SEPARATE object from the row's
+// own, so a capture written to r.result landed nowhere the open run reads: the
+// proposal downloaded with the exhibit on it and the tile above it still said
+// "Not captured". Same fix the rank recheck carries. (2026-09-18, Kiri)
+function putShot(r, img, kw, basis){
+  const at = r.openRun == null ? 0 : r.openRun;
+  const run = (r.history || [])[at];
+  [r.result, run && run.quote].forEach(q => {
+    if (!q) return;
+    q.shot = img;
+    q.serp = {kw: kw, basis: basis};
+  });
+}
+
 // RECAPTURE THE SERP. A capture that failed left "Not captured" and no way to
 // ask again short of regenerating the whole quote.
 async function recaptureSerp(i){
@@ -4125,8 +4139,8 @@ async function recaptureSerp(i){
   try {
     const got = await autoSerp(r, r.data, (r.result || {}).ranks || {}, say);
     if (got && got.img) {
-      r.result.shot = got.img;
-      r.result.serp = {kw: got.kw, basis: got.basis};
+      putShot(r, got.img, got.kw, got.basis);
+      r.note = '';
       await persist(r);
       draw();
       return;
@@ -4183,7 +4197,7 @@ async function downloadProposal(i){
     // the reputation tool keys its captures by query.
     serp_shots: (r.result || {}).shot
       ? [{query: ((r.result || {}).serp || {}).kw || ((d.brand || '') + ' reviews').trim(),
-          data_url: r.result.shot}] : [],
+          data_url: r.result.shot, y: Number((r.result || {}).shotY) || 0}] : [],
     snapshot: {
       query: S.query || ((d.brand || '') + ' reviews').trim().toLowerCase(),
       terms: (T.terms || []).filter(t => t && t['class'] && t['class'] !== 'neutral').slice(0, 10),

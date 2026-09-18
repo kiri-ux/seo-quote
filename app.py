@@ -19001,6 +19001,28 @@ def api_rep_proposal_docx():
     # need them sent a second time.
     d.setdefault("removal_pages",
                  ((d.get("quote") or {}).get("handoff") or {}).get("removal_pages") or [])
+    # THE EXHIBIT IS THE FRAME THE PLANNER SET, not the whole page. The capture
+    # is stored whole so the window can be moved without recapturing, and the
+    # row shows it through a 16:9 box; this document was handed the 2,600px
+    # column, so a landscape frame on screen printed as a page of scroll. Same
+    # cut the SEO proposal takes. (2026-09-18, Kiri)
+    import base64 as _b64
+    _shots = []
+    for sh in (d.get("serp_shots") or []):
+        if not isinstance(sh, dict):
+            continue
+        url = str(sh.get("data_url") or "")
+        if "," in url and url.lower().startswith("data:image"):
+            try:
+                raw = _window_serp_image(_b64.b64decode(url.split(",", 1)[1]),
+                                         sh.get("y"))
+                sh = dict(sh, data_url="data:image/jpeg;base64,"
+                                       + _b64.b64encode(raw).decode("ascii"))
+            except Exception:                                 # noqa: BLE001
+                pass
+        _shots.append(sh)
+    if _shots:
+        d["serp_shots"] = _shots
     try:
         buf = rep_docx.build_rep_proposal_docx(d)
     except Exception as e:                                    # noqa: BLE001
