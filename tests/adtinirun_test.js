@@ -222,9 +222,14 @@ const CFG = {
     return R;
   });
 
-  // the [src] toggle labels each term with where it came from
-  await p.check('#kbSrc');
+  // No source tags on the rows, and the timing sits in a fold at the bottom
+  // rather than on the status line.
   const srcTags = await p.$$eval('#paneKw .col li .s', n => n.map(x => x.textContent));
+  const timing = await p.evaluate(() => ({
+    hidden: document.getElementById('kbTiming').hidden,
+    open: document.getElementById('kbTiming').open,
+    text: document.getElementById('kbTimingBody').textContent,
+  }));
 
   // ---------------- steps 2-4: generate forecast ----------------
   await p.click('#gen');                       // applies the list, back on the form
@@ -368,7 +373,10 @@ const CFG = {
     // meaning rather than character for character.
     'kb.note': [kb.note.split(' · ')[0], 'Built 3 terms.'],
     'kb.buildExpanded': [/4 terms added by expansion/.test(kb.note), true],
-    'kb.noteCarriesTiming': [/\d+\.\d+s — /.test(kb.note), true],
+    'kb.timingOffTheStatusLine': [/\d+\.\d+s — /.test(kb.note), false],
+    'kb.timingInTheFold': [/\d+\.\d+s — /.test(timing.text), true],
+    'kb.timingFoldShown': [timing.hidden, false],
+    'kb.timingFoldCollapsed': [timing.open, false],
     // the measured figure is the pricer's deduplicated total, not a row sum
     'kb.totalIsDeduplicated': [kb.head, 'Keyword list (3 terms)'],
     'kb.widerAreaNamed': [/answered from a wider area/.test(kb.note2 || ''), true],
@@ -387,7 +395,7 @@ const CFG = {
       'dental implants / dental implants boca raton / affordable dental implants near me'],
     'kb.widenShown': [kb.widenShown, true],
     'kb.widenText': [kb.widenText, 'One term is 77% of measured demand.'],
-    'kb.srcTags': [srcTags.join(','), '[seed],[grid],[site]'],
+    'kb.noSrcTags': [srcTags.length, 0],
     // steps 2-4
     // market_signals joined the run between the rank check and pricing: it reads
     // the client's own on-page condition, which now bands into the price and

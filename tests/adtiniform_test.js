@@ -217,6 +217,9 @@ const BASE = "http://127.0.0.1:5203";
     // covers the built list.
     R.builtNote = document.getElementById('kbNote').textContent.trim();
     R.hasBuild = !!document.getElementById('kbBuild');
+    // The sources checkbox is gone: it tagged every term with the pass that
+    // proposed it, which is a build detail on a list the planner is reading
+    // as the quote.
     R.hasSourceToggle = !!document.getElementById('kbSrc');
     R.noCountryPicker = !document.getElementById('kbCountry');
     // Lock keyword list is GONE: it was recorded on the quote and enforced
@@ -339,7 +342,7 @@ const BASE = "http://127.0.0.1:5203";
     'kw.pane': [kw.kwPane, true],
     'kw.savedListShown': [kw.builtNote, '7,700/mo measured · 3 markets'],
     'kw.hasBuild': [kw.hasBuild, true],
-    'kw.hasSourceToggle': [kw.hasSourceToggle, true],
+    'kw.noSourceToggle': [kw.hasSourceToggle, false],
     'kw.noSecondCountryPicker': [kw.noCountryPicker, true],
     'kw.emptySeedsRefused': [kw.emptyBuild,
       'Add a seed term, or turn Expand on to read their site.'],
