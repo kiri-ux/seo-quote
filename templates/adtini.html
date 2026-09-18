@@ -1319,8 +1319,11 @@ function plannerView(r){
     add('Locations', rh.locations);
     add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
   } else {
+    // THREE FIGURES IN TIER ORDER. The tile above is already labelled base /
+    // intermediate / advanced, so repeating the package name on every number
+    // spent the width that the numbers needed.
     const inTier = o => ['base', 'intermediate', 'advanced'].filter(k => (o || {})[k] != null)
-      .map(k => `${k} ${money(o[k])}`).join(' · ');
+      .map(k => money(o[k])).join(' / ');
     // THE STRATEGIES THIS QUOTE IS FOR, as chosen on the form.
     const strat = asList((r.data || {}).strategy);
     add('Strategy', strat.join(' · '));
