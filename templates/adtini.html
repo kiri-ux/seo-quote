@@ -223,12 +223,12 @@
           <p class="hint" id="kbScopeNote" style="margin:10px 0 0"></p>
           <p class="hint unplaced" id="kbUnplaced" hidden></p>
           <div class="kbrow">
+            <div class="f"><label>&#10022; Expand on focus terms</label>
+              <button type="button" class="btn kbexpand" id="kbExpandRun">Expand</button></div>
+            <div class="f"><label>&#8635; Refresh focus terms <span class="i" data-tip="Expand adds to the list. With this on it starts the suggestions over: its own &#10022; terms come off first, and the ones you removed are offered again. A term you typed is never touched." aria-label="Expand adds to the list; with Refresh on it starts the suggestions over">i</span></label>
+              <div class="yn" id="kbRefresh"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
             <div class="f"><label>Price on national demand</label>
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-            <div class="f"><label>&#10022; Expand on focus terms</label>
-              <div class="yn" id="kbExpand"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-            <div class="f"><label>&#8635; Refresh focus terms <span class="i" data-tip="Runs the expansion again on the next build. It takes the tool&rsquo;s own previous suggestions back off the list first; a term you typed is never touched." aria-label="Runs the expansion again on the next build, taking its own previous suggestions off the list first">i</span></label>
-              <label class="kbchk"><input type="checkbox" id="kbRefresh"> Run it again</label></div>
             <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
               <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
           </div>
@@ -565,7 +565,6 @@ function savePayload(r){
              // thirteen identical chips.
              seedSrc: r.seedSrc || {},
              seedDrop: (r.seedDrop || []).slice(),
-             expandDone: (r.expandDone || []).slice(),
              suggested: (r.suggested || []).slice(),
              rankedSeeds: (r.rankedSeeds || []).slice(),
              history: (r.history || []).slice(0, 20)},
@@ -861,7 +860,6 @@ async function loadClient(){
         // solid after a reload.
         seedSrc: a.seedSrc || {}, seedDrop: a.seedDrop || [],
         suggested: a.suggested || [], rankedSeeds: a.rankedSeeds || [],
-        expandDone: a.expandDone || [],
       };
       if (row.result && !row.result.headline) row.result.headline = headlineOf(row);
       // A LEGACY QUOTE IS STILL A RUN. The Reputation and SEO tabs predate this
@@ -1696,79 +1694,26 @@ function seedLegend(r){
   const src = (r.seedSrc || {});
   const added = focus.filter(v => src[String(v).toLowerCase()]).length;
   const dropped = (r.seedDrop || []).length;
+  // RESTORE AND ALLOW AGAIN ARE GONE (2026-09-18). They were two ways back from
+  // a removal, and ↻ Refresh focus terms is now the one way: it takes the
+  // tool's own terms off and offers the removed ones again.
   const rule = dropped
-    // TWO DIFFERENT THINGS, AND ONE BUTTON WAS DOING BOTH. Restore put every
-    // removed term back in the box AND cleared the block, so a planner who
-    // wanted the expansion free to propose again had to accept thirteen chips
-    // back to get it. Allow again clears the block only; the box is untouched.
     ? ` \u00b7 ${dropped} removed.`
-      + ' <button type="button" class="lnkbtn" id="seedRestore">Restore them</button>'
-      + ' \u00b7 <button type="button" class="lnkbtn" id="seedAllow">Allow again</button>'
     : ' \u00b7 Remove one and it is not proposed again.';
   if (!added) return dropped ? rule.replace(/^ · /, '') : '';
   return `${focus.length - added} from Product/Vertical Focus · ${added} added by `
        + 'expansion, marked \u2726.' + rule;
 }
-// ONCE PER LIST, NOT ONCE PER BUILD. Expansion runs inside Build, ahead of it,
-// and stands down when this list has already had it, when the slots are full,
-// or when the toggle is off -- so a second build on the same seeds does not
-// spend three more calls proposing what the planner has already seen. ↻ Refresh
-// focus terms overrides it for one build. (the forecast sheet, panel fields 8-9)
-const seedSig = xs => xs.map(x => String(x).toLowerCase().trim()).sort();
-function expandRanOnThese(r){
-  const done = r.expandDone || [];
-  const focus = ((r.data || {}).focus || []).map(t => String(t).toLowerCase().trim());
-  return done.length > 0 && focus.length > 0 && focus.every(t => done.includes(t));
-}
+// EXPAND IS A BUTTON, AND PRESSING IT IS THE INTENT. It was a toggle read by
+// Build, which meant a press did nothing you could see, a build you did not ask
+// for ran it, and turning it off and building was a combination nobody wants.
+// One button: press it, the three passes run, the proposals land in the box
+// marked ✦, and Build builds on what is left. (2026-09-18, Kiri)
 // THE CEILING SLOT COUNT, not what the entered markets buy: a five-market quote
 // asks the grid for fewer services per market, and capping expansion on that
 // left lists at 14 of 20 with nothing to refill them.
 const expandCeiling = r => Number(((r || {}).over || {}).grid_max_services)
   || Number(((r || {}).cfg || {}).grid_max_services) || 20;
-
-// REMOVING IS PERMANENT, SO THERE IS A WAY BACK. Eight good ENT service lines
-// went out with one weak one, and re-typing them was the only route.
-document.addEventListener('click', e => {
-  if (!e.target.closest('#seedRestore') || ROW == null) return;
-  const r = ROWS[ROW];
-  const back = (r.seedDrop || []).slice();
-  if (!back.length) return;
-  r.seedDrop = [];
-  r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
-    .map(c => c.firstChild.textContent.trim());
-  const have = new Set(r.data.focus.map(x => x.toLowerCase()));
-  back.forEach(t => {
-    if (have.has(t)) return;
-    have.add(t);
-    r.data.focus.push(t);
-    (r.seedSrc = r.seedSrc || {})[t] = 'restored';
-  });
-  // The expansion is asked again, because the terms it was told to skip are back.
-  r.expandDone = [];
-  chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), r.data.focus.slice());
-  const sh = document.querySelector('#paneKw .seedhint');
-  if (sh) sh.innerHTML = seedLegend(r);
-  persist(r);
-});
-
-// CLEARING THE BLOCK IS NOT THE SAME AS TAKING THE TERMS BACK. Restore does
-// both, which is right when the removal was the mistake. This is for the other
-// case: the removals were correct, but the expansion has since been given a
-// rule it did not have -- practitioner terms -- and it cannot offer anything
-// that echoes a dropped term. The exclusion list is emptied and the seed box is
-// left exactly as the planner left it. (2026-09-16)
-document.addEventListener('click', e => {
-  if (!e.target.closest('#seedAllow') || ROW == null) return;
-  const r = ROWS[ROW];
-  if (!(r.seedDrop || []).length) return;
-  r.seedDrop = [];
-  // The expansion is asked again, because the terms it was told to skip are no
-  // longer skipped -- same reason Restore resets it.
-  r.expandDone = [];
-  const sh = document.querySelector('#paneKw .seedhint');
-  if (sh) sh.innerHTML = seedLegend(r);
-  persist(r);
-});
 
 function chipbox(box, list){
   const key = box.dataset.chips;
@@ -2102,7 +2047,7 @@ document.addEventListener('click', e => {
     b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     if (b.parentNode.dataset.k === 'past') pastFields();
     // National demand is a scope decision, so the builder's line follows it.
-    const kbk = {kbNat: 'national', kbExpand: 'expand'}[b.parentNode.id];
+    const kbk = {kbNat: 'national', kbRefresh: 'refresh'}[b.parentNode.id];
     if (kbk && ROW != null) {
       ROWS[ROW].data[kbk] = b.dataset.v === '1' ? 1 : 0;
       if (kbk === 'national') kbScopeNote(ROWS[ROW]);
@@ -2542,14 +2487,10 @@ function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   const seedHint = document.querySelector('#paneKw .seedhint');
   if (seedHint) seedHint.innerHTML = seedLegend(r);
-  // Expand defaults to ON, including on a quote saved before it was a toggle.
-  if (r.data.expand == null) r.data.expand = 1;
   [['kbNat', 'national'], ['kbAxis', 'spread'],
-   ['kbExpand', 'expand']].forEach(([id, k]) =>
+   ['kbRefresh', 'refresh']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
-  // Refresh is spent by the build that used it; it never opens ticked.
-  $('kbRefresh').checked = false;
   kbScopeNote(r);
   kbDraw(r);
 }
@@ -2912,31 +2853,29 @@ async function expandSeeds(r, d){
   return Object.assign({}, got, {added, rows, regions});
 }
 
-// ↻ REFRESH FOCUS TERMS. It takes the tool's OWN previous suggestions back off
-// the list before the expansion runs again, so a weak set of ✦ terms can be
-// replaced rather than added to. A term the planner typed is never touched.
+// ↻ REFRESH FOCUS TERMS. OFF, Expand adds to the list. ON, it starts the
+// suggestions over: the tool's OWN ✦ terms come off first and the ones the
+// planner removed of them are offered again -- which is what Restore and Allow
+// again used to be, in the control that already governs the suggestions.
+// A term the planner typed is never touched by any of it.
 function refreshSeeds(r, d){
   const mine = new Set((r.suggested || []).map(t => String(t).toLowerCase().trim()));
-  if (!mine.size) { r.expandDone = []; return 0; }
   const before = d.focus.length;
-  d.focus = d.focus.filter(t => !mine.has(String(t).toLowerCase().trim()));
-  // Taken off, not removed: a refreshed term is free to be proposed again,
-  // which is the opposite of what the planner removing it means.
-  mine.forEach(t => { delete SEED_SRC[t]; if (r.seedSrc) delete r.seedSrc[t]; });
+  if (mine.size) {
+    d.focus = d.focus.filter(t => !mine.has(String(t).toLowerCase().trim()));
+    // Taken off, not removed: a refreshed term is free to be proposed again,
+    // which is the opposite of what the planner removing it means.
+    mine.forEach(t => { delete SEED_SRC[t]; if (r.seedSrc) delete r.seedSrc[t]; });
+  }
   r.suggested = [];
   r.rankedSeeds = [];
-  r.expandDone = [];
+  r.seedDrop = [];
   return before - d.focus.length;
 }
 
-// EXPANSION, AHEAD OF THE BUILD IT BELONGS TO. Returns what it added so the
-// build line can say so; stands down and returns null when the list has had it
-// already, when the slots are full, or when the toggle is off.
-async function maybeExpand(r, d){
-  if (!d.expand) return null;
-  if (d.focus.length >= expandCeiling(r)) return null;
-  if (expandRanOnThese(r)) return null;
-  if (!d.focus.length && !d.site) return null;
+// THE EXPANSION, ON ITS BUTTON. Proposals land in the seed box marked ✦ and
+// nothing is built: the planner prunes them and presses Build.
+async function runExpand(r, d){
   $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
   const got = await expandSeeds(r, d);
   if (got.added.length) {
@@ -2945,11 +2884,53 @@ async function maybeExpand(r, d){
   }
   if (got.regions.length) r.phrase_geos = got.regions;
   r.expandNote = got;
-  r.expandDone = seedSig(d.focus);
   const sh = document.querySelector('#paneKw .seedhint');
   if (sh) sh.innerHTML = seedLegend(r);
   return got;
 }
+
+$('kbExpandRun').onclick = async () => {
+  const r = ROWS[ROW];
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
+  r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
+    .map(c => c.firstChild.textContent.trim());
+  const d = r.data;
+  d.refresh = $('kbRefresh').querySelector('button[data-v="1"].on') ? 1 : 0;
+  if (!d.focus.length && !d.site) {
+    $('saved').textContent = 'Add a seed term or the client website first.';
+    return;
+  }
+  d.expand = 1;
+  const btn = $('kbExpandRun');
+  btn.disabled = true;
+  $('kbBuild').disabled = true;
+  timingReset();
+  try {
+    if (d.refresh) {
+      const off = refreshSeeds(r, d);
+      chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+      if (off) $('saved').textContent = `${off} taken off. Reading their site again…`;
+    }
+    if (d.focus.length >= expandCeiling(r)) {
+      $('saved').textContent = `The list is full at ${expandCeiling(r)} terms. `
+        + 'Remove one, or turn Refresh on to start the suggestions over.';
+    } else {
+      await resolveBand(r);
+      const got = await runExpand(r, d);
+      const n = got.added.length;
+      $('saved').textContent = n
+        ? `${n} term${n === 1 ? '' : 's'} proposed, marked \u2726. Remove any, `
+          + 'then Build keyword list.'
+        : expandWhy(got).replace(/^ \u00b7 /, '');
+      timingDraw();
+    }
+  } catch (e) {
+    $('saved').textContent = e.message;
+  }
+  btn.disabled = false;
+  $('kbBuild').disabled = false;
+  persist(r);
+};
 
 $('kbBuild').onclick = async () => {
   const r = ROWS[ROW];
@@ -2959,15 +2940,17 @@ $('kbBuild').onclick = async () => {
   const d = r.data;
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.spread = $('kbAxis').querySelector('button[data-v="1"].on') ? 1 : 0;
-  d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.axis = d.spread ? 'geography' : '';
-  // ONE BUILD ONLY, then it clears itself.
-  const refresh = $('kbRefresh').checked;
-  $('kbRefresh').checked = false;
-  if (refresh) refreshSeeds(r, d);
   kbScopeNote(r);
+  // A SEED THE PLANNER REMOVED IS A SERVICE THEY DO NOT WANT. Only the
+  // expansion knew that: the build has its own sources -- their site, the
+  // suggestions endpoint, the refine pass -- and put "apartments for rent"
+  // back in the grid after it had been taken off the seed box. The removals
+  // ride along as negatives for this build; they are not written to the
+  // quote's own Negative terms. (2026-09-18, Kiri)
   const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
-                brand: d.brand, domain: d.site, negatives: d.negatives || [],
+                brand: d.brand, domain: d.site,
+                negatives: (d.negatives || []).concat(r.seedDrop || []),
                 business_desc: d.business_desc || '',
                 goal: (d.goals || [])[0] || '',
                 phrase_geos: r.phrase_geos || [],
@@ -2979,9 +2962,9 @@ $('kbBuild').onclick = async () => {
   // NO SEEDS IS NOT A BUILD. The server answers "At least one keyword/vertical
   // is required", which is a 400 the planner should never have to read -- and
   // when Expand is on and a website is known, their site can propose the seeds.
-  if (!d.focus.length && !(d.expand && d.site)) {
+  if (!d.focus.length) {
     $('saved').textContent = d.site
-      ? 'Add a seed term, or turn Expand on to read their site.'
+      ? 'Add a seed term, or press Expand to read their site.'
       : 'Add a seed term first.';
     document.querySelector('#paneKw [data-chips="seeds"] .chipin').focus();
     return;
@@ -2991,17 +2974,7 @@ $('kbBuild').onclick = async () => {
   // The list is built for the band it will be priced in.
   await resolveBand(r);
   try {
-    // BEFORE THE BUILD, NOT INSIDE IT. What the expansion adds is on the list
-    // the grid is crossed from, and on screen as dashed chips while it runs.
-    const grew = await maybeExpand(r, d);
-    base.keywords = d.focus;
-    base.phrase_geos = r.phrase_geos || [];
-    if (!base.keywords.length) {
-      $('saved').textContent = 'Nothing to build on — their site and the industry '
-        + 'proposed no terms. Add a seed term.';
-      $('kbBuild').disabled = false;
-      return;
-    }
+    // THE EXPANSION IS ITS OWN BUTTON. Build builds on the seeds as they stand.
     $('saved').textContent = 'Building the list…';
     const kw = await post('/api/keywords', base);
     $('saved').textContent = 'Refining…';
@@ -3032,8 +3005,7 @@ $('kbBuild').onclick = async () => {
     }
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
-      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
-        + expandWhy(grew);
+      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`;
     timingDraw();
   } catch (e) {
     $('saved').textContent = e.message;

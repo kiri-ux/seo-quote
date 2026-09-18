@@ -6697,7 +6697,15 @@ _CITY_ABBREV_FULL = {"mount": "mt.", "saint": "st.", "fort": "ft.",
 def _state_abbr(x):
     """'PA', 'Pennsylvania' or '' -> 'PA'. A state already given as its
     abbreviation used to fall through the full-name map and read as no state at
-    all, which turned an exact lookup into a national one."""
+    all, which turned an exact lookup into a national one.
+
+    EVERY MARKET HELPER GOES THROUGH HERE (2026-09-18). They each read
+    STATE_ABBREV directly, which only maps full names, so a quote whose State
+    field holds "SC" -- what the builder sends -- lost its state the moment a
+    market carried no ", SC" of its own. "florence county" then had to win a
+    UNIQUE national match and there is a Florence County in Wisconsin, so it
+    resolved to nothing: not placed on the map, no county-to-city wording, and
+    every keyword naming it took its demand from a wider area."""
     x = (x or "").strip().lower()
     if len(x) == 2:
         return x.upper()
@@ -6855,7 +6863,7 @@ def county_key(market, state=""):
     if not _COUNTY_SUFFIX.search(name):
         return None
     name = _COUNTY_SUFFIX.sub(" county", name)
-    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    abbr = _state_abbr(st or state)
     cidx, _cc = _county_indexes()
     if abbr and (name, abbr) in cidx:
         return (name, abbr)
@@ -6869,7 +6877,7 @@ def county_of(market, state=""):
     """The county a city sits in, as ('knox county','TN'), or None."""
     city, st = parse_market(market, state)
     c = (city or "").strip().lower()
-    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    abbr = _state_abbr(st or state)
     _ci, ccidx = _county_indexes()
     if abbr:
         co = ccidx.get((c, abbr))
@@ -6887,7 +6895,7 @@ def city_size(market, state=""):
     """
     city, st = parse_market(market, state)
     city = (city or "").strip().lower()
-    abbr = STATE_ABBREV.get((st or state or "").strip().lower(), "").upper()
+    abbr = _state_abbr(st or state)
     # A county's size is its ZIP count, but it must never out-rank its own seat
     # when a group is being named: "Knoxville +4" is the market, "Knox County +4"
     # is a filing cabinet. Knox County has 35 ZIPs to Knoxville's 31, so scored
@@ -6939,7 +6947,7 @@ def name_is_unmistakable(market, state=""):
         return False                       # "knox county" always keeps its state
     city, st = parse_market(market, state)
     c = (city or "").strip().lower()
-    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    abbr = _state_abbr(st or state)
     if not c or not abbr:
         return False
     if _NAME_SHARE.get("__built__") is None:
@@ -6979,7 +6987,7 @@ def name_share(market, state=""):
     name_is_unmistakable(market, state)          # builds the index on first call
     city, st = parse_market(market, state)
     c = (city or "").strip().lower()
-    abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+    abbr = _state_abbr(st or state)
     n_self = _NAME_SHARE.get((c, abbr), 0)
     n_all = _NAME_SHARE.get(c, 0)
     return (n_self / n_all) if n_all else 0.0
@@ -7178,7 +7186,7 @@ def geo_overlaps(markets, state=""):
             continue
         city, st = parse_market(m, state)
         cl = (city or "").strip().lower()
-        abbr = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").upper()
+        abbr = _state_abbr(st or state)
         # Canonicalise through the same alias ladder the volume lookup uses, so
         # "New York City, NY" and "New York, NY" land on one key.
         canon = canonical_city_name(cl, st or state) or cl
@@ -8237,7 +8245,7 @@ def geo_form_candidates(market, state):
     c = (city or "").strip().lower()
     if not c:
         return []
-    ab = (STATE_ABBREV.get((st or "").strip().lower(), "") or "").lower()
+    ab = _state_abbr(st).lower()
     forms = []
 
     def add(f):
@@ -11443,7 +11451,7 @@ def market_for_keyword(kw, markets, state=""):
         c = clean_kw((city or "").lower()).strip()
         if not c:
             continue
-        ab = (STATE_ABBREV.get((st or state or "").strip().lower(), "") or "").lower()
+        ab = _state_abbr(st or state).lower()
         forms = [f"{c} {ab}", c] if ab else [c]
         # A county reads either way round: "roane county tn" / "roane tn".
         ck = county_key(m, state)
