@@ -187,8 +187,10 @@ heads = [[c.text for c in t.rows[0].cells] for t in sd.tables]
 check("it has its own heading", "Reputation Snapshot" in st, True)
 check("negative terms", ["Term", "Class", "Searches/mo"] in heads, True)
 check("page one with its routing", ["#", "Result", "Routing", "Rating"] in heads, True)
+# THE PROFILES PRINT WITH THE REMOVALS THEY ARE PRICED FOR (2026-09-18), and
+# the address rides with the name -- four Knoxville listings need telling apart.
 check("review profiles by location",
-      ["Location", "Rating", "Reviews", "1\u2605", "2\u2605", "3\u2605"] in heads, True)
+      ["Location", "Profile", "1\u2605", "2\u2605", "3\u2605"] in heads, True)
 _terms = sd.tables[heads.index(["Term", "Class", "Searches/mo"])]
 check("volume is formatted", _terms.rows[1].cells[2].text, "720")
 _res = sd.tables[heads.index(["#", "Result", "Routing", "Rating"])]

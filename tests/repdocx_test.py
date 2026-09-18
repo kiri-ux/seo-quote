@@ -222,6 +222,30 @@ check("related searches is placed",
 check("auto-suggest is placed",
       "the dropdown that appears under the search bar" in t2, True)
 
+print("\nTHE PROFILES THE REMOVALS COME OFF")
+q5 = rep_pricing.build_rep_quote(
+    {"campaign": "reactive", "brand": "City Heating and Air", "margin_pct": 0.35,
+     "reviews": {"count": 11}, "articles": {"standard": 0, "premium": 0},
+     "search": {"volume": 500, "bundle": True}, "shield": {"locations": 0}})
+t5 = text_of(client.post("/api/rep_proposal.docx", json={
+    "brand": "City Heating and Air", "campaign": "reactive", "quote": q5,
+    "margin_pct": 0.35,
+    "snapshot": {"query": "city heating and air reviews", "terms": [], "organic": [],
+                 "forums": [], "match": "domain",
+                 "locations": [{"title": "City Heating & Air Conditioning",
+                                "address": "3111 NW Park Dr, Knoxville, TN 37921",
+                                "profile_rating": 4.5, "profile_reviews": 93,
+                                "neg_1": 8, "neg_2": 3, "weak_3": 3}]}}).data)
+check("the listing is named", "City Heating & Air Conditioning" in t5, True)
+check("with its address", "3111 NW Park Dr" in t5, True)
+check("and its profile", "4.5\u2605 / 93" in t5, True)
+check("how it was matched", "matched by website" in t5, True)
+check("the flag count is the removals count",
+      "11 flagged at 1\u20132 stars" in t5, True)
+check("and the 3-star count rides with it", "3 at 3 stars" in t5, True)
+check("it sits with the removals it prices",
+      t5.index("City Heating & Air Conditioning") > t5.index("Google Review Removals"), True)
+
 print("\nA WORKSTREAM THE QUOTE DID NOT BUY IS NOT DESCRIBED")
 q4 = rep_pricing.build_rep_quote(
     {"campaign": "reactive", "brand": "Ski Barn", "margin_pct": 0.35,
