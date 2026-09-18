@@ -225,12 +225,12 @@
           <div class="kbrow">
             <div class="f"><label>Price on national demand</label>
               <div class="yn" id="kbNat"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
-            <div class="f"><label>Expand on focus terms</label>
-              <button type="button" class="btn kbexpand" id="kbExpandRun">Expand</button></div>
+            <div class="f"><label>&#10022; Expand on focus terms</label>
+              <div class="yn" id="kbExpand"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
+            <div class="f"><label>&#8635; Refresh focus terms <span class="i" data-tip="Runs the expansion again on the next build. It takes the tool&rsquo;s own previous suggestions back off the list first; a term you typed is never touched." aria-label="Runs the expansion again on the next build, taking its own previous suggestions off the list first">i</span></label>
+              <label class="kbchk"><input type="checkbox" id="kbRefresh"> Run it again</label></div>
             <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
               <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
-            <div class="f"><label>Lock keyword list</label>
-              <div class="yn" id="kbLock"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></div>
           </div>
           <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
         </section>
@@ -462,7 +462,7 @@ const ROWS = [
     city:['Boca Raton, FL'], county:[], state:[], countries:[],
     industry:['Healthcare'], strategy:['Core SEO'], goals:['New patient acquisition'],
     past:1, past_details:'', spend:'$6,200',
-    expand:1, lock:0, national:0, addon:1, markets:8, markup:'35'}},
+    expand:1, national:0, addon:1, markets:8, markup:'35'}},
   {id:'137031', kind:'seo', name:'Search Engine Optimization', built:'9/12/26',
    result: Q137031, kw: Q137031.kw,
    history:[{when:'9/12/26 9:15 AM', prompt:'{ band: single_city, adder: 250 }',
@@ -474,7 +474,7 @@ const ROWS = [
     g_city:true, g_county:false, g_state:false, g_country:false,
     city:['Atlanta, GA'], county:[], state:[], countries:[],
     industry:['Healthcare'], strategy:['Core SEO'], goals:[], past:0, past_details:'',
-    spend:'', expand:1, lock:1, national:0, addon:0, markets:3, markup:'35'}},
+    spend:'', expand:1, national:0, addon:0, markets:3, markup:'35'}},
   {id:'137028', kind:'orm', name:'Online Reputation Management', built:'9/16/26', data:{
     brand:'Sage Dental', site:'mysagedental.com',
     strategy:['Review Removals','Site/Article Removals','Reactive','Proactive'],
@@ -781,7 +781,7 @@ function adopt(got){
            markup: String(Math.round(frac(i.markup_pct != null ? i.markup_pct : 0.35) * 100)),
            past: i.past_seo ? 1 : 0, past_details: i.past_seo_detail || '',
            spend: i.client_budget ? '$' + Number(i.client_budget).toLocaleString() : '',
-           country: 'United States', expand: 1, lock: 0},
+           country: 'United States', expand: 1},
     kw: pay.kw || null,
     result: pay.pricing ? {
       pricing: Object.assign({addon_markets: i.addon_markets || 0}, pay.pricing),
@@ -909,7 +909,7 @@ function fromQuery(){
            g_city: true, g_county: false, g_state: false, g_country: false,
            city: [], county: [], state: [], countries: [],
            industry: [], strategy: ['Core SEO'], goals: [], past: 0, past_details: '',
-           spend: '', expand: 1, lock: 0, national: 0, markup: '35',
+           spend: '', expand: 1, national: 0, markup: '35',
            country: 'United States'},
       history: [],
     };
@@ -1319,8 +1319,11 @@ function plannerView(r){
     add('Locations', rh.locations);
     add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
   } else {
+    // THREE FIGURES IN TIER ORDER. The tile above is already labelled base /
+    // intermediate / advanced, so repeating the package name on every number
+    // spent the width that the numbers needed.
     const inTier = o => ['base', 'intermediate', 'advanced'].filter(k => (o || {})[k] != null)
-      .map(k => `${k} ${money(o[k])}`).join(' · ');
+      .map(k => money(o[k])).join(' / ');
     // THE STRATEGIES THIS QUOTE IS FOR, as chosen on the form.
     const strat = asList((r.data || {}).strategy);
     add('Strategy', strat.join(' · '));
@@ -1437,7 +1440,7 @@ const RUN_SEO = [
   ['focus', 'Product / vertical focus'], ['negatives', 'Negative terms'],
   ['geo', 'Geographic targeting'], ['scope', 'Geo scope'],
   ['country', 'Measurement country'], ['national', 'Price on national demand'],
-  ['expand', 'Expand on focus terms'], ['lock', 'Lock keyword list'],
+  ['expand', 'Expand on focus terms'],
   ['industry', 'Industry'], ['strategy', 'Strategy'], ['goals', 'Campaign goals'],
   ['past', 'Has done SEO in the past'], ['past_details', 'Past SEO details'],
   ['spend', "Client's estimated budget"], ['markup', 'Markup %'],
@@ -1541,7 +1544,7 @@ function runSettings(r){
     brand: d.brand, site: d.site, business_desc: d.business_desc,
     focus: d.focus, negatives: d.negatives,
     geo: geoOf(d), scope: BANDS[(r.band || bandOf(d))], country: d.country,
-    national: YN(d.national), expand: YN(d.expand), lock: YN(d.lock),
+    national: YN(d.national), expand: YN(d.expand),
     industry: d.industry, strategy: d.strategy, goals: d.goals,
     past: YN(d.past), past_details: d.past_details, spend: d.spend,
     markup: d.markup ? d.markup + '%' : '',
@@ -1692,22 +1695,24 @@ function seedLegend(r){
     : ' \u00b7 Remove one and it is not proposed again.';
   if (!added) return dropped ? rule.replace(/^ · /, '') : '';
   return `${focus.length - added} from Product/Vertical Focus · ${added} added by `
-       + 'expansion, shown dashed.' + rule;
+       + 'expansion, marked \u2726.' + rule;
 }
-// EXPANSION IS ITS OWN STEP, BEFORE THE BUILD. It ran inside Build, so every
-// weak proposal cost a 130s build to see and another to remove. The button
-// runs the three sources, puts the proposals in the seed box dashed, and
-// stops. Build builds on what is left. (2026-09-16)
+// ONCE PER LIST, NOT ONCE PER BUILD. Expansion runs inside Build, ahead of it,
+// and stands down when this list has already had it, when the slots are full,
+// or when the toggle is off -- so a second build on the same seeds does not
+// spend three more calls proposing what the planner has already seen. ↻ Refresh
+// focus terms overrides it for one build. (the forecast sheet, panel fields 8-9)
 const seedSig = xs => xs.map(x => String(x).toLowerCase().trim()).sort();
 function expandRanOnThese(r){
   const done = r.expandDone || [];
   const focus = ((r.data || {}).focus || []).map(t => String(t).toLowerCase().trim());
   return done.length > 0 && focus.length > 0 && focus.every(t => done.includes(t));
 }
-function expandBtnSync(r){
-  const b = $('kbExpandRun');
-  if (b) b.textContent = expandRanOnThese(r) ? 'Expand again' : 'Expand';
-}
+// THE CEILING SLOT COUNT, not what the entered markets buy: a five-market quote
+// asks the grid for fewer services per market, and capping expansion on that
+// left lists at 14 of 20 with nothing to refill them.
+const expandCeiling = r => Number(((r || {}).over || {}).grid_max_services)
+  || Number(((r || {}).cfg || {}).grid_max_services) || 20;
 
 // REMOVING IS PERMANENT, SO THERE IS A WAY BACK. Eight good ENT service lines
 // went out with one weak one, and re-typing them was the only route.
@@ -1750,7 +1755,6 @@ document.addEventListener('click', e => {
   r.expandDone = [];
   const sh = document.querySelector('#paneKw .seedhint');
   if (sh) sh.innerHTML = seedLegend(r);
-  expandBtnSync(r);
   persist(r);
 });
 
@@ -2086,7 +2090,7 @@ document.addEventListener('click', e => {
     b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     if (b.parentNode.dataset.k === 'past') pastFields();
     // National demand is a scope decision, so the builder's line follows it.
-    const kbk = {kbNat: 'national', kbLock: 'lock'}[b.parentNode.id];
+    const kbk = {kbNat: 'national', kbExpand: 'expand'}[b.parentNode.id];
     if (kbk && ROW != null) {
       ROWS[ROW].data[kbk] = b.dataset.v === '1' ? 1 : 0;
       if (kbk === 'national') kbScopeNote(ROWS[ROW]);
@@ -2526,12 +2530,15 @@ function kbLoad(r){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), (r.data.focus || []).slice());
   const seedHint = document.querySelector('#paneKw .seedhint');
   if (seedHint) seedHint.innerHTML = seedLegend(r);
-  [['kbNat', 'national'], ['kbLock', 'lock'],
-   ['kbAxis', 'spread']].forEach(([id, k]) =>
+  // Expand defaults to ON, including on a quote saved before it was a toggle.
+  if (r.data.expand == null) r.data.expand = 1;
+  [['kbNat', 'national'], ['kbAxis', 'spread'],
+   ['kbExpand', 'expand']].forEach(([id, k]) =>
     $(id).querySelectorAll('button').forEach(b =>
       b.classList.toggle('on', String(b.dataset.v) === String(r.data[k] ? 1 : 0))));
+  // Refresh is spent by the build that used it; it never opens ticked.
+  $('kbRefresh').checked = false;
   kbScopeNote(r);
-  expandBtnSync(r);
   kbDraw(r);
 }
 // THE BAND IS READ OFF THE MARKETS. bandOf() only knows which checkbox is
@@ -2743,7 +2750,7 @@ document.addEventListener('click', async e => {
 // already rank for -- plus the regions worth naming. Whatever comes back is
 // recorded as the tool's own suggestion, so the refine pass can tell it from
 // the planner's list.
-async function expandSeeds(r, d){
+async function expandPass(r, d, sources){
   const base = {brand: d.brand, domain: d.site, industry: (d.industry || []).join(', '),
                 business_desc: d.business_desc || '', seeds: (d.focus || []).slice(),
                 // THE NEGATIVES REACHED THE BUILD AND NOT THE EXPANSION, so the
@@ -2759,10 +2766,15 @@ async function expandSeeds(r, d){
     fails[key] = e.message || 'failed';
     return {};
   });
+  // WHICH SOURCES THIS PASS ASKS. Their site and their rankings are read off
+  // the domain and answer the same whatever is in the seed box; only the gap
+  // pass is told the list, so only the gap pass is worth asking twice.
+  const want = new Set(sources || ['site', 'industry', 'ranks']);
+  const none = Promise.resolve({});
   const [site, ind, rank] = await Promise.all([
-    tryPost('/api/site_services', 'site'),
-    tryPost('/api/expand_services', 'industry'),
-    tryPost('/api/rank_seeds', 'ranks'),
+    want.has('site') ? tryPost('/api/site_services', 'site') : none,
+    want.has('industry') ? tryPost('/api/expand_services', 'industry') : none,
+    want.has('ranks') ? tryPost('/api/rank_seeds', 'ranks') : none,
   ]);
   const found = {site: (site.services || []).length,
                  industry: (ind.services || []).length,
@@ -2835,64 +2847,98 @@ async function expandSeeds(r, d){
   // Best first, and stop at the slot count -- a list longer than the grid is
   // terms nobody will quote.
   rows.sort((a, b) => (b.ranked - a.ranked) || (b.vol - a.vol));
-  const slots = Math.max(0, 20 - (d.focus || []).length);
+  const slots = Math.max(0, expandCeiling(r) - (d.focus || []).length);
   const kept = rows.slice(0, slots);
-  let regions = [];
-  try {
-    const rr = await post('/api/suggest_regions',
-      {geo_values: geoOf(d), state: stateOf(d), keywords: (d.focus || []).slice(),
-       brand: d.brand, business_desc: d.business_desc || ''});
-    regions = (rr.regions || []).map(x => String(x.name || '').trim()).filter(Boolean);
-  } catch (e) { regions = []; }
   kept.forEach(x => { SEED_SRC[x.term.toLowerCase()] = x.src; });
   r.seedSrc = Object.assign({}, r.seedSrc || {}, SEED_SRC);
   r.suggested = (r.suggested || []).concat(kept.map(x => x.term.toLowerCase()));
-  r.rankedSeeds = kept.filter(x => x.ranked).map(x => x.term.toLowerCase());
-  return {added: kept.map(x => x.term), rows: kept, regions, found, fails, floorInfo,
+  r.rankedSeeds = (r.rankedSeeds || [])
+    .concat(kept.filter(x => x.ranked).map(x => x.term.toLowerCase()));
+  return {added: kept.map(x => x.term), rows: kept, found, fails, floorInfo,
           dupes: rows.length === 0 && under === 0
                  && (found.site + found.industry + found.ranks) > 0,
           held: Math.max(0, rows.length - kept.length)};
 }
 
-$('kbExpandRun').onclick = async () => {
-  const r = ROWS[ROW];
-  r.data = Object.assign({}, r.data, collect(formOf(r)));
-  r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
-    .map(c => c.firstChild.textContent.trim());
-  const d = r.data;
-  if (!d.focus.length && !d.site) {
-    $('saved').textContent = 'Add a seed term or the client website first.';
-    return;
+// THE GAP PASS IS ONLY AS GOOD AS THE LIST IT IS GIVEN. It is asked which
+// service lines the list is MISSING, so against an empty list it has nothing to
+// measure the gap from: the Panama City Beach quote came back with two terms,
+// and thirteen more the moment those two were on the list. So it is asked a
+// second time with what the first pass found. Their site and their rankings are
+// not asked again -- they read the domain and would answer identically.
+// One expansion, and the once-per-list rule is untouched. (2026-09-18)
+async function expandSeeds(r, d){
+  const got = await expandPass(r, d);
+  const added = got.added.slice(), rows = got.rows.slice();
+  const room = () => (d.focus || []).length + added.length < expandCeiling(r);
+  if (added.length && room() && !(got.fails || {}).industry) {
+    const more = await expandPass(r,
+      Object.assign({}, d, {focus: (d.focus || []).concat(added)}), ['industry']);
+    added.push(...more.added);
+    rows.push(...more.rows);
+    Object.keys(got.found).forEach(k => { got.found[k] += (more.found || {})[k] || 0; });
+    Object.assign(got.fails, more.fails || {});
+    const a = got.floorInfo, b = more.floorInfo || {};
+    got.floorInfo = {proposed: a.proposed + (b.proposed || 0),
+                     rejected: a.rejected + (b.rejected || 0),
+                     floor: b.floor || a.floor,
+                     thin: b.thin || a.thin,
+                     typical: b.typical || a.typical,
+                     missing: (b.missing || []).length ? b.missing : a.missing};
+    got.held += more.held || 0;
+    got.dupes = got.dupes && more.dupes;
   }
-  d.expand = 1;
-  const btn = $('kbExpandRun');
-  btn.disabled = true;
-  $('kbBuild').disabled = true;
-  timingReset();
-  $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
+  // The regions are read off the markets rather than the seeds, so they are
+  // asked for once however many passes ran.
+  let regions = [];
   try {
-    await resolveBand(r);
-    const got = await expandSeeds(r, d);
-    if (got.added.length) {
-      d.focus = d.focus.concat(got.added);
-      chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
-    }
-    if (got.regions.length) r.phrase_geos = got.regions;
-    r.expandNote = got;
-    r.expandDone = seedSig(d.focus);
-    const sh = document.querySelector('#paneKw .seedhint');
-    if (sh) sh.innerHTML = seedLegend(r);
-    expandBtnSync(r);
-    const n = got.added.length;
-    $('saved').textContent = (n
-      ? `${n} term${n === 1 ? '' : 's'} proposed, shown dashed. Remove any, then Build keyword list.`
-      : expandWhy(got).replace(/^ · /, '')) + timingLine();
-  } catch (e) {
-    $('saved').textContent = e.message;
+    const rr = await post('/api/suggest_regions',
+      {geo_values: geoOf(d), state: stateOf(d),
+       keywords: (d.focus || []).concat(added),
+       brand: d.brand, business_desc: d.business_desc || ''});
+    regions = (rr.regions || []).map(x => String(x.name || '').trim()).filter(Boolean);
+  } catch (e) { regions = []; }
+  return Object.assign({}, got, {added, rows, regions});
+}
+
+// ↻ REFRESH FOCUS TERMS. It takes the tool's OWN previous suggestions back off
+// the list before the expansion runs again, so a weak set of ✦ terms can be
+// replaced rather than added to. A term the planner typed is never touched.
+function refreshSeeds(r, d){
+  const mine = new Set((r.suggested || []).map(t => String(t).toLowerCase().trim()));
+  if (!mine.size) { r.expandDone = []; return 0; }
+  const before = d.focus.length;
+  d.focus = d.focus.filter(t => !mine.has(String(t).toLowerCase().trim()));
+  // Taken off, not removed: a refreshed term is free to be proposed again,
+  // which is the opposite of what the planner removing it means.
+  mine.forEach(t => { delete SEED_SRC[t]; if (r.seedSrc) delete r.seedSrc[t]; });
+  r.suggested = [];
+  r.rankedSeeds = [];
+  r.expandDone = [];
+  return before - d.focus.length;
+}
+
+// EXPANSION, AHEAD OF THE BUILD IT BELONGS TO. Returns what it added so the
+// build line can say so; stands down and returns null when the list has had it
+// already, when the slots are full, or when the toggle is off.
+async function maybeExpand(r, d){
+  if (!d.expand) return null;
+  if (d.focus.length >= expandCeiling(r)) return null;
+  if (expandRanOnThese(r)) return null;
+  if (!d.focus.length && !d.site) return null;
+  $('saved').textContent = 'Reading their site, the industry, and what they rank for…';
+  const got = await expandSeeds(r, d);
+  if (got.added.length) {
+    d.focus = d.focus.concat(got.added);
+    chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
   }
-  btn.disabled = false;
-  $('kbBuild').disabled = false;
-};
+  if (got.regions.length) r.phrase_geos = got.regions;
+  r.expandNote = got;
+  r.expandDone = seedSig(d.focus);
+  const sh = document.querySelector('#paneKw .seedhint');
+  if (sh) sh.innerHTML = seedLegend(r);
+  return got;
+}
 
 $('kbBuild').onclick = async () => {
   const r = ROWS[ROW];
@@ -2901,9 +2947,13 @@ $('kbBuild').onclick = async () => {
     .map(c => c.firstChild.textContent.trim());
   const d = r.data;
   d.national = $('kbNat').querySelector('button[data-v="1"].on') ? 1 : 0;
-  d.lock = $('kbLock').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.spread = $('kbAxis').querySelector('button[data-v="1"].on') ? 1 : 0;
+  d.expand = $('kbExpand').querySelector('button[data-v="1"].on') ? 1 : 0;
   d.axis = d.spread ? 'geography' : '';
+  // ONE BUILD ONLY, then it clears itself.
+  const refresh = $('kbRefresh').checked;
+  $('kbRefresh').checked = false;
+  if (refresh) refreshSeeds(r, d);
   kbScopeNote(r);
   const base = {keywords: d.focus, geo_values: geoOf(d), state: stateOf(d),
                 brand: d.brand, domain: d.site, negatives: d.negatives || [],
@@ -2918,9 +2968,9 @@ $('kbBuild').onclick = async () => {
   // NO SEEDS IS NOT A BUILD. The server answers "At least one keyword/vertical
   // is required", which is a 400 the planner should never have to read -- and
   // when Expand is on and a website is known, their site can propose the seeds.
-  if (!d.focus.length) {
+  if (!d.focus.length && !(d.expand && d.site)) {
     $('saved').textContent = d.site
-      ? 'Add a seed term, or click Expand to read their site.'
+      ? 'Add a seed term, or turn Expand on to read their site.'
       : 'Add a seed term first.';
     document.querySelector('#paneKw [data-chips="seeds"] .chipin').focus();
     return;
@@ -2930,8 +2980,11 @@ $('kbBuild').onclick = async () => {
   // The list is built for the band it will be priced in.
   await resolveBand(r);
   try {
-    // Expansion is its own step now -- see kbExpandRun. Build builds on the
-    // seeds as they stand.
+    // BEFORE THE BUILD, NOT INSIDE IT. What the expansion adds is on the list
+    // the grid is crossed from, and on screen as dashed chips while it runs.
+    const grew = await maybeExpand(r, d);
+    base.keywords = d.focus;
+    base.phrase_geos = r.phrase_geos || [];
     if (!base.keywords.length) {
       $('saved').textContent = 'Nothing to build on — their site and the industry '
         + 'proposed no terms. Add a seed term.';
@@ -2968,7 +3021,8 @@ $('kbBuild').onclick = async () => {
     }
     kbDraw(r);
     if (!$('saved').textContent.startsWith('Refine failed'))
-      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.` + timingLine();
+      $('saved').textContent = `Built ${(r.kw.all || []).length} terms.`
+        + expandWhy(grew) + timingLine();
   } catch (e) {
     $('saved').textContent = e.message;
   }

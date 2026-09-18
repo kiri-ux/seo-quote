@@ -219,10 +219,12 @@ const BASE = "http://127.0.0.1:5203";
     R.hasBuild = !!document.getElementById('kbBuild');
     R.hasSourceToggle = !!document.getElementById('kbSrc');
     R.noCountryPicker = !document.getElementById('kbCountry');
-    R.builderToggles = ['kbNat', 'kbLock'].every(id => !!document.getElementById(id))
-      && !!document.getElementById('kbExpandRun') && !document.getElementById('kbExpand');
+    // Lock keyword list is GONE: it was recorded on the quote and enforced
+    // nowhere, so it read as a promise the tool did not keep.
+    R.builderToggles = ['kbNat', 'kbExpand'].every(id => !!document.getElementById(id))
+      && !!document.getElementById('kbRefresh')
+      && !document.getElementById('kbExpandRun') && !document.getElementById('kbLock');
     R.formHasNoToggles = !document.querySelector('#fseo .yn[data-k="expand"]')
-      && !document.querySelector('#fseo .yn[data-k="lock"]')
       && !document.querySelector('#fseo .yn[data-k="national"]')
       && !document.querySelector('#fseo [data-k="markets"]');
     R.seedsFromRow = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -236,9 +238,12 @@ const BASE = "http://127.0.0.1:5203";
     R.backOnForm = !document.getElementById('paneForm').hidden;
     R.focusCarried = [...document.querySelectorAll('#fseo [data-chips="focus"] .chip')]
       .some(c => c.textContent.includes('veneers'));
-    // an empty seed box is refused, and says what to do
+    // an empty seed box is refused, and says what to do -- with Expand OFF.
+    // With it on and a website known, an empty box is the case the expansion
+    // exists for, and the build runs it rather than refusing.
     document.getElementById('kwBuilder').click();
     document.querySelectorAll('#paneKw [data-chips="seeds"] .chip b').forEach(x => x.click());
+    document.querySelector('#kbExpand button[data-v="0"]').click();
     document.getElementById('kbBuild').click();
     R.emptyBuild = document.getElementById('saved').textContent;
     R.buildStillEnabled = !document.getElementById('kbBuild').disabled;
@@ -337,9 +342,9 @@ const BASE = "http://127.0.0.1:5203";
     'kw.hasSourceToggle': [kw.hasSourceToggle, true],
     'kw.noSecondCountryPicker': [kw.noCountryPicker, true],
     'kw.emptySeedsRefused': [kw.emptyBuild,
-      'Add a seed term, or click Expand to read their site.'],
+      'Add a seed term, or turn Expand on to read their site.'],
     'kw.buildStaysAvailable': [kw.buildStillEnabled, true],
-    'kw.ownsTheThreeToggles': [kw.builderToggles, true],
+    'kw.ownsTheBuilderFields': [kw.builderToggles, true],
     'form.keepsNoneOfThem': [kw.formHasNoToggles, true],
     'kw.seedsFromRow': [kw.seedsFromRow.length > 0, true],
     'kw.applyLabel': [kw.generateBecomesApply, 'Apply to the quote'],

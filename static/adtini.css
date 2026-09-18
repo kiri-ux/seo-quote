@@ -212,12 +212,11 @@ h3.products{margin:0 0 16px;font-size:22px;font-weight:600}
   font-size:13px;font-weight:600;padding:10px 22px;color:#fff;white-space:nowrap;
 }
 .btn.preview{background:var(--blue);border-radius:999px}
-/* The expansion step in the builder: a pill the size of the Yes/No beside it,
-   on the right of its label like the other rows. width:100% wrapped the label
-   into four lines. */
-.btn.kbexpand{flex:0 0 auto;background:var(--blue);color:#fff;border:0;
-  border-radius:999px;font-size:12px;font-weight:600;padding:8px 18px}
-.btn.kbexpand:disabled{opacity:.6;cursor:default}
+/* Refresh focus terms: a checkbox, sitting where the Yes/No pills sit on the
+   rows above it. */
+.kbchk{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;
+  font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.kbchk input{accent-color:var(--blue);width:15px;height:15px;margin:0}
 .btn.gemini{background:var(--gold)}
 .btn.claude{background:#D2691E}
 .btn.adtini{background:var(--navy)}
@@ -303,6 +302,10 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
 /* a seed the tool proposed, not one the planner typed */
 .chip.sug{background:var(--fill);color:var(--text);border:1px dashed var(--muted)}
 .chip.sug b{opacity:.85}
+/* The mark the field is named for. ::before rather than markup: every chip is
+   read back by its first child text node, so a glyph inside it would be read
+   as part of the term. */
+.chip.sug::before{content:"\2726";color:var(--blue);font-size:10px;margin-right:5px}
 .yn{display:inline-flex;align-self:flex-start;background:var(--fill);border-radius:999px;padding:3px}
 .yn button{
   font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;border:0;

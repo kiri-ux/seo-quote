@@ -1,7 +1,7 @@
-// A REMOVED SUGGESTION STAYS REMOVED, AND IT IS REVIEWED BEFORE THE BUILD.
-// "allergy testing" was proposed on every press, and the only way to reject it
-// was to let the whole list be built around it first. Expansion is its own
-// step now: propose, prune, then build.
+// A REMOVED SUGGESTION STAYS REMOVED. "allergy testing" was proposed on every
+// build, and the only way to reject it was to let the whole list be built
+// around it first. The expansion runs ONCE PER LIST, ahead of the build, so a
+// second build on the same seeds does not propose it again.
 const {chromium} = require('/root/work/node_modules/playwright-core');
 (async () => {
   const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
@@ -50,16 +50,21 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     open(0, 'kw');
   });
   await p.waitForTimeout(400);
-  const proposed = () => p.waitForFunction(
-    () => /proposed|added nothing|under the/.test($('saved').textContent), {timeout:20000});
+  // The line is cleared before each build, so waiting on it cannot be answered
+  // by the previous build's "Built 1 terms."
+  const build = async () => {
+    await p.evaluate(() => { $('saved').textContent = ''; });
+    await p.click('#kbBuild');
+    await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
+  };
 
-  // EXPAND FIRST. Its terms land in the seed box, marked, and nothing is built.
-  await p.click('#kbExpandRun');
-  await proposed();
+  // THE BUILD EXPANDS FIRST. Its terms land in the seed box, marked, and the
+  // build line says how many it added.
+  await build();
   say('expandedOnce', expandCalls === 1, expandCalls + ' expansion passes');
-  say('nothingBuiltYet', buildCalls === 0, buildCalls + ' builds');
-  say('noteSaysWhatToDoNext',
-      /remove any, then build keyword list/i.test(await p.textContent('#saved')),
+  say('builtAfterExpanding', buildCalls === 1, buildCalls + ' builds');
+  say('noteSaysWhatItAdded',
+      /2 terms added by expansion/.test(await p.textContent('#saved')),
       await p.textContent('#saved'));
   let chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => [n.firstChild.textContent.trim(), n.classList.contains('sug')]));
@@ -90,12 +95,12 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
       !/not proposed again/i.test(legend), legend);
 
 
-  // THEN BUILD. It does not ask the expansion at all.
+  // BUILD AGAIN. This list has had its expansion, so the second build spends
+  // nothing on proposing the same terms.
   const before = expandCalls;
-  await p.click('#kbBuild');
-  await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
-  say('builtThisTime', buildCalls === 1, buildCalls + ' builds');
-  say('buildDidNotExpand', expandCalls === before,
+  await build();
+  say('builtAgain', buildCalls === 2, buildCalls + ' builds');
+  say('secondBuildDidNotExpand', expandCalls === before,
       (expandCalls - before) + ' extra expansion passes');
   chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => n.firstChild.textContent.trim()));
@@ -108,10 +113,10 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     open(0, 'kw');
   });
   await p.waitForTimeout(300);
-  say('readsExpandOnNewSeeds', (await p.textContent('#kbExpandRun')).trim(), 'Expand');
+  say('newSeedReopensTheExpansion',
+      !(await p.evaluate(() => expandRanOnThese(ROWS[0]))));
   seedsSent = [];
-  await p.click('#kbExpandRun');
-  await proposed();
+  await build();
   say('newSeedReExpands', expandCalls > before, expandCalls + ' total');
   const after = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('removedTermNeverReturns', !after.includes('allergy testing'), JSON.stringify(after));
@@ -134,8 +139,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
         {term: 'tonsillectomy', volume: 40}], floor: 20})}));
   await p.evaluate(() => { open(0, 'kw'); });
   await p.waitForTimeout(300);
-  await p.click('#kbExpandRun');
-  await proposed();
+  await build();
   const seeds = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('exactDropStaysOut', !seeds.includes('allergy testing'), JSON.stringify(seeds));
   say('rewordingStaysOut', !seeds.includes('allergy skin testing'),
