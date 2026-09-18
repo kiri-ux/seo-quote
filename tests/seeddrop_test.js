@@ -1,7 +1,9 @@
-// A REMOVED SUGGESTION STAYS REMOVED. "allergy testing" was proposed on every
-// build, and the only way to reject it was to let the whole list be built
-// around it first. The expansion runs ONCE PER LIST, ahead of the build, so a
-// second build on the same seeds does not propose it again.
+// A REMOVED SUGGESTION STAYS REMOVED, AND IT IS REVIEWED BEFORE THE BUILD.
+// "allergy testing" was proposed on every press, and the only way to reject it
+// was to let the whole list be built around it first. Expand is its own button:
+// propose, prune, then build. ↻ Refresh focus terms is the one way back from a
+// removal -- it takes the tool's own terms off and offers the removed ones
+// again -- which is what Restore and Allow again used to be.
 const {chromium} = require('/root/work/node_modules/playwright-core');
 (async () => {
   const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
@@ -9,7 +11,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   let bad = 0;
   const say = (n, ok, extra='') => { if(!ok){bad++; console.log('FAIL', n, extra);} };
 
-  let expandCalls = 0, buildCalls = 0, seedsSent = [];
+  let expandCalls = 0, buildCalls = 0, seedsSent = [], buildBody = {};
   await p.route('**/api/site_services', route => {
     expandCalls++;
     const seeds = (route.request().postDataJSON() || {}).seeds || [];
@@ -27,6 +29,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     route.fulfill({status:200, contentType:'application/json', body:'{"regions":[]}'}));
   await p.route('**/api/keywords', route => {
     buildCalls++;
+    buildBody = route.request().postDataJSON() || {};
     return route.fulfill({status:200, contentType:'application/json',
       body: JSON.stringify({ultra:[{kw:'a',vol:10}], competitive:[], long_tail:[],
                             all:[{kw:'a',vol:10}], total_volume:10})});
@@ -45,30 +48,36 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     const r = ROWS[0];
     r.data.focus = ['Hearing Aids'];
     r.data.site = 'entoxford.com';
-    r.data.expand = 1;
-    r.seedSrc = {}; r.seedDrop = []; r.expandDone = [];
+    r.seedSrc = {}; r.seedDrop = []; r.suggested = []; r.rankedSeeds = [];
     open(0, 'kw');
   });
   await p.waitForTimeout(400);
-  // The line is cleared before each build, so waiting on it cannot be answered
-  // by the previous build's "Built 1 terms."
+  // The line is cleared before each press, so waiting on it cannot be answered
+  // by the previous one's.
+  const expand = async () => {
+    await p.evaluate(() => { $('saved').textContent = ''; });
+    await p.click('#kbExpandRun');
+    await p.waitForFunction(
+      () => /proposed|added nothing|under the|full at/i.test($('saved').textContent),
+      {timeout:20000});
+  };
   const build = async () => {
     await p.evaluate(() => { $('saved').textContent = ''; });
     await p.click('#kbBuild');
     await p.waitForFunction(() => /^Built /.test($('saved').textContent), {timeout:20000});
   };
 
-  // THE BUILD EXPANDS FIRST. Its terms land in the seed box, marked, and the
-  // build line says how many it added.
-  await build();
+  // THE BUTTON PROPOSES AND STOPS. Its terms land in the seed box marked, and
+  // nothing is built.
+  await expand();
   say('expandedOnce', expandCalls === 1, expandCalls + ' expansion passes');
-  say('builtAfterExpanding', buildCalls === 1, buildCalls + ' builds');
-  say('noteSaysWhatItAdded',
-      /2 terms added by expansion/.test(await p.textContent('#saved')),
+  say('nothingBuiltYet', buildCalls === 0, buildCalls + ' builds');
+  say('noteSaysWhatItProposed',
+      /2 terms proposed, marked ✦/.test(await p.textContent('#saved')),
       await p.textContent('#saved'));
   let chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => [n.firstChild.textContent.trim(), n.classList.contains('sug')]));
-  say('bothProposedAreDashed',
+  say('bothProposedAreMarked',
       chips.filter(c => c[1]).map(c => c[0]).sort().join('|')
         === 'allergy testing|ear tube surgery', JSON.stringify(chips));
 
@@ -80,44 +89,33 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('recordedAsRemoved',
       (await p.evaluate(() => ROWS[0].seedDrop)).join('|') === 'allergy testing',
       JSON.stringify(await p.evaluate(() => ROWS[0].seedDrop)));
-  // STATES THE FACT AND STOPS. The legend used to carry the mechanism --
-  // "removed suggestions are not proposed again" -- which belongs in the code
-  // comment, not on screen. What it owes the planner is the count and the two
-  // ways out of it.
+  // STATES THE FACT AND STOPS. The legend carries the count; the way back is
+  // the Refresh toggle above it, not two link buttons inside a sentence.
   const legend = await p.textContent('#paneKw .seedhint');
   say('legendSaysTheCount', /1 removed\./i.test(legend), legend);
-  say('legendOffersRestore', /Restore them/i.test(legend), legend);
-  // Restore takes the terms back AND clears the block; Allow again clears the
-  // block only, so a corrected removal does not have to be undone to let the
-  // expansion propose freely.
-  say('legendOffersAllowAgain', /Allow again/i.test(legend), legend);
-  say('legendDropsTheExplanation',
-      !/not proposed again/i.test(legend), legend);
+  say('legendOffersNoRestore', !/Restore them/i.test(legend), legend);
+  say('legendOffersNoAllowAgain', !/Allow again/i.test(legend), legend);
 
-
-  // BUILD AGAIN. This list has had its expansion, so the second build spends
-  // nothing on proposing the same terms.
+  // THEN BUILD. It does not ask the expansion at all, and it is told what was
+  // removed -- its own sources put "apartments for rent" back in the grid after
+  // it had been taken off the seed box.
   const before = expandCalls;
   await build();
-  say('builtAgain', buildCalls === 2, buildCalls + ' builds');
-  say('secondBuildDidNotExpand', expandCalls === before,
+  say('builtThisTime', buildCalls === 1, buildCalls + ' builds');
+  say('buildIsToldWhatWasRemoved',
+      (buildBody.negatives || []).includes('allergy testing'),
+      JSON.stringify(buildBody.negatives));
+  say('buildDidNotExpand', expandCalls === before,
       (expandCalls - before) + ' extra expansion passes');
   chips = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
     ns => ns.map(n => n.firstChild.textContent.trim()));
   say('weakOneStayedOut', !chips.includes('allergy testing'), JSON.stringify(chips));
   say('goodOneKept', chips.includes('ear tube surgery'), JSON.stringify(chips));
 
-  // A NEW TYPED SEED, EXPANDED AGAIN -- never brings the removed term back.
-  await p.evaluate(() => {
-    ROWS[0].data.focus = ROWS[0].data.focus.concat('Tonsillectomy');
-    open(0, 'kw');
-  });
-  await p.waitForTimeout(300);
-  say('newSeedReopensTheExpansion',
-      !(await p.evaluate(() => expandRanOnThese(ROWS[0]))));
+  // PRESS IT AGAIN -- never brings the removed term back.
   seedsSent = [];
-  await build();
-  say('newSeedReExpands', expandCalls > before, expandCalls + ' total');
+  await expand();
+  say('secondPressAsksAgain', expandCalls > before, expandCalls + ' total');
   const after = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('removedTermNeverReturns', !after.includes('allergy testing'), JSON.stringify(after));
 
@@ -126,7 +124,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   await p.evaluate(() => {
     ROWS[0].seedDrop = ['allergy testing', 'sinus surgery'];
     ROWS[0].data.focus = ['Hearing Aids'];
-    ROWS[0].expandDone = [];
+    ROWS[0].suggested = [];
     return null;
   });
   await p.unroute('**/api/site_services');
@@ -139,7 +137,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
         {term: 'tonsillectomy', volume: 40}], floor: 20})}));
   await p.evaluate(() => { open(0, 'kw'); });
   await p.waitForTimeout(300);
-  await build();
+  await expand();
   const seeds = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
   say('exactDropStaysOut', !seeds.includes('allergy testing'), JSON.stringify(seeds));
   say('rewordingStaysOut', !seeds.includes('allergy skin testing'),
@@ -149,56 +147,16 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('unrelatedStillProposed', seeds.includes('tonsillectomy'),
       JSON.stringify(seeds));
 
-  // AND THERE IS A WAY BACK.
-  await p.evaluate(() => {
-    const r = ROWS[0];
-    r.seedDrop = ['allergy testing', 'ear tube surgery'];
-    r.data.focus = ['Hearing Aids'];
-    open(0, 'kw');
-  });
-  await p.waitForTimeout(300);
-  say('restoreOffered', (await p.$$('#seedRestore')).length === 1);
-  await p.click('#seedRestore');
-  await p.waitForTimeout(300);
-  const restored = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
-  say('bothCameBack',
-      restored.includes('allergy testing') && restored.includes('ear tube surgery'),
-      JSON.stringify(restored));
-  say('dropListCleared',
-      (await p.evaluate(() => ROWS[0].seedDrop)).length === 0);
-  say('expansionAskedAgain',
-      (await p.evaluate(() => ROWS[0].expandDone)).length === 0);
-  say('restoreGoesAway', (await p.$$('#seedRestore')).length === 0);
+  // AND REFRESH IS THE WAY BACK. It takes the tool's own terms off, clears the
+  // block, and the removed ones are offered again on the same press.
+  await p.click('#kbRefresh button[data-v="1"]');
+  await expand();
+  say('refreshClearedTheBlock',
+      (await p.evaluate(() => (ROWS[0].seedDrop || []).length)) === 0);
+  const back = await p.evaluate(() => ROWS[0].data.focus.map(x => x.toLowerCase()));
+  say('removedTermIsOfferedAgain', back.includes('allergy testing'), JSON.stringify(back));
   say('typedOneNotDuplicated',
-      restored.filter(x => x === 'hearing aids').length === 1, JSON.stringify(restored));
-
-  // ALLOW AGAIN CLEARS THE BLOCK AND NOTHING ELSE. Restore does both, which is
-  // right when the removal was the mistake. This is the other case: the removal
-  // was correct and the expansion has since been given a rule it did not have,
-  // so the block has to go without the rejected chips coming back with it.
-  // Drops one of its own rather than reusing the state above, which Restore has
-  // already emptied.
-  await p.evaluate(() => [...document.querySelectorAll(
-    '#paneKw [data-chips="seeds"] .chip')].find(
-      c => c.firstChild.textContent.trim() === 'allergy testing').querySelector('b').click());
-  await p.waitForTimeout(200);
-  say('allowAgainOffered', (await p.$$('#seedAllow')).length === 1);
-  const chipsBefore = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
-    ns => ns.map(n => n.firstChild.textContent.trim()).sort().join('|'));
-  await p.click('#seedAllow');
-  await p.waitForTimeout(300);
-  say('allowAgainClearsTheBlock',
-      (await p.evaluate(() => ROWS[0].seedDrop || [])).length === 0,
-      JSON.stringify(await p.evaluate(() => ROWS[0].seedDrop)));
-  const chipsAfter = await p.$$eval('#paneKw [data-chips="seeds"] .chip',
-    ns => ns.map(n => n.firstChild.textContent.trim()).sort().join('|'));
-  say('allowAgainDoesNotTakeTheTermsBack', chipsAfter === chipsBefore,
-      chipsBefore + '  ->  ' + chipsAfter);
-  say('theRemovedTermStaysOutOfTheBox',
-      !/allergy testing/.test(chipsAfter), chipsAfter);
-  say('allowAgainReopensTheExpansion',
-      (await p.evaluate(() => (ROWS[0].expandDone || []).length)) === 0);
-  say('allowAgainGoesAway', (await p.$$('#seedAllow')).length === 0);
+      back.filter(x => x === 'hearing aids').length === 1, JSON.stringify(back));
 
   console.log(bad ? 'failed=' + bad : 'ok all');
   await b.close();

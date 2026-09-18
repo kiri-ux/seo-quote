@@ -179,9 +179,11 @@ const CFG = {
   // ---------------- step 1: the keyword builder ----------------
   await p.click('[data-open="0"][data-view="form"]');
   await p.click('#kwBuilder');
-  // THE BUILD EXPANDS FIRST. ✦ Expand on focus terms is a toggle, on by
-  // default, and the expansion runs once per list ahead of the build it
-  // belongs to.
+  // EXPAND FIRST, THEN BUILD. The expansion is its own button, reviewed in the
+  // seed box before the build spends two minutes on it.
+  await p.click('#kbExpandRun');
+  await p.waitForFunction(() => /proposed|added nothing/.test(document.getElementById('saved').textContent));
+  const expandNote = await p.evaluate(() => document.getElementById('saved').textContent);
   await p.click('#kbBuild');
   await p.waitForFunction(() => /^Built /.test(document.getElementById('saved').textContent));
 
@@ -347,7 +349,7 @@ const CFG = {
 
   const want = {
     // step 1
-    // EXPAND ON FOCUS TERMS runs inside the build, ahead of it, and feeds it.
+    // EXPAND ON FOCUS TERMS runs on its button, before the build, and feeds it.
     // Three sources, then the gap pass a second time with what they found --
     // it is the only one that is told the list. The band is resolved when the
     // builder opens and cached, so it does not reappear in the build sequence.
@@ -372,7 +374,9 @@ const CFG = {
     // The build reports what it waited on, so the note is checked by its
     // meaning rather than character for character.
     'kb.note': [kb.note.split(' · ')[0], 'Built 3 terms.'],
-    'kb.buildExpanded': [/4 terms added by expansion/.test(kb.note), true],
+    'kb.expandNote': [expandNote.split('.')[0], '4 terms proposed, marked ✦'],
+    'kb.noteSaysHowToReject':
+      [/remove any, then build keyword list/i.test(expandNote), true],
     'kb.timingOffTheStatusLine': [/\d+\.\d+s — /.test(kb.note), false],
     'kb.timingInTheFold': [/\d+\.\d+s — /.test(timing.text), true],
     'kb.timingFoldShown': [timing.hidden, false],
