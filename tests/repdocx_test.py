@@ -246,6 +246,22 @@ check("and the 3-star count rides with it", "3 at 3 stars" in t5, True)
 check("it sits with the removals it prices",
       t5.index("City Heating & Air Conditioning") > t5.index("Google Review Removals"), True)
 
+print("\nTHE PHRASES THE CAMPAIGN IS CONTRACTED TO REMOVE")
+# Brendan's own proposals name them and scope the price to them -- "strictly
+# for the term 'Sage Dental'". The document priced a phrase count.
+t6 = text_of(client.post("/api/rep_proposal.docx", json={
+    "brand": "Sage Dental", "campaign": "reactive", "quote": q5, "margin_pct": 0.35,
+    "snapshot": {"query": "sage dental reviews", "terms": [], "organic": [],
+                 "forums": [], "locations": [],
+                 "suggest": ["sage dental lawsuit"],
+                 "related": ["sage dental complaints"]}}).data)
+check("auto-suggest phrases are named", "sage dental lawsuit" in t6, True)
+check("related-search phrases too", "sage dental complaints" in t6, True)
+check("each under its own surface",
+      t6.index("In auto-suggest:") < t6.index("In related searches:"), True)
+check("and inside Reactive, not the removals",
+      t6.index("sage dental lawsuit") > t6.index("Reactive"), True)
+
 print("\nA WORKSTREAM THE QUOTE DID NOT BUY IS NOT DESCRIBED")
 q4 = rep_pricing.build_rep_quote(
     {"campaign": "reactive", "brand": "Ski Barn", "margin_pct": 0.35,
