@@ -260,7 +260,7 @@
         </div>
         <div class="cfgsec">
           <h4>Pricing constants</h4>
-          <p class="hint">An edit prices this quote only. Re-run the forecast to see it.</p>
+          <p class="hint">An edit prices this quote only.</p>
           <div id="cfgGlobal"></div>
         </div>
       </form>
@@ -2139,9 +2139,7 @@ function show(view){
   // A QUOTE THAT EXISTS IS REGENERATED, NOT GENERATED. The button read the same
   // before and after a run, so there was nothing to say the next press replaces
   // what is on screen.
-  const ran = ROW != null && !!(ROWS[ROW] || {}).result;
-  $('gen').textContent = view === 'kw' ? 'Apply to the quote'
-    : (ran ? 'Regenerate Quote' : 'Generate Quote');
+  genLabel();
   // The keyword builder produces a LIST, not a quote, so there is nothing to
   // save without generating -- "Apply to the quote" is the whole action.
   $('save').hidden = view === 'kw';
@@ -2150,6 +2148,18 @@ function show(view){
   // looking at a list you did not want meant closing the whole modal.
   $('back').hidden = !(view === 'kw' || view === 'cfg');
 }
+// A QUOTE THAT EXISTS IS REGENERATED, NOT GENERATED -- and on the config pane
+// it is usually only repriced, which is one call instead of the whole
+// forecast. The label is the only thing that says which will happen, so it is
+// recomputed as the constants are typed. (2026-09-18, Kiri)
+function genLabel(){
+  const r = ROW != null ? ROWS[ROW] : null;
+  const ran = !!(r || {}).result;
+  $('gen').textContent = VIEW === 'kw' ? 'Apply to the quote'
+    : (VIEW === 'cfg' && canReprice(r)) ? 'Reprice'
+    : ran ? 'Regenerate Quote' : 'Generate Quote';
+}
+$('paneCfg').addEventListener('input', genLabel);
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) close(); });
@@ -2558,6 +2568,46 @@ function cfgOverride(){
       out[k] = Object.assign({}, cfgGet(CFGVALS, k), out[k]);
   });
   return out;
+}
+
+// THE CONSTANTS THIS QUOTE PRICES ON. The pricing-constants pane writes
+// r.over; the quote's own Minimum term box wrote r.cfg.min_term and nothing
+// read it, so a quote set to 12 months priced and printed the file's 6.
+// (2026-09-18, Kiri)
+function priceCfg(r){
+  const over = Object.assign({}, r.over || {});
+  const t = parseInt(String((r.cfg || {}).min_term || '').trim(), 10);
+  if (t > 0) over.min_term_months = t;
+  return over;
+}
+
+// WHICH CONSTANTS A REPRICE CANNOT CARRY. Step 4 runs on measurements taken
+// by the passes before it -- the keyword list, the competition adder, the
+// share of terms not ranking -- so a constant that shapes one of THOSE needs
+// the passes run again. Everything else is arithmetic /api/price redoes from
+// the numbers already on the quote. (2026-09-18, Kiri)
+const RERUN_KEYS = new Set([
+  'grid_target_keywords', 'grid_min_services', 'grid_max_services',
+  'grid_max_cities', 'grid_state_suffix', 'service_min_volume',
+  'service_upgrade_ratio', 'expand_min_volume', 'service_max_swaps',
+  'store_intent_tier_boost',
+  'cpc_adder_mult', 'cpc_adder_cap', 'cpc_adder_knee', 'cpc_adder_mult_high',
+  'cpc_adder_free_below', 'bid_score_breaks', 'competitive_adder',
+  'zero_ranking_top_n']);
+function needsFullRun(r, now){
+  const was = ((r.result || {}).over) || {};
+  now = now || r.over || {};
+  return [...new Set(Object.keys(was).concat(Object.keys(now)))]
+    .some(k => RERUN_KEYS.has(k)
+               && JSON.stringify(was[k]) !== JSON.stringify(now[k]));
+}
+// A run that has been priced can be priced again off its own stored request.
+function canReprice(r){
+  if (!r || r.kind !== 'seo') return false;
+  if (!r.result || !r.result.pricing) return false;
+  const typed = (VIEW === 'cfg' && $('cfgGlobal').children.length)
+    ? cfgOverride() : null;
+  return !needsFullRun(r, typed);
 }
 
 // ---------------------------------------------------------------- step 1
@@ -4017,8 +4067,15 @@ async function generate(){
       ai_search: hasStrategy(d, 'ai search'),
       core_seo: hasStrategy(d, 'core seo'),
       pct_not_ranking, total_volume, industry,
-      national_demand: band === 'nationwide', cfg: r.over,
+      national_demand: band === 'nationwide', cfg: priceCfg(r),
+      // THREE OVERRIDE BOXES, ONE WIRE. Config offered Core SEO, AI Search and
+      // add-on market, and only Core SEO was ever sent -- so typing $1,787.50
+      // against AI Search changed nothing and the quote came back at the
+      // built-in 74% of Core SEO. The pricer has taken all three since August;
+      // this tab was sending one of them. (2026-09-18, Kiri)
       base_override: r.cfg.ov_core || '',
+      geo_override: r.cfg.ov_ai || '',
+      addon_override: r.cfg.ov_addon || '',
       // The page-one median comes off the market signals pass, which this tab
       // does not run yet. Null, not a guess -- the SEO tab sends null too.
       // Site condition, banded in CFG.site_debt_tiers. Only sent when it was
@@ -4104,6 +4161,80 @@ async function generate(){
   $('gen').disabled = false;
 }
 
+// A PRICE CHANGE IS NOT A NEW FORECAST. Moving the markup or typing an
+// override meant regenerating -- rebuilding the keyword list, scoring
+// competition again and re-checking twenty-five rankings, minutes of API
+// calls -- to move a number that is arithmetic off measurements already in
+// hand. Step 4 runs again on the run's own stored request; nothing is
+// re-measured, so nothing but the price can move. The one thing it cannot do
+// is carry a constant that shapes an earlier pass -- see RERUN_KEYS, which is
+// what keeps the button reading Regenerate Quote when one of those is edited.
+// (2026-09-18, Kiri)
+async function reprice(){
+  const r = ROWS[ROW];
+  r.data = Object.assign({}, r.data, collect(formOf(r)));
+  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  r.cfg = r.cfg || {};
+  r.over = r.over || {};
+  const res = r.result;
+  // Nothing measured yet: the only honest way to a price is the whole forecast.
+  if (!res) { generate(); return; }
+  const say = t => { $('saved').textContent = t; };
+  $('gen').disabled = true;
+  try {
+    const band = r.band || bandOf(r.data);
+    // A quote saved before the request was kept still reprices; the request is
+    // rebuilt from what the quote itself recorded, the way a recheck does it.
+    const base = res.priceReq || {
+      band, adder: ((res.metrics || {}).adder) || 0,
+      // The flag the run was priced on is not stored; it is what the measured
+      // share of terms not ranking says.
+      zero_ranking: ((res.pricing || {}).pct_not_ranking || 0) >= 90,
+      pct_not_ranking: (res.pricing || {}).pct_not_ranking,
+      addon_markets: ((res.addon || {}).suggested) || 0,
+      total_volume: (res.pricing || {}).total_volume
+        || ((r.kw || {}).total_volume || 0),
+      industry: (r.data.industry || []).join(', '),
+      ai_search: hasStrategy(r.data, 'ai search'),
+      core_seo: hasStrategy(r.data, 'core seo'),
+      national_demand: band === 'nationwide', pageone_rank: null};
+    const req = Object.assign({}, base, {
+      markup_pct: parseFloat(String(r.cfg.markup || r.data.markup || 35)),
+      cfg: priceCfg(r),
+      base_override: r.cfg.ov_core || '',
+      geo_override: r.cfg.ov_ai || '',
+      addon_override: r.cfg.ov_addon || ''});
+    // The count of add-on markets is the planner's to set; left blank it keeps
+    // the recommendation the run measured.
+    const addonOv = String(r.cfg.addon_markets || '').trim();
+    if (addonOv !== '') req.addon_markets = +addonOv || 0;
+    say('Repricing\u2026');
+    const price = await post('/api/price', req);
+    res.pricing = price;
+    res.priceReq = req;
+    // The run records what it was priced on, so the Settings fold and the
+    // pricing fold cannot disagree with the tiles above them.
+    res.cfg = Object.assign({}, r.cfg);
+    res.over = JSON.parse(JSON.stringify(r.over));
+    res.headline = headlineOf(r);
+    // THE OPEN RUN HOLDS ITS OWN COPY. Reloaded from storage, history[0].quote
+    // is a separate object from r.result, so repricing the row left the run on
+    // screen showing the price it was saved with.
+    const h0 = (r.history || [])[0];
+    if (h0) { h0.quote = res; h0.resp = res.headline; }
+    await persist(r);
+    r.startTab = 'history';
+    r.openRun = 0;
+    draw();
+    say('');
+    close();
+  } catch (e) {
+    say(e.message);
+  } finally {
+    $('gen').disabled = false;
+  }
+}
+
 // SAVE WRITES TO THE DATABASE. It used to copy the form into memory and print
 // "Saved 24 fields" off the field count -- a message about an object in the
 // browser, not a record anywhere. Closing the tab lost the lot, and the only
@@ -4132,6 +4263,7 @@ $('save').onclick = async () => {
 };
 $('gen').onclick = () => {
   if (ROWS[ROW].kind === 'orm') { generateOrm(); return; }
+  if (VIEW === 'cfg' && canReprice(ROWS[ROW])) { reprice(); return; }
   if (VIEW === 'kw') {
     const r = ROWS[ROW];
     r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
@@ -4495,8 +4627,10 @@ async function recheckRanks(i){
       total_volume: (res.pricing || {}).total_volume
         || ((work.kw || {}).total_volume || 0),
       industry: (d.industry || []).join(', '),
-      national_demand: band === 'nationwide', cfg: r.over || {},
-      base_override: (r.cfg || {}).ov_core || '', pageone_rank: null};
+      national_demand: band === 'nationwide', cfg: priceCfg(r),
+      base_override: (r.cfg || {}).ov_core || '',
+      geo_override: (r.cfg || {}).ov_ai || '',
+      addon_override: (r.cfg || {}).ov_addon || '', pageone_rank: null};
     const req = Object.assign({}, base, {
       pct_not_ranking: pct,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
