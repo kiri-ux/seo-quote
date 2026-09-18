@@ -150,20 +150,22 @@ check("no ORM services in it",
 check("and no Partner A / Partner B — the rate card replaced them",
       "Partner A" in t or "Partner B" in t, False)
 
-print("\nAND IT OPENS AND CLOSES THE WAY HIS OWN PROPOSALS DO")
-check("the subject line",
-      "Subject: Ski Barn - Reputation Management Proposal" in t, True)
-check("the from line",
-      "From: Brendan Egan, Aaron Peterson - Simple SEO Group" in t, True)
-check("the IP notice", "remain the intellectual property of Simple SEO Group" in t, True)
+print("\nAND IT IS ADTINI'S DOCUMENT TOO")
+# Same cover as the proposal and the SEO document: the letterhead, the next
+# steps and the footer were all Simple SEO Group's. (2026-09-18)
+check("it opens on the cover", "Review Removal Analysis" in t, True)
+check("with the client on it", "Ski Barn" in t, True)
+check("no letterhead", "Subject: Ski Barn" in t, False)
+check("nobody else's name on it",
+      any(x in t for x in ("Simple SEO Group", "Brendan", "simpleseogroup")), False)
 check("his review wording, verbatim",
       "you, as the end client, can define which reviews you want removed" in t, True)
 check("the success rates", "roughly 60% success rate" in t, True)
 check("the pay-on-success terms",
       "payment is only due upon successful removal of the review from Google" in t, True)
 check("the capacity note", "capacity to remove up to 500 reviews per month" in t, True)
-check("next steps", "Proposal - Next Steps" in t, True)
-check("and the footer", "1-888-918-1665 | info@SimpleSEOGroup.com" in t, True)
+check("no next steps", "Proposal - Next Steps" in t, False)
+check("and no footer", "1-888-918-1665" in t, False)
 
 print("\nTHE PROPOSAL DOCUMENT")
 q = rep_pricing.build_rep_quote(

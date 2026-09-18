@@ -2085,16 +2085,27 @@ function renderCfg(c){
   h += cfgHdr('Website Removals ($ / site)', 'pricing from one example quote — need confirmation', 'warn');
   c.site_brackets.forEach((b,i)=>{ h += cfgRow(b.min+'–'+(b.max||'∞'), cfgIn('c_sb'+i, b.per)); });
   h += cfgRow('Premium (DA>35 / news-legal)', cfgIn('c_sprem', c.site_premium_per));
-  h += cfgHdr('Reactive · Search Protection', 'hard-cost canonical · Sage replay approximate ($7,550 vs $7,400 actual) · 3-phrase inclusion unconfirmed', 'warn');
+  h += cfgHdr('Reactive · Search Protection', 'refit through the Sage actual ($7,500 vs $7,400) · 3-phrase inclusion unconfirmed · per-phrase rate is a starting number', 'warn');
   h += cfgRow('Suppression component base — hard $/mo', cfgIn('c_supp', c.bundle.supp_base));
   h += cfgRow('Auto-suggest/related component base — hard $/mo', cfgIn('c_as', c.bundle.as_base));
   h += cfgRow('Hard $ per 1K — suppression', cfgIn('c_p1ks', c.bundle.supp_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Hard $ per 1K — auto-suggest/related', cfgIn('c_p1ka', c.bundle.as_per_1k ?? c.bundle.comp_per_1k, 1));
   h += cfgRow('Included negative phrases <span style="font-weight:400;color:var(--warn)">(unconfirmed)</span>', cfgIn('c_incneg', c.bundle.included_negatives ?? 3, 1));
+  h += cfgRow('Each phrase beyond the included set — hard $/mo', cfgIn('c_xphr', c.bundle.per_extra_phrase_hard ?? 0));
   h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
-  h += cfgHdr('Proactive · Brand Shield', 'internal estimate — pending review', 'warn');
-  h += cfgRow('Partner hard cost base /mo', cfgIn('c_shield', c.shield_monthly));
-  h += cfgRow('Partner hard cost per extra location /mo', cfgIn('c_shloc', c.shield_per_extra_location));
+  const pr = c.proactive || {};
+  h += cfgHdr('Proactive · Brand Shield', 'costed off the brand\u2019s own footprint (ORM - Proactive Brand Monitoring, 16 Sep 2026) \u00b7 displacement ratio and floor are assumptions', 'warn');
+  h += cfgRow('Monitoring — fixed + per keyword /mo',
+              cfgIn('c_pmf', pr.monitor_fixed) + ' ' + cfgIn('c_pmk', pr.monitor_per_keyword));
+  h += cfgRow('Moat building — fixed + per backlink + per asset page',
+              cfgIn('c_pbf', pr.moat_fixed) + ' ' + cfgIn('c_pbl', pr.moat_per_backlink, 2)
+              + ' ' + cfgIn('c_pas', pr.moat_per_asset));
+  h += cfgRow('Per page-one threat — backlinks + asset pages <span style="font-weight:400;color:var(--warn)">(assumption)</span>',
+              cfgIn('c_pblt', pr.backlinks_per_threat, 1) + ' ' + cfgIn('c_past', pr.assets_per_threat, 1));
+  h += cfgRow('Monthly production ceiling — backlinks + asset pages',
+              cfgIn('c_pblc', pr.backlinks_cap, 1) + ' ' + cfgIn('c_pasc', pr.assets_cap, 1));
+  h += cfgRow('Internal cost as % of retail', cfgIn('c_ppct', Math.round((pr.internal_pct_of_retail||0.225)*1000)/10, 1));
+  h += cfgRow('Minimum monthly — client $ <span style="font-weight:400;color:var(--warn)">(assumption)</span>', cfgIn('c_pfloor', pr.floor));
   h += cfgHdr('Reputational AI Search', 'Sage GEO card actuals — reputational use unconfirmed', 'warn');
   h += cfgRow('Setup /mo', cfgIn('c_geos', c.geo.setup));
   h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));
@@ -2117,8 +2128,15 @@ $('cfgApply').onclick = async ()=>{
     bundle: {supp_base: v('c_supp'), as_base: v('c_as'),
              supp_per_1k: v('c_p1ks'), as_per_1k: v('c_p1ka'),
              included_negatives: v('c_incneg'),
+             per_extra_phrase_hard: v('c_xphr'),
              floor: v('c_floor'), cap: v('c_cap')},
-    shield_monthly: v('c_shield'), shield_per_extra_location: v('c_shloc'),
+    proactive: {monitor_fixed: v('c_pmf'), monitor_per_keyword: v('c_pmk'),
+                moat_fixed: v('c_pbf'), moat_per_backlink: v('c_pbl'),
+                moat_per_asset: v('c_pas'),
+                backlinks_per_threat: v('c_pblt'), assets_per_threat: v('c_past'),
+                backlinks_cap: v('c_pblc'), assets_cap: v('c_pasc'),
+                internal_pct_of_retail: (v('c_ppct') || 22.5) / 100,
+                floor: v('c_pfloor')},
     geo: {setup: v('c_geos'), scale: v('c_geoc')},
     bundle_discount_pct: v('c_bdisc')/100,
     internal_cost_pct: v('c_intpct')/100,

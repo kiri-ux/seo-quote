@@ -37,9 +37,11 @@ def check(label, got, want):
         FAIL.append(label)
 
 
+# PROACTIVE IS PRICED OFF THE FOOTPRINT NOW (2026-09-18), not a flat card:
+# what is being watched, and how much of page one is against it.
 SKI_BARN = {"campaign": "bundle", "margin_pct": 0.35,
             "search": {"bundle": True, "volume": 8000},
-            "shield": {"locations": 4},
+            "shield": {"locations": 4, "keywords": 5, "threats": 3},
             "reviews": {"count": 26},
             "articles": {"standard": 2, "premium": 1}}
 q = R.build_rep_quote(SKI_BARN)
@@ -83,12 +85,15 @@ check("and nothing prints it",
       "not done on a performance basis" in _txt, False)
 
 print("\nTHE TWO BUNDLES GO OVER SEPARATELY")
-check("reactive", h["search_protection_monthly"], 6500)
-check("proactive", h["brand_shield_monthly"], 5600)
+check("reactive", h["search_protection_monthly"], 4650)
+# The sheet's own worked example: 5 keywords, 3 threats -> $486/mo to run ->
+# $2,200 retail. It reads $2,150 there because that page rounds retail to the
+# nearest $50 and every client figure in both tools rounds UP.
+check("proactive", h["brand_shield_monthly"], 2200)
 check("and still sum to the budget",
       h["search_protection_monthly"] + h["brand_shield_monthly"],
       h["monthly_budget"])
-check("which is the Ski Barn figure", h["monthly_budget"], 12100)
+check("which is the Ski Barn figure", h["monthly_budget"], 6850)
 
 print("\nWITH WHAT EACH IS PRICED OFF")
 check("brand search volume", h["search_volume"], 8000)
@@ -106,7 +111,8 @@ print("\nPROACTIVE ONLY IS THE MIRROR")
 r2 = R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                         "shield": {"locations": 4}})["handoff"]
 check("no search money", r2["search_protection_monthly"], 0)
-check("shield money stands", r2["brand_shield_monthly"], 5600)
+# No footprint given: one keyword, no threats, so it prices at the minimum.
+check("shield money stands", r2["brand_shield_monthly"], 1500)
 check("volume is zero, not absent", r2["search_volume"], 0)
 
 print("\nA REMOVALS-ONLY QUOTE HAS NO MONTHLY AT ALL")
@@ -122,13 +128,14 @@ check("reactive line", [l["service"] for l in q["lines"] if "Search Protection" 
       ["Reactive \u00b7 Search Protection"])
 check("proactive line", [l["service"] for l in q["lines"] if "Brand Shield" in l["service"]],
       ["Proactive \u00b7 Brand Shield"])
-check("the shield detail is not its own name again",
+check("the shield detail is what it is priced off",
       [l["detail"] for l in q["lines"] if "Brand Shield" in l["service"]],
-      ["4 locations (+$700/extra location)"])
-check("one location reads singular",
+      ["5 keywords tracked \u00b7 3 page-one threats \u00b7 15 backlinks/mo, "
+       "3 asset pages/mo \u00b7 4 locations"])
+check("one keyword reads singular",
       R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                          "shield": {"locations": 1}})["lines"][0]["detail"],
-      "1 location")
+      "1 keyword tracked \u00b7 0 page-one threats")
 
 print("\nPARTNER COST FOR EVERY CLIENT FIGURE")
 # The margin can change on the order form after the quote is built, and every
@@ -141,8 +148,8 @@ for c, pk in [("monthly_budget", "partner_monthly_cost"),
               ("price_per_premium_site_removal", "partner_hard_cost_per_premium_site")]:
     check("%s has a partner figure" % c, bool(h.get(pk)) and h[pk] > 0, True)
     check("  and it is below the client one", h[pk] < h[c], True)
-check("reactive partner", h["partner_search_protection_monthly"], 4200)
-check("proactive partner", h["partner_brand_shield_monthly"], 3600)
+check("reactive partner", h["partner_search_protection_monthly"], 3000)
+check("proactive partner", h["partner_brand_shield_monthly"], 1430)
 check("the two sum to the partner monthly",
       h["partner_search_protection_monthly"] + h["partner_brand_shield_monthly"],
       h["partner_monthly_cost"])
@@ -187,7 +194,7 @@ print("\nMARGIN DOLLARS, THE WAY THE SEO HANDOFF SENDS THEM")
 # does not return partner. The difference is stated instead of derived.
 check("monthly", h["margin_dollars_monthly"],
       round(h["monthly_budget"] - h["partner_monthly_cost"], 2))
-check("the Ski Barn figure", h["margin_dollars_monthly"], 4300)
+check("the Ski Barn figure", h["margin_dollars_monthly"], 2420)
 check("a margin % does not reproduce it",
       h["margin_dollars_monthly"] == round(h["monthly_budget"] * 0.35, 2), False)
 # The removal lines get no equivalent: rate x count on both sides with no
