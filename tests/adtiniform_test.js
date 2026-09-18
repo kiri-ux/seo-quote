@@ -143,14 +143,18 @@ const BASE = "http://127.0.0.1:5203";
     cityIn.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
     R.cityPills = [...document.querySelectorAll('#fseo [data-chips="city"] .chip')]
       .map(c => c.firstChild.textContent.trim());
-    // County commits on a comma
+    // County takes Enter too: "Brunswick County, NC" is one value, and it is
+    // the only way to say WHICH Brunswick County.
     document.querySelector('#fseo [data-k="g_county"]').checked = true;
     document.querySelector('#fseo [data-k="g_county"]')
       .dispatchEvent(new Event('change', {bubbles: true}));
     R.countyShown = !document.querySelector('#fseo [data-geo="g_county"]').hidden;
     const cIn = document.querySelector('#fseo [data-chips="county"] .chipin');
-    cIn.value = 'Palm Beach County,';
+    cIn.value = 'Palm Beach County, FL';
     cIn.dispatchEvent(new Event('input', {bubbles: true}));
+    R.countyNotSplitOnComma =
+      document.querySelectorAll('#fseo [data-chips="county"] .chip').length;
+    cIn.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
     R.countyPills = [...document.querySelectorAll('#fseo [data-chips="county"] .chip')]
       .map(c => c.firstChild.textContent.trim());
     document.getElementById('save').click();
@@ -315,7 +319,8 @@ const BASE = "http://127.0.0.1:5203";
     'geo.cityKeepsItsComma': [form.cityNotSplitOnComma, 1],
     'geo.cityPills': [form.cityPills.join(' | '), 'Boca Raton, FL | Delray Beach, FL'],
     'geo.childFollowsItsCheckbox': [form.countyShown, true],
-    'geo.countyCommitsOnComma': [form.countyPills.join(','), 'Palm Beach County'],
+    'geo.countyKeepsItsState': [form.countyPills.join(','), 'Palm Beach County, FL'],
+    'geo.countyNotSplitOnComma': [form.countyNotSplitOnComma, 0],
     'form.savedMsg': [form.savedMsg, true],
     'form.savedIsNotAFieldCount': [form.savedNoFieldCount, true],
     'form.closed': [form.closed, true],

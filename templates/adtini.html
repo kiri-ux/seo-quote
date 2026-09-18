@@ -2116,8 +2116,11 @@ function splitCities(text){
 }
 const chipCommit = (inp, raw) => {
   const box = inp.closest('.box');
-  // City is the exception: "Boca Raton, FL" is one place, not two.
-  const whole = box && box.dataset.chips === 'city';
+  // EVERY GEO BOX KEEPS ITS STATE. "Boca Raton, FL" is one place, not two, and
+  // so is "Brunswick County, NC" -- which is the only way to say WHICH
+  // Brunswick County, there being one in North Carolina and one in Virginia.
+  // County and State split on the comma and lost it. (2026-09-18, Kiri)
+  const whole = box && ['city', 'county', 'state'].includes(box.dataset.chips);
   const text = raw == null ? inp.value : raw;
   const parts = whole ? splitCities(text) : String(text).split(/[,;\t\r\n]+|\s+\u2022\s+/);
   const have = new Set((box ? chipsOf(box) : []).map(x => x.toLowerCase()));
@@ -2179,8 +2182,12 @@ document.addEventListener('input', e => {
   const inp = e.target;
   if (!inp.classList.contains('chipin') || !inp.value.includes(',')) return;
   if (inp.dataset.pick) return;
+  // A COMMA IS PART OF A MARKET, NOT THE END OF ONE. "Wayne, NJ" was already
+  // exempt; County and State were not, so "Brunswick County, NC" -- the only
+  // way to tell the tool WHICH Brunswick County -- broke into two pills and
+  // the county resolved to nothing. (2026-09-18, Kiri)
   const box = inp.closest('.box');
-  if (box && box.dataset.chips === 'city') return;
+  if (box && ['city', 'county', 'state'].includes(box.dataset.chips)) return;
   chipCommit(inp);
 });
 
@@ -3281,21 +3288,22 @@ function snapshotParts(r, live){
         + `<span class="mag">&#128269;</span><span>${boldMod(x, brand)}</span></li>`);
     });
   });
-  // FROM THE RELATED-SEARCHES BLOCK, NOT THE SUGGEST DROPDOWN. The tag used to
-  // read "related", which does not say related to what.
-  leadsWithBrand(relNeg, brand).forEach(x => {
-    acN++;
-    acRows.push(`<li class="ac neg"><span class="mag">&#128269;</span>`
-      + `<span>${boldMod(x, brand)}</span>`
-      + `<span class="v">related search</span></li>`);
-  });
+  // TWO DIFFERENT PLACES, AND THEY ARE SOLD SEPARATELY. Auto-suggest is the
+  // dropdown under the search bar; related searches is the box at the bottom
+  // of the results page. Brendan's Sage Dental proposal prices them as two
+  // campaigns with two scopes, so a column holding both, with a tag on half
+  // the rows, was one list of two things. (2026-09-18)
+  const relRows = leadsWithBrand(relNeg, brand).map(x =>
+    `<li class="ac neg"><span class="mag">&#128269;</span>`
+    + `<span>${boldMod(x, brand)}</span></li>`);
   const cols =
     col('Negative terms', flagged.length,
       flagged.slice(0, 10).map(t =>
         `<li><span>${esc(t.term || t.keyword || '')}`
         + `<i class="tg ${t['class'] === 'negative' ? 'bad' : ''}">${esc(t['class'] || '')}</i></span>`
         + `<span class="v">${(t.volume || 0).toLocaleString()}</span></li>`).join(''))
-    + col('Auto-suggest &amp; related', acN, acRows.join(''));
+    + col('Auto-suggest', acN, acRows.join(''))
+    + col('Related searches', relRows.length, relRows.join(''));
 
   // ------------------------------------------------------------- page one
   const rated = x => x.rating ? `${x.rating}★${x.votes ? ' (' + x.votes.toLocaleString() + ')' : ''}` : '';
@@ -4085,7 +4093,32 @@ async function downloadProposal(i){
   if (btn) { btn.disabled = true; btn.textContent = 'Building\u2026'; }
   say('');
   const d = r.data || {};
-  const body = JSON.stringify({
+  // A REPUTATION QUOTE IS A REPUTATION PROPOSAL. Both products shared this
+  // handler, so pressing Download on an ORM row posted a reputation quote to
+  // the SEO builder and handed back an SEO proposal -- keyword grid, ranking
+  // table and all -- for a client who bought none of it. (2026-09-18, Kiri)
+  const url = r.kind === 'orm' ? '/api/rep_proposal.docx' : '/api/proposal.docx';
+  const sc = r.scan || {};
+  const S = sc.serp || {}, T = sc.terms || {};
+  const strat = asList(d.strategy);
+  const body = r.kind === 'orm' ? JSON.stringify({
+    brand: d.brand || '', order_no: d.order_no || '',
+    campaign: strat.includes('Proactive') && strat.includes('Reactive') ? 'bundle'
+            : strat.includes('Proactive') ? 'proactive' : 'reactive',
+    margin_pct: parseFloat(String((r.cfg || {}).markup || d.markup || 35)) / 100,
+    quote: (r.result || {}).quote || {},
+    // The exhibit the proposal opens with, in the shape the document reads:
+    // the reputation tool keys its captures by query.
+    serp_shots: (r.result || {}).shot
+      ? [{query: ((r.result || {}).serp || {}).kw || ((d.brand || '') + ' reviews').trim(),
+          data_url: r.result.shot}] : [],
+    snapshot: {
+      query: S.query || ((d.brand || '') + ' reviews').trim().toLowerCase(),
+      terms: (T.terms || []).filter(t => t && t['class'] && t['class'] !== 'neutral').slice(0, 10),
+      organic: S.organic || [], forums: S.forums || [],
+      locations: sc.locations || [],
+    },
+  }) : JSON.stringify({
     brand: d.brand || '', business_desc: d.business_desc || '',
     order_no: d.order_no || '',
     geo_values: geoOf(d), state: stateOf(d),
@@ -4121,7 +4154,7 @@ async function downloadProposal(i){
         say(`Server waking up \u2014 retrying in ${wait / 1000}s\u2026`);
         await new Promise(z => setTimeout(z, wait));
       }
-      res = await fetch('/api/proposal.docx',
+      res = await fetch(url,
         {method: 'POST', headers: {'Content-Type': 'application/json'}, body});
       if (res.ok || ![502, 503, 504].includes(res.status)) break;
     }
