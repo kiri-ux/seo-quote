@@ -9,12 +9,14 @@ const BASE = "http://127.0.0.1:5203";
 
 const CLIENTS = {enabled: true, clients: [
   {client: 'Drainify', order: '56310', planner: 'Kiri', partner: 'ADX Communications',
-   status: 'In Progress', built: '2026-09-10', seo: 2, orm: 0,
+   status: 'In Progress', updated: '2026-09-10', seo: 2, orm: 0,
+   priceSeo: 7150, priceOrm: null,
    seoStrat: ['Core SEO', 'AI Search'], ormStrat: [],
    quotes: [{id: 11, name: 'Drainify — 2026-09-04', updated_at: '2026-09-10T10:00:00'},
             {id: 12, name: 'Drainify UK — 2026-09-04', updated_at: '2026-09-09T10:00:00'}]},
   {client: 'Ski Barn', order: '', planner: 'Stacy', partner: 'Rock Paper Scissors',
-   status: 'Pending', built: '2026-08-21', seo: 0, orm: 1,
+   status: 'Pending', updated: '2026-08-21', seo: 0, orm: 1,
+   priceSeo: null, priceOrm: 2600,
    seoStrat: [], ormStrat: ['Reactive', 'Proactive'],
    quotes: [{id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
              updated_at: '2026-08-21T09:00:00'}]},
@@ -112,7 +114,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
   const home = await p.evaluate(() => {
     const cells = tr => [...tr.children].map(td => td.textContent.trim());
     const rows = [...document.querySelectorAll('tbody tr')];
-    const R = {rows: rows.length, first: cells(rows[0])};
+    const R = {rows: rows.length, first: cells(rows[0]), second: cells(rows[1])};
     R.noSamples = !rows.some(t => /Sage Dental|Junk Bee Gone/.test(t.textContent));
     R.plannerFromStore = rows[1].querySelector('select.who').value;
     // By field, not by position: Order ID now sits between Strategies and
@@ -220,10 +222,12 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
   const want = {
     'home.oneRowPerClient': [home.rows, 2],
     'home.sampleRowsGone': [home.noSamples, true],
-    // built, client, products -- in the columns they now sit in. Partner moved
-    // right of Strategies on 2026-09-17, which shifts everything between.
-    'home.rowFromTheStore': [[home.first[2], home.first[4], home.first[5]].join(' | '),
-      '2026-09-10 | Drainify | SEO2'],
+    // client, products, updated -- in the columns they now sit in. The date
+    // moved to the last column on 2026-09-18 and Price went in before Partner.
+    'home.rowFromTheStore': [[home.first[3], home.first[4], home.first[9]].join(' | '),
+      'Drainify | SEO2 | 2026-09-10'],
+    'home.priceFromTheStore': [home.first[6], '$7,150'],
+    'home.ormPriceIsTheMonthly': [home.second[6], '$2,600'],
     'home.quoteCountPerProduct': [home.countPerProduct.join(','), 'SEO2'],
     'home.plannerFromTheStore': [home.plannerFromStore, 'Stacy'],
     'home.partnerFromTheStore': [home.partnerFromStore, 'ADX Communications'],

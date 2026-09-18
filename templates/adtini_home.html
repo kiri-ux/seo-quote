@@ -85,16 +85,19 @@
           <tr>
             <th style="width:40px"></th>
             <th>Planner</th>
-            <th>Built</th>
             <!-- Order ID is a short number and was taking a full column's width;
-                 Partner reads better beside Strategies than between Built and
+                 Partner reads better beside Strategies than between the date and
                  the order number. -->
             <th style="width:92px">Order ID</th>
             <th>Client</th>
             <th>Products</th>
             <th>Strategies</th>
+            <th>Price</th>
             <th>Partner</th>
             <th>Status</th>
+            <!-- WHEN IT LAST MOVED, on the right where a date is looked for
+                 rather than in front of the client's name. -->
+            <th>Updated</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -130,29 +133,37 @@ const TONE = {
   SSG:    '#33265C,#E2DCF7',
 };
 const QUOTES = [
-  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Drainify', order:'',
+  {planner:'Kiri', updated:'2026-09-17', due:'ok', client:'Drainify', order:'',
+   priceSeo:6700, priceOrm:0,
    seo:2, orm:0, seoStrat:['Core SEO','AI Search'], ormStrat:[],
    partner:'ADX Communications', status:'In Progress'},
-  {planner:'Kiri', built:'9/17/26', due:'ok', client:'Ski Barn', order:'',
+  {planner:'Kiri', updated:'2026-09-17', due:'ok', client:'Ski Barn', order:'',
+   priceSeo:0, priceOrm:2100,
    seo:0, orm:2, seoStrat:[], ormStrat:['Review Removals','Reactive'],
    partner:'Rock Paper Scissors', status:'Pending'},
-  {planner:'Kiri', built:'9/16/26', due:'warn', client:'Sage Dental', order:'',
+  {planner:'Kiri', updated:'2026-09-16', due:'warn', client:'Sage Dental', order:'',
+   priceSeo:5450, priceOrm:3100,
    seo:1, orm:1, seoStrat:['Core SEO'],
    ormStrat:['Review Removals','Site/Article Removals','Reactive','Proactive'],
    partner:'Bay Area Digital Solutions', status:'Ready for SSG Review'},
-  {planner:'Kiri', built:'9/16/26', due:'warn', client:"Rosalyn's Ice Cream", order:'',
+  {planner:'Kiri', updated:'2026-09-16', due:'warn', client:"Rosalyn's Ice Cream", order:'',
+   priceSeo:4100, priceOrm:0,
    seo:1, orm:0, seoStrat:['Core SEO'], ormStrat:[],
    partner:'Local Media San Diego', status:'Pending'},
-  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Renfroe Pecans', order:'',
+  {planner:'Kiri', updated:'2026-09-15', due:'ok', client:'Renfroe Pecans', order:'',
+   priceSeo:5250, priceOrm:0,
    seo:1, orm:0, seoStrat:['Core SEO','AI Search'], ormStrat:[],
    partner:'ADX Communications', status:'In Progress'},
-  {planner:'Kiri', built:'9/15/26', due:'ok', client:'Junk Bee Gone', order:'',
+  {planner:'Kiri', updated:'2026-09-15', due:'ok', client:'Junk Bee Gone', order:'',
+   priceSeo:4950, priceOrm:1800,
    seo:1, orm:3, seoStrat:['Core SEO'], ormStrat:['Review Removals','Proactive'],
    partner:'Amperage Marketing + Fundraising', status:'Ready for SSG Review'},
-  {planner:'Kiri', built:'9/12/26', due:'warn', client:'Visions Electronics', order:'',
+  {planner:'Kiri', updated:'2026-09-12', due:'warn', client:'Visions Electronics', order:'',
+   priceSeo:0, priceOrm:2500,
    seo:0, orm:1, seoStrat:[], ormStrat:['Reactive'],
    partner:'Benchmarketing Group', status:'Complete'},
-  {planner:'Kiri', built:'9/11/26', due:'ok', client:'Whidbey Island Electric', order:'',
+  {planner:'Kiri', updated:'2026-09-11', due:'ok', client:'Whidbey Island Electric', order:'',
+   priceSeo:4100, priceOrm:0,
    seo:1, orm:0, seoStrat:['Core SEO'], ormStrat:[],
    partner:'CK Advertising Strategies', status:'Complete'},
 ];
@@ -160,6 +171,18 @@ const QUOTES = [
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tag = (cls, label, n) =>
   `<span class="tag ${cls}">${label}${n > 1 ? '<sup>' + n + '</sup>' : ''}</span>`;
+
+// THE MIDDLE TIER, MONTHLY. SEO is the intermediate package -- Core SEO and AI
+// Search together where both were sold -- and ORM is the monthly. A client
+// holding both gets both figures, in the order the product chips beside them
+// are drawn, so neither needs a label.
+const money = n => '$' + Number(n || 0).toLocaleString();
+function priceCell(r){
+  const out = [];
+  if (r.priceSeo) out.push(money(r.priceSeo));
+  if (r.priceOrm) out.push(money(r.priceOrm));
+  return out.length ? out.join('<br>') : '\u2014';
+}
 
 // The sparkle opens the client's quote builder.
 // The order rides along only when the client has one. An empty &order= is a
@@ -202,14 +225,15 @@ function draw(){
       </div></td>
       <td>${pick(PLANNERS, r.planner, 'who sel', i, 'planner')
         .replace('class="who sel"', `class="who sel" style="color:${fg};background:${bg}"`)}</td>
-      <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${r.built}</span></td>
       <td><input class="cell ord" data-i="${i}" data-f="order_no" value="${esc(r.order || '')}"
                  placeholder="\u2014"></td>
       <td class="lnk"><a href="${fcUrl(r)}">${esc(r.client)}</a></td>
       <td><div class="tags">${chips}</div></td>
       <td><div class="tags">${strat}</div></td>
+      <td class="num">${priceCell(r)}</td>
       <td><input class="cell" data-i="${i}" data-f="partner" value="${esc(r.partner)}"></td>
       <td>${pick(STATUSES, r.status, 'stat sel', i, 'status')}</td>
+      <td><span class="due${r.due === 'warn' ? ' warn' : ''}">${esc(r.updated || '')}</span></td>
     </tr>`;
   }).join('');
   document.getElementById('count').textContent = all.length

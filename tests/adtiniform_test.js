@@ -258,8 +258,10 @@ const BASE = "http://127.0.0.1:5203";
     // THE ORDER ID IS A HANDOFF FIELD, NOT AN IDENTIFIER. It sat third, ahead of
     // the client name, and took the width of one. Partner reads with Strategies
     // -- both answer "who is this for" -- so it moved next to it, 2026-09-17.
+    // The date moved to the right and was renamed for what it has always held
+    // (the newest updated_at), and Price sits with the products it prices.
     'home.cols': [home.cols.join('|'),
-      'Planner|Built|Order ID|Client|Products|Strategies|Partner|Status'],
+      'Planner|Order ID|Client|Products|Strategies|Price|Partner|Status|Updated'],
     'home.rows': [home.rows, 8],
     'home.everyoneIsKiri': [home.planners.join(','), 'Kiri'],
     'home.plannerOptions': [home.plannerOptions.join(','), 'Kiri,Stacy,Hana,Megan,SSG'],

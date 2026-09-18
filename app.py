@@ -18487,11 +18487,27 @@ def group_by_client(seo_rows, rep_rows, meta=None):
             c[tool].append({"id": r.get("id"), "name": r.get("name"),
                             "updated_at": r.get("updated_at"),
                             "created_at": r.get("created_at"),
-                            "base": r.get("base"), "strategy": r.get("strategy") or ""})
+                            "base": r.get("base"),
+                            # THE PRICE THE LIST SHOWS. `intermediate` is the
+                            # middle tier a client is quoted -- Core SEO and AI
+                            # Search COMBINED where both were sold (storage
+                            # _tiers reads client_total) -- and on a rep quote
+                            # the same column holds the monthly.
+                            "price": r.get("intermediate"),
+                            "strategy": r.get("strategy") or ""})
             for part in str(r.get("strategy") or "").split("+"):
                 part = part.strip()
                 if part and part not in c[tool + "_strat"]:
                     c[tool + "_strat"].append(part)
+    # The newest priced quote of that product, because a client can hold four
+    # and the list shows one figure.
+    def _price(qs):
+        priced = [q for q in qs if q.get("price")]
+        if not priced:
+            return None
+        priced.sort(key=lambda q: q.get("updated_at") or "", reverse=True)
+        return priced[0]["price"]
+
     rows = []
     for name, c in out.items():
         m = meta.get(name, {})
@@ -18502,12 +18518,15 @@ def group_by_client(seo_rows, rep_rows, meta=None):
             "planner": m.get("planner", "") or "Kiri",
             "partner": m.get("partner", ""),
             "status": m.get("status", "") or "Pending",
-            "built": (newest or "")[:10],
+            # WHEN IT LAST MOVED, not when it was first built -- it has always
+            # been the newest updated_at and the column said "Built".
+            "updated": (newest or "")[:10],
             "seo": len(c["seo"]), "orm": len(c["orm"]),
             "seoStrat": c["seo_strat"], "ormStrat": c["orm_strat"],
+            "priceSeo": _price(c["seo"]), "priceOrm": _price(c["orm"]),
             "quotes": c["seo"] + c["orm"],
         })
-    rows.sort(key=lambda r: r["built"], reverse=True)
+    rows.sort(key=lambda r: r["updated"], reverse=True)
     return rows
 
 
