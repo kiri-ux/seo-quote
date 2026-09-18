@@ -4268,6 +4268,22 @@ async function downloadProposal(i){
       // the removals with no listing behind them. Only the ticked locations,
       // with the star split the flag count was read off. (2026-09-18, Kiri)
       match: (sc.locations || {}).strategy || '',
+      // THE PHRASES THE CAMPAIGN IS CONTRACTED TO REMOVE, named the way
+      // Brendan's own proposals name them. Same two lists the panel shows.
+      suggest: (() => {
+        const seen = new Set(), out = [];
+        Object.keys(sc.autocomplete || {}).forEach(k => {
+          leadsWithBrand((sc.autocomplete[k] || {}).negative || [], d.brand || '')
+            .forEach(x => {
+              const key = String(x).toLowerCase().trim();
+              if (!seen.has(key)) { seen.add(key); out.push(x); }
+            });
+        });
+        return out;
+      })(),
+      related: [...new Set(leadsWithBrand(
+        [...(S.negative_related || []), ...(S.negative_pasf || [])], d.brand || '')
+        .map(x => String(x).trim()))],
       locations: (((sc.locations || {}).locations) || [])
         .filter(l => scOn(r, l.place_id))
         .map(l => {

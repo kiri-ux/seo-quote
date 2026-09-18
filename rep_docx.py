@@ -918,6 +918,20 @@ def build_rep_proposal_docx(d):
         _body(doc, COPY["related_where"])
         _body(doc, COPY["suggest_where"])
         _body(doc, COPY["influence_rule"])
+        # THE PHRASES THE CAMPAIGN IS CONTRACTED TO REMOVE. Brendan's own
+        # proposals name them and scope the price to them -- "strictly for the
+        # term 'Sage Dental'", "pricing is based on the number of keywords".
+        # The scan measures them; the document priced a phrase count with no
+        # phrases behind it. (2026-09-18, Kiri)
+        snap = d.get("snapshot") or {}
+        for label, key in (("In auto-suggest:", "suggest"),
+                           ("In related searches:", "related")):
+            found = [str(x).strip() for x in (snap.get(key) or []) if str(x).strip()]
+            if not found:
+                continue
+            _body(doc, label, bold=True)
+            for x in found[:10]:
+                _bullet(doc, x)
         _lines_table(protection)
     if shield:
         _head(doc, COPY["proactive_heading"], size=12)
