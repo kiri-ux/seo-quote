@@ -97,9 +97,6 @@ COPY = {
                     "to hold the removal of the negative result.",
     "search_rates": "We have a 85+% success rate at removal of negative "
                     "results over a 6 month period.",
-    "search_influence": "Additionally, if desired, we can actually influence "
-                        "what shows up here \u2014 we can put positive terms "
-                        "in their place. This is all done based on volume.",
 
     # Sage Dental (January 2026) — the shape a removals-only proposal takes:
     # a "Reputation Management:" heading, the areas needing improvement, then
@@ -113,6 +110,84 @@ COPY = {
     "rm_reviews_head": "Google Review Removals:",
     "rm_tier_lead": "Removals are priced on the whole order — the rate for the "
                     "total number of reviews applies to every removal:",
+
+    # ---- THE PRODUCT, IN THE WORDS THE DECK USES -------------------------
+    # Verbatim from the adtini ORM slides (Online Reputation Management, and
+    # the two Strategy Details slides). The document used to price four
+    # workstreams and never say what any of them was, so the client read a rate
+    # card for a campaign nobody had described. (2026-09-18, Kiri)
+    "orm_heading": "Online Reputation Management",
+    "orm_def": "ORM or \u201creverse SEO,\u201d monitors and shapes your "
+               "brand\u2019s digital footprint across search results, reviews, "
+               "and AI platforms to minimize negative content and ensure a "
+               "positive online presence.",
+    "orm_points": [
+        "Your online reputation is the first impression your brand makes. "
+        "Before a customer calls, visits, or buys, they search \u2014 and what "
+        "Google, review platforms, and now AI assistants say about your brand "
+        "determines whether that interaction ever happens. A single negative "
+        "article, a cluster of bad reviews, or a damaging search suggestion "
+        "can quietly turn customers away at scale, often without your "
+        "knowledge.",
+        "Effective reputation management works in two directions. Reactively, "
+        "it addresses the negative content that already exists and reduces the "
+        "visibility it commands. Proactively, it builds and maintains a "
+        "positive digital presence strong enough to withstand future threats.",
+        "Most engagements combine both: resolve what\u2019s hurting you today, "
+        "then make it harder for anything to hurt you tomorrow.",
+    ],
+    "reactive_heading": "Reactive",
+    "reactive_lead": "Responds to negative content, reviews, and harmful "
+                     "narratives as they surface \u2014 suppressing, "
+                     "addressing, or removing them to protect your brand\u2019s "
+                     "digital footprint and restore a positive online presence.",
+    "reactive_bundle_head": "Search Protection Bundle:",
+    # The three components price_search_bundle names, each in the deck's words.
+    "reactive_items": [
+        ("Organic Search Suppression",
+         "We execute targeted link building and create optimized web pages to "
+         "rank your owned assets higher, pushing existing negative media "
+         "further down the search results."),
+        ("Auto-Suggest & Related Search Manipulation",
+         "We use high-volume search strategies to inject positive terms into "
+         "the search bar, pushing negative dropdown modifiers and "
+         "bottom-of-page related searches out of view."),
+        ("Branded Search Append",
+         "We target high-volume searches and append your brand name or other "
+         "related terms to the end of the search auto-suggestions."),
+    ],
+    "proactive_heading": "Proactive",
+    "proactive_lead": "Builds and amplifies positive content, reviews, and "
+                      "brand signals ahead of time so your strongest assets "
+                      "occupy search results and AI platforms before any "
+                      "negative content can take hold.",
+    "proactive_items": [
+        ("SEO Brand Shield & Asset Building",
+         "We build a protective shield around your brand by publishing "
+         "high-quality digital assets. Through ongoing link-building, we "
+         "dominate Page 1 of search results to block future negative content."),
+        ("24/7 Brand Monitoring & Threat Detection",
+         "We deploy comprehensive social listening software to track your "
+         "brand, executives, and products across the web. Real-time alerts "
+         "allow us to intercept and de-escalate negative narratives the moment "
+         "they form before they impact your search results."),
+    ],
+
+    # TWO PLACES, NOT ONE. Sage Dental prices Related Searches and Auto Suggest
+    # as two campaigns with two scopes; the section named both in its heading
+    # and then described neither. His words for each.
+    "related_where": "At the bottom of Google searches are the related "
+                     "searches box.",
+    "suggest_where": "Auto-suggest is the dropdown that appears under the "
+                     "search bar as a searcher types your brand name.",
+    "influence_rule": "We can assist by putting positive terms in their place. "
+                      "This is all done based on volume; if the number of "
+                      "searches for the negative terms exceeds the number of "
+                      "searches we contract out to search then the campaign "
+                      "will not succeed; as long as our number of searches "
+                      "exceeds the number of negative searches, in about 2-3 "
+                      "months we will be able to influence and update the "
+                      "search results accordingly.",
 
     "next_heading": "Proposal - Next Steps",
     "next_1": "If you have any questions regarding this proposal or would "
@@ -735,6 +810,12 @@ def build_rep_proposal_docx(d):
     _head(doc, "Summary")
     _body(doc, COPY["summary"].format(brand=brand))
 
+    # WHAT THE PRODUCT IS, BEFORE WHAT IT COSTS.
+    _head(doc, COPY["orm_heading"])
+    _body(doc, COPY["orm_def"])
+    for para in COPY["orm_points"]:
+        _body(doc, para)
+
     _snapshot(doc, d, brand)
 
     def _find(pred):
@@ -743,10 +824,29 @@ def build_rep_proposal_docx(d):
     reviews = _find(lambda l: str(l.get("service", "")).startswith(
         "Negative Review Removals"))
     sites = _find(lambda l: "Website/Article Removals" in str(l.get("service", "")))
-    search = _find(lambda l: "Search Protection" in str(l.get("service", ""))
-                   or "Brand Shield" in str(l.get("service", "")))
+    protection = _find(lambda l: "Search Protection" in str(l.get("service", "")))
+    shield = _find(lambda l: "Brand Shield" in str(l.get("service", "")))
+    search = protection + shield
     other = [l for l in lines
              if l not in reviews and l not in sites and l not in search]
+
+    # ---- the strategies on this quote, in the deck's words ----------------
+    # Only what was bought: a Reactive-only quote describing the Brand Shield
+    # is selling something with no line item behind it, which is the trap the
+    # maintenance phase fell into.
+    if protection or shield:
+        _head(doc, "Strategy")
+    if protection:
+        _head(doc, COPY["reactive_heading"], size=12)
+        _body(doc, COPY["reactive_lead"])
+        _body(doc, COPY["reactive_bundle_head"], bold=True)
+        for name, text in COPY["reactive_items"]:
+            _bullet(doc, f"{name}: {text}")
+    if shield:
+        _head(doc, COPY["proactive_heading"], size=12)
+        _body(doc, COPY["proactive_lead"])
+        for name, text in COPY["proactive_items"]:
+            _bullet(doc, f"{name}: {text}")
 
     # ---- website removals -------------------------------------------------
     if sites:
@@ -792,7 +892,11 @@ def build_rep_proposal_docx(d):
         _head(doc, "Search Results, Related Searches and Auto Suggest")
         _body(doc, COPY["search_basis"])
         _body(doc, COPY["search_rates"])
-        _body(doc, COPY["search_influence"])
+        # NAMED SEPARATELY, because they are two places on the page and the
+        # heading was the only thing that said so.
+        _body(doc, COPY["related_where"])
+        _body(doc, COPY["suggest_where"])
+        _body(doc, COPY["influence_rule"])
         _table(doc, ["Service", "Detail", "Price"],
                [[l.get("service") or "", l.get("detail") or "",
                  _money(l.get("total")) + ("/mo" if l.get("kind") == "monthly"
