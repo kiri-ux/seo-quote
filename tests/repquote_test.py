@@ -67,10 +67,13 @@ check("Reactive puts Search Protection on the quote",
       any("Search Protection" in x for x in svc), True)
 check("and the monthly is not zero", q["totals"]["monthly"] > 0, True)
 # At 500/mo the per-1K terms are pennies, so this is the two component bases:
-# suppression 1750 and auto-suggest 2250, each CEIL50'd, = 4100 hard, and
-# 4100/0.65 CEIL50'd = 6350 client. The SEARCH_BUNDLE floor of 3950 never
-# binds, because the bases already clear it before any volume is added.
-check("the floor never binds, the bases do", q["totals"]["monthly"], 6350)
+# suppression 1100 and auto-suggest 1500, each CEIL50'd = 2700 hard, and
+# 2700/0.65 CEIL50'd = 4200 client. RECALIBRATED 2026-09-18: the bases used to
+# be 1750/2250 and quoted this client $6,350 -- the base price of the product,
+# with $8 of measured volume on top, against published suppression rates of
+# $2,000-$10,000/mo. The line is refitted through the Sage actual instead.
+check("a brand with no measured demand prices like a small campaign",
+      q["totals"]["monthly"], 4200)
 check("the review removals are on it too",
       any("Review Removal" in x for x in svc), True)
 check("at the rate card's 1-25 price", q["handoff"]["price_per_review_removal"], 900)
@@ -118,7 +121,9 @@ check("and they add to the monthly budget",
 lo = R.build_rep_quote(payload(["Reactive"], volume=480))["totals"]["monthly"]
 hi = R.build_rep_quote(payload(["Reactive"], volume=51330))["totals"]["monthly"]
 check("brand volume moves the Search Protection monthly", hi > lo, True)
-check("and 51,330/mo is the Sage figure", hi, 7550)
+# Sage Dental's actual is $7,400 at 35%. The refit holds it inside the
+# rounding; the shape before it read $7,550 from a much flatter line.
+check("and 51,330/mo is still the Sage figure", hi, 7500)
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))

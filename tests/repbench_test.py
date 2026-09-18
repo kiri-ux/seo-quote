@@ -69,7 +69,7 @@ for name in ("Vici card 1-25", "Vici card 26-50", "Vici card 51-100",
 # loudly instead of passing quietly -- and so a change that makes it WORSE
 # cannot hide behind a total.
 sage = by["Sage Dental bundle @ 51,330/mo"]
-check("the Sage bundle is still $150 over", bench.score(sage["want"], sage["f"]()), 150)
+check("the Sage bundle is still over, by less", bench.score(sage["want"], sage["f"]()), 100)
 supp = by["Sage suppression alone @ 51,330/mo"]
 check("and suppression on its own is still exact",
       bench.score(supp["want"], supp["f"]()), 0)
@@ -92,19 +92,19 @@ check("and it rounds up rather than to the nearest $5", off["f"](), 945)
 # ---------------------------------------------- a patch actually moves it
 raw = subprocess.run(
     [sys.executable, "tools/repbench.py", "--quiet-gaps",
-     "--patch", json.dumps({"SEARCH_BUNDLE.supp_base": 1650})],
+     "--patch", json.dumps({"SEARCH_BUNDLE.supp_base": 1050})],
     capture_output=True, text=True, cwd=SRCDIR)
 check("a patch prints a before and an after", raw.stdout.count("total error"), 3)
 check("and it reaches a nested constant", "PATCHED CONFIG" in raw.stdout, True)
-# supp hard 1650 + 9.75x51.33 = 2150.47 -> r50 2200; + as 2600 = 4800;
+# supp hard 1050 + 25.80x51.33 = 2374.3 -> r50 2400; + as 2400 = 4800;
 # 4800/0.65 = 7384.6 -> r50 7400. Which is exactly what Brendan sent.
 check("$100 off the suppression base lands Sage on his number",
       "$7,400" in raw.stdout and "rows scored" in raw.stdout, True)
-bench.apply_patch({"SEARCH_BUNDLE.supp_base": 1650})
+bench.apply_patch({"SEARCH_BUNDLE.supp_base": 1050})
 check("and the bench agrees when the patch is applied in process",
       bench.score(sage["want"], sage["f"]()), 0)
-bench.apply_patch({"SEARCH_BUNDLE.supp_base": 1750})
-check("reverting puts it back", bench.score(sage["want"], sage["f"]()), 150)
+bench.apply_patch({"SEARCH_BUNDLE.supp_base": 1100})
+check("reverting puts it back", bench.score(sage["want"], sage["f"]()), 100)
 
 # ---------------------------------------------- the gaps are named, not hidden
 check("the superseded actuals are listed", len(bench.SUPERSEDED) > 0, True)

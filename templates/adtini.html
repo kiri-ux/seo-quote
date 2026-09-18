@@ -3630,6 +3630,21 @@ $('scRun').onclick = async () => {
 
 
 // ---------------------------------------------------------------- ORM quote
+// THE NEGATIVE PHRASES THE CAMPAIGN IS CONTRACTED TO REMOVE, deduplicated
+// across the two surfaces they sit on: the suggest dropdown and the related
+// searches box. Both halves of the price read this.
+function negPhrases(r){
+  const sc = r.scan || {}, S = sc.serp || {}, brand = (r.data || {}).brand || '';
+  const seen = new Set(), out = [];
+  const take = xs => leadsWithBrand(xs || [], brand).forEach(x => {
+    const k = String(x).toLowerCase().trim();
+    if (k && !seen.has(k)) { seen.add(k); out.push(x); }
+  });
+  Object.keys(sc.autocomplete || {}).forEach(k => take((sc.autocomplete[k] || {}).negative));
+  take([...(S.negative_related || []), ...(S.negative_pasf || [])]);
+  return out;
+}
+
 async function generateOrm(){
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
@@ -3664,12 +3679,19 @@ async function generateOrm(){
     // which nothing reads, so Search Protection was never priced: a Reactive
     // quote came back "not on this quote" with a $0 monthly, however much
     // brand volume the scan had measured. (2026-09-17)
+    // WHAT THE TWO SIDES ARE PRICED OFF, from the scan the panel already
+    // draws. Reactive: the negative phrases beyond the included three.
+    // Proactive: what is being watched and how much of page one is against
+    // them. (2026-09-18, Kiri)
     search: {volume: +d.volume || 0, bundle: strat.includes('Reactive'),
              suppression: strat.includes('Reactive'),
-             term_sets: 1,
+             term_sets: 1, phrases: negPhrases(r).length,
              pages: pages.slice(0, 10).map(x => ({pos: x.pos, domain: x.domain,
                                                   url: x.url || '', title: x.title || ''}))},
-    shield: {locations: +d.locations || 1},
+    shield: {locations: +d.locations || 1,
+             // The brand itself, plus every negative variant being watched.
+             keywords: 1 + negPhrases(r).length,
+             threats: pages.length},
     overrides: {},
   };
   $('gen').disabled = true;

@@ -18861,8 +18861,14 @@ def api_rep_config_get():
         "review_brackets": rc["review_removal"]["brackets"],
         "site_brackets": rc["article_removal"]["brackets"],
         "site_premium_per": rc["article_removal"]["premium_per"],
+        # EVERY CONSTANT THAT MOVES A PRICE IS EDITABLE. The per-1K slopes and
+        # the phrase rate set the whole reactive line and were not on the
+        # panel; the shield card no longer sets anything.
         "bundle": {k: rep_pricing.SEARCH_BUNDLE[k]
-                   for k in ("supp_base", "as_base", "comp_per_1k", "floor", "cap")},
+                   for k in ("supp_base", "as_base", "supp_per_1k", "as_per_1k",
+                             "comp_per_1k", "included_negatives",
+                             "per_extra_phrase_hard", "floor", "cap")},
+        "proactive": dict(rc["proactive"]),
         "shield_monthly": rc["shield"]["monthly_hard"],
         "shield_per_extra_location": rc["shield"]["per_extra_location_hard"],
         "geo": {p: rep_pricing.GEO[p]["monthly"] for p in ("setup", "scale")},
@@ -18892,9 +18898,20 @@ def api_rep_config_set():
         if "site_premium_per" in d:
             rc["article_removal"]["premium_per"] = int(float(d["site_premium_per"]))
         if "bundle" in d and isinstance(d["bundle"], dict):
-            for k in ("supp_base", "as_base", "comp_per_1k", "floor", "cap"):
+            _float_keys = ("comp_per_1k", "supp_per_1k", "as_per_1k")
+            for k in ("supp_base", "as_base", "supp_per_1k", "as_per_1k",
+                      "comp_per_1k", "included_negatives",
+                      "per_extra_phrase_hard", "floor", "cap"):
                 if k in d["bundle"]:
-                    rep_pricing.SEARCH_BUNDLE[k] = int(float(d["bundle"][k])) if k != "comp_per_1k" else float(d["bundle"][k])
+                    rep_pricing.SEARCH_BUNDLE[k] = (
+                        float(d["bundle"][k]) if k in _float_keys
+                        else int(float(d["bundle"][k])))
+        if "proactive" in d and isinstance(d["proactive"], dict):
+            _pf = ("moat_per_backlink", "internal_pct_of_retail")
+            for k in rc["proactive"]:
+                if k in d["proactive"]:
+                    rc["proactive"][k] = (float(d["proactive"][k]) if k in _pf
+                                          else int(float(d["proactive"][k])))
         if "shield_monthly" in d:
             rc["shield"]["monthly_hard"] = int(float(d["shield_monthly"]))
         if "shield_per_extra_location" in d:

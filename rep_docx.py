@@ -37,11 +37,6 @@ MUTED = RGBColor(0x66, 0x6666 // 0x100, 0x66)
 # verbatim rather than paraphrased -- the pay-on-success sentence in
 # particular is the commercial term, not a description of one.
 COPY = {
-    "from": "Brendan Egan, Aaron Peterson - Simple SEO Group",
-    "ip": "Until accepted, all written proposals and recommendations remain "
-          "the intellectual property of Simple SEO Group and its officers and "
-          "may not be shared, distributed, copied, or otherwise reproduced in "
-          "any manner.",
     "summary": "{brand} is requesting information to assist in improving "
                "their online reputation. All pricing within this proposal is "
                "listed in US dollars.",
@@ -189,22 +184,7 @@ COPY = {
                       "months we will be able to influence and update the "
                       "search results accordingly.",
 
-    "next_heading": "Proposal - Next Steps",
-    "next_1": "If you have any questions regarding this proposal or would "
-              "like to review together, please contact Brendan at "
-              "Brendan@simpleseogroup.com to schedule a call to review.",
-    "next_2": "When you\u2019re ready to get started with services, please "
-              "complete our new client registration / master services "
-              "agreement located conveniently online at "
-              "https://www.simpleseogroup.com/new-client-registration-contract/",
-    "next_3": "Upon completion, we\u2019ll contact you within 24 hours or "
-              "less to begin your services with us.",
 
-    "footer_1": "1-888-918-1665 | info@SimpleSEOGroup.com | "
-                "www.SimpleSEOGroup.com",
-    "footer_2": "All proposals expire 30 days from the date of issuance. All "
-                "proposals are subject to our full terms of service available "
-                "for review at SimpleSEOGroup.com/TOS",
 }
 
 
@@ -319,27 +299,10 @@ def _cover(doc, brand, title):
     rn.font.size = Pt(16)
 
 
-def _letterhead(doc, brand, subject, when=None):
-    """Date / Subject / From, then the IP notice — the way both of Brendan's
-    reputation proposals open."""
-    import datetime
-    day = when or datetime.date.today()
-    _body(doc, f"Date: {day.strftime('%B')} {day.day}, {day.year}")
-    _body(doc, f"Subject: {brand} - {subject}")
-    _body(doc, "From: " + COPY["from"])
-    _body(doc, COPY["ip"], size=8.5, italic=True)
-
-
-def _footer(doc):
-    p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(16)
-    r = p.add_run(COPY["footer_1"])
-    r.font.size = Pt(8.5)
-    r.bold = True
-    q = doc.add_paragraph()
-    rq = q.add_run(COPY["footer_2"])
-    rq.font.size = Pt(7.5)
-    rq.italic = True
+# (_letterhead and _footer are GONE, 2026-09-18. Date / Subject / From, the IP
+# notice, the phone number and the terms were Simple SEO Group's, on two
+# documents adtini sends out. Both open on _cover now and end where the numbers
+# end.)
 
 
 def _rate_table(doc, headers, prices, head_label, price_label):
@@ -527,7 +490,10 @@ def build_review_removal_docx(d):
     locs = [l for l in (d.get("locations") or []) if l.get("profile_reviews")]
     where = (d.get("region") or "").strip()
 
-    _letterhead(doc, brand, "Reputation Management Proposal")
+    # ADTINI'S DOCUMENT TOO (2026-09-18). Same cover as the proposal and the
+    # SEO document; the letterhead, the next steps and the footer were all
+    # Simple SEO Group's.
+    _cover(doc, brand, "Review Removal Analysis")
     _head(doc, COPY["rm_heading"], size=15)
     _body(doc, COPY["rm_lead"].format(brand=brand))
     _body(doc, "Google Business Profile review analysis"
@@ -668,12 +634,6 @@ def build_review_removal_docx(d):
                "scenarios move only one-star reviews.", italic=True)
     _body(doc, COPY["reviews_capacity"])
     _body(doc, d.get("stat_line") or STAT_LINE, italic=True)
-
-    _head(doc, COPY["next_heading"])
-    _body(doc, COPY["next_1"])
-    _body(doc, COPY["next_2"])
-    _body(doc, COPY["next_3"])
-    _footer(doc)
 
     buf = io.BytesIO()
     doc.save(buf)
