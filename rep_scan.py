@@ -501,15 +501,54 @@ def reviews_submit(place_ids, depth=200):
 
 def reviews_collect(task_ids):
     """Poll queued pulls. Counts 1-2 star (negative) and 3 star (weak) per
-    task; flags when negatives hit the pull depth (=> more exist)."""
-    done, pending = [], []
+    task; flags when negatives hit the pull depth (=> more exist).
+
+    QUEUED IS TRANSIENT. GONE IS PERMANENT. THEY CANNOT SHARE A BRANCH.
+
+    This caught every raised exception and filed it as "pending: poll again",
+    which is the same bug the rank check had on 2026-09-04 and the same one
+    DataForSEO wrote to Kiri about. A 40401 Task Not Found arrives as an HTTP
+    404, which dfs_post raises, and the browser re-sends every pending id twelve
+    times at five-second intervals -- so one dead task is twelve failed calls
+    per scan, and a ten-location DSO is a hundred and twenty.
+
+    A task is gone the moment it has been read: DataForSEO drops it on
+    collection and expires it after that. The trap is the completed pull with
+    an empty result, a location with nothing to return -- that read consumed the
+    task, so asking a second time is a guaranteed 40401. It is terminal, not
+    pending. (2026-09-19, Kiri)
+    """
+    done, pending, gone = [], [], []
     for tid in task_ids:
         try:
             data = _post(f"/business_data/google/reviews/task_get/{tid}",
                          None, timeout=30, method="GET")
+        except Exception as e:                       # noqa: BLE001
+            # 40401 as an HTTP 404. Anything else is worth another ask.
+            _code = getattr(getattr(e, "response", None), "status_code", None)
+            (gone if _code in (404, 410) else pending).append(tid)
+            continue
+        try:
             task = (data.get("tasks") or [{}])[0]
             res = (task.get("result") or [None])[0]
-            if task.get("status_code") == 20000 and res:
+            _sc = task.get("status_code")
+            if _sc in (40401, 40400):                # 40401 inside a 200 body
+                gone.append(tid)
+                continue
+            if _sc == 20000 and not res:
+                # Read and empty: the task is spent, and asking again is a 404.
+                #
+                # EXCEPT WHEN 20000 MEANS "STILL WORKING". "Task Handed." and
+                # "Task In Queue." both arrive under a 20000 on this provider,
+                # and calling those spent would drop a location's whole star
+                # split to save one call. The message is what separates them.
+                if re.search(r"in queue|in progress|task handed|not yet completed",
+                             str(task.get("status_message") or ""), re.I):
+                    pending.append(tid)
+                else:
+                    gone.append(tid)
+                continue
+            if _sc == 20000 and res:
                 items = res.get("items") or []
                 vals = [((i.get("rating") or {}).get("value") or 5) for i in items]
                 n1 = sum(1 for v in vals if v <= 1)
@@ -541,9 +580,10 @@ def reviews_collect(task_ids):
                     "truncated": n12 >= len(items) and len(items) > 0,
                 })
             else:
-                pending.append(tid)
-        except Exception:
+                pending.append(tid)                  # still in Google's queue
+        except Exception:                            # noqa: BLE001
+            # A malformed body is not a missing task; ask again.
             pending.append(tid)
-    return {"done": done, "pending": pending,
+    return {"done": done, "pending": pending, "gone": gone,
             "total_negatives": sum(d["neg_1_2"] for d in done),
             "total_weak": sum(d["weak_3"] for d in done)}
