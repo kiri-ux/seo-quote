@@ -137,6 +137,16 @@
               <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
             <div class="f"><label>Partner <span class="i" data-tip="Shows on the workflow page" aria-label="Shows on the workflow page">i</span></label>
               <input type="text" data-k="partner"></div>
+            <!-- IN ADTINI THE FLIGHT COMES WITH THE ORDER. The slides print it
+                 across the top of the product page and the tool had nowhere to
+                 put it, so every deck said how many months and never which
+                 ones. (2026-09-19, Kiri) -->
+            <div class="f"><label>Start date <span class="i" data-tip="Prints on the slides" aria-label="Prints on the slides">i</span></label>
+              <input type="date" data-k="start_date"></div>
+            <div class="f"><label>End date <span class="i" data-tip="Prints on the slides" aria-label="Prints on the slides">i</span></label>
+              <input type="date" data-k="end_date"></div>
+            <div class="f"><label>Months running <span class="i" data-tip="Blank reads it off the dates" aria-label="Blank reads it off the dates">i</span></label>
+              <input type="number" data-k="months" min="1" placeholder="from the dates"></div>
           </div>
         </details>
       </div>
@@ -4494,6 +4504,10 @@ async function downloadProposal(i, as){
   }) : JSON.stringify({
     brand: d.brand || '', business_desc: d.business_desc || '',
     order_no: d.order_no || '',
+    // The flight, as typed on the form. The slides print it; the document
+    // does not read it.
+    start_date: d.start_date || '', end_date: d.end_date || '',
+    months: d.months || '',
     geo_values: geoOf(d), state: stateOf(d),
     strategy: asList(d.strategy).join(', '),
     kw: r.kw || {},
