@@ -274,37 +274,46 @@ def _text_box(slide, x, y, w, h):
     return tb
 
 
-def _blank(prs):
-    """A slide with the adtini chrome: white, navy foot, logo top right."""
+def _blank(prs, band=True):
+    """A slide with the adtini chrome: white, and the navy foot."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, SLIDE_W, SLIDE_H)
     bg.fill.solid()
     bg.fill.fore_color.rgb = WHITE
     bg.line.fill.background()
     bg.shadow.inherit = False
-    foot = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(7.02),
-                                  SLIDE_W, Inches(0.48))
-    foot.fill.solid()
-    foot.fill.fore_color.rgb = NAVY
-    foot.line.fill.background()
-    foot.shadow.inherit = False
+    if band:
+        foot = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(7.02),
+                                      SLIDE_W, Inches(0.48))
+        foot.fill.solid()
+        foot.fill.fore_color.rgb = NAVY
+        foot.line.fill.background()
+        foot.shadow.inherit = False
     # THE MARK, IF THE MARK IS ON DISK. The wordmark is a brand asset rather
-    # than something to redraw in shapes; without it the deck prints the name
-    # instead of a broken picture, and drops the file in the moment it exists.
-    drawn = False
+    # than something to set in type: the deck carried "adtini" as text where
+    # the logo goes, which is not the logo. Nothing is drawn there until the
+    # file exists, and it is drawn the moment it does. (2026-09-19, Kiri)
     if os.path.exists(LOGO):
         try:
             slide.shapes.add_picture(LOGO, Inches(11.55), Inches(0.3),
                                      width=Inches(1.35))
-            drawn = True
         except Exception:                                     # noqa: BLE001
-            drawn = False
-    if not drawn:
-        tb = _text_box(slide, Inches(11.1), Inches(0.26), Inches(1.9),
-                       Inches(0.5))
-        _txt(tb, size=20, bold=True, color=NAVY, align=PP_ALIGN.RIGHT)
-        tb.text_frame.paragraphs[0].text = "adtini"
+            pass
     return slide
+
+
+def _navy_block(slide, x, y, w, h, radius=0.28):
+    """The navy shapes the product slides carry at their corners."""
+    sh = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
+    sh.fill.solid()
+    sh.fill.fore_color.rgb = NAVY
+    sh.line.fill.background()
+    sh.shadow.inherit = False
+    try:
+        sh.adjustments[0] = radius
+    except (IndexError, KeyError, ValueError):
+        pass
+    return sh
 
 
 def _heading(slide, text, size=26, top=0.45):
@@ -328,54 +337,101 @@ def _label_para(tf, label, body, size=11.5, first=False, space_before=6,
 
 
 # ---------------------------------------------------------------- slide 1
-def _slide_product(prs, d):
-    slide = _blank(prs)
-    icon = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.5), Inches(0.42),
-                                  Inches(0.72), Inches(0.72))
-    icon.fill.solid()
-    icon.fill.fore_color.rgb = RGBColor(0xE8, 0xF0, 0xFB)
-    icon.line.color.rgb = NAVY
-    icon.line.width = Pt(2.5)
-    icon.shadow.inherit = False
-    _txt(icon, size=20, bold=True, color=NAVY, align=PP_ALIGN.CENTER)
-    icon.text_frame.paragraphs[0].text = "⌕"
+def _icon(slide, x, y, size=0.78):
+    """The product's own mark: the navy ring the adtini slides open with."""
+    ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, Inches(size),
+                                  Inches(size))
+    ring.fill.solid()
+    ring.fill.fore_color.rgb = RGBColor(0xDE, 0xEA, 0xF8)
+    ring.line.color.rgb = NAVY
+    ring.line.width = Pt(3)
+    ring.shadow.inherit = False
+    glass = slide.shapes.add_shape(MSO_SHAPE.DONUT, x + Inches(size * 0.22),
+                                   y + Inches(size * 0.2),
+                                   Inches(size * 0.42), Inches(size * 0.42))
+    glass.fill.background()
+    glass.line.color.rgb = NAVY
+    glass.line.width = Pt(1.5)
+    glass.shadow.inherit = False
+    try:
+        glass.adjustments[0] = 0.2
+    except (IndexError, KeyError, ValueError):
+        pass
+    stem = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE, x + Inches(size * 0.56),
+        y + Inches(size * 0.55), Inches(size * 0.2), Inches(size * 0.09))
+    stem.rotation = 45
+    stem.fill.solid()
+    stem.fill.fore_color.rgb = NAVY
+    stem.line.fill.background()
+    stem.shadow.inherit = False
+    return ring
 
-    tb = _text_box(slide, Inches(1.3), Inches(0.4), Inches(9.6), Inches(0.9))
-    _txt(tb, size=32, bold=True, color=NAVY)
+
+def _slide_product(prs, d):
+    """THE OPENING SLIDE, AS THE PRODUCT DECK DRAWS IT. Title and tagline top
+    left, the client's own SERP in a browser frame under it, what the campaign
+    includes down the right, and the navy blocks the adtini slides carry at
+    the right edge and the bottom left. (2026-09-19, Kiri)"""
+    slide = _blank(prs, band=False)
+    _navy_block(slide, Inches(11.75), Inches(1.15), Inches(2.2), Inches(4.3))
+    _navy_block(slide, Inches(-0.85), Inches(3.4), Inches(1.5), Inches(3.1))
+
+    _icon(slide, Inches(0.5), Inches(0.42))
+    tb = _text_box(slide, Inches(1.4), Inches(0.36), Inches(9.6), Inches(0.9))
+    _txt(tb, size=34, bold=True, color=NAVY)
     tb.text_frame.paragraphs[0].text = TITLE
 
-    tag = _box(slide, Inches(0.5), Inches(1.3), Inches(6.4), Inches(0.85))
-    _txt(tag, size=12.5, color=INK)
+    tag = _box(slide, Inches(0.5), Inches(1.4), Inches(5.9), Inches(0.82),
+               fill=WHITE, radius=0.14)
+    _txt(tag, size=12, color=INK, line=1.2)
     tag.text_frame.paragraphs[0].text = COPY["tagline"]
 
-    # THE EXHIBIT. The capture is the client's own search result, which is the
-    # reason the first slide exists; a quote without one says so rather than
-    # printing an empty frame.
+    # THE EXHIBIT, IN A BROWSER. It is the client's own search result and it
+    # reads as one when it is framed like a window rather than dropped on the
+    # slide bare. A quote with no capture says so instead.
     img = (d.get("serp") or {}).get("bytes")
-    frame = _box(slide, Inches(0.5), Inches(2.4), Inches(6.4), Inches(3.9),
-                 fill=RGBColor(0xF4, 0xF5, 0xF7))
+    fx, fy, fw, fh = Inches(0.55), Inches(2.62), Inches(5.95), Inches(3.55)
+    frame = _box(slide, fx, fy, fw, fh, fill=RGBColor(0x2B, 0x33, 0x40),
+                 outline=None, radius=0.03)
+    for i in range(3):
+        dot = slide.shapes.add_shape(
+            MSO_SHAPE.OVAL, fx + Inches(0.14) + Inches(0.17) * i,
+            fy + Inches(0.1), Inches(0.09), Inches(0.09))
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = RGBColor(0x6B, 0x75, 0x84)
+        dot.line.fill.background()
+        dot.shadow.inherit = False
+    page = _box(slide, fx + Inches(0.1), fy + Inches(0.3),
+                fw - Inches(0.2), fh - Inches(0.4),
+                fill=WHITE, outline=None, radius=0.02)
     if img:
-        pic = slide.shapes.add_picture(io.BytesIO(img), Inches(0.62),
-                                       Inches(2.55), width=Inches(6.16))
-        # Keep it inside the frame whatever the capture's aspect.
-        if pic.height > Inches(3.6):
+        inner_w, inner_h = fw - Inches(0.2), fh - Inches(0.4)
+        pic = slide.shapes.add_picture(io.BytesIO(img), fx + Inches(0.1),
+                                       fy + Inches(0.3), width=inner_w)
+        if pic.height > inner_h:
             ratio = pic.width / pic.height
-            pic.height = Inches(3.6)
-            pic.width = Emu(int(Inches(3.6) * ratio))
-            pic.left = Inches(0.62) + Emu(int((Inches(6.16) - pic.width) / 2))
+            pic.height = int(inner_h)
+            pic.width = Emu(int(inner_h * ratio))
+            pic.left = Emu(int(fx + Inches(0.1)
+                               + (inner_w - pic.width) / 2))
+        else:
+            pic.top = Emu(int(fy + Inches(0.3) + (inner_h - pic.height) / 2))
     else:
-        _txt(frame, size=12, color=MUTED, align=PP_ALIGN.CENTER)
-        frame.text_frame.paragraphs[0].text = COPY["no_serp"]
-        frame.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _txt(page, size=12, color=MUTED, align=PP_ALIGN.CENTER)
+        page.text_frame.paragraphs[0].text = COPY["no_serp"]
+        page.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
-    head = _text_box(slide, Inches(7.2), Inches(1.28), Inches(5.6), Inches(0.4))
+    head = _text_box(slide, Inches(6.75), Inches(1.42), Inches(5.6),
+                     Inches(0.4))
     _txt(head, size=15, bold=True, color=INK)
     head.text_frame.paragraphs[0].text = COPY["include_heading"]
 
-    body = _box(slide, Inches(7.2), Inches(1.75), Inches(5.6), Inches(4.55))
+    body = _box(slide, Inches(6.75), Inches(1.92), Inches(5.65), Inches(4.1),
+                fill=WHITE, radius=0.03)
     tf = _txt(body, size=11.5)
     for i, (label, text) in enumerate(COPY["include"]):
-        _label_para(tf, label, text, size=11.5, first=(i == 0), space_before=9)
+        _label_para(tf, label, text, size=11.5, first=(i == 0), space_before=10)
     return slide
 
 
@@ -618,8 +674,16 @@ def _slide_pricing(prs, d):
     tb.text_frame.paragraphs[0].text = COPY["product_title"]
 
     # ---- the summary box. Each cell is printed only where the quote has one.
-    monthly = (core.get("intermediate") or 0) + (ai.get("intermediate") or 0)
-    cells = [[("Months Running: ", str(term))]]
+    # WHICH TIER THE BUDGET IS. The adtini slide takes it off the tier the
+    # planner selects on screen; a file cannot be selected, so the budget says
+    # which tier it came from -- it was reading as a fourth number that matched
+    # none of the three cards. Intermediate, which is the tier the tool
+    # headlines everywhere else. (2026-09-19, Kiri)
+    shown = "intermediate" if core.get("intermediate") else next(
+        (k for k in TIER_ORDER if core.get(k)), "intermediate")
+    monthly = (core.get(shown) or 0) + (ai.get(shown) or 0)
+    cells = [[("Months Running: ", str(term)),
+              ("Tier: ", shown.title())]]
     if monthly:
         cells.append([("Monthly Budget: ", _money(monthly)),
                       ("Total Budget: ", _money(monthly * term))])
@@ -664,22 +728,47 @@ def _slide_pricing(prs, d):
         _txt(name, size=15, bold=True,
              color=(INK if not dark else WHITE), align=PP_ALIGN.CENTER)
         name.text_frame.paragraphs[0].text = spec["name"]
+        # THE TIER THE BUDGET ABOVE WAS QUOTED FROM, marked on the card the
+        # way the product slide marks the selected one.
+        if key == shown:
+            pill = _box(slide, x + (card_w - Inches(1.05)) / 2, Inches(6.3),
+                        Inches(1.05), Inches(0.28),
+                        fill=(NAVY if not dark else WHITE), outline=None,
+                        radius=0.5)
+            _txt(pill, size=9, bold=True,
+                 color=(WHITE if not dark else NAVY), align=PP_ALIGN.CENTER,
+                 space_after=0)
+            pill.text_frame.paragraphs[0].text = "Selected"
+            pill.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
+        # THE HEADLINE IS WHAT THEY PAY, AND THE SPLIT IS UNDER IT. The card
+        # printed the Core SEO price large with AI Search beside it, so the
+        # Monthly Budget above -- which is both legs -- matched no card on the
+        # slide. The big number is the two together; the lines under it say
+        # what each leg costs. (2026-09-19, Kiri)
+        both = (core.get(key) or 0) + (ai.get(key) or 0)
         price = _text_box(slide, x, Inches(2.66), card_w, Inches(0.42))
         tf = _txt(price, size=20, align=PP_ALIGN.CENTER, space_after=0)
-        _run(tf.paragraphs[0], _money(core[key]), size=20, bold=True,
+        _run(tf.paragraphs[0], _money(both), size=20, bold=True,
              color=(BLUE if not dark else WHITE))
         _run(tf.paragraphs[0], " / month", size=12,
              color=(INK if not dark else WHITE))
         head_h = Inches(1.02)
         if ai_on and ai.get(key):
-            sub = _text_box(slide, x, Inches(3.08), card_w, Inches(0.3))
-            tf = _txt(sub, size=11, align=PP_ALIGN.CENTER, space_after=0)
-            _run(tf.paragraphs[0], "AI Search: ", size=11, bold=True,
-                 color=(INK if not dark else WHITE))
-            _run(tf.paragraphs[0], _money(ai[key]) + " / month", size=11,
-                 color=(INK if not dark else WHITE))
-            head_h = Inches(1.34)
+            sub = _text_box(slide, x, Inches(3.06), card_w, Inches(0.52))
+            tf = _txt(sub, size=9.5, align=PP_ALIGN.CENTER, space_after=0,
+                      line=1.1)
+            for j, (lab, val) in enumerate((("Core SEO: ", core.get(key)),
+                                            ("AI Search: ", ai.get(key)))):
+                para = tf.paragraphs[0] if j == 0 else _para(
+                    tf, size=9.5, align=PP_ALIGN.CENTER, space_after=0,
+                    line=1.1)
+                para.alignment = PP_ALIGN.CENTER
+                _run(para, lab, size=9.5, bold=True,
+                     color=(INK if not dark else WHITE))
+                _run(para, _money(val) + " / month", size=9.5,
+                     color=(INK if not dark else WHITE))
+            head_h = Inches(1.46)
 
         rule = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x,
                                       Inches(2.12) + head_h, card_w, Pt(1))
@@ -699,7 +788,7 @@ def _slide_pricing(prs, d):
         if ai_on:
             ticks += spec["ai_ticks"]
         ticks += list(spec.get("then") or [])
-        tint = TINT if dark else MUTED
+        tint = TINT if dark else INK
         y = Inches(2.12) + head_h + Inches(0.13)
         for t in ticks:
             y = y + _tick(slide, x + Inches(0.1), y, Inches(1.95), t, tint=tint)
@@ -757,12 +846,17 @@ def build_proposal_pptx(d):
 
 
 def _strategies(d):
-    """What was sold, however the quote spells it."""
+    """What was sold, however the quote spells it.
+
+    A CHIP CAN CARRY TWO STRATEGIES. This split the field on commas, and a
+    quote whose chip reads "Core SEO + AI Search" -- which is how the form
+    offers the pair, and what hasStrategy() has always split on -- matched
+    nothing: the deck came back with the product slide and the prices and no
+    strategy or keyword slide at all. Read as text and look for the names.
+    (2026-09-19, Kiri)
+    """
     raw = d.get("strategy")
-    if isinstance(raw, str):
-        parts = [x.strip() for x in raw.split(",")]
-    else:
-        parts = [str(x).strip() for x in (raw or [])]
-    known = {"core seo": "Core SEO", "ai search": "AI Search",
-             "website audit": "Website Audit"}
-    return {known[p.lower()] for p in parts if p.lower() in known}
+    text = (raw if isinstance(raw, str)
+            else ", ".join(str(x) for x in (raw or []))).lower()
+    return {name for name in ("Core SEO", "AI Search", "Website Audit")
+            if name.lower() in text}
