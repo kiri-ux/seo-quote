@@ -19962,6 +19962,40 @@ def ascii_header(value, limit=180):
     return re.sub(r"\s+", " ", t).strip()[:limit]
 
 
+# THE DECK, FROM THE SAME QUOTE AS THE DOCUMENT. The proposal is the letter a
+# partner sends; the slides are what they present, and they were being rebuilt
+# by hand from the adtini product deck every time. (2026-09-19, Kiri)
+@app.route("/api/proposal.pptx", methods=["POST"])
+def api_proposal_pptx():
+    """The quote as the adtini product slides."""
+    d = request.get_json(force=True) or {}
+    # The window the planner set on screen, cut here rather than in the deck
+    # builder -- same crop the document and the row show.
+    sp = d.get("serp") or {}
+    raw = str(sp.get("img") or "")
+    if raw.startswith("data:"):
+        try:
+            d["serp"] = dict(sp, bytes=_window_serp_image(
+                base64.b64decode(raw.split(",", 1)[1]), sp.get("y")))
+        except Exception:                                     # noqa: BLE001
+            d["serp"] = dict(sp, bytes=None)
+    try:
+        import seo_pptx
+        buf = seo_pptx.build_proposal_pptx(d)
+    except ImportError:
+        return jsonify({"error": "python-pptx is not installed on this "
+                                 "server."}), 500
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("proposal pptx failed")
+        return jsonify({"error": str(e)[:200]}), 500
+    return send_file(buf, as_attachment=True,
+                     download_name=proposal_filename(d.get("brand"),
+                                                     d.get("order_no"),
+                                                     ext="pptx"),
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "presentationml.presentation")
+
+
 @app.route("/api/proposal.docx", methods=["POST"])
 def api_proposal_docx():
     """The quote as an SSG-shaped Word document."""
