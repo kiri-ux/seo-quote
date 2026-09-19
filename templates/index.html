@@ -3969,7 +3969,7 @@ async function runStep3(retryOnlyFailed){
   // A FULL RUN IS A NEW MARKET. Retrying only the failed rows keeps what the
   // earlier polls already collected; a fresh check starts the incumbent tally
   // over, or one client's page one bleeds into the next quote's.
-  if(!retryOnlyFailed){ ST.rivals={}; ST.signals=null; ST._signalsRun=false;
+  if(!retryOnlyFailed){ ST.rivals={}; ST.agg=null; ST.signals=null; ST._signalsRun=false;
                         const n=document.getElementById('marketSignals'); if(n) n.remove(); }
   const b=$('step3');
   if(b){ b.disabled=true; b.textContent='Checking rankings…'; }
@@ -4107,6 +4107,7 @@ async function _bgQueuePoll(pending, gen){
       ST.rivals = ST.rivals || {};
       coll.rivals.forEach(r=>{ ST.rivals[r.domain]=(ST.rivals[r.domain]||0)+(r.appearances||0); });
     }
+    addAggregators(coll.aggregators);
     pending=coll.pending||[];
     if(landed && $('p3')) finishStep3();
   }
@@ -4169,6 +4170,7 @@ async function _runStep3Live(todo, all, BATCH){
         ST.rivals = ST.rivals || {};
         got.rivals.forEach(r=>{ ST.rivals[r.domain]=(ST.rivals[r.domain]||0)+(r.appearances||0); });
       }
+      addAggregators(got.aggregators);
     }else{
       // batch failed twice — record these as failed and KEEP GOING
       batch.forEach(kw=>{ ST.table.push({kw, pos:'—', ranked_top:false, error:true}); ST.errored++; });
@@ -4214,6 +4216,31 @@ function pageoneRank(){
   const v=(ST.signals||{}).pageone_rank;
   return (v===undefined||v===null)?null:v;
 }
+// HOW MUCH OF PAGE ONE THE AGGREGATORS HOLD, accumulated as COUNTERS rather
+// than recomputed from ST.rivals. ST.rivals has been through serp_rival_cap on
+// every batch, and the cap keeps the domains that repeat — which is exactly
+// what an aggregator does. A share divided out of it would read most of a
+// dentist's page one as Yelp. The server sends the two raw numbers, taken
+// before anything was cut, and they simply add up across batches.
+function addAggregators(a){
+  if(!a || !a.slots) return;
+  ST.agg = ST.agg || {slots:0, aggregator_slots:0, terms:0, domains:[]};
+  ST.agg.slots += a.slots||0;
+  ST.agg.aggregator_slots += a.aggregator_slots||0;
+  ST.agg.terms += a.terms||0;
+  (a.domains||[]).forEach(d=>{ if(ST.agg.domains.indexOf(d)<0) ST.agg.domains.push(d); });
+  ST.agg.share = ST.agg.slots ? ST.agg.aggregator_slots/ST.agg.slots : null;
+}
+function aggShare(){
+  const a=ST.agg||(ST.signals||{}).aggregators;
+  const v=a&&a.share;
+  return (v===undefined||v===null)?null:v;
+}
+function aggTerms(){
+  const a=ST.agg||(ST.signals||{}).aggregators;
+  const v=a&&a.terms;
+  return (v===undefined||v===null)?null:v;
+}
 async function loadMarketSignals(){
   const rv = Object.entries(ST.rivals||{})
     .map(([domain,appearances])=>({domain,appearances}))
@@ -4228,7 +4255,8 @@ async function loadMarketSignals(){
     (ST.table||[]).some(r=>r && (r.queued || r.expired));
   try{
     ST.signals = await postJSON('/api/market_signals',
-      {domain:(ST.inputs&&ST.inputs.domain)||'', rivals:rv});
+      {domain:(ST.inputs&&ST.inputs.domain)||'', rivals:rv,
+       aggregators:ST.agg||null});
   }catch(e){ ST.signals=null; }
   try{ renderMarketSignals(); }catch(e){}
 }
@@ -4256,6 +4284,15 @@ function renderMarketSignals(){
     bits.push(`<div style="margin-top:4px"><b>Page one strength</b> \u2014 strongest incumbent holding more than one of your terms: <b>${num(s.pageone_rank)}</b>`
       +(s.pageone_band?` \u2014 ${escapeHtml(String(s.pageone_band).split(': ').pop())}`:'')
       +`${tipOf('A MAX, not a median, because that is the mechanism: one Zillow changes the job. NPAIHB&rsquo;s page one is ihs.gov, Wikipedia and Facebook; Amar&eacute;&rsquo;s is Zillow, Trulia and Redfin. Brendan priced both the same, and a median falls between them.<br><br>The &ldquo;more than one term&rdquo; is the guard on the max: a stray facebook.com on a single keyword is a SERP artifact, not a competitor, and without it one keyword&rsquo;s noise would move a local client into the national band.')}</div>`);
+  }
+  if(s.pageone_agg_share!=null){
+    const pc=Math.round(Number(s.pageone_agg_share)*100);
+    const dn=(s.pageone_aggregator_domains||[]).slice(0,5).map(escapeHtml).join(', ');
+    bits.push(`<div style="margin-top:4px"><b>Page one competition</b> - aggregators hold <b>${pc}%</b> of page-one slots`
+      +(dn?` <span class="nf">(${dn})</span>`:'')
+      +(s.pageone_aggregator_add
+        ? ` - <b>+$${Number(s.pageone_aggregator_add).toLocaleString()} partner cost</b>`:'')
+      +`${tipOf('Counted in slots: a domain on eight of your ten terms is eight slots. Social profiles are excluded.<br><br>Fires at half the page. Fitted on one quote, Amar&eacute; Homes.')}</div>`);
   }
   if(s.client_rank!=null||s.median_rival_rank!=null){
     // A CLIENT RANK OF 0 IS NOT A MEASUREMENT. bulk_ranks answers for every
@@ -4293,9 +4330,20 @@ function renderMarketSignals(){
   // authority gap and the site condition are still reported only. Saying "the
   // price is unchanged by all of this" over a line that changed it is exactly
   // the kind of stale reassurance that stops anyone checking.
+  // TWO OF THESE CAN CARRY DOLLARS NOW, so the footer names the ones that did
+  // rather than asserting which one it is. Printing "page-one strength moves
+  // nothing" over a quote where it moved $300 is the stale reassurance this
+  // line exists to avoid, and it would be true today only because the band is
+  // set to zero.
+  const aggApplied = s.applied_to_price && s.pageone_aggregator_add;
   const applied = s.applied_to_price && s.pageone_add;
-  const foot = applied
-    ? `<b style="color:#8a5a10">This moved the price</b> \u2014 page one is held by ${escapeHtml(String(s.pageone_band||'').split(': ').pop())}, worth <b>+$${Number(s.pageone_add).toLocaleString()} partner cost</b> on the base.${tipOf('Fitted on TWO quotes \u2014 Amar&eacute; and NPAIHB, both of which Brendan priced $600 over the floor while every other input in the formula read them as identical to a client he priced AT the floor.<br><br>Two is below the three-quote minimum this tool uses everywhere else, and it is set early on purpose so the back-measure can check it across the whole book. Authority gap and site condition still move nothing.<br><br>Reverting is one number: pageone_anchor_add, national band, back to 0.')} <span class="nf">The authority gap and site condition below still move nothing.</span>`
+  const aggBit = aggApplied
+    ? `page-one competition, <b>+$${Number(s.pageone_aggregator_add).toLocaleString()} partner cost</b>${tipOf('Fires when aggregators hold half of page one. Fitted on one quote, Amar&eacute; Homes.<br><br>Revert is one number: pageone_aggregator_add back to 0.')}` : '';
+  const bandBit = applied
+    ? `page one is held by ${escapeHtml(String(s.pageone_band||'').split(': ').pop())}, worth <b>+$${Number(s.pageone_add).toLocaleString()} partner cost</b>${tipOf('Fitted on TWO quotes \u2014 Amar&eacute; and NPAIHB, both of which Brendan priced $600 over the floor while every other input in the formula read them as identical to a client he priced AT the floor.<br><br>Two is below the three-quote minimum this tool uses everywhere else, and it is set early on purpose so the back-measure can check it across the whole book.<br><br>Reverting is one number: pageone_anchor_add, national band, back to 0.')}` : '';
+  const moved = [aggBit, bandBit].filter(Boolean);
+  const foot = moved.length
+    ? `<b style="color:#8a5a10">This moved the price</b> \u2014 ${moved.join(' \u00b7 also ')} on the base. <span class="nf">The authority gap and site condition still move nothing.</span>`
     : `Reported only \u2014 the price is unchanged by all of this.`;
   n.innerHTML=`\u{1F52C} <b>Market signals</b>${tipOf('Who already holds page one, how far this client sits behind them in backlink authority, and what condition their own site is in. Every other threshold in the formula was set for a client ten times larger than the ones quoted here \u2014 volume pays nothing under 10,000/mo and these run 200-980 \u2014 which is why two clients Brendan priced $600 apart came out identical. The page-one band is the one that now carries dollars; the other two are measured and shown.')}<div class="nf" style="margin-top:4px">${bits.join('')}<div style="margin-top:5px;opacity:.75">${foot}</div></div>`;
 }
@@ -4928,7 +4976,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -4941,7 +4989,7 @@ function renderStep4(p){
     if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -5174,7 +5222,7 @@ async function checkStoredPrice(){
   _staleChecked = true;
   const host=$('p4'); if(!host) return;
   try{
-    const fresh=await postJSON('/api/price',{pageone_rank:pageoneRank(),
+    const fresh=await postJSON('/api/price',{pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(),
       geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'',
       ecommerce:!!ST.inputs.ecommerce, national_demand:!!ST.inputs.national_demand,
       goal:ST.inputs.goal||'', industry:ST.inputs.industry||'',
@@ -5262,7 +5310,7 @@ async function runStep4(){
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   ST.rankUnmeasured = ((ST.total||0) > 0 && checkedOk === 0);
   try{
-    const p=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
       band:ST.inputs.geo_scope, adder:ST.adder,
       zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
@@ -5457,6 +5505,7 @@ function pricingChart(){
   const p=ST.pricing||{}; if(!p.client_tiers) return '';
   const anchor=p.anchor||0, adder=p.competitive_adder||0, vol=p.volume_add||0;
   const ind=p.industry_anchor_add||0, po=p.pageone_anchor_add||0;
+  const pagg=p.pageone_aggregator_add||0;
   const up=p.zero_ranking_uplift_pct||0, mult=p.extras_multiplier;
   const mk=p.markup_pct!=null?p.markup_pct:35;
   const t=p.client_tiers||{}, ai=p.ai_search||null;
@@ -5496,6 +5545,10 @@ function pricingChart(){
       + (vol?'':' — under the threshold'), !vol);
   if(ind) row('Industry rule', '+ '+ppMoney(ind), escapeHtml(p.industry_rule||'vertical premium'));
   if(po)  row('Page one', '+ '+ppMoney(po), escapeHtml(String(p.pageone_band||'').split(': ').pop()));
+  if(pagg) row('Page-one competition', '+ '+ppMoney(pagg),
+               p.pageone_aggregator_share!=null
+                 ? `aggregators hold ${Math.round(Number(p.pageone_aggregator_share)*100)}% of page one`
+                 : 'aggregators hold page one');
   if(up)  row('Current visibility', '× '+(1+up/100).toFixed(2),
               `${ST.pctNotRanking!=null?Math.round(ST.pctNotRanking)+'% of terms not ranking':'ranking uplift'}`);
   if(mult!=null && mult!==1) row('Extras multiplier', '× '+mult, 'industry card or nationwide scope');
@@ -6231,6 +6284,14 @@ async function loadConfig(){
       tierRows(c.zero_ranking_tiers,'cf_zr','If at least','% of terms aren\u2019t ranking → add','% to price')+
       cfgRow('Positions checked (top-N)','cf_topn',c.zero_ranking_top_n,'a term counts as "ranking" if it appears in the top N results — SERP depth follows this (any value \u2264100 is one DataForSEO unit)'),
       'thin','UPLIFT CALIBRATED · DISCOUNT TIER FIT ON ONE CLIENT') +
+    cfgGroup('Step 3 · page-one competition',
+      `<div class="tierhelp">When the aggregators listed below hold at least this share of the page-one slots across the client's terms, this flat partner cost is added to the base.</div>`+
+      cfgRow('Page-one competition $ (hard)','cf_aggadd',c.pageone_aggregator_add,'0 turns it off entirely')+
+      cfgRow('Fires at (share of page one)','cf_aggshare',c.pageone_aggregator_share_min,'0.5 = aggregators hold most of the page')+
+      cfgRow('Minimum terms measured','cf_aggterms',c.pageone_aggregator_min_terms,'one SERP is an artifact')+
+      `<div class="tierhelp" style="margin-top:10px">The aggregators. One per line or comma-separated. Social profiles are excluded from the count on both sides and do not belong here.</div>`+
+      `<textarea id="cf_aggdoms" style="width:100%;min-height:84px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace">${(c.pageone_aggregator_domains||[]).join(', ')}</textarea>`,
+      'thin','FIT ON ONE CLIENT - CONFIRM ON A SECOND') +
     cfgGroup('Step 4 · volume-based pricing',
       `<div class="tierhelp">The base price assumes a normalized search volume. Above that baseline, add a fixed $ per additional monthly search, at a declining rate per band (like tax brackets). Edit the bands and rates to calibrate.</div>`+
       cfgRow('Normalized baseline (searches)','cf_volfree',c.vol_free_below,'volume at/below this adds nothing — the base already covers it')+
@@ -6289,6 +6350,10 @@ $('cfgApply').addEventListener('click', async()=>{
     cpc_adder_mult:v('cf_cpcmult'), cpc_adder_cap:v('cf_cpccap'), cpc_adder_free_below:v('cf_cpcfree'),
     zero_ranking_top_n:v('cf_topn'),
     zero_ranking_tiers:readTierRows('cf_zr'),
+    pageone_aggregator_add:v('cf_aggadd'),
+    pageone_aggregator_share_min:v('cf_aggshare'),
+    pageone_aggregator_min_terms:v('cf_aggterms'),
+    pageone_aggregator_domains:(v('cf_aggdoms')||'').split(/[\s,]+/).filter(Boolean),
     vol_free_below:v('cf_volfree'),
     volume_brackets:readVolBrackets(),
     step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'),
@@ -6494,6 +6559,10 @@ function snapshotQuote(){
     // with, and re-measuring costs five SERPs. (2026-08-18)
     signals: ST.signals||null,
     rivals: ST.rivals||{},
+    // The page-one slot counts, saved for the same reason and separately from
+    // the rivals list: the share cannot be recovered from a capped list, so a
+    // quote that saved only the rivals would reopen at a different price.
+    agg: ST.agg||null,
     // What the formula said BEFORE this quote was last rebuilt, so the
     // calibration panel can tell a formula change from a keyword-list change.
     formulaWas: ST.formulaWas||null,
@@ -6564,6 +6633,7 @@ function restoreQuote(p){
   ST.serp=p.serp||null;
   ST.signals=p.signals||null;
   ST.rivals=p.rivals||{};
+  ST.agg=p.agg||null;
   ST._signalsRun=!!p.signals;
   ST.rankLoc=null;
   // THE ONE-SHOT LATCHES ARE PER CLIENT TOO. _unrankedAuto stops the probe
@@ -7271,7 +7341,7 @@ function repriceForAddons(){
     try{
       p = await postJSON('/api/price',{
         site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'',
-        pageone_rank:pageoneRank(), geo_override:ST.geoOverride||'',
+        pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'',
         addon_override:ST.addonOverride||'',
         ecommerce:!!(ST.inputs&&ST.inputs.ecommerce),
         national_demand:!!(ST.inputs&&ST.inputs.national_demand),
