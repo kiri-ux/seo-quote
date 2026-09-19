@@ -16001,6 +16001,91 @@ def _window_serp_image(data, y=0, ratio=16 / 9):
     return buf.getvalue()
 
 
+# ---- HAS THE ORGANIC TASK FINISHED YET? ------------------------------------
+#
+# ASK THE FREE LIST BEFORE SPENDING A REFUSAL. /serp/screenshot renders from a
+# COMPLETED organic task, so every poll before Google answers is a 40401 in
+# DataForSEO's logs. Polling every three seconds through 75 seconds of patience
+# is 25 of those per capture, and since the reputation quote started capturing
+# itself (2026-09-17) that runs on every ORM quote as well as every SEO one.
+# DataForSEO wrote to Kiri about the volume. (2026-09-19, Kiri)
+#
+# tasks_ready lists the tasks that are finished and not yet collected. It is
+# free, and it does NOT collect anything -- unlike task_get, which drops the
+# task and would leave the screenshot with nothing to render from. That is the
+# whole reason the readiness check cannot just be a task_get.
+#
+# It is a gate, not a gatekeeper. If tasks_ready cannot be read, or the caller
+# has already waited past the grace window, the screenshot call goes out exactly
+# as it did before -- the worst case here is what we have today.
+_SERP_READY_TTL = 5.0                 # seconds; concurrent captures share a read
+_SERP_READY_GRACE = 90                # seconds waited, after which stop gating
+_SERP_READY_LOCK = threading.Lock()
+_SERP_READY_CACHE = {"at": 0.0, "ids": frozenset()}
+_SERP_READY_SEEN = set()              # ids confirmed finished at least once
+_SERP_READY_FIRST = {}                # id -> when this gate first held it back
+
+
+def _serp_tasks_ready():
+    """Organic task ids DataForSEO reports as finished and uncollected."""
+    now = time.time()
+    with _SERP_READY_LOCK:
+        if now - _SERP_READY_CACHE["at"] < _SERP_READY_TTL:
+            return _SERP_READY_CACHE["ids"]
+    data = dfs_get("/serp/google/organic/tasks_ready", timeout=20)
+    ids = set()
+    for t in (data.get("tasks") or []):
+        for r in (t.get("result") or []):
+            if r and r.get("id"):
+                ids.add(str(r["id"]))
+    out = frozenset(ids)
+    with _SERP_READY_LOCK:
+        _SERP_READY_CACHE["at"] = time.time()
+        _SERP_READY_CACHE["ids"] = out
+    return out
+
+
+def _serp_task_finished(task_id):
+    """True finished · False still running · None could not be read.
+
+    Once an id has been seen on the ready list it stays seen: the screenshot
+    render may take it off that list, and asking twice must not turn a finished
+    task back into a pending one.
+    """
+    if task_id in _SERP_READY_SEEN:
+        return True
+    try:
+        ids = _serp_tasks_ready()
+    except Exception:
+        return None
+    if task_id in ids:
+        if len(_SERP_READY_SEEN) > 500:   # a memo, not a ledger
+            _SERP_READY_SEEN.clear()
+        _SERP_READY_SEEN.add(task_id)
+        return True
+    return False
+
+
+def _serp_gate_holds(task_id, waited):
+    """Should the screenshot call be held back for this task?
+
+    BOUNDED BY THE CLOCK, NOT ONLY BY THE CALLER. `waited` comes from the page,
+    so a cached copy of the old page sends nothing -- and if the ready list ever
+    reads differently than it does today, an ungrounded gate would hold a
+    capture until the poll ran out. This gate lets go after the grace window
+    whatever the caller says, so the worst it can cost is a slower first
+    capture. (2026-09-19, Kiri)
+    """
+    now = time.time()
+    with _SERP_READY_LOCK:
+        if len(_SERP_READY_FIRST) > 500:
+            _SERP_READY_FIRST.clear()
+        first = _SERP_READY_FIRST.setdefault(task_id, now)
+    if waited >= _SERP_READY_GRACE or (now - first) >= _SERP_READY_GRACE:
+        return False
+    return _serp_task_finished(task_id) is False
+
+
 @app.route("/api/serp_fetch", methods=["POST"])
 @_json_error_guard
 def api_serp_fetch():
@@ -16013,6 +16098,13 @@ def api_serp_fetch():
     keyword = d.get("keyword", "")
     if not task_id:
         return jsonify({"error": "No task_id."}), 400
+    try:
+        _waited = float(d.get("waited") or 0)
+    except (TypeError, ValueError):
+        _waited = 0.0
+    if _serp_gate_holds(task_id, _waited):
+        return jsonify({"ready": False, "queued": True,
+                        "status": "Task In Queue."})
     # build screenshot params, including optional sizing
     shot = {"task_id": task_id, "browser_preset": device}
     if d.get("width"):  shot["browser_screen_width"]  = int(d["width"])
