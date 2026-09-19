@@ -162,12 +162,34 @@ check("the budget is the intermediate tier",
       "Monthly Budget: $8,650" in with_ai, True)
 check("and the total is that across the term",
       "Total Budget: $103,800" in with_ai, True)
-# A FILE CANNOT BE SELECTED ON SCREEN, so the slide says which tier the
-# budget came from -- twice, because it is read in two places.
-check("the budget says which tier it is", "Tier: Intermediate" in with_ai, True)
-check("and the tier is marked on its own card", "Selected" in with_ai, True)
-check("the budget equals that card",
-      "$8,650 / month" in with_ai, True)
+# A FILE CANNOT BE SELECTED ON SCREEN, so the tier the budget came from is
+# marked on its own card.
+check("the tier is marked on its own card", "Selected" in with_ai, True)
+check("the budget equals that card", "$8,650 / month" in with_ai, True)
+
+print("\nTHE FLIGHT IS WHAT WAS TYPED ON THE FORM")
+flight = dict(quote("Core SEO, AI Search"),
+              start_date="2025-05-01", end_date="2025-10-31", months="")
+dated = slides(deck(flight))[-1]
+check("the dates print across the top",
+      "05/01/2025 - 10/31/2025" in dated, True)
+check("and the months are read off them", "Months Running: 6" in dated, True)
+check("the total is the budget across those months",
+      "Total Budget: $51,900" in dated, True)
+# Typed months win, and an end date is worked out from them.
+typed = dict(quote("Core SEO, AI Search"), start_date="2025-05-01", months="3")
+check("months typed by hand set the end date",
+      "05/01/2025 - 08/01/2025" in slides(deck(typed))[-1], True)
+check("with no dates at all it falls back to the term",
+      "Months Running: 12" in with_ai, True)
+check("and never prints a range it does not have",
+      "/2025 -" in with_ai, False)
+
+print("\nTHE AI LINES CARRY THE SPARKLE")
+check("the AI tier line is marked with it",
+      "\u2726" in with_ai, True)
+check("and a quote without AI Search has none",
+      "\u2726" in core[-1], False)
 
 print("\nTHE KEYWORD SLIDE IS THE LIST, NOT A SAMPLE OF IT")
 kw_slide = slides(deck(quote("Core SEO")))[2]

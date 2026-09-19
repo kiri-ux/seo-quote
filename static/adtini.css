@@ -295,7 +295,10 @@ form label,.lab{font-size:12.5px;font-weight:600;color:var(--text);display:flex;
   font-size:10px;font-weight:700;line-height:1;text-align:center;flex:0 0 auto;
   cursor:help;font-family:Georgia,serif;font-style:italic;
 }
-form input[type=text],form input[type=number],form textarea,form select,.box{
+/* A DATE FIELD IS A FIELD. Typed selectors meant the flight dates came out
+   in the browser's own white box beside the tool's grey ones. */
+form input[type=text],form input[type=number],form input[type=date],
+form textarea,form select,.box{
   width:100%;background:var(--fill);border:1px solid transparent;border-radius:10px;
   padding:10px 12px;font-family:inherit;font-size:13px;color:var(--text);min-height:41px;
 }
