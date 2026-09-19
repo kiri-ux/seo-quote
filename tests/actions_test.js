@@ -9,12 +9,19 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   let bad = 0;
   const say = (n, ok, extra='') => { if(!ok){bad++; console.log('FAIL', n, extra);} };
 
-  let docCalls = 0;
+  let docCalls = 0, deckCalls = 0;
   await p.route('**/api/proposal.docx', route => {
     docCalls++;
     return route.fulfill({status:200,
       contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       body: Buffer.from('PK not really a docx')});
+  });
+  // THE DECK IS THE SECOND DELIVERABLE, off the same quote. (2026-09-19, Kiri)
+  await p.route('**/api/proposal.pptx', route => {
+    deckCalls++;
+    return route.fulfill({status:200,
+      contentType:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      body: Buffer.from('PK not really a pptx')});
   });
 
   const BASE = 'http://127.0.0.1:5203';
@@ -40,10 +47,23 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('notInAFold', (await p.$$eval(hist + ' .qfold [data-prop]', n => n.length)) === 0);
   say('oneDownloadPerRow', (await p.$$eval(hist + ' [data-prop]', n => n.length)) === 1);
 
+  say('slides.visible', await p.isVisible(hist + ' .qacts [data-slides]'));
+  say('slides.label',
+      (await p.textContent(hist + ' .qacts [data-slides]')).trim() === 'Download slides');
+
   // The download asks the server for the document.
   await p.click(hist + ' .qacts [data-prop]');
   await p.waitForTimeout(900);
   say('download.called', docCalls === 1, docCalls + ' calls');
+  say('download.notTheDeck', deckCalls === 0, deckCalls + ' deck calls');
+
+  // And the deck button asks for the deck, not the document.
+  await p.click(hist + ' .qacts [data-slides]');
+  await p.waitForTimeout(900);
+  say('slides.called', deckCalls === 1, deckCalls + ' calls');
+  say('slides.notTheDocument', docCalls === 1, docCalls + ' doc calls');
+  say('slides.labelBack',
+      (await p.textContent(hist + ' .qacts [data-slides]')).trim() === 'Download slides');
   say('download.reports',
       /Downloaded\.|Request failed/.test(await p.textContent(hist + ' [data-propmsg]')),
       await p.textContent(hist + ' [data-propmsg]'));

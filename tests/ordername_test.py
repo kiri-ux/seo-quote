@@ -33,13 +33,15 @@ check("extension", f("X", "1").endswith(".docx"), True)
 # Every download route names the file by this rule.
 src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "app.py"), encoding="utf-8").read()
-check("threeRoutesUseIt", src.count("download_name=proposal_filename("), 3)
+# Four downloads now: the SEO proposal, the reputation proposal, the review
+# analysis, and the adtini slides.
+check("everyRouteUsesIt", src.count("download_name=proposal_filename("), 4)
 check("noOldSeoName", "_SEO_Proposal.docx" in src, False)
 check("noOldRepName", "_Reputation_Proposal.docx" in src, False)
 check("noOldAnalysisName", "_Review_Removal_Analysis.docx" in src, False)
 
 # The order ID rides in on the request body.
-check("orderReadFromBody", src.count('proposal_filename(d.get("brand"),'), 3)
+check("orderReadFromBody", src.count('proposal_filename(d.get("brand"),'), 4)
 
 # client_meta answers a read as well as a write.
 check("metaReadable", "methods=[\"GET\", \"POST\"]" in src, True)
