@@ -3662,12 +3662,17 @@ $('scRun').onclick = async () => {
       const sub = await post('/api/rep_reviews_submit', {place_ids: pids});
       let pending = (sub.tasks || []).filter(t => t.ok).map(t => t.id);
       const done = [];
+      let lost = 0;
       for (let n = 0; pending.length && n < 12; n++) {
         await new Promise(z => setTimeout(z, 5000));
         const got = await post('/api/rep_reviews_collect', {task_ids: pending});
         (got.done || []).forEach(x => done.push(x));
+        // A task the provider no longer holds is not a slow task. Re-sending it
+        // is twelve guaranteed 40401s per scan, per location.
+        lost += (got.gone || []).length;
         pending = got.pending || [];
-        say(`Counting 1–2 star reviews… ${done.length} done · ${pending.length} pending`);
+        say(`Counting 1–2 star reviews… ${done.length} done · ${pending.length} pending`
+            + (lost ? ` · ${lost} did not land` : ''));
       }
       // THE PER-LOCATION ROWS, NOT JUST THE TOTALS. Only the three summary
       // numbers were kept, so the star split the pull already paid for was
@@ -3857,17 +3862,27 @@ async function autoSerp(r, d, ranks, say){
     // THE EXHIBIT IS LANDSCAPE. Trimmed and cropped server-side so the stored
     // image is the 16:9 frame the proposal uses, not a 2,000px column that the
     // page then has to squash.
-    let last = '', requeued = 0, task = q;
-    for (let i = 0; i < 60; i++) {
+    let last = '', requeued = 0, task = q, waited = 0;
+    // A SERP TASK TAKES TENS OF SECONDS, SO THE FIRST ASK WAITS FOR IT. Asking
+    // every three seconds from the moment it was queued spent twenty-five
+    // refusals per capture on a task that had not started. First ask at 12s,
+    // then every 6. The server gates on tasks_ready as well, so the polls that
+    // remain cost a free read rather than a 40401. (2026-09-19, Kiri)
+    const nap = i => (i ? 6000 : 12000);
+    for (let i = 0; i < 30; i++) {
       // The provider says what it is waiting on; discarding that left three
       // minutes of silence and then one flat sentence.
-      say(`Capturing the SERP for “${kw}”… ${i * 3}s`
+      say(`Capturing the SERP for “${kw}”… ${waited}s`
           + (last ? ` · ${captureSays(last)}` : ''));
-      await new Promise(z => setTimeout(z, 3000));
+      await new Promise(z => setTimeout(z, nap(i)));
+      waited += nap(i) / 1000;
       let f;
       try {
         f = await post('/api/serp_fetch', {task_id: task.task_id, device: task.device,
           keyword: kw, width: task.width, height: task.height, scale: task.scale,
+          // How long this capture has been waiting, so the server knows when to
+          // stop gating and simply ask.
+          waited,
           // Trimmed and bounded, but NOT cropped to the frame: the planner
         // moves the window over the page, so there has to be a page.
         trim: true, max_h: 2600});
@@ -3885,7 +3900,7 @@ async function autoSerp(r, d, ranks, say){
       // that terminal made the capture give up seconds after queueing, queue
       // again, ask too early again, and conclude the task "keeps being lost".
       // It was never lost; it had not started.
-      if (f.notfound && (i * 3) < 75) { last = 'queued'; continue; }
+      if (f.notfound && waited < 90) { last = 'queued'; continue; }
       if (f.gone || f.notfound) {
         if (requeued++)
           return {error: `no capture for \u201c${kw}\u201d \u2014 the task was not`
@@ -3896,7 +3911,7 @@ async function autoSerp(r, d, ranks, say){
           null, say);
         if (!task || !task.task_id)
           return {error: 'the capture service took no task on the retry', kw};
-        i = 0;                          // the fresh task gets its own patience
+        i = 0; waited = 0;              // the fresh task gets its own patience
         continue;
       }
       if (f.status) last = f.status;

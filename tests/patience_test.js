@@ -40,7 +40,10 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
 
   const hist = '.prod[data-row="0"] [data-pane="history"]';
   await p.click(hist + ' .pvserp .pvmini');
-  for (let i = 0; i < 60; i++) {
+  // REAL TIME, NOT POLL COUNT. The first ask waits 12s and the rest 6s apart
+  // (2026-09-19) -- asking every three seconds spent twenty-five 40401s per
+  // capture on a task that had not started. Five polls is ~36 seconds now.
+  for (let i = 0; i < 160; i++) {
     const shot = await p.evaluate(() => (ROWS[0].result || {}).shot || '');
     if (shot) break;
     await p.waitForTimeout(500);

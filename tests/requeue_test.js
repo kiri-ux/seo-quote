@@ -41,8 +41,13 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
 
   const hist = '.prod[data-row="0"] [data-pane="history"]';
   await p.click(hist + ' .pvserp .pvmini');
-  for (let i = 0; i < 40 && queued < 2; i++) await p.waitForTimeout(500);
-  await p.waitForTimeout(3500);
+  // REAL TIME, NOT POLL COUNT. The first ask waits 12s and the rest 6s apart
+  // (2026-09-19), so a requeue and a second landing is ~20 seconds.
+  for (let i = 0; i < 160; i++) {
+    const shot = await p.evaluate(() => (ROWS[0].result || {}).shot || '');
+    if (shot && queued >= 2) break;
+    await p.waitForTimeout(500);
+  }
 
   say('queuedTwice', queued === 2, queued + ' queue calls');
   say('waitedBeforeRequeue', fetched >= 2, 'it requeued without polling');
