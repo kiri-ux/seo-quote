@@ -16,6 +16,7 @@ empty: a deck that shows a Website Audit section to a client who did not buy
 one is a deck that has to be edited by hand before it can be sent, which is
 the thing this is meant to stop.
 """
+import datetime as _dt
 import io
 import os
 
@@ -34,6 +35,7 @@ BLUE = RGBColor(0x1C, 0x5B, 0xC4)
 BLUE_MID = RGBColor(0x1F, 0x5F, 0xAD)
 BLUE_LT = RGBColor(0x5E, 0x9B, 0xD6)
 GREEN = RGBColor(0x2F, 0xA8, 0x4F)
+GOLD = RGBColor(0xE9, 0xA9, 0x3C)          # the AI mark, on white and on blue
 LINE = RGBColor(0xDD, 0xE1, 0xE7)
 MUTED = RGBColor(0x66, 0x70, 0x84)
 INK = RGBColor(0x1A, 0x23, 0x30)
@@ -274,37 +276,46 @@ def _text_box(slide, x, y, w, h):
     return tb
 
 
-def _blank(prs):
-    """A slide with the adtini chrome: white, navy foot, logo top right."""
+def _blank(prs, band=True):
+    """A slide with the adtini chrome: white, and the navy foot."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, SLIDE_W, SLIDE_H)
     bg.fill.solid()
     bg.fill.fore_color.rgb = WHITE
     bg.line.fill.background()
     bg.shadow.inherit = False
-    foot = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(7.02),
-                                  SLIDE_W, Inches(0.48))
-    foot.fill.solid()
-    foot.fill.fore_color.rgb = NAVY
-    foot.line.fill.background()
-    foot.shadow.inherit = False
+    if band:
+        foot = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(7.02),
+                                      SLIDE_W, Inches(0.48))
+        foot.fill.solid()
+        foot.fill.fore_color.rgb = NAVY
+        foot.line.fill.background()
+        foot.shadow.inherit = False
     # THE MARK, IF THE MARK IS ON DISK. The wordmark is a brand asset rather
-    # than something to redraw in shapes; without it the deck prints the name
-    # instead of a broken picture, and drops the file in the moment it exists.
-    drawn = False
+    # than something to set in type: the deck carried "adtini" as text where
+    # the logo goes, which is not the logo. Nothing is drawn there until the
+    # file exists, and it is drawn the moment it does. (2026-09-19, Kiri)
     if os.path.exists(LOGO):
         try:
             slide.shapes.add_picture(LOGO, Inches(11.55), Inches(0.3),
                                      width=Inches(1.35))
-            drawn = True
         except Exception:                                     # noqa: BLE001
-            drawn = False
-    if not drawn:
-        tb = _text_box(slide, Inches(11.1), Inches(0.26), Inches(1.9),
-                       Inches(0.5))
-        _txt(tb, size=20, bold=True, color=NAVY, align=PP_ALIGN.RIGHT)
-        tb.text_frame.paragraphs[0].text = "adtini"
+            pass
     return slide
+
+
+def _navy_block(slide, x, y, w, h, radius=0.28):
+    """The navy shapes the product slides carry at their corners."""
+    sh = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
+    sh.fill.solid()
+    sh.fill.fore_color.rgb = NAVY
+    sh.line.fill.background()
+    sh.shadow.inherit = False
+    try:
+        sh.adjustments[0] = radius
+    except (IndexError, KeyError, ValueError):
+        pass
+    return sh
 
 
 def _heading(slide, text, size=26, top=0.45):
@@ -328,54 +339,101 @@ def _label_para(tf, label, body, size=11.5, first=False, space_before=6,
 
 
 # ---------------------------------------------------------------- slide 1
-def _slide_product(prs, d):
-    slide = _blank(prs)
-    icon = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.5), Inches(0.42),
-                                  Inches(0.72), Inches(0.72))
-    icon.fill.solid()
-    icon.fill.fore_color.rgb = RGBColor(0xE8, 0xF0, 0xFB)
-    icon.line.color.rgb = NAVY
-    icon.line.width = Pt(2.5)
-    icon.shadow.inherit = False
-    _txt(icon, size=20, bold=True, color=NAVY, align=PP_ALIGN.CENTER)
-    icon.text_frame.paragraphs[0].text = "⌕"
+def _icon(slide, x, y, size=0.78):
+    """The product's own mark: the navy ring the adtini slides open with."""
+    ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, Inches(size),
+                                  Inches(size))
+    ring.fill.solid()
+    ring.fill.fore_color.rgb = RGBColor(0xDE, 0xEA, 0xF8)
+    ring.line.color.rgb = NAVY
+    ring.line.width = Pt(3)
+    ring.shadow.inherit = False
+    glass = slide.shapes.add_shape(MSO_SHAPE.DONUT, x + Inches(size * 0.22),
+                                   y + Inches(size * 0.2),
+                                   Inches(size * 0.42), Inches(size * 0.42))
+    glass.fill.background()
+    glass.line.color.rgb = NAVY
+    glass.line.width = Pt(1.5)
+    glass.shadow.inherit = False
+    try:
+        glass.adjustments[0] = 0.2
+    except (IndexError, KeyError, ValueError):
+        pass
+    stem = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE, x + Inches(size * 0.56),
+        y + Inches(size * 0.55), Inches(size * 0.2), Inches(size * 0.09))
+    stem.rotation = 45
+    stem.fill.solid()
+    stem.fill.fore_color.rgb = NAVY
+    stem.line.fill.background()
+    stem.shadow.inherit = False
+    return ring
 
-    tb = _text_box(slide, Inches(1.3), Inches(0.4), Inches(9.6), Inches(0.9))
-    _txt(tb, size=32, bold=True, color=NAVY)
+
+def _slide_product(prs, d):
+    """THE OPENING SLIDE, AS THE PRODUCT DECK DRAWS IT. Title and tagline top
+    left, the client's own SERP in a browser frame under it, what the campaign
+    includes down the right, and the navy blocks the adtini slides carry at
+    the right edge and the bottom left. (2026-09-19, Kiri)"""
+    slide = _blank(prs, band=False)
+    _navy_block(slide, Inches(11.75), Inches(1.15), Inches(2.2), Inches(4.3))
+    _navy_block(slide, Inches(-0.85), Inches(3.4), Inches(1.5), Inches(3.1))
+
+    _icon(slide, Inches(0.5), Inches(0.42))
+    tb = _text_box(slide, Inches(1.4), Inches(0.36), Inches(9.6), Inches(0.9))
+    _txt(tb, size=34, bold=True, color=NAVY)
     tb.text_frame.paragraphs[0].text = TITLE
 
-    tag = _box(slide, Inches(0.5), Inches(1.3), Inches(6.4), Inches(0.85))
-    _txt(tag, size=12.5, color=INK)
+    tag = _box(slide, Inches(0.5), Inches(1.4), Inches(5.9), Inches(0.82),
+               fill=WHITE, radius=0.14)
+    _txt(tag, size=12, color=INK, line=1.2)
     tag.text_frame.paragraphs[0].text = COPY["tagline"]
 
-    # THE EXHIBIT. The capture is the client's own search result, which is the
-    # reason the first slide exists; a quote without one says so rather than
-    # printing an empty frame.
+    # THE EXHIBIT, IN A BROWSER. It is the client's own search result and it
+    # reads as one when it is framed like a window rather than dropped on the
+    # slide bare. A quote with no capture says so instead.
     img = (d.get("serp") or {}).get("bytes")
-    frame = _box(slide, Inches(0.5), Inches(2.4), Inches(6.4), Inches(3.9),
-                 fill=RGBColor(0xF4, 0xF5, 0xF7))
+    fx, fy, fw, fh = Inches(0.55), Inches(2.62), Inches(5.95), Inches(3.55)
+    frame = _box(slide, fx, fy, fw, fh, fill=RGBColor(0x2B, 0x33, 0x40),
+                 outline=None, radius=0.03)
+    for i in range(3):
+        dot = slide.shapes.add_shape(
+            MSO_SHAPE.OVAL, fx + Inches(0.14) + Inches(0.17) * i,
+            fy + Inches(0.1), Inches(0.09), Inches(0.09))
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = RGBColor(0x6B, 0x75, 0x84)
+        dot.line.fill.background()
+        dot.shadow.inherit = False
+    page = _box(slide, fx + Inches(0.1), fy + Inches(0.3),
+                fw - Inches(0.2), fh - Inches(0.4),
+                fill=WHITE, outline=None, radius=0.02)
     if img:
-        pic = slide.shapes.add_picture(io.BytesIO(img), Inches(0.62),
-                                       Inches(2.55), width=Inches(6.16))
-        # Keep it inside the frame whatever the capture's aspect.
-        if pic.height > Inches(3.6):
+        inner_w, inner_h = fw - Inches(0.2), fh - Inches(0.4)
+        pic = slide.shapes.add_picture(io.BytesIO(img), fx + Inches(0.1),
+                                       fy + Inches(0.3), width=inner_w)
+        if pic.height > inner_h:
             ratio = pic.width / pic.height
-            pic.height = Inches(3.6)
-            pic.width = Emu(int(Inches(3.6) * ratio))
-            pic.left = Inches(0.62) + Emu(int((Inches(6.16) - pic.width) / 2))
+            pic.height = int(inner_h)
+            pic.width = Emu(int(inner_h * ratio))
+            pic.left = Emu(int(fx + Inches(0.1)
+                               + (inner_w - pic.width) / 2))
+        else:
+            pic.top = Emu(int(fy + Inches(0.3) + (inner_h - pic.height) / 2))
     else:
-        _txt(frame, size=12, color=MUTED, align=PP_ALIGN.CENTER)
-        frame.text_frame.paragraphs[0].text = COPY["no_serp"]
-        frame.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _txt(page, size=12, color=MUTED, align=PP_ALIGN.CENTER)
+        page.text_frame.paragraphs[0].text = COPY["no_serp"]
+        page.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
-    head = _text_box(slide, Inches(7.2), Inches(1.28), Inches(5.6), Inches(0.4))
+    head = _text_box(slide, Inches(6.75), Inches(1.42), Inches(5.6),
+                     Inches(0.4))
     _txt(head, size=15, bold=True, color=INK)
     head.text_frame.paragraphs[0].text = COPY["include_heading"]
 
-    body = _box(slide, Inches(7.2), Inches(1.75), Inches(5.6), Inches(4.55))
+    body = _box(slide, Inches(6.75), Inches(1.92), Inches(5.65), Inches(4.1),
+                fill=WHITE, radius=0.03)
     tf = _txt(body, size=11.5)
     for i, (label, text) in enumerate(COPY["include"]):
-        _label_para(tf, label, text, size=11.5, first=(i == 0), space_before=9)
+        _label_para(tf, label, text, size=11.5, first=(i == 0), space_before=10)
     return slide
 
 
@@ -551,7 +609,14 @@ def _slide_audit(prs):
 # fixed height, and "In-Depth Monthly Report" wraps to two lines in the card's
 # left column -- so each tick sat on top of the one below it and the last of
 # them ran off the bottom of the card. (2026-09-19, Kiri)
-def _lines(text, per_line):
+# A LINE IS AS WIDE AS THE FONT MAKES IT. Rows were measured in characters
+# against a guess, the guess was generous, and every row that wrapped ran into
+# the one under it. This measures in inches: at a given point size a character
+# averages ~0.0082in per point across Poppins and the fonts that stand in for
+# it, so the count is conservative -- a row is given the space it needs on the
+# widest of them. (2026-09-19, Kiri)
+def _lines(text, width_in, pt):
+    per_line = max(6, int(float(width_in) / (0.0082 * pt)))
     line, n = 0, 1
     for word in str(text).split():
         add = len(word) + (1 if line else 0)
@@ -563,17 +628,68 @@ def _lines(text, per_line):
     return n
 
 
-def _tick(slide, x, y, w, text, tint=None, bold=False, color=None):
-    h = Inches(0.155) * _lines(text, 26) + Inches(0.05)
+LH = Inches(0.145)      # one line of the tier list, at TIER_PT
+TIER_PT = 8
+
+
+def _tick(slide, x, y, w, text, tint=None, bold=False, color=None,
+          mark="✓", mark_color=None):
+    """A line of the tier list, with its mark in the gutter.
+
+    THE MARK IS NOT ALWAYS A CHECK AND NOT ALWAYS GREEN. Green on the pale
+    blue card was barely visible, and the AI Search lines are the one thing on
+    the card that is not part of the SEO campaign -- they carry the sparkle
+    instead. (2026-09-19, Kiri)
+    """
+    text_w = (w - Inches(0.3)) / 914400.0 - 0.24
+    h = LH * _lines(text, text_w, TIER_PT) + Inches(0.05)
     tb = _text_box(slide, x, y, w - Inches(0.3), h)
-    _txt(tb, size=8.5, color=(color or tint or INK), space_after=0, line=1.0)
+    _txt(tb, size=TIER_PT, color=(color or tint or INK), space_after=0,
+         line=1.0)
     tb.text_frame.paragraphs[0].text = text
     tb.text_frame.paragraphs[0].font.bold = bold
-    mark = _text_box(slide, x + w - Inches(0.32), y, Inches(0.28), Inches(0.24))
-    _txt(mark, size=10, bold=True, color=GREEN, align=PP_ALIGN.CENTER,
-         space_after=0)
-    mark.text_frame.paragraphs[0].text = "✓"
+    box = _text_box(slide, x + w - Inches(0.32), y, Inches(0.28), Inches(0.24))
+    _txt(box, size=10, bold=True, color=(mark_color or GREEN),
+         align=PP_ALIGN.CENTER, space_after=0)
+    box.text_frame.paragraphs[0].text = mark
     return h + Inches(0.07)
+
+
+def _flight(d, term):
+    """THE DATES THE CAMPAIGN RUNS, off the form. Months running is what was
+    typed; failing that the span between the dates; failing that the quote's
+    minimum term. (2026-09-19, Kiri)"""
+    start, end = _date(d.get("start_date")), _date(d.get("end_date"))
+    try:
+        months = int(str(d.get("months") or "").strip() or 0)
+    except ValueError:
+        months = 0
+    if not months and start and end:
+        months = max(1, (end.year - start.year) * 12 + end.month - start.month
+                     + (1 if end.day >= start.day else 0))
+    if not months and start and term:
+        months = term
+    if start and not end and months:
+        end = _add_months(start, months)
+    span = ("%s - %s" % (start.strftime("%m/%d/%Y"), end.strftime("%m/%d/%Y"))
+            if start and end else "")
+    return span, (months or term)
+
+
+def _date(v):
+    """A date input hands back YYYY-MM-DD; anything else is not a date."""
+    try:
+        return _dt.date.fromisoformat(str(v or "").strip()[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _add_months(d0, n):
+    m = d0.month - 1 + n
+    y, m = d0.year + m // 12, m % 12 + 1
+    day = min(d0.day, [31, 29 if y % 4 == 0 and (y % 100 or not y % 400) else 28,
+                       31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1])
+    return _dt.date(y, m, day)
 
 
 def _priced(d):
@@ -599,6 +715,7 @@ def _slide_pricing(prs, d):
     if not core_on and ai_on:
         core, ai, ai_on = ai, {}, False
     term = int(pricing.get("min_term_months") or h.get("min_term_months") or 6)
+    flight, months = _flight(d, term)
     n_addon = int(pricing.get("addon_markets") or h.get("addon_markets") or 0)
     per_market = (pricing.get("client_addon_per_market")
                   or h.get("addon_market_price") or {})
@@ -618,11 +735,20 @@ def _slide_pricing(prs, d):
     tb.text_frame.paragraphs[0].text = COPY["product_title"]
 
     # ---- the summary box. Each cell is printed only where the quote has one.
-    monthly = (core.get("intermediate") or 0) + (ai.get("intermediate") or 0)
-    cells = [[("Months Running: ", str(term))]]
+    # WHICH TIER THE BUDGET IS. The adtini slide takes it off the tier the
+    # planner selects on screen; a file cannot be selected, so the budget says
+    # which tier it came from -- it was reading as a fourth number that matched
+    # none of the three cards. Intermediate, which is the tier the tool
+    # headlines everywhere else. (2026-09-19, Kiri)
+    shown = "intermediate" if core.get("intermediate") else next(
+        (k for k in TIER_ORDER if core.get(k)), "intermediate")
+    monthly = (core.get(shown) or 0) + (ai.get(shown) or 0)
+    first = [("", flight)] if flight else []
+    first.append(("Months Running: ", str(months)))
+    cells = [first]
     if monthly:
         cells.append([("Monthly Budget: ", _money(monthly)),
-                      ("Total Budget: ", _money(monthly * term))])
+                      ("Total Budget: ", _money(monthly * months))])
     if n_addon and per_market.get("intermediate"):
         cells.append([("# of Add-on Markets: ", str(n_addon)),
                       ("Add-on Price: ", _money(per_market["intermediate"]))])
@@ -637,7 +763,7 @@ def _slide_pricing(prs, d):
                 tf, size=12, align=PP_ALIGN.CENTER, space_after=0)
             p.alignment = PP_ALIGN.CENTER
             _run(p, label, size=12, bold=True)
-            _run(p, value, size=12)
+            _run(p, value, size=12, bold=not label)
         if i:
             rule = slide.shapes.add_shape(
                 MSO_SHAPE.RECTANGLE, Inches(0.55) + span * i, Inches(1.4),
@@ -664,22 +790,48 @@ def _slide_pricing(prs, d):
         _txt(name, size=15, bold=True,
              color=(INK if not dark else WHITE), align=PP_ALIGN.CENTER)
         name.text_frame.paragraphs[0].text = spec["name"]
+        # THE TIER THE BUDGET ABOVE WAS QUOTED FROM, marked on the card the
+        # way the product slide marks the selected one.
+        if key == shown:
+            pill = _box(slide, x + (card_w - Inches(1.15)) / 2, Inches(6.24),
+                        Inches(1.15), Inches(0.3),
+                        fill=(NAVY if not dark else WHITE), outline=None,
+                        radius=0.5)
+            _txt(pill, size=9, bold=True,
+                 color=(WHITE if not dark else NAVY), align=PP_ALIGN.CENTER,
+                 space_after=0)
+            pill.text_frame.paragraphs[0].text = "Selected"
+            pill.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
+        # THE HEADLINE IS WHAT THEY PAY, AND THE SPLIT IS UNDER IT. The card
+        # printed the Core SEO price large with AI Search beside it, so the
+        # Monthly Budget above -- which is both legs -- matched no card on the
+        # slide. The big number is the two together; the lines under it say
+        # what each leg costs. (2026-09-19, Kiri)
+        both = (core.get(key) or 0) + (ai.get(key) or 0)
         price = _text_box(slide, x, Inches(2.66), card_w, Inches(0.42))
         tf = _txt(price, size=20, align=PP_ALIGN.CENTER, space_after=0)
-        _run(tf.paragraphs[0], _money(core[key]), size=20, bold=True,
+        _run(tf.paragraphs[0], _money(both), size=20, bold=True,
              color=(BLUE if not dark else WHITE))
         _run(tf.paragraphs[0], " / month", size=12,
              color=(INK if not dark else WHITE))
         head_h = Inches(1.02)
         if ai_on and ai.get(key):
-            sub = _text_box(slide, x, Inches(3.08), card_w, Inches(0.3))
-            tf = _txt(sub, size=11, align=PP_ALIGN.CENTER, space_after=0)
-            _run(tf.paragraphs[0], "AI Search: ", size=11, bold=True,
-                 color=(INK if not dark else WHITE))
-            _run(tf.paragraphs[0], _money(ai[key]) + " / month", size=11,
-                 color=(INK if not dark else WHITE))
-            head_h = Inches(1.34)
+            # ONE LINE, THE TWO LEGS SEPARATED BY A DOT. Stacked, the split
+            # read as two more prices under the price rather than as what the
+            # price is made of. (2026-09-19, Kiri)
+            sub = _text_box(slide, x, Inches(3.08), card_w, Inches(0.4))
+            tf = _txt(sub, size=8.5, align=PP_ALIGN.CENTER, space_after=0,
+                      line=1.1)
+            ink = INK if not dark else WHITE
+            para = tf.paragraphs[0]
+            para.alignment = PP_ALIGN.CENTER
+            _run(para, "Core SEO: ", size=8.5, bold=True, color=ink)
+            _run(para, _money(core.get(key)) + " / month  \u2022  ", size=8.5,
+                 color=ink)
+            _run(para, "AI Search: ", size=8.5, bold=True, color=ink)
+            _run(para, _money(ai.get(key)) + " / month", size=8.5, color=ink)
+            head_h = Inches(1.38)
 
         rule = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x,
                                       Inches(2.12) + head_h, card_w, Pt(1))
@@ -687,9 +839,9 @@ def _slide_pricing(prs, d):
         rule.fill.fore_color.rgb = LINE if not dark else WHITE
         rule.line.fill.background()
         rule.shadow.inherit = False
-        mid = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + Inches(2.05),
+        mid = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + Inches(2.25),
                                      Inches(2.12) + head_h + Inches(0.1),
-                                     Pt(1), Inches(4.55) - head_h - Inches(0.2))
+                                     Pt(1), Inches(4.55) - head_h - Inches(0.7))
         mid.fill.solid()
         mid.fill.fore_color.rgb = LINE if not dark else WHITE
         mid.line.fill.background()
@@ -699,26 +851,48 @@ def _slide_pricing(prs, d):
         if ai_on:
             ticks += spec["ai_ticks"]
         ticks += list(spec.get("then") or [])
-        tint = TINT if dark else MUTED
+        tint = TINT if dark else INK
+        check = GREEN if not dark else WHITE
+        ai_rows = set(spec["ai_ticks"]) if ai_on else set()
         y = Inches(2.12) + head_h + Inches(0.13)
         for t in ticks:
-            y = y + _tick(slide, x + Inches(0.1), y, Inches(1.95), t, tint=tint)
-        _tick(slide, x + Inches(0.1), y, Inches(1.95), spec["last"],
-              bold=True, color=(BLUE if not dark else WHITE))
+            y = y + _tick(slide, x + Inches(0.1), y, Inches(2.15), t, tint=tint,
+                          mark=("✦" if t in ai_rows else "✓"),
+                          mark_color=(GOLD if t in ai_rows else check))
+        _tick(slide, x + Inches(0.1), y, Inches(2.15), spec["last"],
+              bold=True, color=(BLUE if not dark else WHITE), mark_color=check)
 
         counts = list(spec["counts"])
         if ai_on:
             counts += spec["ai_counts"]
+        ai_counts = set(spec["ai_counts"]) if ai_on else set()
         cy = Inches(2.12) + head_h + Inches(0.13)
-        for n, rest in counts:
-            ch = Inches(0.155) * _lines(n + rest, 24) + Inches(0.05)
-            cb = _text_box(slide, x + Inches(2.16), cy, Inches(1.68), ch)
-            tf = _txt(cb, size=8.5, space_after=0, line=1.0)
-            _run(tf.paragraphs[0], n, size=8.5, bold=True,
+        for row in counts:
+            n, rest = row
+            is_ai = row in ai_counts
+            box_w = 1.5 if is_ai else 1.55
+            ch = LH * _lines(n + rest, box_w - 0.24, TIER_PT) + Inches(0.05)
+            if is_ai:
+                # WHAT THE AI SEARCH MONEY BUYS, SET APART. It read as one more
+                # keyword count in a list of keyword counts. The box needs air
+                # above it or it sits on the line before it.
+                cy = cy + Inches(0.1)
+                _box(slide, x + Inches(2.3), cy - Inches(0.07), Inches(1.55),
+                     ch + Inches(0.18),
+                     fill=(RGBColor(0xFD, 0xF4, 0xE4) if not dark else None),
+                     outline=GOLD, radius=0.12)
+                sp = _text_box(slide, x + Inches(2.31), cy - Inches(0.02),
+                               Inches(0.2), Inches(0.2))
+                _txt(sp, size=9, bold=True, color=GOLD, space_after=0)
+                sp.text_frame.paragraphs[0].text = "✦"
+            cb = _text_box(slide, x + Inches(2.45 if is_ai else 2.35), cy,
+                           Inches(box_w), ch)
+            tf = _txt(cb, size=TIER_PT, space_after=0, line=1.0)
+            _run(tf.paragraphs[0], n, size=TIER_PT, bold=True,
                  color=(INK if not dark else WHITE))
-            _run(tf.paragraphs[0], rest, size=8.5,
+            _run(tf.paragraphs[0], rest, size=TIER_PT,
                  color=(INK if not dark else WHITE))
-            cy = cy + ch + Inches(0.07)
+            cy = cy + ch + Inches(0.22 if is_ai else 0.08)
 
     foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(9.4), Inches(0.32))
     _txt(foot, size=11, bold=True, color=INK)
@@ -757,12 +931,17 @@ def build_proposal_pptx(d):
 
 
 def _strategies(d):
-    """What was sold, however the quote spells it."""
+    """What was sold, however the quote spells it.
+
+    A CHIP CAN CARRY TWO STRATEGIES. This split the field on commas, and a
+    quote whose chip reads "Core SEO + AI Search" -- which is how the form
+    offers the pair, and what hasStrategy() has always split on -- matched
+    nothing: the deck came back with the product slide and the prices and no
+    strategy or keyword slide at all. Read as text and look for the names.
+    (2026-09-19, Kiri)
+    """
     raw = d.get("strategy")
-    if isinstance(raw, str):
-        parts = [x.strip() for x in raw.split(",")]
-    else:
-        parts = [str(x).strip() for x in (raw or [])]
-    known = {"core seo": "Core SEO", "ai search": "AI Search",
-             "website audit": "Website Audit"}
-    return {known[p.lower()] for p in parts if p.lower() in known}
+    text = (raw if isinstance(raw, str)
+            else ", ".join(str(x) for x in (raw or []))).lower()
+    return {name for name in ("Core SEO", "AI Search", "Website Audit")
+            if name.lower() in text}

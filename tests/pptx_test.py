@@ -31,6 +31,7 @@ import seo_pptx as P      # noqa: E402
 from pptx import Presentation      # noqa: E402
 
 FAIL, CHECKS = [], []
+TITLE_LINE = "Search Engine Optimization+"
 
 
 def check(label, got, want):
@@ -87,8 +88,8 @@ print("\nEVERYTHING SOLD, AND NOTHING ELSE")
 full = slides(deck(quote("Core SEO, AI Search, Website Audit")))
 check("five slides on the full quote", len(full), 5)
 check("the product and its SERP first",
-      full[0].startswith("adtini") and "Your SEO Campaign Will Include:"
-      in full[0], True)
+      TITLE_LINE in full[0] and "Your SEO Campaign Will Include:" in full[0],
+      True)
 check("a capture that was never taken says so",
       "No SERP captured" in full[0], True)
 check("strategy details second", "Strategy Details" in full[1], True)
@@ -116,14 +117,21 @@ check("but keeps the audit slide",
 
 print("\nTHE AI SEARCH PRICE ONLY WHEN IT IS IN THE QUOTE")
 with_ai = slides(deck(quote("Core SEO, AI Search")))[-1]
-check("the tier price is the Core SEO price", "$3,950 / month" in with_ai, True)
-check("with AI Search priced under it",
+# THE HEADLINE IS WHAT THEY PAY. It was the Core SEO price with AI Search
+# printed beside it, so the Monthly Budget above -- both legs -- matched no
+# card on the slide.
+check("the tier price is both legs together", "$6,900 / month" in with_ai, True)
+check("with Core SEO named under it",
+      "Core SEO: $3,950 / month" in with_ai, True)
+check("and AI Search under that",
       "AI Search: $2,950 / month" in with_ai, True)
 check("and the AI lines in the tier list",
       "AI model brand optimization" in with_ai, True)
 check("and what the AI money buys",
       "premium placements per month within AI search results" in with_ai, True)
 check("no AI Search line without it", "AI Search:" in core[-1], False)
+check("and no split at all, because there is nothing to split",
+      "Core SEO: $" in core[-1], False)
 check("and none of its bullets either",
       "AI model brand optimization" in core[-1], False)
 # A quote that buys AI Search alone prices THAT as the campaign rather than
@@ -154,6 +162,34 @@ check("the budget is the intermediate tier",
       "Monthly Budget: $8,650" in with_ai, True)
 check("and the total is that across the term",
       "Total Budget: $103,800" in with_ai, True)
+# A FILE CANNOT BE SELECTED ON SCREEN, so the tier the budget came from is
+# marked on its own card.
+check("the tier is marked on its own card", "Selected" in with_ai, True)
+check("the budget equals that card", "$8,650 / month" in with_ai, True)
+
+print("\nTHE FLIGHT IS WHAT WAS TYPED ON THE FORM")
+flight = dict(quote("Core SEO, AI Search"),
+              start_date="2025-05-01", end_date="2025-10-31", months="")
+dated = slides(deck(flight))[-1]
+check("the dates print across the top",
+      "05/01/2025 - 10/31/2025" in dated, True)
+check("and the months are read off them", "Months Running: 6" in dated, True)
+check("the total is the budget across those months",
+      "Total Budget: $51,900" in dated, True)
+# Typed months win, and an end date is worked out from them.
+typed = dict(quote("Core SEO, AI Search"), start_date="2025-05-01", months="3")
+check("months typed by hand set the end date",
+      "05/01/2025 - 08/01/2025" in slides(deck(typed))[-1], True)
+check("with no dates at all it falls back to the term",
+      "Months Running: 12" in with_ai, True)
+check("and never prints a range it does not have",
+      "/2025 -" in with_ai, False)
+
+print("\nTHE AI LINES CARRY THE SPARKLE")
+check("the AI tier line is marked with it",
+      "\u2726" in with_ai, True)
+check("and a quote without AI Search has none",
+      "\u2726" in core[-1], False)
 
 print("\nTHE KEYWORD SLIDE IS THE LIST, NOT A SAMPLE OF IT")
 kw_slide = slides(deck(quote("Core SEO")))[2]
@@ -170,6 +206,28 @@ many = quote("Core SEO")
 many["kw"] = dict(KW, all=[{"kw": "term %d" % i} for i in range(30)])
 check("thirty terms run onto a second slide",
       sum("Keyword Details" in s for s in slides(deck(many))), 3)
+
+print("\nA CHIP CAN CARRY TWO STRATEGIES")
+# The form offers the pair as one chip, "Core SEO + AI Search", and reading
+# the field on commas alone matched neither: a real quote came back with the
+# product slide and the prices and nothing in between. (2026-09-19, Kiri)
+pair = slides(deck(quote("Core SEO + AI Search")))
+check("both are read off one chip",
+      sorted(P._strategies({"strategy": "Core SEO + AI Search"})),
+      ["AI Search", "Core SEO"])
+check("a list of chips reads the same",
+      sorted(P._strategies({"strategy": ["Core SEO + AI Search"]})),
+      ["AI Search", "Core SEO"])
+check("so the strategy slide is there",
+      any("Strategy Details" in s for s in pair), True)
+check("and the keyword slide with it",
+      any("Keyword Details" in s for s in pair), True)
+check("with both strategies on the strategy slide",
+      "Core SEO:" in pair[1] and "AI Search:" in pair[1], True)
+
+print("\nTHE LOGO IS A FILE, NOT A WORD")
+check("the deck never sets the name in type",
+      any("adtini" in s for s in pair), False)
 
 print("\nAND IT COMES BACK AS A FILE")
 app.app.config["TESTING"] = True
