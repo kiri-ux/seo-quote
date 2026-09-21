@@ -102,6 +102,47 @@ const BASE = 'http://127.0.0.1:5203';
   say('theRankCheckIsGivenTheLastWord',
       /the rank check found only 1 of 3 measured/.test(clash), clash);
 
+  // ---- AND THE BUILD'S OWN ANSWER SURVIVES THE REFINE PASS.
+  //
+  // This is why the panel drew nothing on a real build. /api/keywords ranks the
+  // seeds and reserves the slots; /api/refine rewords the finished buckets and
+  // has no reason to produce any of that. The page replaced r.kw with the
+  // refine response outright -- and refine's response DECLARES seed_ranking
+  // while filling it from a stage that never computes it, so it always came
+  // back {} and always won.
+  const merged = await p.evaluate(() => {
+    const build = {
+      all: [{kw: 'a'}], city_selection: {kept: [['huntingdon, pa', 10]]},
+      seed_ranking: {order: [['contractor', 10, 10]],
+                     headroom: [['ski tuning', 320]],
+                     headroom_seen: {want: 4, fresh: 0, own: 27, pool: 9,
+                                     source: 'x'}},
+    };
+    const refine = {
+      all: [{kw: 'a'}, {kw: 'b'}],          // refine's own answer, and it wins
+      seed_ranking: {},                      // declared, never computed
+      city_selection: {},                    // same story
+      tier_moves: [{from: 'ultra', to: 'competitive'}],   // only refine has it
+    };
+    const out = mergeBuild(build, refine);
+    return {
+      terms: out.all.length,
+      heldSlots: ((out.seed_ranking || {}).headroom || []).length,
+      keptCities: ((out.city_selection || {}).kept || []).length,
+      refineOnly: (out.tier_moves || []).length,
+    };
+  });
+  say('refineWinsWhereItHasAnAnswer', merged.terms === 2, JSON.stringify(merged));
+  say('theReserveSurvivesTheRefinePass', merged.heldSlots === 1, JSON.stringify(merged));
+  say('andSoDoesTheMarketPick', merged.keptCities === 1, JSON.stringify(merged));
+  say('andRefineOnlyKeysComeThrough', merged.refineOnly === 1, JSON.stringify(merged));
+
+  // An empty answer is not a new answer, but a REAL one replaces the build's.
+  const beats = await p.evaluate(() => mergeBuild(
+    {seed_ranking: {headroom: [['old', 1]]}},
+    {seed_ranking: {headroom: [['new', 2]]}}).seed_ranking.headroom[0][0]);
+  say('aRealRefineAnswerStillReplacesTheBuilds', beats === 'new', beats);
+
   await b.close();
   console.log(bad ? `FAILED ${bad}` : 'all ok');
   process.exit(bad ? 1 : 0);

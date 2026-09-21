@@ -2828,6 +2828,34 @@ async function resolveBand(r){
   }
   return r.band;
 }
+// THE REFINE PASS DOES NOT RECOMPUTE THE BUILD, SO IT MUST NOT ERASE IT.
+//
+// /api/keywords measures the seeds, ranks them and reserves slots for terms the
+// client does not rank for. /api/refine takes the finished buckets and rewords
+// them -- a different stage, which has no reason to produce most of what the
+// build did. The page replaced r.kw with the refine response outright, so
+// everything refine does not carry was thrown away on every build.
+//
+// seed_ranking is the worst of them, because refine's response DECLARES the key
+// and fills it from a stage that never computes it: it always came back {} and
+// always won. The headroom panel read it and drew nothing on a build that had
+// done the work.
+//
+// Refine's value wins wherever refine has one. Where its value is empty and the
+// build's is not, the build's stands -- an absent answer is not a new answer.
+// (2026-09-21, Kiri)
+function mergeBuild(kw, ref){
+  const empty = v => v == null
+    || (Array.isArray(v) ? !v.length
+        : (typeof v === 'object' ? !Object.keys(v).length : false));
+  const out = Object.assign({}, kw || {});
+  Object.keys(ref || {}).forEach(k => {
+    if (empty(ref[k]) && !empty(out[k])) return;
+    out[k] = ref[k];
+  });
+  return out;
+}
+
 function kbScopeNote(r){
   const d = r.data, g = geoOf(d);
   const paint = () => {
@@ -3387,7 +3415,16 @@ $('kbBuild').onclick = async () => {
         ranked: (r.rankedSeeds || []).slice(),
         national_demand: (r.band || bandOf(d)) === 'nationwide'}));
     } catch (e) { $('saved').textContent = 'Refine failed — raw list kept. ' + e.message; }
-    r.kw = ref && ref.all ? ref : kw;
+    // THE REFINE PASS DOES NOT RECOMPUTE THE BUILD, SO IT MUST NOT ERASE IT.
+    // /api/keywords measures the seeds, ranks them and reserves slots for terms
+    // the client does not rank for; /api/refine takes the finished buckets and
+    // rewords them. Replacing r.kw outright threw away everything the refine
+    // stage has no reason to produce -- seed_ranking most of all, which its
+    // response declares and fills from a stage that never computes it, so it
+    // always came back {} and always won. The headroom panel read it and drew
+    // nothing, on a build that had done the work. Refine's keys win where it
+    // has one; the build's stand where it does not. (2026-09-21, Kiri)
+    r.kw = (ref && ref.all) ? mergeBuild(kw, ref) : kw;
     // Which axis got the term budget, and the evidence for it.
     r.axis = (ref && ref.grid_axis) || kw.grid_axis || null;
     // THE BUILD CAN DISCOVER NATIONAL DEMAND. The refine pass says so, and the
