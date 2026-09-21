@@ -556,6 +556,25 @@ input.cell.ord{width:86px;font-variant-numeric:tabular-nums}
 .unrbox.none{background:var(--fill);border-color:var(--line);color:var(--muted)}
 .unrbox .unrfind{margin-left:4px;padding:3px 11px;font-size:12px}
 
+/* The competitor reader: the seed source that does not start from the client.
+   Sits with the builder's other seed options, above Build. */
+.kbcomp{margin:12px 0 4px;padding-top:12px;border-top:1px solid var(--line)}
+.kbcomp label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.kbcomp textarea{width:100%;font:inherit;font-size:12.5px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:8px;resize:vertical}
+.kbcomp .btn2{margin-top:6px;padding:5px 13px;font-size:12.5px}
+.kbcompout{margin-top:7px}
+.kbcompout .hint{display:block;margin-bottom:5px}
+/* The overlap is the signal, so the rival count leads the sub-label. */
+.compchip{display:inline-flex;flex-direction:column;align-items:flex-start;gap:1px;
+  margin:0 6px 6px 0;padding:4px 11px;border-radius:13px;cursor:pointer;
+  border:1px solid #9DB3C8;background:#fff;color:var(--velocity);
+  font:inherit;font-size:12.5px;text-align:left}
+.compchip small{font-size:10.5px;color:var(--muted)}
+.compchip:hover{background:#EEF4FB;border-color:var(--velocity)}
+.compchip.on,.compchip:disabled{background:var(--fill);border-color:var(--line);
+  color:var(--muted);cursor:default}
+
 /* ---- the planner's view of a quote -------------------------------------- */
 .pview{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;
   margin-bottom:12px}

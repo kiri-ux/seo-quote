@@ -250,6 +250,18 @@
             <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
               <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
           </div>
+          <!-- WHAT THE COMPETITORS RANK FOR, when the client's own list cannot
+               say. Every other seed source starts from the client: their site,
+               their focus terms, their own rankings. That works while they sell
+               into the market being quoted and fails completely when every term
+               they name is one they already own. -->
+          <div class="kbcomp">
+            <label for="kbCompIn">✦ Competitor websites</label>
+            <textarea id="kbCompIn" rows="2"
+              placeholder="lowes.com, homedepot.com"></textarea>
+            <button class="btn2" type="button" id="kbCompRead">Read their rankings</button>
+            <div class="kbcompout" id="kbCompOut"></div>
+          </div>
           <button class="btn build" type="button" id="kbBuild">Build keyword list</button>
         </section>
         <section class="kbmain">
@@ -2904,6 +2916,106 @@ function kbScopeNote(r){
 // those is a different answer, so each one says so. Ported from the legacy
 // panel, which has carried all of them since 2026-08-19. (2026-09-21, Kiri)
 // ---------------------------------------------------------------------------
+// WHAT THE COMPETITORS RANK FOR, when the client's own list cannot say.
+//
+// Every other seed source starts from the client: their site, their focus
+// terms, their own rankings. That works while the client sells into the market
+// being quoted and fails completely when it does not -- and it fails the same
+// way on a client who ALREADY RANKS for every term they named. Cisney &
+// O'Donnell: 19 seed families, all quoted, all ranked, the reservation with
+// nothing cut to promote from and the gap finder with nothing to probe. The
+// candidate well is dry because the well is the client's own vocabulary.
+//
+// THE OVERLAP IS THE SIGNAL, NOT THE VOLUME. A term five of nine competitors
+// hold is the category's vocabulary; one that a single competitor holds alone
+// is that competitor's angle. Chips are accepted BY HAND, and what is accepted
+// becomes the planner's own seed -- which is what keeps the competitor-name
+// filter from cutting a rival's product name straight back out.
+// (2026-09-21, Kiri, ported from the legacy page)
+// The seed list as it stands, which is what the competitor read is diffed
+// against so a term already on the list is not offered again.
+function kbSeeds(){
+  return (((ROWS[ROW] || {}).data || {}).focus || []).slice();
+}
+
+// ACCEPTED BY HAND BECOMES THE PLANNER'S OWN SEED. Not marked as a suggestion:
+// the competitor-name filter cuts rivals' product names out of TOOL-proposed
+// terms, and it would cut this straight back out again.
+function addCompetitorSeed(term){
+  const r = ROWS[ROW];
+  const t = String(term || '').trim().toLowerCase();
+  if (!r || !t) return;
+  const d = r.data = r.data || {};
+  d.focus = (d.focus || []).slice();
+  if (d.focus.some(x => String(x).trim().toLowerCase() === t)) return;
+  d.focus.push(t);
+  if (SEED_SRC) delete SEED_SRC[t];
+  if (r.seedSrc) delete r.seedSrc[t];
+  chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+  const b = document.querySelector(`[data-compadd="${CSS.escape(t)}"]`);
+  if (b) { b.disabled = true; b.classList.add('on'); }
+}
+
+let COMP_RUNNING = false;
+async function readCompetitors(){
+  const r = ROWS[ROW];
+  const ta = $('kbCompIn'), out = $('kbCompOut'), btn = $('kbCompRead');
+  if (!r || !ta || !out || COMP_RUNNING) return;
+  const doms = String(ta.value || '').split(/[\s,;]+/)
+    .map(x => x.trim()).filter(Boolean);
+  if (!doms.length) {
+    out.innerHTML = '<span class="hint">Add at least one competitor website.</span>';
+    return;
+  }
+  COMP_RUNNING = true;
+  btn.disabled = true;
+  btn.textContent = `Reading ${doms.length}\u2026`;
+  out.innerHTML = `<span class="hint">Reading what ${doms.length} competitor`
+    + `${doms.length === 1 ? '' : 's'} rank for\u2026</span>`;
+  const d = r.data || {};
+  try {
+    const got = await post('/api/competitor_seeds', {
+      competitors: doms, seeds: kbSeeds(), brand: d.brand || '',
+      domain: d.site || '', geo_values: geoOf(d), state: stateOf(d)});
+    if (got.error) {
+      out.innerHTML = `<span class="hint">${esc(got.error)}</span>`;
+      return;
+    }
+    const rows = got.keywords || [];
+    if (!rows.length) {
+      out.innerHTML = `<span class="hint">`
+        + `${got.already_seeded ? `All ${got.already_seeded} terms they rank for are `
+                                + `already on your list.`
+                                : 'Nothing came back for those sites.'}</span>`;
+      return;
+    }
+    // The overlap first: it is the category's vocabulary rather than one
+    // rival's angle.
+    out.innerHTML = `<div class="hint">${rows.length} term`
+      + `${rows.length === 1 ? '' : 's'} from ${(got.domains_read || []).length} `
+      + `competitor${(got.domains_read || []).length === 1 ? '' : 's'}`
+      + `${got.already_seeded ? ` \u00b7 ${got.already_seeded} already on your list` : ''}`
+      + `${(got.domains_failed || []).length
+            ? ` \u00b7 ${got.domains_failed.length} could not be read` : ''}`
+      + ` \u00b7 click to add</div>`
+      + rows.slice(0, 24).map(x => {
+          const n = Number(x.volume) || 0;
+          const c = Number(x.competitors) || 0;
+          return `<button class="compchip" type="button"`
+            + ` data-compadd="${esc(x.term)}"`
+            + ` title="${esc((x.on || []).join(', '))}">${esc(x.term)}`
+            + `<small>${c > 1 ? `${c} rivals` : '1 rival'}`
+            + `${n ? ` \u00b7 ${n.toLocaleString()}/mo` : ''}</small></button>`;
+        }).join('');
+  } catch (e) {
+    out.innerHTML = `<span class="hint">Could not read them \u00b7 ${esc(e.message)}</span>`;
+  } finally {
+    COMP_RUNNING = false;
+    btn.disabled = false;
+    btn.textContent = 'Read their rankings';
+  }
+}
+
 // A CLIENT RANKING FOR EVERYTHING HAS NO STORY IN THE PROPOSAL.
 //
 // The build-time reservation (see drawHeadroom) holds grid slots for terms the
@@ -5301,6 +5413,12 @@ $('prods').addEventListener('click', e => {
   if (db) { e.preventDefault(); downloadProposal(+db.dataset.slides, 'pptx'); return; }
   const uf = e.target.closest('[data-unrfind]');
   if (uf) { e.preventDefault(); findUnranked(ROWS[+uf.dataset.unrfind], false); return; }
+});
+document.addEventListener('click', e => {
+  const cr = e.target.closest('#kbCompRead');
+  if (cr) { e.preventDefault(); readCompetitors(); return; }
+  const ca = e.target.closest('[data-compadd]');
+  if (ca) { e.preventDefault(); addCompetitorSeed(ca.dataset.compadd); return; }
 });
 
 // RERUN THE CHECKS THAT FAILED. Nineteen of twenty-one came back "\u2014" and the
