@@ -15035,10 +15035,15 @@ def _lighthouse_health(dom, why):
     cover meta descriptions, titles, hreflang, crawlable links and image alt
     text, which is most of what _ONPAGE_DEBT counts.
 
-    OFF BY DEFAULT AND ONLY ON FAILURE: this is a second request, and doubling
-    the cost of every quote to rescue the occasional blocked site is a bad
-    trade. Returns ({}, why) unchanged when it is off or when it fails too, so
+    ONLY ON FAILURE: a second request per blocked site, never on the happy
+    path. Returns ({}, why) unchanged when it is off or when it fails too, so
     the caller still learns that nothing was measured. (2026-08-17)
+
+    IT IS ON. This said "OFF BY DEFAULT" while technical_health_fallback has
+    read True since it shipped, which is the sort of comment that gets read
+    instead of the config: a site reading "not measured" has already been
+    through both readers, and the next person looking at one should not go
+    hunting for a switch to flip. (2026-09-21)
     """
     if not CFG.get("technical_health_fallback"):
         return {}, why
