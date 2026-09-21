@@ -818,6 +818,14 @@ CFG = {
     # in BE's proposals separates his $2,950 clients from his $3,550 ones (Nob Hill
     # and Amare Homes are both 20 terms, one city, 80% not ranking, and $600
     # apart), so that gap stays a judgement call on the override.
+    #
+    # ONE OF THEM IS NO LONGER A JUDGEMENT CALL (2026-09-19). The two lists are
+    # identical on every number the formula reads and different in a way it was
+    # throwing away: Amare's page one is Zillow, Trulia, Redfin and
+    # Apartments.com, Nob Hill's is five other Salem dentists. That is now
+    # pageone_aggregator_add, and it lands Amare on $3,550 while leaving Nob Hill
+    # where it was. NPAIHB's $3,550 is still unexplained — its page one is ihs.gov
+    # and Wikipedia, which is not an aggregator lock-up and draws nothing.
     "tier_step_flat": 650,                    # partner $ per tier; null -> use step_ratio
     "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
     "step_ratio": 0.38,                       # fallback: proportional step
@@ -1128,6 +1136,103 @@ CFG = {
         "page one: regional or institutional (200-399)": 0,
         "page one: national platforms (400+)": 0,
     },
+    # PAGE-ONE COMPETITION: AGGREGATORS HOLDING THE METRO. The lever above
+    # measures how STRONG page one is and the back-measure killed it (rho -0.09
+    # against the prices Brendan actually sent). This one measures something
+    # else: WHO page one is. Brendan named the mechanism himself — a national
+    # aggregator locking up a metro is a different job from out-ranking six
+    # other local dentists — and authority was only ever a stand-in for it.
+    #
+    # Why not the ranking ladder instead. The obvious alternative was to raise
+    # the top zero-ranking rung, and the back-measure says the opposite: quotes
+    # at 90%+ not ranking track close to the formula (-2.8% mean), while the
+    # ones already ranking somewhat came in +20.3% ABOVE it. Two clients can
+    # both be at 100% not ranking for completely different reasons — one because
+    # nobody has tried yet, one because Zillow, Redfin and Apartments.com own
+    # every result — and only the second deserves a premium. Ranking % cannot
+    # tell them apart. Page-one occupancy can, and it is measured off SERPs the
+    # rank check already fetches, so it costs nothing.
+    #
+    # FITTED ON ONE QUOTE, SAID OUT LOUD. Amare Homes is the only client in the
+    # book whose page one is aggregator-held (Zillow, Trulia, Redfin, per
+    # pageone_strength's own note) and Brendan sent $3,550 where the formula
+    # computes $3,100. +$300 partner cost lands it on $3,550 exactly.
+    #
+    # WHETHER IT FIRES ON THE FLOOR SIX IS NOT KNOWN, and that is the thing to
+    # watch. The authority band fired on four of them (Media Venue 650, Junk Bee
+    # Gone 704, Keller 728, Red Shoes 728) and would have overcharged every one.
+    # Those readings are a MAX, though, and a max is set by the single strongest
+    # domain on the page: a Yelp repeating on two of twenty terms reads 1,000
+    # there and about a tenth of the page here, because this counts slots and
+    # needs a majority of them. That is a reason to expect it behaves
+    # differently, not evidence that it does. The back-measure carries it as its own variable
+    # from today, and the floor six are the quotes to run first.
+    #
+    # WHAT IT DOES NOT EXPLAIN: NPAIHB, also $3,550, whose page one is ihs.gov
+    # and Wikipedia. Not an aggregator lock-up, no premium here, still unexplained
+    # by anything in the formula. One datapoint fitted, one left open — a second
+    # aggregator-held quote is what would turn this into evidence.
+    #
+    # Revert is one number: pageone_aggregator_add back to 0. (2026-09-19)
+    "pageone_aggregator_add": 300,
+    # Share of the page-one slots the aggregators have to hold before it fires.
+    # "Most of page one", literally — a majority. A dental SERP carries a Yelp
+    # and a Healthgrades and lands well under half; a Santa Fe rentals SERP is
+    # aggregators almost end to end. The cut is where those two separate, not a
+    # number fitted to either.
+    "pageone_aggregator_share_min": 0.50,
+    # Measured across at least this many terms. One SERP is an artifact, the
+    # same guard pageone_strength puts on its maximum.
+    "pageone_aggregator_min_terms": 3,
+    # THE DEFINED SET. National platforms that take the click on somebody else's
+    # search: listings marketplaces, booking engines, directories, review hubs.
+    # The line is a domain that AGGREGATES this client's competitors — not a big
+    # domain (a .gov or Wikipedia are neither), and not a profile page the client
+    # could own outright (those are _PAGEONE_NON_RIVAL and count for nobody).
+    # One flat list rather than one per vertical: a client whose page one is held
+    # by the aggregators of a NEIGHBOURING vertical is in the same fight, and a
+    # per-vertical split would need the vertical to be right before the price is.
+    "pageone_aggregator_domains": [
+        # Real estate and rentals
+        "zillow.com", "trulia.com", "redfin.com", "realtor.com", "homes.com",
+        "apartments.com", "apartmentlist.com", "rent.com", "rentals.com",
+        "hotpads.com", "zumper.com", "forrent.com", "padmapper.com",
+        "movoto.com", "point2homes.com", "loopnet.com", "compass.com",
+        # Home services and trades
+        "yelp.com", "angi.com", "angieslist.com", "homeadvisor.com",
+        "thumbtack.com", "porch.com", "houzz.com", "buildzoom.com",
+        "nextdoor.com", "bark.com",
+        # Health
+        "healthgrades.com", "zocdoc.com", "webmd.com", "vitals.com",
+        "ratemds.com", "wellness.com", "sharecare.com", "caredash.com",
+        "psychologytoday.com", "opencare.com",
+        # Legal
+        "avvo.com", "findlaw.com", "justia.com", "lawyers.com", "nolo.com",
+        "martindale.com", "superlawyers.com", "lawinfo.com",
+        # Travel, hospitality, dining
+        "tripadvisor.com", "expedia.com", "booking.com", "hotels.com",
+        "kayak.com", "trivago.com", "airbnb.com", "vrbo.com", "viator.com",
+        "opentable.com", "grubhub.com", "doordash.com",
+        # Retail marketplaces
+        "amazon.com", "walmart.com", "ebay.com", "etsy.com", "target.com",
+        "wayfair.com", "homedepot.com", "lowes.com", "chewy.com",
+        # Auto
+        "cars.com", "carfax.com", "autotrader.com", "cargurus.com",
+        "edmunds.com", "kbb.com", "truecar.com", "repairpal.com",
+        # Jobs and schools
+        "indeed.com", "glassdoor.com", "ziprecruiter.com", "niche.com",
+        "greatschools.org",
+        # Weddings and events
+        "theknot.com", "weddingwire.com", "zola.com", "eventbrite.com",
+        # Money
+        "bankrate.com", "nerdwallet.com", "lendingtree.com", "valuepenguin.com",
+        "insurify.com", "thezebra.com",
+        # Care and pets
+        "care.com", "rover.com",
+        # General business directories
+        "bbb.org", "yellowpages.com", "manta.com", "chamberofcommerce.com",
+        "mapquest.com", "foursquare.com", "expertise.com", "birdeye.com",
+    ],
     # NO DEMAND IS A DIFFERENT STATE FROM LOW DEMAND. Under this monthly total
     # the list did not measure at all, and the price that comes out is the
     # anchor plus the competition adder with every demand signal at zero. Well
@@ -1382,6 +1487,20 @@ def _cfg_apply(d, target):
             target["addon_volume_discount_tiers"] = at
     if "vol_add_ramp" in d and isinstance(d["vol_add_ramp"], list) and len(d["vol_add_ramp"]) == 2:
         target["vol_add_ramp"] = [float(d["vol_add_ramp"][0]), float(d["vol_add_ramp"][1])]
+    # THE LIST IS A CONSTANT LIKE ANY OTHER. A new marketplace turns up in a
+    # vertical every year, and a lever that needs a deploy to notice one is a
+    # lever that quietly stops firing. Normalised on the way in so a pasted
+    # "https://www.Zillow.com/" matches the domain the SERP reports.
+    if "pageone_aggregator_domains" in d and isinstance(
+            d["pageone_aggregator_domains"], list):
+        doms = []
+        for x in d["pageone_aggregator_domains"]:
+            s = (str(x or "").strip().lower()
+                 .replace("https://", "").replace("http://", "")
+                 .replace("www.", "").strip("/").split("/")[0])
+            if s and s not in doms:
+                doms.append(s)
+        target["pageone_aggregator_domains"] = sorted(doms)
     if "geo_pricing_mode" in d and d["geo_pricing_mode"] in ("pct", "card"):
         target["geo_pricing_mode"] = d["geo_pricing_mode"]
     # volume_brackets: [[lo, hi, dollars_per_search], ...]; hi may be null/"".
@@ -1443,6 +1562,9 @@ def _cfg_apply(d, target):
                         ("dfs_calls_per_minute", int),
                         ("dfs_calls_per_minute_other", int),
                         ("geo_pct_default", float),
+                        ("pageone_aggregator_add", int),
+                        ("pageone_aggregator_share_min", float),
+                        ("pageone_aggregator_min_terms", int),
                         ("min_term_months", int),
                         ("nationwide_service_extras", float)]:
         if key in d and d[key] not in (None, ""):
@@ -11602,10 +11724,12 @@ def stage3_rankcheck(all_kws, domain, markets, state, brand):
                 results[i] = (None, [], [], True)
 
     table, paa, ranked, errors = [], [], 0, 0
-    rivals = {}
+    rivals, serp_terms = {}, 0
     for kw, (pos, qs, doms, err) in zip(kws, results):
         table.append({"keyword": kw, "position": pos, "error": err})
         paa.extend(qs)
+        if doms:
+            serp_terms += 1
         for _d in (doms or []):
             rivals[_d] = rivals.get(_d, 0) + 1
         if err:
@@ -11620,6 +11744,8 @@ def stage3_rankcheck(all_kws, domain, markets, state, brand):
             # Nothing was measured, so there is no evidence of zero ranking.
             "zero_ranking": bool(checked) and frac < CFG["zero_ranking_frac"],
             "paa_pool": list(dict.fromkeys(paa)),
+            # Measured off the whole set, before the cap below cuts it.
+            "aggregators": aggregators_from_counts(rivals, serp_terms),
             "rivals": [{"domain": d, "appearances": n}
                        for d, n in sorted(rivals.items(),
                                           key=lambda kv: (-kv[1], kv[0]))
@@ -11837,6 +11963,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  ecommerce=False, industry="", ai_search=False, core_seo=True,
                  national_demand=False, geo_override=None, addon_override=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
+                 pageone_agg_share=None, pageone_agg_terms=None,
                  _formula_pass=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
@@ -11976,6 +12103,23 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     _mult = (float(CFG.get("nationwide_service_extras", 1.0)) if nw_service
              else (0.0 if rule_extras_off else 1.0))
     extras_off = _mult != 1.0
+
+    # WHO HOLDS PAGE ONE, AS OPPOSED TO HOW STRONG THEY ARE — see
+    # pageone_aggregator_add. A flat partner-dollar add, like the industry card
+    # and the band above it, because it describes a fixed difference in the job
+    # rather than a share of anything.
+    #
+    # THIS ONE IS MUTED BY A BIG-ORG CARD. The band above is deliberately not:
+    # it is a property of the market. This is a SERP reading, and the cards that
+    # set extras_off (hospital, telehealth, behavioral health) price on the size
+    # of the organisation rather than on its SERPs — stacking a page-one premium
+    # on top of one is the double-count the insurance card already paid for.
+    pageone_agg_add, pageone_agg_why = pageone_aggregator_add(
+        pageone_agg_share, pageone_agg_terms)
+    if extras_off and pageone_agg_add:
+        pageone_agg_add = int(round(pageone_agg_add * _mult))
+        pageone_agg_why += " (muted: priced on organisation size)"
+    base_pre += pageone_agg_add
     if extras_off and vol_add:
         base_pre -= vol_add
         vol_add = int(round(vol_add * _mult))
@@ -12006,6 +12150,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     if manual_base:
         base = r50(float(base_override))
         zr_uplift = 0; vol_add = 0; sd_uplift = 0
+        # An operator-set base is the whole base. The components below it did
+        # not contribute to this price, so they are not reported as though they
+        # had — the breakdown would otherwise print a $300 row that is not in
+        # the number above it. (The page-one BAND above is a standing instance
+        # of the same thing, left alone here only because it is set to 0.)
+        if pageone_agg_add:
+            pageone_agg_add = 0
+            pageone_agg_why = "not applied — the base was set by hand"
     else:
         # Both uplifts are shares of the same pre-uplift base, added rather
         # than compounded: a 7% and a 5% is 12%, not 12.35%. Compounding two
@@ -12375,6 +12527,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                national_demand=national_demand,
                                geo_override=None, addon_override=None, goal=goal,
                                pageone_rank=pageone_rank, site_rebuild=site_rebuild,
+                               pageone_agg_share=pageone_agg_share,
+                               pageone_agg_terms=pageone_agg_terms,
                                _formula_pass=True)
             _formula = {"client_tiers": _fp["client_tiers"],
                         "ai_search": ({"client_add": _fp["ai_search"]["client_add"],
@@ -12425,6 +12579,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             # ways depending on when the button was pressed. Said out loud so
             # step 4 can warn instead of quietly under-quoting.
             "pageone_measured": pageone_band is not None,
+            # The second page-one reading: not how strong the incumbents are,
+            # but how much of the page belongs to national aggregators.
+            "pageone_aggregator_add": int(pageone_agg_add or 0),
+            "pageone_aggregator_share": (round(float(pageone_agg_share), 3)
+                                         if pageone_agg_share is not None else None),
+            "pageone_aggregator_why": pageone_agg_why,
+            "pageone_aggregator_measured": pageone_agg_share is not None,
             "ai_search": ai,
             "floored": floored, "client_floor": floor, "manual_base": manual_base,
             # WHAT THE PRICE IS MADE OF, and whether anything made it.
@@ -12440,6 +12601,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                 "competitive_adder": int(adder or 0),
                 "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
                 "pageone_anchor_add": int(pageone_add or 0),
+                "pageone_aggregator_add": int(pageone_agg_add or 0),
                 "volume_add": int(vol_add or 0),
                 "zero_ranking_uplift_pct": zr_uplift,
                 "site_debt_uplift_pct": sd_uplift, "site_debt": site_debt,
@@ -13017,7 +13179,10 @@ def quote():
             return jsonify({"error": "No keywords returned — try broader seeds or check the market/state."}), 400
         m3 = stage3_metrics(s1["head"], markets, state)
         r3 = stage3_rankcheck(s1["all"], domain, markets, state, brand)
+        _agg = r3.get("aggregators") or {}
         p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon,
+                          pageone_agg_share=_agg.get("share"),
+                          pageone_agg_terms=_agg.get("terms"),
                           ecommerce=bool(d.get("ecommerce")),
                           industry=(d.get("industry") or ""),
                           ai_search=bool(d.get("ai_search")),
@@ -14072,7 +14237,7 @@ def api_rankings_collect():
     dom = domain.replace("https://", "").replace("http://", "").replace("www.", "").strip("/")
     top_n = CFG["zero_ranking_top_n"]
     done, pending, paa = [], [], []
-    rivals = {}
+    rivals, serp_terms = {}, 0
 
     def one(t):
         # A TASK THAT NO LONGER EXISTS IS NOT A SLOW TASK.
@@ -14130,6 +14295,8 @@ def api_rankings_collect():
             paa.extend(qs)
             # WHO IS ALREADY THERE. Collected per keyword and counted across the
             # list below, because one SERP is an anecdote and ten is a market.
+            if doms:
+                serp_terms += 1
             for _d in doms:
                 rivals[_d] = rivals.get(_d, 0) + 1
         elif status == "gone":
@@ -14142,6 +14309,7 @@ def api_rankings_collect():
         else:
             pending.append(t)
     return jsonify({"done": done, "pending": pending, "paa": paa[:40],
+                    "aggregators": aggregators_from_counts(rivals, serp_terms),
                     "rivals": [{"domain": d, "appearances": n}
                                for d, n in sorted(rivals.items(),
                                                   key=lambda kv: (-kv[1], kv[0]))
@@ -14224,6 +14392,14 @@ def api_market_signals():
     strength = pageone_strength(_rivrows)
     band = _pageone_bucket(strength)
     band_add = int((CFG.get("pageone_anchor_add") or {}).get(band, 0) if band else 0)
+    # WHO page one is, next to how strong it is. Prefers the rank check's own
+    # count, which was taken before serp_rival_cap cut the list; falls back to
+    # the rows this endpoint was handed, which is the same measurement on a
+    # thinner denominator.
+    agg = d.get("aggregators") if isinstance(d.get("aggregators"), dict) else None
+    if not agg or agg.get("share") is None:
+        agg = pageone_aggregators(_rivrows)
+    agg_add, agg_why = pageone_aggregator_add(agg.get("share"), agg.get("terms"))
 
     return jsonify({
         "domain": domain,
@@ -14232,6 +14408,12 @@ def api_market_signals():
         "pageone_rank": strength,
         "pageone_band": band,
         "pageone_add": band_add,
+        "aggregators": agg,
+        "pageone_agg_share": agg.get("share"),
+        "pageone_agg_terms": agg.get("terms"),
+        "pageone_aggregator_add": agg_add,
+        "pageone_aggregator_why": agg_why,
+        "pageone_aggregator_domains": agg.get("domains") or [],
         "median_rival_rank": median_rival,
         "top_rival_rank": top_rival,
         "gap": gap,
@@ -14245,7 +14427,7 @@ def api_market_signals():
         # NO LONGER ALWAYS FALSE. As of 2026-08-18 the page-one band carries a
         # partner-dollar add, so this says which of the three signals moved the
         # quote. Authority-gap and site condition are still reported only.
-        "applied_to_price": bool(band_add),
+        "applied_to_price": bool(band_add or agg_add),
     })
 
 
@@ -14386,7 +14568,14 @@ def api_backmeasure_one():
     # version snapshot, no reordering, no price touched.
     _rivrows = [{"domain": x, "rank": ranks.get(x), "appearances": n}
                 for x, n in order[:int(CFG.get("serp_rival_cap", 12))]]
+    _agg = aggregators_from_counts(rivals, measured)
     signals = {"pageone_rank": pageone_strength(_rivrows),
+               # Measured off the full set for the same reason the price is —
+               # the cap keeps the repeat domains and drops the one-offs, which
+               # is the shape of an aggregator page one whether or not it is one.
+               "pageone_agg_share": _agg.get("share"),
+               "pageone_agg_terms": _agg.get("terms"),
+               "pageone_agg_domains": _agg.get("domains") or [],
                "median_rival_rank": median_rival,
                "top_rival_rank": (rr[-1] if rr else None),
                "client_rank": client_rank, "client_measured": client_measured,
@@ -14411,6 +14600,10 @@ def api_backmeasure_one():
         "pageone_band": _pageone_bucket(signals.get("pageone_rank")),
         "pageone_add": int((CFG.get("pageone_anchor_add") or {}).get(
             _pageone_bucket(signals.get("pageone_rank")) or "", 0)),
+        "pageone_agg_share": _agg.get("share"),
+        "pageone_agg_domains": _agg.get("domains") or [],
+        "pageone_aggregator_add": pageone_aggregator_add(
+            _agg.get("share"), _agg.get("terms"))[0],
         "client_rank": client_rank,
         "client_measured": client_measured,
         # Only when the client was actually measured — see the note in
@@ -15012,7 +15205,7 @@ def api_rankings():
                           if mk_named else loc)
     batch = order
     results, paa = [], []
-    rivals = {}
+    rivals, serp_terms = {}, 0
     hits = {}
     to_fetch = []
     err_msgs = []
@@ -15021,6 +15214,8 @@ def api_rankings():
         if c != "MISS":
             hits[kw] = c
             # A cached row still tells you who holds page one.
+            if cdoms:
+                serp_terms += 1
             for _d in cdoms:
                 rivals[_d] = rivals.get(_d, 0) + 1
         else:
@@ -15043,6 +15238,8 @@ def api_rankings():
                     # Google answers fast enough to skip the queue, which is how
                     # Nob Hill reported "0 incumbents measured" with its rivals
                     # sitting in the response. (2026-08-17)
+                    if doms:
+                        serp_terms += 1
                     for _d in (doms or []):
                         rivals[_d] = rivals.get(_d, 0) + 1
                 except Exception as e:
@@ -15111,6 +15308,7 @@ def api_rankings():
                     "n_cached": len(hits), "n_fetched": len(to_fetch),
                     "n_errors": len(err_msgs), "error_reason": top_err,
                     "rank_location": note,
+                    "aggregators": aggregators_from_counts(rivals, serp_terms),
                     "rivals": [{"domain": d, "appearances": n}
                                for d, n in sorted(rivals.items(),
                                                   key=lambda kv: (-kv[1], kv[0]))
@@ -15372,7 +15570,28 @@ def api_price():
     # from "nobody strong" and is carried through as such.
     pageone_rank = d.get("pageone_rank", None)
     pageone_rank = int(pageone_rank) if pageone_rank not in (None, "") else None
+    # HOW MUCH OF PAGE ONE THE AGGREGATORS HOLD. The share arrives already
+    # measured — the rank check counts it off the UNCAPPED domain list, which is
+    # the only place the denominator is honest (see aggregators_from_counts).
+    # A caller that sends only rivals gets it measured here instead, and the
+    # comment on that helper is the caveat: a rivals list that has been through
+    # serp_rival_cap has had its one-off local sites cut and its repeat
+    # aggregators kept, so the share reads high. Accepted for a caller that has
+    # nothing else; never the path the panel takes.
+    pageone_agg_share = d.get("pageone_agg_share", None)
+    pageone_agg_terms = d.get("pageone_agg_terms", None)
+    if pageone_agg_share in (None, "") and d.get("rivals"):
+        _agg = pageone_aggregators(d.get("rivals") or [])
+        pageone_agg_share = _agg["share"]
+        if pageone_agg_terms in (None, ""):
+            pageone_agg_terms = _agg["terms"]
+    pageone_agg_share = (float(pageone_agg_share)
+                         if pageone_agg_share not in (None, "") else None)
+    pageone_agg_terms = (int(pageone_agg_terms)
+                         if pageone_agg_terms not in (None, "") else None)
     p = stage4_price(band, adder, zero, addon, markup, pageone_rank=pageone_rank,
+                     pageone_agg_share=pageone_agg_share,
+                     pageone_agg_terms=pageone_agg_terms,
                      pct_not_ranking=pct_not_ranking, total_volume=total_volume,
                      site_debt=site_debt,
                      base_override=base_override, ecommerce=bool(d.get("ecommerce")),
@@ -15413,6 +15632,10 @@ def api_price():
                     "pageone_anchor_add": p.get("pageone_anchor_add", 0),
                     "pageone_band": p.get("pageone_band"),
                     "pageone_measured": p.get("pageone_measured", False),
+                    "pageone_aggregator_add": p.get("pageone_aggregator_add", 0),
+                    "pageone_aggregator_share": p.get("pageone_aggregator_share"),
+                    "pageone_aggregator_why": p.get("pageone_aggregator_why", ""),
+                    "pageone_aggregator_measured": p.get("pageone_aggregator_measured", False),
                     "floored": p.get("floored", False),
                     "client_floor": p.get("client_floor"),
                     "price_basis": p.get("price_basis", {}),
@@ -15659,6 +15882,10 @@ def api_config_get():
         "geo_pricing_mode": CFG.get("geo_pricing_mode", "pct"),
         "geo_pct_tiers": CFG.get("geo_pct_tiers", []),
         "geo_pct_default": CFG.get("geo_pct_default", 60),
+        "pageone_aggregator_add": CFG.get("pageone_aggregator_add", 0),
+        "pageone_aggregator_share_min": CFG.get("pageone_aggregator_share_min", 0.5),
+        "pageone_aggregator_min_terms": CFG.get("pageone_aggregator_min_terms", 3),
+        "pageone_aggregator_domains": CFG.get("pageone_aggregator_domains", []),
         "addon_volume_discount_tiers": CFG.get("addon_volume_discount_tiers", []),
         "perf_page_depth": CFG.get("perf_page_depth", 50),
         "perf_eligible_min_share": CFG.get("perf_eligible_min_share", 0.5),
@@ -17021,6 +17248,10 @@ def calibration_rows(payloads):
                                   is not None
                                   else (p.get("signals") or {}).get("median_rival_rank")),
             "top_rival_rank": (p.get("signals") or {}).get("top_rival_rank"),
+            # Also attached by the back-measure. None on a quote it has not run
+            # on, which sits that quote out of the aggregator split rather than
+            # forming a bucket of unmeasured ones.
+            "pageone_agg_share": (p.get("signals") or {}).get("pageone_agg_share"),
             "total_volume": kw.get("total_volume") or pricing.get("total_volume"),
             "formula": {t: pairs[t][0] for t in _TIERS},
             "actual": {t: pairs[t][1] for t in _TIERS},
@@ -17336,6 +17567,107 @@ def pageone_strength(rivals, min_appearances=2):
     return max(repeated) if repeated else max(v for v, _ in ranked)
 
 
+def _is_aggregator(domain):
+    """Is this domain one of the defined aggregators/marketplaces?
+
+    Matches the registrable domain and any subdomain of it, so
+    `biz.yelp.com` and `www.zillow.com` count and `notzillow.com` does not.
+    """
+    d = str(domain or "").lower().strip().replace("www.", "").strip("/")
+    if not d:
+        return False
+    for agg in (CFG.get("pageone_aggregator_domains") or []):
+        a = str(agg or "").lower().strip()
+        if a and (d == a or d.endswith("." + a)):
+            return True
+    return False
+
+
+def pageone_aggregators(rivals):
+    """HOW MUCH OF PAGE ONE THE AGGREGATORS HOLD, across the terms measured.
+
+    Counts SLOTS, not domains: a rival row carries the number of the client's
+    terms that domain appeared on, so one Zillow sitting on eight of ten terms
+    is eight slots, and a single stray listing is one. That is the quantity the
+    price cares about — how much of the page the client cannot have.
+
+    A business's own social profile counts for NOBODY, numerator or denominator
+    (see _PAGEONE_NON_RIVAL): a Facebook result is a slot the client can take
+    by owning it, so leaving it in the denominator would dilute a genuinely
+    locked page. Returns share=None when nothing was measured, which is a
+    different state from "no aggregators" and is carried through as such.
+    """
+    slots = agg_slots = 0
+    names, terms = [], 0
+    for r in (rivals or []):
+        dom = str((r.get("domain") if isinstance(r, dict) else r) or "").lower()
+        dom = dom.replace("www.", "")
+        if not dom or dom in _PAGEONE_NON_RIVAL:
+            continue
+        n = int((r.get("appearances") if isinstance(r, dict) else 0) or 0) or 1
+        slots += n
+        terms = max(terms, n)
+        if _is_aggregator(dom):
+            agg_slots += n
+            names.append(dom)
+    return {"share": (agg_slots / slots) if slots else None,
+            "slots": slots, "aggregator_slots": agg_slots,
+            # The most-seen aggregator's appearances is a floor on how many
+            # terms were measured — the rank check's own count is better, and
+            # overrides this wherever it is in hand.
+            "terms": terms,
+            "domains": sorted(set(names))}
+
+
+def aggregators_from_counts(counts, terms=None):
+    """pageone_aggregators() off the UNCAPPED domain counts.
+
+    The rivals list every endpoint returns is truncated to serp_rival_cap, and
+    it is sorted by appearances — so the domains that survive the cut are
+    exactly the ones that repeat, which is exactly the aggregators. Measuring
+    the share off the truncated list would read a locked page one off almost
+    any SERP. Measured here, before anything is cut.
+    """
+    out = pageone_aggregators([{"domain": d, "appearances": n}
+                               for d, n in (counts or {}).items()])
+    if terms:
+        out["terms"] = int(terms)
+    return out
+
+
+def pageone_aggregator_add(share, terms=None):
+    """The dollars the aggregator lock-up is worth, and why — or zero.
+
+    Returns (dollars, reason). Never fires on an unmeasured page one, and never
+    on a measurement too thin to mean anything: `None` share and a two-term read
+    both come back $0 with the reason saying which, so step 4 can print the
+    state instead of an unexplained absence.
+    """
+    add = int(CFG.get("pageone_aggregator_add", 0) or 0)
+    cut = float(CFG.get("pageone_aggregator_share_min", 0.5))
+    min_terms = int(CFG.get("pageone_aggregator_min_terms", 3))
+    if share is None:
+        return 0, "page one not measured"
+    if terms is not None and int(terms) < min_terms:
+        return 0, f"only {int(terms)} term(s) measured — needs {min_terms}"
+    if float(share) < cut:
+        return 0, (f"aggregators hold {float(share) * 100:.0f}% of page one — "
+                   f"under the {cut * 100:.0f}% cut")
+    return add, (f"aggregators hold {float(share) * 100:.0f}% of page one")
+
+
+def _agg_bucket(share):
+    """The back-measure's bucket for this signal — measured before it is
+    believed, exactly like the eight variables before it. None for a quote
+    where page one was never read: not-yet-measured is a fact about the
+    measuring, not about the price."""
+    if share is None:
+        return None
+    cut = float(CFG.get("pageone_aggregator_share_min", 0.5))
+    return ("page one: aggregator-held" if float(share) >= cut
+            else "page one: local/mixed")
+
+
 def _pageone_bucket(rank):
     """Who already holds page one, by the median incumbent's backlink authority.
 
@@ -17382,6 +17714,12 @@ CALIB_DRIVERS = [
     # small" and how to spot one outlier wearing several hats, and a variable
     # read off a table by eye gets neither. (2026-08-17)
     ("page one", lambda r: _pageone_bucket(r.get("median_rival_rank"))),
+    # WHO page one is, as opposed to how strong it is — the tenth variable, and
+    # the one the authority band above was a stand-in for. It moves the price as
+    # of 2026-09-19 on ONE fitted quote, which makes measuring it across the book
+    # more urgent than the others, not less: this panel is where a lever fitted
+    # on one client either earns a second datapoint or gets reverted.
+    ("page one aggregators", lambda r: _agg_bucket(r.get("pageone_agg_share"))),
     # INDUSTRY, tested the same way as everything else rather than assumed. There
     # is already an industry pricing rule (industry_anchor_add), so if BE's prices
     # move by vertical this is the variable that will show it — and if they do not,

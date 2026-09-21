@@ -77,6 +77,21 @@ BENCH = [
     dict(name="Keller Builds", band="single_city", adder=0, vol=0, nr=25,
          actual=(2950, 3950, 4950),
          why="tier_step_flat note: floor base, steps $1,000"),
+    # THE ONE AGGREGATOR-HELD PAGE ONE IN THE BOOK, and the quote
+    # pageone_aggregator_add is fitted on. Same twenty terms, same one city, same
+    # 80% not ranking as Nob Hill Dental directly above -- and $600 apart in what
+    # Brendan sent. The only input that differs is who holds page one: Zillow,
+    # Trulia, Redfin and Apartments.com here, five other Salem dentists there.
+    # Reconstructible as of 2026-09-19 because the lever gives its page one a
+    # place in the formula; before that it was cited in the back-measure only.
+    dict(name="Amare Homes", band="single_city", adder=0, vol=0, nr=80,
+         agg=0.86, agg_terms=20, actual=(3550, None, None),
+         why="tier_step_flat note: 'Nob Hill and Amare Homes are both 20 terms, "
+             "one city, 80% not ranking, and $600 apart'. The 0.86 share is "
+             "RECONSTRUCTED from pageone_strength's note that its page one is "
+             "Zillow, Trulia and Redfin -- the ledger records who, not how many "
+             "slots. The lever is a threshold, so any share over the 0.50 cut "
+             "prices identically and the exact figure is not load-bearing"),
     dict(name="Red Shoes", band="single_city", adder=0, vol=0, nr=23,
          actual=(2950, 3950, 4950),
          why="tier_step_flat note: floor base, steps $1,000"),
@@ -108,7 +123,9 @@ UNRECONSTRUCTIBLE = [
     ("Ooten Law", "fitted the legal +$700 anchor add; its own inputs are not "
                   "written down"),
     ("NASSCO", "cited for scope and page-one strength, never for a price fit"),
-    ("Amare / NPAIHB", "cited only in the page-one back-measure"),
+    ("NPAIHB", "cited only in the page-one back-measure. $3,550 like Amare, "
+               "but its page one is ihs.gov and Wikipedia -- not an aggregator "
+               "lock-up, so the new lever does not explain it either"),
 ]
 
 TIERS = ("base", "intermediate", "advanced")
@@ -131,6 +148,11 @@ def quote(d):
                          addon_markets=0, markup_pct=35,
                          pct_not_ranking=d.get("nr"),
                          total_volume=d.get("vol") or 0,
+                         # Who holds page one. Absent on every client the
+                         # back-measure has not read a SERP for, which prices as
+                         # not measured rather than as no aggregators.
+                         pageone_agg_share=d.get("agg"),
+                         pageone_agg_terms=d.get("agg_terms"),
                          industry=d.get("industry", ""))
     return p["handoff"]["package"], adder
 
