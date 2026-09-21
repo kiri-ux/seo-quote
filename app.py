@@ -1491,8 +1491,12 @@ def _cfg_apply(d, target):
     # vertical every year, and a lever that needs a deploy to notice one is a
     # lever that quietly stops firing. Normalised on the way in so a pasted
     # "https://www.Zillow.com/" matches the domain the SERP reports.
+    # AN EMPTY LIST IS IGNORED, not obeyed. A pane rendered against a server
+    # that predates this constant sends [] for it, and taking that literally
+    # would leave the quote with no aggregators to match and the lever silently
+    # dead. Turning the lever off is pageone_aggregator_add = 0, which says so.
     if "pageone_aggregator_domains" in d and isinstance(
-            d["pageone_aggregator_domains"], list):
+            d["pageone_aggregator_domains"], list) and d["pageone_aggregator_domains"]:
         doms = []
         for x in d["pageone_aggregator_domains"]:
             s = (str(x or "").strip().lower()

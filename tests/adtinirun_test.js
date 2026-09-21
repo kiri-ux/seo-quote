@@ -46,6 +46,9 @@ const CFG = {
   default_markup_pct: 35, nationwide_service_extras: 1,
   geo_pct_tiers: [[90, 74], [70, 66], [40, 59], [0, 48]], geo_pct_default: 57,
   min_term_months: 6, pin_head_terms: 3, pin_min_volume: 300,
+  pageone_aggregator_add: 300, pageone_aggregator_share_min: 0.5,
+  pageone_aggregator_min_terms: 3,
+  pageone_aggregator_domains: ['zillow.com', 'trulia.com', 'yelp.com'],
 };
 
 (async () => {
@@ -69,7 +72,12 @@ const CFG = {
     if (url === '/api/rankings') {
       const results = (body.batch || []).map((x, i) => ({
         kw: x.kw, pos: i === 0 ? 4 : 'Not Found', ranked_top: i === 0, error: false }));
-      return json(route, { results, paa: [] });
+      // WHO HOLDS PAGE ONE, counted off the same SERPs the rank check already
+      // fetched. Two batches, so the counts have to ADD UP rather than the
+      // last one winning.
+      return json(route, { results, paa: [],
+        aggregators: {slots: 10, aggregator_slots: 7, terms: 5,
+                      domains: ['zillow.com', 'trulia.com']} });
     }
     if (url === '/api/price') return json(route, PRICE);
     if (url === '/api/config') return json(route, CFG);
@@ -139,6 +147,8 @@ const CFG = {
     R.anchor = document.querySelector('#cfgGlobal [data-g="geo_anchor.single_city"]').value;
     R.break1 = document.querySelector('#cfgGlobal [data-g="bid_score_breaks.0"]').value;
     R.tierRows = document.querySelectorAll('#cfgGlobal [data-t="zero_ranking_tiers"]').length;
+    R.aggAdd = document.querySelector('#cfgGlobal [data-g="pageone_aggregator_add"]').value;
+    R.aggDoms = document.querySelector('#cfgGlobal [data-l="pageone_aggregator_domains"]').value;
     R.bracketRows = document.querySelectorAll('#cfgGlobal [data-b="volume_brackets"]').length;
     R.openTopBlank = document.querySelectorAll('#cfgGlobal [data-b="volume_brackets"]')[2]
       .querySelectorAll('input')[1].value;
@@ -523,7 +533,19 @@ const CFG = {
     'cfg.title': [cfg.title, 'Pricing Config'],
     'cfg.groups': [cfg.groups.join(' / '),
       'Step 1 · Keyword grid / Step 2 · Competition / Step 3 · Zero-ranking uplift'
+      + ' / Step 3 · Page-one competition'
       + ' / Step 4 · Volume / Step 4 · Anchors / AI Search / Keyword list consistency'],
+    'cfg.aggAdd': [cfg.aggAdd, '300'],
+    // The aggregator set is editable here, and it round-trips as text.
+    'cfg.aggDoms': [cfg.aggDoms, 'zillow.com, trulia.com, yelp.com'],
+    // AN UNTOUCHED LIST DOES NOT RIDE ALONG. It read back as an edit on every
+    // quote, which posted an instruction to wipe the aggregator set.
+    // THE KNOBS ABOVE DO NOTHING UNLESS THE READING REACHES THE PRICER. This
+    // tab sent no page-one reading at all until 2026-09-21, so the lever could
+    // be configured here and never fire.
+    'cfg.aggShareReachesThePricer': [priceCall.body.pageone_agg_share, 0.7],
+    'cfg.aggTermsAddUpAcrossBatches':
+      [priceCall.body.pageone_agg_terms, 5 * rankCalls.length],
     'cfg.anchorLoaded': [cfg.anchor, '2250'],
     'cfg.nestedLoaded': [cfg.break1, '5'],
     'cfg.tierRows': [cfg.tierRows, 4],

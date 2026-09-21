@@ -1638,6 +1638,10 @@ function priceRows(r){
         + (p.pct_not_ranking != null
            ? ` \u00b7 ${Math.round(p.pct_not_ranking)}% of measured terms not ranking` : ''),
       'uplift'],
+    ['Page-one competition', p.pageone_aggregator_share == null ? 'not measured'
+      : money(p.pageone_aggregator_add || 0)
+        + ` \u00b7 aggregators hold ${Math.round(p.pageone_aggregator_share * 100)}% of page one`,
+      'pageone'],
     ['Volume add', money(p.volume_add || 0)
       + ` \u00b7 ${(p.total_volume || 0).toLocaleString()}/mo`, 'volume'],
     // SITE CONDITION. Unmeasured says so rather than reading as clean -- a
@@ -2431,6 +2435,17 @@ const CFGSPEC = [
    rows:[
     ['zero_ranking_top_n','Positions checked (top-N)','a term ranks if it appears in the top N results'],
    ]},
+  {h:'Step 3 · Page-one competition',
+   text:'When the aggregators listed below hold at least this share of the page-one slots '
+      + 'across the client\u2019s terms, this flat partner cost is added to the base.',
+   rows:[
+    ['pageone_aggregator_add','Page-one competition $','0 turns it off'],
+    ['pageone_aggregator_share_min','Fires at (share of page one)','0.5 = aggregators hold most of the page'],
+    ['pageone_aggregator_min_terms','Minimum terms measured','one SERP is an artifact'],
+   ],
+   list:{key:'pageone_aggregator_domains',
+         hint:'The aggregators. One per line or comma-separated. Social profiles are excluded '
+            + 'from the count on both sides and do not belong here.'}},
   {h:'Step 4 · Volume',
    text:'Above the baseline, add $ per additional monthly search at a declining rate per band. '
       + 'Volume prices opportunity: the add ramps down as visibility improves.',
@@ -2474,6 +2489,23 @@ const CFGSPEC = [
    ]},
 ];
 
+// HOW MUCH OF PAGE ONE THE AGGREGATORS HOLD, added up across rank batches.
+// The server counts the slots off the SERPs the rank check already fetched and
+// before serp_rival_cap truncates the rivals list -- the cap keeps the domains
+// that repeat, which is what an aggregator does, so a share divided out of the
+// truncated list would read a locked page one off almost any SERP. These are
+// the raw counts; they only ever add up.
+function addAgg(store, a){
+  if (!a || !a.slots) return store;
+  const s = store || {slots: 0, aggregator_slots: 0, terms: 0, domains: []};
+  s.slots += a.slots || 0;
+  s.aggregator_slots += a.aggregator_slots || 0;
+  s.terms += a.terms || 0;
+  (a.domains || []).forEach(d => { if (s.domains.indexOf(d) < 0) s.domains.push(d); });
+  s.share = s.slots ? s.aggregator_slots / s.slots : null;
+  return s;
+}
+
 let CFGVALS = null, CFGVIEW = null;
 const cfgGet = (o, path) => path.split('.').reduce((v, k) => (v == null ? v : v[k]), o);
 
@@ -2491,6 +2523,13 @@ function cfgTiersHtml(t){
       <span>${t.mid}</span><input type="number" value="${row[1]}">
       <span>${t.tail}</span>
     </div>`).join('');
+}
+// A LIST, NOT A NUMBER. The aggregator set is a constant like any other and
+// a new marketplace turns up in a vertical every year, so it is editable here
+// rather than only in the file.
+function cfgListHtml(l){
+  return `<p class="hint">${l.hint || ''}</p>
+    <textarea data-l="${l.key}" rows="4" style="width:100%;font-size:12px;font-family:ui-monospace,Menlo,monospace">${esc((cfgGet(CFGVIEW, l.key) || []).join(', '))}</textarea>`;
 }
 function cfgBracketsHtml(key){
   return (cfgGet(CFGVIEW, key) || []).map(b => `
@@ -2515,6 +2554,7 @@ async function cfgGlobalLoad(){
       <summary>${g.h}${g.note ? `<i>${g.note}</i>` : ''}</summary>
       ${g.text ? `<p class="hint">${g.text}</p>` : ''}
       ${cfgRowsHtml(g.rows)}
+      ${g.list ? cfgListHtml(g.list) : ''}
       ${g.brackets ? cfgBracketsHtml(g.brackets) : ''}
       ${cfgRowsHtml(g.rows2)}
       ${g.tiers ? cfgTiersHtml(g.tiers) : ''}
@@ -2532,6 +2572,15 @@ function cfgPaneRead(){
   });
   ['bid_score_breaks', 'vol_add_ramp'].forEach(k => {
     if (out[k]) out[k] = [out[k][0], out[k][1]];
+  });
+  $('cfgGlobal').querySelectorAll('[data-l]').forEach(el => {
+    const v = el.value.split(/[\s,]+/).filter(Boolean);
+    // AN EMPTY BOX IS NOT AN EMPTY LIST. A server that predates the constant
+    // serves no value for it, the box renders blank, and reading it back as []
+    // made the diff below call it an edit -- so every quote carried an
+    // instruction to wipe the aggregator set, and the lever would never fire
+    // again. Blank means the pane has nothing to say about it.
+    if (v.length) out[el.dataset.l] = v;
   });
   $('cfgGlobal').querySelectorAll('[data-t]').forEach(row => {
     const k = row.dataset.t, n = row.querySelectorAll('input');
@@ -4009,6 +4058,8 @@ async function generate(){
           tick(batch);
           return {results: batch.map(x => ({kw: x.kw, pos: '\u2014', error: true}))};
         })));
+    let agg = null;
+    settled.forEach(rk => { agg = addAgg(agg, rk.aggregators); });
     settled.forEach(rk => (rk.results || []).forEach(x => {
       ranks[String(x.kw).toLowerCase()] = x.pos;
       table.push(x);
@@ -4063,7 +4114,7 @@ async function generate(){
     if (d.site) {
       try {
         signals = await post('/api/market_signals',
-          {domain: d.site, rivals: [], cfg: r.over});
+          {domain: d.site, rivals: [], aggregators: agg, cfg: r.over});
       } catch (e) { signals = {}; }
     }
     const health = signals.health || {};
@@ -4111,11 +4162,17 @@ async function generate(){
       // The page-one median also comes off this pass now, but wiring it would
       // change a SECOND pricing input in the same commit. Left null
       // deliberately; the SEO tab sends null too.
-      pageone_rank: null};
+      pageone_rank: null,
+      // WHO holds page one, which is a different reading from how strong they
+      // are, and the one that carries dollars. Counted off the rank batches
+      // above, so it costs no extra call. Null until the rank check has read a
+      // page one -- not measured is not "no aggregators".
+      pageone_agg_share: agg ? agg.share : null,
+      pageone_agg_terms: agg ? agg.terms : null};
     const price = await post('/api/price', priceReq);
 
     r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
-      signals, health,
+      signals, health, agg,
       rankReq: {common, geo, st, band},
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {}};
     // One place builds the headline, so the row, the summary and the history
@@ -4632,6 +4689,10 @@ async function recheckRanks(i){
         const batch = left.slice(n, n + BATCH).map(kw => ({kw}));
         const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
                                   null, say);
+        // ADDS, never double-counts: this pass only re-reads terms whose
+        // lookup failed or never ran, and a failed lookup contributed no
+        // page-one slots the first time round.
+        res.agg = addAgg(res.agg, rk.aggregators);
         (rk.results || []).forEach(x => {
           const key = String(x.kw).toLowerCase();
           ranks[key] = x.pos;
@@ -4674,6 +4735,9 @@ async function recheckRanks(i){
       addon_override: (r.cfg || {}).ov_addon || '', pageone_rank: null};
     const req = Object.assign({}, base, {
       pct_not_ranking: pct,
+      // The page one this pass just read, on top of what the build read.
+      pageone_agg_share: res.agg ? res.agg.share : (base.pageone_agg_share ?? null),
+      pageone_agg_terms: res.agg ? res.agg.terms : (base.pageone_agg_terms ?? null),
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
     say('repricing\u2026');
     const price = await postWait('/api/price', req, null, say);
