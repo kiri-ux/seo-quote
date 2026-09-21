@@ -158,13 +158,13 @@ check("the term is the quote's", "12-month term" in with_ai, True)
 check("a six-month quote says six", "6-month term" in core[-1], True)
 # Monthly budget is the intermediate tier, which is the headline the tool
 # prints everywhere else, times the term it is sold on.
-check("the budget is the intermediate tier",
-      "Monthly Budget: $8,650" in with_ai, True)
+check("the budget is the intermediate tier, and says so",
+      "Monthly Budget (Intermediate): $8,650" in with_ai, True)
 check("and the total is that across the term",
       "Total Budget: $103,800" in with_ai, True)
 # A FILE CANNOT BE SELECTED ON SCREEN, so the tier the budget came from is
 # marked on its own card.
-check("the tier is marked on its own card", "Selected" in with_ai, True)
+check("the tier is marked on its own card too", "Selected" in with_ai, True)
 check("the budget equals that card", "$8,650 / month" in with_ai, True)
 
 print("\nTHE FLIGHT IS WHAT WAS TYPED ON THE FORM")

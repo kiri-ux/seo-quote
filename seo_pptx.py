@@ -23,7 +23,7 @@ import os
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
@@ -558,13 +558,9 @@ def _distribution(slide, counts):
     chart.legend.font.size = Pt(11)
     chart.legend.font.name = FONT
     plot = chart.plots[0]
-    plot.has_data_labels = True
-    plot.data_labels.show_value = True
-    plot.data_labels.font.size = Pt(10)
-    plot.data_labels.font.bold = True
-    plot.data_labels.font.color.rgb = WHITE
-    plot.data_labels.font.name = FONT
-    plot.data_labels.position = XL_LABEL_POSITION.INSIDE_END
+    # NO NUMBERS ON THE SLICES. The table beside it is the count; on the pie
+    # they read as a second, smaller list. (2026-09-21, Kiri)
+    plot.has_data_labels = False
     shades = {"Ultra-Competitive": NAVY, "Competitive": BLUE_LT,
               "Long-Tail": BLUE_MID}
     for i, label in enumerate(labels):
@@ -747,7 +743,9 @@ def _slide_pricing(prs, d):
     first.append(("Months Running: ", str(months)))
     cells = [first]
     if monthly:
-        cells.append([("Monthly Budget: ", _money(monthly)),
+        # WHICH TIER THE BUDGET IS, WHERE THE BUDGET IS. The card carries the
+        # Selected mark, but the number is read up here. (2026-09-21, Kiri)
+        cells.append([("Monthly Budget (%s): " % shown.title(), _money(monthly)),
                       ("Total Budget: ", _money(monthly * months))])
     if n_addon and per_market.get("intermediate"):
         cells.append([("# of Add-on Markets: ", str(n_addon)),
@@ -839,14 +837,6 @@ def _slide_pricing(prs, d):
         rule.fill.fore_color.rgb = LINE if not dark else WHITE
         rule.line.fill.background()
         rule.shadow.inherit = False
-        mid = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + Inches(2.25),
-                                     Inches(2.12) + head_h + Inches(0.1),
-                                     Pt(1), Inches(4.55) - head_h - Inches(0.7))
-        mid.fill.solid()
-        mid.fill.fore_color.rgb = LINE if not dark else WHITE
-        mid.line.fill.background()
-        mid.shadow.inherit = False
-
         ticks = list(spec["ticks"])
         if ai_on:
             ticks += spec["ai_ticks"]
@@ -859,8 +849,9 @@ def _slide_pricing(prs, d):
             y = y + _tick(slide, x + Inches(0.1), y, Inches(2.15), t, tint=tint,
                           mark=("✦" if t in ai_rows else "✓"),
                           mark_color=(GOLD if t in ai_rows else check))
-        _tick(slide, x + Inches(0.1), y, Inches(2.15), spec["last"],
-              bold=True, color=(BLUE if not dark else WHITE), mark_color=check)
+        y = y + _tick(slide, x + Inches(0.1), y, Inches(2.15), spec["last"],
+                      bold=True, color=(BLUE if not dark else WHITE),
+                      mark_color=check)
 
         counts = list(spec["counts"])
         if ai_on:
@@ -893,6 +884,20 @@ def _slide_pricing(prs, d):
             _run(tf.paragraphs[0], rest, size=TIER_PT,
                  color=(INK if not dark else WHITE))
             cy = cy + ch + Inches(0.22 if is_ai else 0.08)
+
+        # THE DIVIDER IS AS LONG AS WHAT IT DIVIDES. It was a fixed length
+        # measured off the card, so on a machine with the real font -- where
+        # the rows are narrower and end higher -- it ran on past the last line
+        # as a stub, and on a tier with more lines it stopped short of them.
+        # Drawn last, between the top of the first row and the bottom of the
+        # longer column. (2026-09-21, Kiri)
+        top = Inches(2.12) + head_h + Inches(0.08)
+        mid = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + Inches(2.25),
+                                     top, Pt(1), max(y, cy) - top)
+        mid.fill.solid()
+        mid.fill.fore_color.rgb = LINE if not dark else WHITE
+        mid.line.fill.background()
+        mid.shadow.inherit = False
 
     foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(9.4), Inches(0.32))
     _txt(foot, size=11, bold=True, color=INK)
