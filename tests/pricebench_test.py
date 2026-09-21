@@ -94,7 +94,10 @@ back = subprocess.run([sys.executable, "tools/pricebench.py", "--quiet-gaps",
                        "--patch", "@tools/proposals/pre_seascape_volume.json"],
                       capture_output=True, text=True, cwd=SRCDIR)
 check("and running it puts Seascape back where it was", back.returncode, 0)
-check("at the old total error", "$15,515" in back.stdout, True)
+# The figure moves whenever a client joins the ledger -- it is the whole bench
+# scored under the old curve, not Seascape's own error. $15,515 was the twelve
+# clients; Cota Vera is the thirteenth (2026-09-21).
+check("at the old total error", "$18,315" in back.stdout, True)
 
 # ---------------------------------------------- the gap is named, not hidden
 check("the clients it cannot reconstruct are listed",

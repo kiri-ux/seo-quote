@@ -103,6 +103,19 @@ BENCH = [
          nr=100, actual=(6950, 8250, 9950),
          why="Brendan 2026-09-17: 'I would have quoted this as $6950 for entry, "
              "$8,250 for intermediate and $9,950 for advanced'"),
+    # THE SECOND AGGREGATOR-HELD PAGE ONE, and the one that says the flat
+    # constant fitted on Amare does not fit both. San Diego new-home terms:
+    # Apartments.com, Redfin, Zillow, Trulia and Realtor.com hold page one,
+    # nothing of theirs ranks, 6,560/mo, and a $4.19 median bid that buys no
+    # adder. Brendan, unprompted, on the run the tool produced: "San Diego is a
+    # very competitive market and they currently don't rank for any terms; would
+    # suggest pricing this one at $4,250, $5,450 and $6,750 per tier for SEO" --
+    # and separately that he was "concerned competing with them at $7k/mo being
+    # too low ... high reward/high search volume". (2026-09-21)
+    dict(name="Cota Vera", band="contiguous_region", cpc=4.19, vol=6560, nr=100,
+         agg=0.90, agg_terms=19, actual=(4250, 5450, 6750),
+         why="Brendan 2026-09-21 on quote Q-100244, verbatim above. Page-one "
+             "share read off the run's own SERP panel"),
     # AND THE ONE THAT PROVES VOLUME IS NOT DEMAND. The largest raw volume in
     # the whole set, priced UNDER the statewide anchor because he already ranks.
     dict(name="Susquehanna River Valley VB", band="statewide", adder=0,
