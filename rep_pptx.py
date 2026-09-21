@@ -368,6 +368,27 @@ def _slide_snapshot(prs, d):
     return slide
 
 
+def _cell(cell, text, size=8, bold=False, color=INK,
+          align=PP_ALIGN.LEFT, wrap=True):
+    """One table cell, at the size asked for.
+
+    THE SIZE HAS TO BE ON THE RUN. `cell.text = x` makes a run carrying no
+    rPr of its own, and a paragraph-level font does not reach it -- PowerPoint
+    falls back to the table style's 18pt. On the City Heating deck that drew
+    the # and Rating columns at three times the size of the Result column
+    beside them, wrapped "10" into "1" over "0", and grew every row until the
+    table ran straight through the legend underneath it. (2026-09-21, Kiri)
+    """
+    tf = cell.text_frame
+    tf.word_wrap = wrap
+    tf.clear()
+    p = tf.paragraphs[0]
+    p.alignment = align
+    _run(p, str(text), size=size, bold=bold, color=color)
+    _style(p, size, bold, color)
+    return p
+
+
 def _col_head(slide, text, x, y, w=Inches(4.3)):
     hb = _text_box(slide, x, y, w, Inches(0.34))
     _txt(hb, size=14, bold=True, color=INK, space_after=0)
@@ -419,12 +440,11 @@ def _profiles_block(slide, d):
     for c, label in enumerate(("Location", "Profile", "1★", "2★",
                                "3★")):
         cell = table.cell(0, c)
-        cell.text = label
         cell.fill.solid()
         cell.fill.fore_color.rgb = NAVY
-        p = cell.text_frame.paragraphs[0]
-        _style(p, 8.5, True, WHITE)
-        p.alignment = PP_ALIGN.LEFT if c == 0 else PP_ALIGN.CENTER
+        _cell(cell, label, size=8.5, bold=True, color=WHITE,
+              align=PP_ALIGN.LEFT if c == 0 else PP_ALIGN.CENTER,
+              wrap=(c == 0))
     for r, l in enumerate(locs, start=1):
         rating = l.get("profile_rating")
         prof = ("%s★/%s" % (rating, _int(l.get("profile_reviews")))
@@ -433,12 +453,11 @@ def _profiles_block(slide, d):
                 _int(l.get("neg_2")), _int(l.get("weak_3")))
         for c, val in enumerate(vals):
             cell = table.cell(r, c)
-            cell.text = str(val)
             cell.fill.solid()
             cell.fill.fore_color.rgb = WHITE
-            p = cell.text_frame.paragraphs[0]
-            _style(p, 8.5, False, INK)
-            p.alignment = PP_ALIGN.LEFT if c == 0 else PP_ALIGN.CENTER
+            _cell(cell, val, size=8.5,
+                  align=PP_ALIGN.LEFT if c == 0 else PP_ALIGN.CENTER,
+                  wrap=(c == 0))
 
 
 def _results_block(slide, snap):
@@ -460,18 +479,20 @@ def _results_block(slide, snap):
         rows = len(page1) + 1
         table = slide.shapes.add_table(rows, 3, x, top, w,
                                        row_h * rows).table
-        for c, cw in enumerate((Inches(0.4), Inches(3.3), Inches(0.9))):
+        # A RANK IS TWO DIGITS ON PAGE ONE. rank_group runs past 10 whenever the
+        # page carries a block, and 0.4in wrapped "10" into "1" over "0", which
+        # doubled the row. Neither number column wraps at all now.
+        for c, cw in enumerate((Inches(0.46), Inches(3.24), Inches(0.9))):
             table.columns[c].width = cw
         for r in range(rows):
             table.rows[r].height = row_h
         for c, label in enumerate(("#", "Result", "Rating")):
             cell = table.cell(0, c)
-            cell.text = label
             cell.fill.solid()
             cell.fill.fore_color.rgb = NAVY
-            p = cell.text_frame.paragraphs[0]
-            _style(p, 8.5, True, WHITE)
-            p.alignment = PP_ALIGN.CENTER if c != 1 else PP_ALIGN.LEFT
+            _cell(cell, label, size=8.5, bold=True, color=WHITE,
+                  align=PP_ALIGN.CENTER if c != 1 else PP_ALIGN.LEFT,
+                  wrap=(c == 1))
         for r, res in enumerate(page1, start=1):
             rating = res.get("rating")
             # NO VOTE COUNT IN THIS COLUMN. "2.3★ (8)" wrapped to two lines
@@ -482,28 +503,33 @@ def _results_block(slide, snap):
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = WHITE
                 cell.margin_top = cell.margin_bottom = Inches(0.01)
-                p = cell.text_frame.paragraphs[0]
-                if c == 1:
-                    # The domain, then what is to be done about it -- the
-                    # tactic is why the row is on the slide at all.
-                    _run(p, str(res.get("domain") or ""), size=8, color=INK)
-                    _run(p, "  " + ("Owned" if res.get("owned")
-                                    else "3rd party"),
-                         size=7, bold=True,
-                         color=(GREEN if res.get("owned") else MUTED))
-                    tac = str(res.get("tactic") or "")
-                    if tac:
-                        _run(p, "  \u2192 " + tac, size=7, color=BLUE)
-                    _style(p, 8, False, INK)
-                else:
-                    cell.text = str(val)
-                    _style(p, 8, False, INK)
-                    p.alignment = PP_ALIGN.CENTER
+                if c != 1:
+                    _cell(cell, val, size=8, align=PP_ALIGN.CENTER, wrap=False)
+                    continue
+                # The domain, then what is to be done about it -- the tactic is
+                # why the row is on the slide at all.
+                tf = cell.text_frame
+                tf.word_wrap = True
+                tf.clear()
+                p = tf.paragraphs[0]
+                _run(p, str(res.get("domain") or ""), size=8, color=INK)
+                _run(p, "  " + ("Owned" if res.get("owned") else "3rd party"),
+                     size=7, bold=True,
+                     color=(GREEN if res.get("owned") else MUTED))
+                tac = str(res.get("tactic") or "")
+                if tac:
+                    _run(p, "  \u2192 " + tac, size=7, color=BLUE)
+                _style(p, 8, False, INK)
     else:
         nb = _text_box(slide, x, top, w, Inches(0.3))
         _txt(nb, size=10.5, color=MUTED)
         nb.text_frame.paragraphs[0].text = "No page one captured."
-    legend = _box(slide, x, LEGEND_TOP, w, Inches(1.05), fill=WHITE,
+    # UNDER THE TABLE, WHEREVER THE TABLE ENDS. A fixed foot is right only for
+    # the longest table; a short one left an inch of gap. Sized off the rows
+    # actually drawn, floored so it can never ride up into a table that grew.
+    ltop = max(top + row_h * (len(page1) + 1) + Inches(0.14),
+               Inches(3.0)) if page1 else Inches(2.2)
+    legend = _box(slide, x, min(ltop, LEGEND_TOP), w, Inches(1.05), fill=WHITE,
                   radius=0.03)
     tf = _txt(legend, size=7.5, space_after=0, line=1.1)
     for i, (name, text) in enumerate(COPY["tactics"]):

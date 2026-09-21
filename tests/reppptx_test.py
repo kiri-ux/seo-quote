@@ -294,6 +294,60 @@ check("and the legend starts below the table's last row",
 check("the rating column carries no vote count to wrap on",
       "(" in "".join(c.text for c in table[0].table.rows[1].cells), False)
 
+# ---------------------------------------------- every cell is sized
+# THE SIZE HAS TO BE ON THE RUN. `cell.text = x` makes a run with no rPr of
+# its own and a paragraph-level font does not reach it, so PowerPoint fell back
+# to the table style's 18pt. On the City Heating deck that drew the # and
+# Rating columns at three times the size of the Result column beside them,
+# wrapped "10" into "1" over "0", and grew every row until the table ran
+# through the legend underneath it. An unsized run is the whole bug, so it is
+# the thing checked -- not the rendering, which CI cannot see.
+PAGE_ONE = dict(SNAP, organic=[
+    {"pos": 6, "domain": "cityheatingandcooling.org", "tactic": "suppression"},
+    {"pos": 7, "domain": "facebook.com", "tactic": "positive \u2014 leave",
+     "rating": 4.1},
+    {"pos": 10, "domain": "americanstandardair.com", "tactic": "suppression"},
+    {"pos": 11, "domain": "angi.com", "tactic": "positive \u2014 leave",
+     "rating": 5},
+    {"pos": 12, "domain": "reviews.birdeye.com", "tactic": "suppression"},
+])
+sized, _ = deck(FULL, snap=PAGE_ONE)
+unsized, seen = [], 0
+for s in sized.slides:
+    for sh in s.shapes:
+        if not (getattr(sh, "has_table", False) and sh.has_table):
+            continue
+        for row in sh.table.rows:
+            for c in row.cells:
+                for para in c.text_frame.paragraphs:
+                    for run in para.runs:
+                        seen += 1
+                        if run.font.size is None:
+                            unsized.append(run.text[:20])
+check("every table cell carries a sized run", (seen > 0, unsized), (True, []))
+
+# A RANK IS TWO DIGITS ON PAGE ONE. rank_group runs past 10 whenever the page
+# carries a block, and the # column has to hold "12" on one line.
+_snapslide = [s for s in sized.slides if "Reputation Snapshot" in all_text(s)][0]
+_page1 = [sh for sh in _snapslide.shapes
+          if getattr(sh, "has_table", False) and sh.has_table
+          and sh.table.rows[0].cells[0].text == "#"][0]
+check("the rank column is wide enough for two digits",
+      _page1.table.columns[0].width >= Inches(0.45), True)
+check("and neither number column wraps",
+      [_page1.table.cell(1, c).text_frame.word_wrap for c in (0, 2)],
+      [False, False])
+check("a two-digit rank prints whole",
+      "12" in [_page1.table.cell(r, 0).text
+               for r in range(1, len(_page1.table.rows))], True)
+# ...and the legend still clears it, now that it follows the table.
+_leg = [sh for sh in _snapslide.shapes if sh.has_text_frame
+        and "outrank it instead" in sh.text_frame.text][0]
+check("the legend sits under the table it follows",
+      _leg.top >= _page1.top + _page1.height, True)
+check("and not an inch below it",
+      _leg.top - (_page1.top + _page1.height) < Inches(0.4), True)
+
 # NOTHING UNDER THE TITLE. A navy corner block sat beneath the icon and the
 # heading and read as a bar drawn through it.
 det = prs.slides[-1]
