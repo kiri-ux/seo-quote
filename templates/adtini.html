@@ -259,6 +259,10 @@
           <p class="hint" id="kbNote"></p>
           <p class="hint" id="kbAxisNote"></p>
           <p class="hint" id="kbMarketNote"></p>
+          <!-- ROOM TO GROW. The reservation runs on every build and nothing
+               showed it, so a client who already ranks for every quoted term
+               read as a campaign to win what is already won. -->
+          <p class="hint" id="kbHeadroom"></p>
           <div class="cols" id="kbCols"></div>
           <div class="widen" id="kbWiden" hidden></div>
           <details class="tmg" id="kbTiming" hidden>
@@ -2845,6 +2849,76 @@ function kbScopeNote(r){
   paint();
   resolveBand(r).then(paint);
 }
+// ROOM TO GROW, AND WHETHER THE RESERVATION ACTUALLY DID ANYTHING.
+//
+// Ranking the grid purely by measured demand hands every slot to the terms a
+// client with existing SEO already owns -- those are the ones with volume
+// attached -- so the proposal ends up arguing for a campaign to win what is
+// already won. A few slots are reserved for the highest-demand terms the
+// client is NOT ranking for, taken from the ones the demand ranking cut.
+//
+// A RESERVATION, NOT A QUOTA: nothing is invented to fill it, and if every
+// candidate is already ranked the grid is unchanged. Set grid_headroom_slots
+// to 0 in pricing config to turn it off.
+//
+// A SILENT NO-OP IS THE FAILURE MODE. It has shipped twice looking like it
+// worked, because every outcome except a swap was silent: no rankings to
+// compare against, reservation already met, nothing left to promote. Each of
+// those is a different answer, so each one says so. Ported from the legacy
+// panel, which has carried all of them since 2026-08-19. (2026-09-21, Kiri)
+function drawHeadroom(kw){
+  const el = document.getElementById('kbHeadroom');
+  if (!el) return;
+  const sr = (kw || {}).seed_ranking || {};
+  const seen = sr.headroom_seen;
+  const counts = seen
+    ? ` \u00b7 wanted ${seen.want}, ${seen.fresh} already in the grid of `
+      + `${seen.own} known ranked terms, ${seen.pool} candidates below the cut`
+    : '';
+  const held = sr.headroom || [];
+  const n = x => Number(x || 0).toLocaleString();
+  let out = '';
+  if (held.length) {
+    out = `\u{1F331} <b>${held.length} slot${held.length === 1 ? '' : 's'} held `
+      + `for terms they don't rank for yet</b> \u00b7 `
+      + held.map(([t, v]) => `${esc(t)} (${n(v)}/mo)`).join(' \u00b7 ')
+      + ((sr.headroom_displaced || []).length
+          ? `, in place of ${sr.headroom_displaced.map(([t]) => esc(t)).join(' \u00b7 ')}`
+          : '')
+      + (sr.headroom_basis ? ` \u00b7 ${esc(sr.headroom_basis)}` : '');
+  } else if (sr.headroom_skipped) {
+    // The one case that needs a human: nothing known about their positions, so
+    // the grid filled on demand alone.
+    out = `\u26a0 <b>No slots held for unranked terms</b> \u00b7 what this client `
+      + `already ranks for ${esc(sr.headroom_skipped)}`;
+  } else if (sr.headroom_dry) {
+    out = `\u{1F331} <b>No slots held for unranked terms</b> \u00b7 `
+      + esc(sr.headroom_dry) + counts;
+  } else if (sr.headroom_met) {
+    // THE RANK CHECK OUTRANKS THE RANKED-KEYWORDS REPORT, AND SAYS SO. On Ski
+    // Barn this read "20 of the quoted terms are ones they don't rank for"
+    // directly above "19/19 found in top 100" -- two numbers about the same
+    // twenty terms, flatly contradicting each other, because the reservation
+    // asks ranked_keywords at BUILD time and the rank check asks the live
+    // result page for each keyword in the market it names. When the rank check
+    // has run, it is the answer.
+    const t = ((ROWS[ROW] || {}).result || {}).table || [];
+    const measured = t.filter(x => x && !x.error && !x.queued && !x.expired
+                              && x.pos !== undefined && x.pos !== null && x.pos !== '');
+    const miss = measured.filter(x => x.pos === 'Not Found').length;
+    out = (measured.length && miss < sr.headroom_met)
+      ? `\u{1F331} <b>The reservation read ${sr.headroom_met} of the quoted terms `
+        + `as unranked \u00b7 the rank check found ${miss === 0 ? 'none' : 'only ' + miss}`
+        + ` of ${measured.length} measured</b>${counts}`
+      : `\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't `
+        + `rank for</b> \u00b7 past the reservation, nothing swapped${counts}`;
+  } else if (seen) {
+    out = `\u{1F331} <b>Unranked-term reservation ran and changed nothing</b>${counts}`;
+  }
+  el.innerHTML = out;
+  el.hidden = !out;
+}
+
 function kbDraw(r){
   r = r || ROWS[ROW];
   const kw = r.kw;
@@ -2905,7 +2979,7 @@ function kbDraw(r){
             + `${ev.cities_scored || 0} markets`)
         + (ev.by_hand ? ' \u00b7 set by hand' : '');
   }
-  // WHICH TOWN THE QUOTE IS BUILT ON, AND WHETHER THAT WAS MEASURED.
+    // WHICH TOWN THE QUOTE IS BUILT ON, AND WHETHER THAT WAS MEASURED.
   //
   // The primary market sets the grid suffix, the rank-check location AND the
   // price, and nothing on this screen said which town won or why. ENT
@@ -2938,6 +3012,7 @@ function kbDraw(r){
       };
     }
   }
+  drawHeadroom(kw);
   const w = kw.widen;
   // NOT ONE TERM MEASURED IN THESE MARKETS. Either every figure came from a
   // wider area or there is no figure at all -- both price as no demand.
@@ -4726,11 +4801,19 @@ async function recaptureSerp(i){
 // downloads and what is on screen cannot drift.
 // MMDDYYYY_Client Name_Order ID. The order segment appears only when an order
 // ID was typed.
-function proposalFilename(client, order, ext){
+function proposalFilename(client, order, ext, kind){
   const n = new Date();
   const pad = x => String(x).padStart(2, '0');
   const stamp = `${pad(n.getMonth() + 1)}${pad(n.getDate())}${n.getFullYear()}`;
-  const parts = [stamp, String(client || '').trim() || 'Client'];
+  // WHICH PRODUCT, RIGHT AFTER THE DATE. A client with both products got two
+  // files named identically apart from the extension, and an ORM deck and an
+  // SEO deck for the same client on the same day collided outright. The tag
+  // sits between the date and the name so a folder sorted by filename still
+  // groups a client's work by day. (2026-09-21, Kiri)
+  const parts = [stamp];
+  const tag = String(kind || '').trim().toUpperCase();
+  if (tag) parts.push(tag);
+  parts.push(String(client || '').trim() || 'Client');
   if (String(order || '').trim()) parts.push(String(order).trim());
   return parts.join('_').replace(/[\\/:*?"<>|\r\n\t]+/g, '-').replace(/^[ .]+|[ .]+$/g, '')
     + '.' + (ext || 'docx');
@@ -4868,7 +4951,7 @@ async function downloadProposal(i, as){
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = proposalFilename(d.brand, d.order_no, as);
+    a.download = proposalFilename(d.brand, d.order_no, as, r.kind === 'orm' ? 'ORM' : 'SEO');
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 30000);
     say('Downloaded.');

@@ -1158,6 +1158,13 @@ CFG = {
     "onpage_user_agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
                           "Chrome/126.0 Safari/537.36"),
+    # RENDER THE PAGE WHEN THE PLAIN READ COMES BACK WITH NOTHING. instant_pages
+    # fetches raw HTML, so a site behind a JS challenge or one that builds its
+    # own content client-side has nothing to give -- which is what Milligan Vein
+    # looked like: a spoofed Chrome user agent AND the Lighthouse fallback both
+    # came back empty. JS rendering is slower and dearer per call, so it never
+    # runs on the happy path: the plain read goes first and this is the retry.
+    "onpage_render_js": True,
     # Second opinion via Google Lighthouse when the read above comes back empty.
     # A second request per blocked site, never on the happy path.
     "technical_health_fallback": True,
@@ -14895,7 +14902,7 @@ _ONPAGE_DEBT = (
 )
 
 
-def _instant_pages(dom):
+def _instant_pages(dom, render=False):
     """One instant_pages call that survives a parameter this endpoint rejects.
 
     I added `accept_language` on the strength of a docs summary and DataForSEO
@@ -14912,6 +14919,11 @@ def _instant_pages(dom):
     """
     extras = {"custom_user_agent": CFG.get("onpage_user_agent"),
               "browser_preset": "desktop"}
+    if render:
+        # Both names, because either is enough on its own and an endpoint that
+        # has never heard of one drops it by the rule below rather than failing.
+        extras["enable_javascript"] = True
+        extras["enable_browser_rendering"] = True
     last = ""
     for _ in range(len(extras) + 1):
         payload = dict(extras)
@@ -14957,54 +14969,76 @@ def fetch_technical_health(domain):
         # with an empty page and the panel printed "0/100 · nothing flagged" for
         # a site nobody had read. Ask as a browser on the call we already pay
         # for. (2026-08-17)
-        task0 = _instant_pages(dom)
-        if isinstance(task0, str):
-            return {}, task0
-        item = None
-        for block in (task0.get("result") or []):
-            for it in (block.get("items") or []):
-                item = it
-                break
-            if item:
-                break
-        if not item:
-            return _lighthouse_health(dom, "no page returned")
-        checks = item.get("checks") or {}
-        # A SITE THAT REFUSED US IS NOT A SITE SCORING ZERO. With no checks
-        # there is nothing to score, and `onpage_score or 0` turned that into
-        # 0.0/100 with an empty failure list — the worst possible reading,
-        # printed as though it were a measurement, for the one client in three
-        # whose site blocks crawlers. The information to tell them apart was
-        # already here: len(checks). (2026-08-17)
-        if not checks:
-            return _lighthouse_health(dom, "the page returned nothing to check")
-        failed = [label for key, bad_when, label in _ONPAGE_DEBT
-                  if key in checks and bool(checks[key]) is bool(bad_when)]
-        score = round(float(item.get("onpage_score") or 0), 1)
-
-        # ZERO OUT OF A HUNDRED WITH NOTHING WRONG IS A CONTRADICTION, and the
-        # empty-checks guard above does not catch it: for a page it could not
-        # fetch, DataForSEO returns a FULL checks object with everything at its
-        # default, so `checks` is populated, every check reads as passing, and
-        # the score comes back 0. Amare printed "0/100 · nothing flagged" again
-        # on the build after that guard shipped.
+        # THE PLAIN READ FIRST, THEN THE RENDERED ONE. instant_pages fetches
+        # raw HTML: a site behind a JS challenge, or one that builds its own
+        # content client-side, hands back a shell -- and that looks identical to
+        # a WAF refusing us. Milligan Vein came back empty from the spoofed user
+        # agent AND from Lighthouse, which is the shape of a page that has to be
+        # executed rather than fetched.
         #
-        # No new API knowledge needed to spot it — the two halves of the answer
-        # disagree. A page that genuinely scores 0 has failures; a page with no
-        # failures does not score 0. An HTTP error on the item says the same
-        # thing more directly, when it is there to read. (2026-08-18)
-        _http = item.get("status_code")
-        _dead = (isinstance(_http, int) and _http >= 400) or (
-            score <= 0 and not failed)
-        if _dead:
-            return _lighthouse_health(
-                dom, (f"their site answered HTTP {_http}" if isinstance(_http, int)
-                      and _http >= 400 else
-                      "the page scored 0 with nothing flagged, which means it was "
-                      "not read"))
-        return {"score": score,
-                "failed": failed, "checked": len(checks), "source": "on_page",
-                "timing": (item.get("page_timing") or {}).get("dom_complete")}, ""
+        # JS rendering is slower and dearer per call, so it is the RETRY and
+        # never the first ask: one extra call on the sites that need it, none on
+        # the ones that do not.
+        #
+        # AND THE RETRY COVERS EVERY WAY THE PLAIN READ FAILS, not just an empty
+        # one. For a page it could not fetch, DataForSEO returns a FULL checks
+        # object with everything at its default -- so `checks` is populated,
+        # nothing reads as failing, and the score comes back 0. Testing only for
+        # empty checks would have skipped the retry on exactly the sites it is
+        # for, so every no-reading case funnels through _reading(), which is
+        # also what decides when to hand over to Lighthouse. (2026-09-21, Kiri)
+        def _reading(rendered):
+            """(health dict, "") when this read said something, else (None, why)."""
+            t = _instant_pages(dom, render=rendered)
+            if isinstance(t, str):
+                return None, t
+            item = None
+            for block in (t.get("result") or []):
+                for it in (block.get("items") or []):
+                    item = it
+                    break
+                if item:
+                    break
+            if not item:
+                return None, "no page returned"
+            checks = item.get("checks") or {}
+            # A SITE THAT REFUSED US IS NOT A SITE SCORING ZERO. With no checks
+            # there is nothing to score, and `onpage_score or 0` turned that
+            # into 0.0/100 with an empty failure list -- the worst possible
+            # reading, printed as though it were a measurement, for the one
+            # client in three whose site blocks crawlers. (2026-08-17)
+            if not checks:
+                return None, "the page returned nothing to check"
+            failed = [label for key, bad_when, label in _ONPAGE_DEBT
+                      if key in checks and bool(checks[key]) is bool(bad_when)]
+            score = round(float(item.get("onpage_score") or 0), 1)
+            # ZERO OUT OF A HUNDRED WITH NOTHING WRONG IS A CONTRADICTION, and
+            # the full-checks object above is why the empty guard misses it. No
+            # new API knowledge needed to spot it: the two halves of the answer
+            # disagree. A page that genuinely scores 0 has failures; a page with
+            # no failures does not score 0. An HTTP error on the item says the
+            # same thing more directly, when it is there. (2026-08-18)
+            _http = item.get("status_code")
+            if isinstance(_http, int) and _http >= 400:
+                return None, "their site answered HTTP %s" % _http
+            if score <= 0 and not failed:
+                return None, ("the page scored 0 with nothing flagged, which "
+                              "means it was not read")
+            return {"score": score, "failed": failed, "checked": len(checks),
+                    "source": "on_page" + (" rendered" if rendered else ""),
+                    "timing": (item.get("page_timing") or {}).get(
+                        "dom_complete")}, ""
+
+        health, why = _reading(False)
+        if not health and CFG.get("onpage_render_js"):
+            _h2, _w2 = _reading(True)
+            if _h2:
+                health, why = _h2, ""
+            elif _w2 and _w2 != why:
+                why = "%s; rendered: %s" % (why, _w2)
+        if not health:
+            return _lighthouse_health(dom, why or "no page returned")
+        return health, ""
     except Exception as e:                                    # noqa: BLE001
         app.logger.exception("instant_pages health failed")
         return {}, str(e)[:120]
@@ -19036,12 +19070,24 @@ def api_quotes_status():
         "detail": storage.status_detail(),
     })
 
-def proposal_filename(client, order_no="", ext="docx", when=None):
-    """MMDDYYYY_Client Name_Order ID. The order segment appears only when an
-    order ID was typed — a document is never named after a number nobody
-    entered. (2026-09-16, Kiri)"""
+def proposal_filename(client, order_no="", ext="docx", when=None, kind=""):
+    """MMDDYYYY_SEO_Client Name_Order ID. The order segment appears only when
+    an order ID was typed — a document is never named after a number nobody
+    entered. (2026-09-16, Kiri)
+
+    WHICH PRODUCT, RIGHT AFTER THE DATE. A client with both products got two
+    files named identically apart from the extension, and a reputation deck and
+    an SEO deck for the same client on the same day collided outright — same
+    date, same name, both .pptx. The tag sits between the date and the name so
+    a folder sorted by filename still groups a client's work by day.
+    (2026-09-21, Kiri)
+    """
     stamp = (when or _dt.datetime.now()).strftime("%m%d%Y")
-    parts = [stamp, (str(client or "").strip() or "Client")]
+    parts = [stamp]
+    tag = str(kind or "").strip().upper()
+    if tag:
+        parts.append(tag)
+    parts.append(str(client or "").strip() or "Client")
     order = str(order_no or "").strip()
     if order:
         parts.append(order)
@@ -19573,7 +19619,8 @@ def api_rep_removals_docx():
         return jsonify({"error": str(e)[:200]}), 500
     return send_file(buf, as_attachment=True,
                      download_name=proposal_filename(d.get("brand"),
-                                                     d.get("order_no")),
+                                                     d.get("order_no"),
+                                                     kind="ORM"),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
 
@@ -19630,7 +19677,8 @@ def api_rep_proposal_docx():
         return jsonify({"error": str(e)[:200]}), 500
     return send_file(buf, as_attachment=True,
                      download_name=proposal_filename(d.get("brand"),
-                                                     d.get("order_no")),
+                                                     d.get("order_no"),
+                                                     kind="ORM"),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
 
@@ -19675,7 +19723,7 @@ def api_rep_proposal_pptx():
     return send_file(buf, as_attachment=True,
                      download_name=proposal_filename(d.get("brand"),
                                                      d.get("order_no"),
-                                                     ext="pptx"),
+                                                     ext="pptx", kind="ORM"),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "presentationml.presentation")
 
@@ -20619,7 +20667,7 @@ def api_proposal_pptx():
     return send_file(buf, as_attachment=True,
                      download_name=proposal_filename(d.get("brand"),
                                                      d.get("order_no"),
-                                                     ext="pptx"),
+                                                     ext="pptx", kind="SEO"),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "presentationml.presentation")
 
@@ -20638,7 +20686,8 @@ def api_proposal_docx():
         return jsonify({"error": str(e)[:200]}), 500
     resp = send_file(buf, as_attachment=True,
                      download_name=proposal_filename(d.get("brand"),
-                                                     d.get("order_no")),
+                                                     d.get("order_no"),
+                                                     kind="SEO"),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
     # A SECTION THAT REMOVES ITSELF HAS TO SAY SO. The performance table
