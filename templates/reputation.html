@@ -888,9 +888,11 @@ function renderTerms(d){
     reco('useSearchBundle','Reactive \u00b7 Search Protection',
       d.negative_volume.toLocaleString()+'/mo negative-modifier volume'+(negs?' — '+negs:''));
   }
-  if(d.total_volume){
+  // A MEASURED ZERO IS A MEASUREMENT: the field carries what the scan read,
+  // so an empty box means the scan never ran rather than found nothing.
+  if(d.total_volume != null){
     $('volume').value = d.total_volume;
-    $('volNote').innerHTML = 'Auto-filled from scan: <b>'+d.total_volume.toLocaleString()+'/mo</b> total brand volume.';
+    $('volNote').innerHTML = 'Auto-filled from scan: <b>'+(d.total_volume||0).toLocaleString()+'/mo</b> total brand volume.';
   }
   let h = '<div class="scanhdr">Brand Term Universe · '+d.total_volume.toLocaleString()+'/mo total</div>';
   if(d.negative_volume > 0){

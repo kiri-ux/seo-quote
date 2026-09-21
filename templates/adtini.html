@@ -539,7 +539,9 @@ function rowHtml(r, i){
   return `
   <div class="prod" data-row="${i}">
     <h4>${r.name} &ndash; <u>${r.qid}</u>
-      <span class="when">${dateOf(r)}</span></h4>
+      <span class="when">${dateOf(r)}</span>${ROWS.length > 1
+        ? `<button class="rmq" type="button" data-remove="${i}"
+             aria-label="Remove ${esc(r.qid)}">&times;</button>` : ''}</h4>
     <div class="ptabs">
       <button type="button" class="${tab === 'details' ? 'on' : ''}" data-tab="details">Details</button>
       <button type="button" class="${tab === 'history' ? 'on' : ''}" data-tab="history">History</button>
@@ -631,6 +633,50 @@ document.addEventListener('click', e => {
   if (!b) return;
   e.preventDefault();
   addProductRow(b.dataset.add === 'orm' ? 'orm' : 'seo');
+});
+
+// REMOVING ONE QUOTE OF SEVERAL. A client can carry two quotes on the same
+// product -- two reputation forecasts built a day apart -- and the page could
+// add a row but never drop one, so a superseded quote stayed on the client's
+// page for good. The delete route has existed since the legacy page; this is
+// the handle for it.
+//
+// The saved record goes with the row. A row that was never saved has no
+// saveId and is dropped from the page alone.
+async function removeProductRow(i){
+  const r = ROWS[i];
+  if (!r || ROWS.length < 2) return;
+  const saved = r.saveId || r.id;
+  if (!confirm(`Remove ${r.qid}?`
+      + (saved ? ' The saved quote and its history go with it.' : ''))) return;
+  if (saved) {
+    try {
+      const res = await fetch('/api/quotes/' + saved, {method: 'DELETE'});
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Request failed (${res.status})`);
+      }
+    } catch (err) {
+      const m = document.querySelector(`[data-msg="${i}"]`);
+      if (m) m.textContent = 'Not removed: ' + err.message;
+      return;
+    }
+  }
+  ROWS.splice(i, 1);
+  // The open row is tracked by INDEX, so removing a row above it shifts what
+  // ROW points at. Left alone, closing the modal would write the removed
+  // quote's form onto its neighbour.
+  if (typeof ROW === 'number') {
+    if (ROW === i) ROW = null;
+    else if (ROW > i) ROW -= 1;
+  }
+  draw();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-remove]');
+  if (!b) return;
+  e.preventDefault();
+  removeProductRow(+b.dataset.remove);
 });
 
 // SAVING. A quote is stored under its client with the shape the store already
@@ -3889,9 +3935,16 @@ $('scRun').onclick = async () => {
   r.scanOff = {};
   if (sc.stars) { d.reviews = sc.stars.flagged; d.locations = sc.stars.locations; }
   else if ((sc.locations || {}).locations) d.locations = sc.locations.locations.length;
+  // A MEASURED ZERO IS A MEASUREMENT. Writing the field only when the total
+  // was truthy left it BLANK on a brand the scan had read and found no demand
+  // for, so "0/mo brand volume" on the panel sat next to an empty Search
+  // Volume box and there was no telling a measured zero from an unasked
+  // question. sc.terms exists only when the call came back, so its presence is
+  // the test -- a failed scan still leaves a typed figure alone.
+  // (2026-09-21, Kiri)
   const vol = (sc.terms || {}).total_volume
     || ((sc.terms || {}).terms || []).reduce((z, x) => z + (x.volume || 0), 0);
-  if (vol) d.volume = vol;
+  if (sc.terms && !sc.terms.error) d.volume = vol;
   const rec = scanRecommend(r);
   load(formOf(r), d);
   scanDraw(r);

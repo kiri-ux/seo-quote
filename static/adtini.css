@@ -536,6 +536,12 @@ input.cell.ord{width:86px;font-variant-numeric:tabular-nums}
 .rowicons .off{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
   border-radius:7px;font-size:12px;font-weight:700;color:#C3CAD4;background:var(--fill)}
 .prod h4 .when{font-size:12.5px;font-weight:500;color:var(--muted);margin-left:6px}
+/* Remove this quote. Sits at the far right of the card's own heading, because
+   the thing being removed is the card. Muted until hover: a delete that draws
+   the eye gets clicked by accident. */
+.prod h4 .rmq{float:right;width:24px;height:24px;border:0;border-radius:7px;cursor:pointer;
+  font-size:15px;line-height:1;color:#C3CAD4;background:var(--fill);padding:0}
+.prod h4 .rmq:hover{background:#FDE7E7;color:#B4232A}
 
 /* ---- the planner's view of a quote -------------------------------------- */
 .pview{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;

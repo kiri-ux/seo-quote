@@ -100,7 +100,14 @@ const BASE = "http://127.0.0.1:5203";
   await p.goto(BASE + '/adtini/forecast', { waitUntil: 'domcontentloaded' });
   const fc = await p.evaluate(() => {
     const R = {};
-    R.products = [...document.querySelectorAll('.prod > h4')].map(h => h.textContent.replace(/\s+/g, ' ').trim());
+    // The heading carries a Remove button; this check is about the NAMES, so
+    // the button's glyph comes out rather than being written into every
+    // expectation. (2026-09-21)
+    R.products = [...document.querySelectorAll('.prod > h4')].map(h => {
+      const c = h.cloneNode(true);
+      c.querySelectorAll('.rmq').forEach(x => x.remove());
+      return c.textContent.replace(/\s+/g, ' ').trim();
+    });
     R.tabs = [...document.querySelectorAll('.prod:first-child .ptabs button')].map(x => x.textContent.trim());
     R.actions = [...document.querySelectorAll('.prod:first-child .prow .btn')].map(x => x.textContent.trim());
     // History is a tab on the row, not a separate page
