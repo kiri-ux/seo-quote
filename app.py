@@ -9897,6 +9897,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             if _ff and _fk:
                 seeds_folded = [[a, b] for a, b in _ff]
                 seeds = _fk
+        # EVERY WAY THIS DOES NOT RUN IS ALSO AN ANSWER. seed_ranking starts {}
+        # and is only filled past the three gates below, so on a list whose
+        # seeds all fit the grid it came back EMPTY -- and empty is what the
+        # panel reading it treats as "nothing to say", which is silence about
+        # the one question it was added to answer. The ranking is skipped on
+        # purpose there (a ranking decides nothing when every seed is quoted)
+        # and that is worth one line rather than none. (2026-09-21, Kiri)
+        if not seeds:
+            seed_ranking["skipped"] = "no seeds to rank"
+        elif len(seeds) <= _slots:
+            seed_ranking["skipped"] = (
+                "%d seeds for %d slots, so every seed is quoted and nothing "
+                "was cut to reserve from" % (len(seeds), _slots))
         if seeds and len(seeds) > _slots:
             _sr = rank_seeds(seeds, markets, state, national=national_demand,
                              limit=len(seeds), kinds=_kinds)
@@ -10043,6 +10056,9 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                 seed_ranking["headroom_basis"] = _own_src
                         elif _own:
                             seed_ranking["headroom_met"] = len(_fresh)
+                else:
+                    seed_ranking["skipped"] = (
+                        "the seed ranking measured nothing to order on")
             else:
                 seed_ranking = {"failed": _sr.get("error") or "no volume data",
                                 "was": list(seeds)}

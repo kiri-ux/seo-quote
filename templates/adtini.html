@@ -2948,10 +2948,18 @@ function drawHeadroom(kw){
     // indistinguishable from the panel not working.
     out = `\u26a0 <b>No slots held for unranked terms</b> \u00b7 `
       + esc(sr.headroom_off);
+  } else if (sr.skipped) {
+    // THE RANKING ITSELF DID NOT RUN, which is the case that was silent: on a
+    // list whose seeds all fit the grid, nothing is cut, so there is nothing
+    // to reserve FROM. The server says which of those it was.
+    out = `\u{1F331} <b>No slots held for unranked terms</b> \u00b7 `
+      + esc(sr.skipped);
+  } else if (sr.failed) {
+    out = `\u26a0 <b>Seeds could not be ranked</b> \u00b7 ${esc(sr.failed)}`;
   } else if ((sr.order || []).length) {
-    // The seed ranking ran and the reservation left no trace at all. Older
-    // saved quotes are the normal case -- they were built before any of these
-    // keys existed -- and the line says which rather than staying blank.
+    // The seed ranking ran and the reservation left no trace at all. A saved
+    // quote built before any of these keys existed is the normal case, and the
+    // line says which rather than staying blank.
     out = `\u{1F331} <b>No unranked-term reservation on this build</b> \u00b7 `
       + `re-run the build to hold slots for terms they don't rank for`;
   }

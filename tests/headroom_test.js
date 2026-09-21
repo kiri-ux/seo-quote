@@ -83,7 +83,23 @@ const BASE = 'http://127.0.0.1:5203';
       /No unranked-term reservation on this build/.test(r.text), r.text);
   say('andSaysWhatToDo', /re-run the build/.test(r.text), r.text);
 
-  // ---- nothing to say at all: no ranking ran either
+  // ---- THE RANKING ITSELF DID NOT RUN. This is the case that was silent on a
+  // real build: seed_ranking comes back {} when every seed fits the grid, so
+  // nothing is cut and there is nothing to reserve FROM -- and {} is exactly
+  // what the panel read as "nothing to say".
+  r = await show({skipped: '18 seeds for 20 slots, so every seed is quoted and '
+                          + 'nothing was cut to reserve from'});
+  say('aSkippedRankingIsReported',
+      /No slots held for unranked terms/.test(r.text)
+      && /18 seeds for 20 slots/.test(r.text), r.text);
+
+  // ---- the volume lookup failed outright
+  r = await show({failed: 'no volume data', was: ['contractor']});
+  say('aFailedRankingIsReported',
+      /Seeds could not be ranked/.test(r.text) && /no volume data/.test(r.text),
+      r.text);
+
+  // ---- nothing to say at all: no seed_ranking of any kind
   r = await show({});
   say('nothingToSayHidesTheLine', r.hidden && r.text === '', JSON.stringify(r));
 
