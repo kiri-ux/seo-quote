@@ -105,6 +105,47 @@ const BASE = 'http://127.0.0.1:5203';
       JSON.stringify(added.inBox));
   say('andTheChipCannotBeAddedTwice', added.chipDisabled, String(added.chipDisabled));
 
+  // ---- PULLED, NOT TYPED. The rank check has already read page one for every
+  // term in the grid, so the competitors are in hand: nothing to look up and
+  // nothing to pay for. /api/rankings has always answered with `rivals` and
+  // this tab was dropping them.
+  const pulled = await p.evaluate(() => {
+    const r = ROWS[0];
+    r.result = {
+      // as addRivals accumulates them across batches
+      rivals: {'yelp.com': 9, 'bigremodeler.com': 7, 'smallremodel.com': 4,
+               'angi.com': 8, 'cisneyremodeling.com': 6, 'facebook.com': 5},
+      agg: {domains: ['yelp.com', 'angi.com']},
+    };
+    document.getElementById('kbCompIn').value = '';
+    pullCompetitors();
+    return {box: document.getElementById('kbCompIn').value,
+            note: document.getElementById('kbCompOut').textContent};
+  });
+  say('itPullsTheRealCompetitors',
+      /bigremodeler\.com/.test(pulled.box) && /smallremodel\.com/.test(pulled.box),
+      pulled.box);
+  // Yelp ranks for everything and sells none of it, so its vocabulary is
+  // Yelp's rather than a remodeler's.
+  say('andLeavesTheAggregatorsOut',
+      !/yelp\.com|angi\.com/.test(pulled.box), pulled.box);
+  say('andTheClientsOwnSite', !/cisneyremodeling/.test(pulled.box), pulled.box);
+  say('andTheSocialProfiles', !/facebook/.test(pulled.box), pulled.box);
+  say('mostSeenFirst',
+      pulled.box.indexOf('bigremodeler') < pulled.box.indexOf('smallremodel'),
+      pulled.box);
+  say('andItSaysHowOftenEachWasSeen', /bigremodeler\.com \(7\)/.test(pulled.note),
+      pulled.note);
+
+  // No rank check behind it is a different answer from no competitors.
+  const noRank = await p.evaluate(() => {
+    ROWS[0].result = {};
+    document.getElementById('kbCompIn').value = '';
+    pullCompetitors();
+    return document.getElementById('kbCompOut').textContent;
+  });
+  say('noRankCheckSaysSo', /No rank check on this quote yet/.test(noRank), noRank);
+
   // ---- nothing typed, and nothing to say
   await p.fill('#kbCompIn', '  ');
   await p.click('#kbCompRead');

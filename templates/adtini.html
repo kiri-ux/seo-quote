@@ -259,6 +259,7 @@
             <label for="kbCompIn">✦ Competitor websites</label>
             <textarea id="kbCompIn" rows="2"
               placeholder="lowes.com, homedepot.com"></textarea>
+            <button class="btn2" type="button" id="kbCompPull">Pull from page one</button>
             <button class="btn2" type="button" id="kbCompRead">Read their rankings</button>
             <div class="kbcompout" id="kbCompOut"></div>
           </div>
@@ -2916,6 +2917,42 @@ function kbScopeNote(r){
 // those is a different answer, so each one says so. Ported from the legacy
 // panel, which has carried all of them since 2026-08-19. (2026-09-21, Kiri)
 // ---------------------------------------------------------------------------
+// WHO ELSE IS ON PAGE ONE, added up across rank batches.
+//
+// /api/rankings has always answered with `rivals` -- the page-one domains and
+// how often each one appears, counted off SERPs the rank check has already
+// fetched. This tab read `aggregators` out of that same response and dropped
+// the rivals, so the one list of real competitors the tool owns was thrown
+// away on every run and the competitor reader had to be typed into by hand.
+// Costs nothing: the SERPs are already paid for. (2026-09-21, Kiri)
+function addRivals(store, list){
+  if (!(list || []).length) return store;
+  const s = store || {};
+  (list || []).forEach(x => {
+    const d = String((x && x.domain) || '').toLowerCase().trim();
+    if (!d) return;
+    s[d] = (s[d] || 0) + (Number(x.appearances) || 1);
+  });
+  return s;
+}
+
+// The rivals worth reading: not the client, and not an aggregator. Yelp ranks
+// for everything and sells none of it, so its vocabulary is Yelp's rather than
+// a remodeler's -- seeding from one would fill the grid with directory words.
+function realRivals(r){
+  const res = r.result || {};
+  const store = res.rivals || {};
+  const own = String((r.data || {}).site || '').toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  const aggs = new Set(((res.agg || {}).domains || [])
+    .map(d => String(d).toLowerCase()));
+  return Object.keys(store)
+    .filter(d => d !== own && !aggs.has(d)
+                 && !/(^|\.)(google|facebook|instagram|youtube|linkedin|x|twitter|tiktok|pinterest|wikipedia)\./.test(d + '.'))
+    .sort((a, b) => store[b] - store[a])
+    .map(d => ({domain: d, appearances: store[d]}));
+}
+
 // WHAT THE COMPETITORS RANK FOR, when the client's own list cannot say.
 //
 // Every other seed source starts from the client: their site, their focus
@@ -2954,6 +2991,33 @@ function addCompetitorSeed(term){
   chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
   const b = document.querySelector(`[data-compadd="${CSS.escape(t)}"]`);
   if (b) { b.disabled = true; b.classList.add('on'); }
+}
+
+// PULLED, NOT TYPED. The rank check has already read page one for every term
+// in the grid, so the competitors are in hand -- there is nothing to look up
+// and nothing to pay for. Needs a rank check behind it, and says so when there
+// is not one.
+function pullCompetitors(){
+  const r = ROWS[ROW];
+  const ta = $('kbCompIn'), out = $('kbCompOut');
+  if (!r || !ta || !out) return;
+  const rivals = realRivals(r);
+  if (!rivals.length) {
+    out.innerHTML = `<span class="hint">`
+      + ((r.result || {}).rivals
+          ? 'Page one is all directories and the client\u2019s own site.'
+          : 'No rank check on this quote yet \u00b7 generate it first.')
+      + `</span>`;
+    return;
+  }
+  const top = rivals.slice(0, 6);
+  const have = new Set(String(ta.value || '').split(/[\s,;]+/)
+    .map(x => x.trim().toLowerCase()).filter(Boolean));
+  const add = top.map(x => x.domain).filter(d => !have.has(d));
+  ta.value = [...have, ...add].join(', ');
+  out.innerHTML = `<span class="hint">${top.length} from page one, `
+    + `most-seen first \u00b7 ${top.map(x =>
+        `${esc(x.domain)} (${x.appearances})`).join(', ')}</span>`;
 }
 
 let COMP_RUNNING = false;
@@ -4825,8 +4889,9 @@ async function generate(){
           tick(batch);
           return {results: batch.map(x => ({kw: x.kw, pos: '\u2014', error: true}))};
         })));
-    let agg = null;
-    settled.forEach(rk => { agg = addAgg(agg, rk.aggregators); });
+    let agg = null, rivals = null;
+    settled.forEach(rk => { agg = addAgg(agg, rk.aggregators);
+                            rivals = addRivals(rivals, rk.rivals); });
     settled.forEach(rk => (rk.results || []).forEach(x => {
       ranks[String(x.kw).toLowerCase()] = x.pos;
       table.push(x);
@@ -4939,7 +5004,7 @@ async function generate(){
     const price = await post('/api/price', priceReq);
 
     r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
-      signals, health, agg,
+      signals, health, agg, rivals,
       rankReq: {common, geo, st, band},
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {}};
     // One place builds the headline, so the row, the summary and the history
@@ -5415,6 +5480,8 @@ $('prods').addEventListener('click', e => {
   if (uf) { e.preventDefault(); findUnranked(ROWS[+uf.dataset.unrfind], false); return; }
 });
 document.addEventListener('click', e => {
+  const cp = e.target.closest('#kbCompPull');
+  if (cp) { e.preventDefault(); pullCompetitors(); return; }
   const cr = e.target.closest('#kbCompRead');
   if (cr) { e.preventDefault(); readCompetitors(); return; }
   const ca = e.target.closest('[data-compadd]');
@@ -5486,6 +5553,7 @@ async function recheckRanks(i){
         // lookup failed or never ran, and a failed lookup contributed no
         // page-one slots the first time round.
         res.agg = addAgg(res.agg, rk.aggregators);
+        res.rivals = addRivals(res.rivals, rk.rivals);
         (rk.results || []).forEach(x => {
           const key = String(x.kw).toLowerCase();
           ranks[key] = x.pos;
