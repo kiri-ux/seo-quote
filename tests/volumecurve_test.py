@@ -136,7 +136,17 @@ def base(vol, nr=100, band="contiguous_region"):
 
 check("Seascape lands on Brendan's entry price, within $150",
       abs(base(51690) - 6950) <= 150, True)
-check("and a 20,000/mo client is exactly where it was", base(20000), 3800)
+# WAS 3,800, AND THE VOLUME CURVE IS NOT WHAT MOVED IT (2026-09-21). This
+# helper prices at 100% not ranking, which now draws the top zero-ranking rung
+# (+18% where it used to be +7%) and no longer carries that uplift on the
+# volume add at all. The volume component itself is unchanged -- the pure-curve
+# checks above still pass on the same figures -- so the number is restated
+# rather than the curve re-fitted.
+check("and a 20,000/mo client is where the ranking ladder puts it",
+      base(20000), 4100)
+check("with the volume component itself untouched",
+      round(app._volume_dollar_add(20000, app.CFG["vol_free_below"],
+                                   app.CFG["volume_brackets"]), 2), 450.05)
 # THE OTHER HIGH-VOLUME CLIENT IN THE BOOK POINTS THE OTHER WAY. Susquehanna is
 # 135,000/mo and was quoted at the floor, because it already ranks for 60% of
 # its head terms. vol_add_ramp is the whole reconciliation, and a steeper curve

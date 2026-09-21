@@ -1636,7 +1636,10 @@ function priceRows(r){
     ['Zero-ranking uplift', p.zero_ranking_uplift_pct == null ? ''
       : (p.zero_ranking_uplift_pct > 0 ? '+' : '') + p.zero_ranking_uplift_pct + '%'
         + (p.pct_not_ranking != null
-           ? ` \u00b7 ${Math.round(p.pct_not_ranking)}% of measured terms not ranking` : ''),
+           ? ` \u00b7 ${Math.round(p.pct_not_ranking)}% of measured terms not ranking` : '')
+        // It applies to every component except the volume add, which is
+        // already scaled by this same reading.
+        + (p.volume_add ? ' \u00b7 not on the volume add' : ''),
       'uplift'],
     ['Page-one competition', p.pageone_aggregator_share == null ? 'not measured'
       : money(p.pageone_aggregator_add || 0)

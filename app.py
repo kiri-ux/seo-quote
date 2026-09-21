@@ -497,8 +497,47 @@ CFG = {
     # magnitude is no longer inventing variance he does not have.
     #
     # Superseded values, for the record: [[80,14],[65,9],[50,5],[45,0],[0,-3]].
+    #
+    # A RUNG ABOVE 80 (2026-09-21). The ladder stopped at 80%+, which put a
+    # client with footholds on a handful of terms and one with nothing at all
+    # on the same rung. Against the thirteen quotes whose inputs are recorded,
+    # ranking coverage is the strongest signal in the book -- Spearman +0.59
+    # against the gap, ahead of the competitive adder (+0.41), search volume
+    # (+0.20) and page-one occupancy (-0.08) -- and the clients it under-quotes
+    # are all at 90-100%: Skidmore 90, MPG 100, Seascape 100, Cota Vera 100.
+    # Amare and Nob Hill sit at 80 and are already right, so the rung boundary
+    # is what keeps them still.
+    #
+    # THIS IS THE LEVER RULED OUT ON 2026-09-19 AND THEN PUT BACK. That reading
+    # came off the calibration panel, which measures the gap as a percentage
+    # across saved quotes whose stored formula figures are of mixed vintage --
+    # some predate changes to the formula they are being compared against. The
+    # bench computes fresh against recorded inputs, and says the opposite. The
+    # bench is the one to trust, and the mechanism argument that went with the
+    # old reading survives anyway: two clients at 100% for different reasons are
+    # still told apart, by pageone_aggregator_add, not by this.
+    #
+    # 18 at the top is fitted, not chosen: MPG lands exactly on the price he
+    # sent, Skidmore within $100, Cota Vera closes $400 of a $700 gap, and
+    # Seascape's base improves while its upper tiers overshoot by $250 and $150
+    # -- that overshoot is the cost. Bench total error 8,365 -> 5,715, exact
+    # tiers 11 -> 12. Nothing at the floor moves and nothing under 80% moves.
+    #
+    # THE RUNGS BETWEEN 80 AND 95 ARE THERE FOR THE CLIFF, NOT THE FIT. Going
+    # straight from 7 to 18 fits one client better (Skidmore exactly, error
+    # 5,515) and puts an 11-point step in the ladder -- and the percentage is
+    # quantised by however many terms got measured, so on a 25-term list one
+    # keyword crossing 90% moved the quote $450 and on a ten-term list $900.
+    # That is the hard gate vol_add_ramp was built to remove, arrived at from
+    # the other direction, and volumecurve_test caught it. Stepping 7-11-14-18
+    # holds the worst single-keyword swing at $400 on 25 terms and $850 on ten,
+    # which is where it was. $200 of bench error and one exact tier is the
+    # price of a ladder an operator can defend in a room.
     "zero_ranking_tiers": [
-        [80, 7],    # 80%+ not ranking -> +7%
+        [95, 18],   # 95%+ not ranking -> +18%. Nothing of theirs is anywhere.
+        [90, 14],   # 90-95% -> +14%
+        [85, 11],   # 85-90% -> +11%
+        [80, 7],    # 80-85% -> +7%
         [65, 4],    # 65-80% -> +4%
         [50, 2],    # 50-65% -> +2%
         [0,  0],    # below half -> par. Never a discount.
@@ -12183,7 +12222,29 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # Both uplifts are shares of the same pre-uplift base, added rather
         # than compounded: a 7% and a 5% is 12%, not 12.35%. Compounding two
         # independently-banded percentages multiplies two guesses together.
-        base = r50(base_pre * (1.0 + (zr_uplift + sd_uplift) / 100.0))
+        #
+        # AND NEITHER OF THEM APPLIES TO THE VOLUME ADD (2026-09-21). The
+        # volume add is ALREADY ramped by the same signal -- vol_add_ramp
+        # scales it from nothing at 40% not ranking to the whole of it at 100%
+        # -- so multiplying it by the zero-ranking uplift charges one fact
+        # twice. It also made the uplift worth a different amount of money to
+        # every client for the identical reading: at 7% of a base carrying a
+        # $2,000 volume add it is $140 of premium, at 7% of a bare anchor it is
+        # $130, and the gap widens as the rung rises. That is what capped the
+        # rung -- size it for a client with no volume and it doubles on one
+        # with 50,000/mo.
+        #
+        # What the uplift is FOR is the anchor work: nothing of theirs ranks,
+        # so the campaign starts from zero. That is a fact about the site, not
+        # about the demand, and site_debt is the same kind of fact, which is why
+        # both come off the same subtotal.
+        #
+        # Consequence to accept, and it has no datapoint behind it: a client
+        # between 65% and 80% not ranking with heavy volume prices $100-150
+        # lower at base. No quote in the book has that shape, so it is reasoned
+        # rather than fitted. Watch for the first one.
+        base = r50((base_pre - vol_add) * (1.0 + (zr_uplift + sd_uplift) / 100.0)
+                   + vol_add)
 
     flat = CFG.get("tier_step_flat")
     if manual_base:

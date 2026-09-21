@@ -116,15 +116,28 @@ check("but keeps the audit slide",
       any("Audit Details" in s for s in audit), True)
 
 print("\nTHE AI SEARCH PRICE ONLY WHEN IT IS IN THE QUOTE")
-with_ai = slides(deck(quote("Core SEO, AI Search")))[-1]
+_q = quote("Core SEO, AI Search")
+with_ai = slides(deck(_q))[-1]
+# READ OFF THE QUOTE, NOT PINNED. These were hard-coded dollars, and a change
+# to the ranking ladder -- which decides nothing about what the deck prints --
+# failed five checks about layout. What is being tested is that the headline is
+# both legs and the two named under it are its parts. (2026-09-21)
+_pr = _q["pricing"]
+_money = lambda v: "$" + format(int(v), ",")
+_seo = _pr["client_tiers"]
+_ai = _pr["ai_search"]["client_add"]
+_both = _pr["ai_search"]["client_total"]
 # THE HEADLINE IS WHAT THEY PAY. It was the Core SEO price with AI Search
 # printed beside it, so the Monthly Budget above -- both legs -- matched no
 # card on the slide.
-check("the tier price is both legs together", "$6,900 / month" in with_ai, True)
+check("the tier price is both legs together",
+      f"{_money(_both['base'])} / month" in with_ai, True)
 check("with Core SEO named under it",
-      "Core SEO: $3,950 / month" in with_ai, True)
+      f"Core SEO: {_money(_seo['base'])} / month" in with_ai, True)
 check("and AI Search under that",
-      "AI Search: $2,950 / month" in with_ai, True)
+      f"AI Search: {_money(_ai['base'])} / month" in with_ai, True)
+check("and the two named parts add up to the headline",
+      _seo["base"] + _ai["base"], _both["base"])
 check("and the AI lines in the tier list",
       "AI model brand optimization" in with_ai, True)
 check("and what the AI money buys",
@@ -158,14 +171,16 @@ check("the term is the quote's", "12-month term" in with_ai, True)
 check("a six-month quote says six", "6-month term" in core[-1], True)
 # Monthly budget is the intermediate tier, which is the headline the tool
 # prints everywhere else, times the term it is sold on.
+_mid = _both["intermediate"]
 check("the budget is the intermediate tier, and says so",
-      "Monthly Budget (Intermediate): $8,650" in with_ai, True)
+      f"Monthly Budget (Intermediate): {_money(_mid)}" in with_ai, True)
 check("and the total is that across the term",
-      "Total Budget: $103,800" in with_ai, True)
+      f"Total Budget: {_money(_mid * 12)}" in with_ai, True)
 # A FILE CANNOT BE SELECTED ON SCREEN, so the tier the budget came from is
 # marked on its own card.
 check("the tier is marked on its own card too", "Selected" in with_ai, True)
-check("the budget equals that card", "$8,650 / month" in with_ai, True)
+check("the budget equals that card",
+      f"{_money(_mid)} / month" in with_ai, True)
 
 print("\nTHE FLIGHT IS WHAT WAS TYPED ON THE FORM")
 flight = dict(quote("Core SEO, AI Search"),
@@ -175,7 +190,7 @@ check("the dates print across the top",
       "05/01/2025 - 10/31/2025" in dated, True)
 check("and the months are read off them", "Months Running: 6" in dated, True)
 check("the total is the budget across those months",
-      "Total Budget: $51,900" in dated, True)
+      f"Total Budget: {_money(_mid * 6)}" in dated, True)
 # Typed months win, and an end date is worked out from them.
 typed = dict(quote("Core SEO, AI Search"), start_date="2025-05-01", months="3")
 check("months typed by hand set the end date",

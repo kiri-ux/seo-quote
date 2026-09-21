@@ -5554,8 +5554,12 @@ function pricingChart(){
                p.pageone_aggregator_share!=null
                  ? `aggregators hold ${Math.round(Number(p.pageone_aggregator_share)*100)}% of page one`
                  : 'aggregators hold page one');
+  // THE MULTIPLIER DOES NOT MULTIPLY THE WHOLE COLUMN. It applies to every row
+  // above except Search volume, so a reader adding the rows and multiplying
+  // gets a different number from the one at the bottom. The cell says which.
   if(up)  row('Current visibility', '× '+(1+up/100).toFixed(2),
-              `${ST.pctNotRanking!=null?Math.round(ST.pctNotRanking)+'% of terms not ranking':'ranking uplift'}`);
+              `${ST.pctNotRanking!=null?Math.round(ST.pctNotRanking)+'% of terms not ranking':'ranking uplift'}`
+              + (vol?' · not on search volume':''));
   if(mult!=null && mult!==1) row('Extras multiplier', '× '+mult, 'industry card or nationwide scope');
   if(p.floored) row('Minimum', ppMoney(p.client_floor), 'computed below the floor — the floor is the price');
   row('Margin', mk+'%', 'agency share of gross · everything above is partner cost');
