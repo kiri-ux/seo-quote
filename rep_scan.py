@@ -33,7 +33,148 @@ def _squash(t):
     return re.sub(r"[^a-z0-9]", "", (t or "").lower())
 
 
-def names_client(phrase, brand, domain=""):
+# ------------------------------------------------------------- the core name
+# A company name wearing its own paperwork. Only a TRAILING token counts, so
+# "PA Roofing" and "Co-op Market" keep every word of their names.
+#
+# UNAMBIGUOUS MARKERS ONLY. The obvious additions — ag, sa, nv, bv — read as a
+# state or a trade as often as an entity type, and stripping one collapses
+# "Midwest Ag" to "midwest", which then counts a region's worth of other
+# people's volume as this client's brand. A suffix earns its place here by
+# being a word no US client's trading name ends in for any other reason.
+_CORP_SUFFIX = frozenset("""llc inc incorporated corp corporation ltd limited
+llp lllp pllc plc pc pa lp co company gmbh""".split())
+
+# Words that join a name rather than being part of it. A searcher types the
+# ampersand, spells it out, or drops it entirely, and all three are the same
+# business.
+_CONNECTORS = frozenset({"and", "of", "the"})
+
+
+def _norm_tokens(text):
+    """Name tokens, punctuation-blind, with '&' spelled out.
+
+    "Cisney & O'Donnell, P.A." -> ['cisney', 'and', 'odonnell', 'pa']
+    """
+    out = []
+    for raw in (text or "").lower().replace("&", " and ").split():
+        w = re.sub(r"[^a-z0-9]", "", raw)
+        if w:
+            out.append(w)
+    return out
+
+
+def _sig(toks):
+    """The tokens that carry the name — connectors dropped."""
+    return [t for t in toks if t not in _CONNECTORS]
+
+
+def brand_core(brand):
+    """The brand as a search box gets it: normalized tokens, legal tail gone.
+
+    A CLIENT NAME CARRIES ITS PAPERWORK AND A SEARCH BOX DOES NOT. Cisney &
+    O'Donnell PA scanned to 0/mo of total brand volume — not because nobody
+    searches them, but because every name match here asked for the ENTERED
+    name as a literal substring and no phrase anyone types ends in "pa". Every
+    row DataForSEO returned classified as a different company, the universe
+    summed to zero, and Search Protection priced off its floor instead of off
+    measured demand.
+
+    The punctuation did the same damage one layer down: "cisney and o'donnell"
+    and "cisney odonnell" are the same business as "cisney & o'donnell" and
+    matched none of the others, so even the volume that survived the suffix
+    was split three ways and mostly discarded. (2026-09-21)
+    """
+    toks = _norm_tokens(brand)
+    while len(toks) > 1 and toks[-1] in _CORP_SUFFIX:
+        toks.pop()
+    # A connector cannot end a name once the suffix it joined is gone.
+    while len(toks) > 1 and toks[-1] in _CONNECTORS:
+        toks.pop()
+    return toks
+
+
+def brand_key(brand):
+    """Squashed core, CONNECTORS KEPT — the listing-title gate's key.
+
+    Kept separate from the matcher below on purpose. That one anchors the
+    front of the phrase and can afford to ignore connectors; a title gate is a
+    bare substring test with nothing anchoring it, and dropping the "and"
+    turns "cityheatingair" loose inside "Twin City Heating Air and Electric
+    Blaine" — the 45-location scan all over again.
+    """
+    return "".join(brand_core(brand))
+
+
+def brand_seed(brand):
+    """The entered brand minus its legal tail, original spelling intact.
+
+    What gets SENT to DataForSEO, as opposed to what gets matched. Seeding
+    keywords_for_keywords with "cisney & o'donnell pa" asks Google Ads to
+    expand a phrase nobody types, so the result set is thin before any filter
+    runs.
+    """
+    words = (brand or "").replace("&", " & ").split()
+    while len(words) > 1:
+        w = re.sub(r"[^a-z0-9]", "", words[-1].lower())
+        if w in _CORP_SUFFIX or w in _CONNECTORS or not w:
+            words.pop()
+        else:
+            break
+    return " ".join(words).strip()
+
+
+def _match_key(brand, alias=""):
+    """The token run a phrase has to carry to be this client's.
+
+    Normally the brand's own core. When Google's listing name is also known
+    the two are reconciled on their COMMON TOKEN PREFIX, which is what lets a
+    listing tail fall away: "Cisney & O'Donnell PA" and "Cisney & O'Donnell
+    Builders & Remodelers" agree on "cisney odonnell", and that head is
+    attested by two independent sources rather than guessed at.
+
+    Two sources are the whole point. Trimming a tail off one name on its own
+    would hand "Denver Dental Group" the term "denver dental" — a service in a
+    city, the best keyword they could buy, and thousands a month of somebody
+    else's volume priced as theirs.
+    """
+    core = _sig(brand_core(brand))
+    other = _sig(brand_core(alias))
+    if core and other:
+        n = 0
+        while n < len(core) and n < len(other) and core[n] == other[n]:
+            n += 1
+        if n >= 2:
+            return core[:n]
+    return core
+
+
+def _run_at(toks, key):
+    """Where `key` sits in `toks` as one contiguous run: (index, tokens eaten),
+    or (-1, 0).
+
+    Also matches the run-together spelling of a two-or-more-word name, which
+    is how people type a brand they know from a URL. That match eats ONE token
+    rather than the key's length, which is why the count comes back with the
+    index instead of being assumed by the caller. Anchored at the front of the
+    token, so "cityheatingairconditioning" is theirs and "twincityheatingair"
+    is not.
+    """
+    n = len(key)
+    if not n:
+        return -1, 0
+    for i in range(len(toks) - n + 1):
+        if toks[i:i + n] == key:
+            return i, n
+    if n >= 2:
+        squashed = "".join(key)
+        for i, t in enumerate(toks):
+            if t.startswith(squashed):
+                return i, 1
+    return -1, 0
+
+
+def names_client(phrase, brand, domain="", alias=""):
     """Does this search phrase actually name THIS client?
 
     Google's related-searches and People-Also-Search-For blocks are topical, not
@@ -44,22 +185,28 @@ def names_client(phrase, brand, domain=""):
     client it has nothing to do with, which both recommends a cleanup campaign
     and prices one (2026-08-05).
 
-    Matching is on the squashed brand and the bare domain, so punctuation and
-    spacing don't matter ("Hot Tubs Etc." -> hottubsetc). When neither yields a
-    usable key the filter stands down rather than emptying the panel.
+    It asks classify_term, so the core name answers here too and one filter
+    cannot disagree with the other. A SQUASHED WHOLE NAME IS NOT A BRAND KEY:
+    this used to test whether the entered name ran through the phrase with its
+    punctuation removed, which put "cisney & o'donnell reviews" — their own
+    phrase, off their own page one — in the "names a different company" box,
+    because the key it was tested against still carried the "pa". Both of that
+    client's related searches were excluded that way (2026-09-21).
+
+    The bare domain is kept as a second key for a phrase written the way a URL
+    is. When neither yields a usable key the filter stands down rather than
+    emptying the panel.
     """
-    keys = []
-    b = _squash(brand)
-    if len(b) > 3:
-        keys.append(b)
+    core = _sig(brand_core(brand))
     host = (domain or "").split("//")[-1].split("/")[0].replace("www.", "")
     d = _squash(host.rsplit(".", 1)[0] if "." in host else host)
-    if len(d) > 3 and d not in keys:
-        keys.append(d)
-    if not keys:
+    if not core and len(d) <= 3:
         return True
-    p = _squash(phrase)
-    return any(k in p for k in keys)
+    if core and classify_term(phrase, brand, alias=alias) is not None:
+        return True
+    if len(d) > 3:
+        return d in "".join(_sig(_norm_tokens(phrase)))
+    return False
 
 
 NEG_MODIFIERS = {
@@ -81,7 +228,7 @@ LEADERS = {"is", "are", "was", "the", "a", "an", "does", "do", "did", "who",
            "complaints", "complaint", "lawsuit", "lawsuits", "scam", "scams"}
 
 
-def classify_term(term, brand):
+def classify_term(term, brand, alias=""):
     """Which class of brand term is this, or None if it is not the client's.
 
     A BRAND NAME MADE OF COMMON WORDS IS NOT A BRAND FILTER. This asked only
@@ -98,16 +245,27 @@ def classify_term(term, brand):
     there. Anything else is a different company whose name happens to contain
     these words. What comes AFTER is left alone: "city heating and air
     conditioning" is how Google lists this very client. (2026-09-17)
+
+    MATCHED ON THE CORE NAME, NOT THE ENTERED STRING. The gate above is the
+    right gate and the key it ran on was wrong: a literal substring of the
+    name as typed, legal suffix and apostrophes and all. See brand_core —
+    Cisney & O'Donnell PA came back with a brand universe of zero because of
+    it. Tokens now, so the front stays anchored while the spelling stops
+    mattering. (2026-09-21)
     """
-    t = term.lower()
-    b = brand.lower()
-    i = t.find(b)
+    key = _match_key(brand, alias)
+    # A one-word core has nothing but its own length keeping it from swallowing
+    # a common word, so a short one falls back to the name as entered.
+    if len(key) == 1 and len(key[0]) < 4:
+        key = _sig(_norm_tokens(brand))
+    sig = _sig(_norm_tokens(term))
+    i, eaten = _run_at(sig, key)
     if i < 0:
-        return None                       # not a brand term
-    lead = [w for w in t[:i].split() if w]
+        return None                       # not this client's brand term
+    lead = sig[:i]
     if any(w not in LEADERS for w in lead):
         return None                       # someone else's name
-    rest = t.replace(b, " ")
+    rest = " ".join(lead + sig[i + eaten:])
     for m in NEG_MODIFIERS:
         if m in rest:
             return "negative"
@@ -120,7 +278,7 @@ def classify_term(term, brand):
 PROBE_MODIFIERS = ["lawsuit", "complaints", "scam", "fraud", "class action",
                    "settlement", "reviews", "legit"]
 
-def scan_terms(brand):
+def scan_terms(brand, alias=""):
     """Brand term universe via keywords_for_keywords (US national), PLUS an
     exact-match probe of the canonical negative/watch variants. KFK returns
     GROUPED volumes that merge close variants (the same quirk the SEO tool
@@ -131,7 +289,10 @@ def scan_terms(brand):
     # that brand, wherever they are, and the Search Protection bases were
     # fitted on national volume (Sage at 51,330/mo). The SERP and auto-suggest
     # are localized because a page one is local; a brand's own demand is not.
-    b = brand.lower()
+    # SEEDED ON THE CORE NAME. "cisney & o'donnell pa" is a phrase nobody
+    # types, so Google Ads had little to expand and the probe asked after
+    # eight more phrases nobody types either.
+    b = brand_seed(brand).lower()
     payload = [{"keywords": [b], "location_code": 2840,
                 "language_code": "en", "sort_by": "search_volume"}]
     data = _post("/keywords_data/google_ads/keywords_for_keywords/live",
@@ -140,7 +301,7 @@ def scan_terms(brand):
     for it in (data["tasks"][0]["result"] or []):
         kw = (it.get("keyword") or "").lower()
         vol = it.get("search_volume") or 0
-        cls = classify_term(kw, brand)
+        cls = classify_term(kw, brand, alias=alias)
         if cls:
             by_term[kw] = {"term": kw, "volume": vol, "class": cls, "src": "kfk"}
 
@@ -156,7 +317,7 @@ def scan_terms(brand):
             for it in (block.get("items") or []):
                 kw = (it.get("keyword") or "").lower()
                 vol = ((it.get("keyword_info") or {}).get("search_volume")) or 0
-                cls = classify_term(kw, brand)
+                cls = classify_term(kw, brand, alias=alias)
                 if not cls:
                     continue
                 # exact volume overrides the grouped KFK number
@@ -243,11 +404,14 @@ def _where(location):
             else {"location_code": 2840})
 
 
-def scan_serp(brand, domain="", location=None):
+def scan_serp(brand, domain="", location=None, alias=""):
     """Top-10 for '{brand} reviews': organic results (with ratings parsed from
     snippet text when Google omits star markup), the Reddit/forums block, the
     AI Overview, related searches — owned tagging against the client domain."""
-    kw = f"{brand} reviews".lower()
+    # THE CORE NAME IS THE QUERY. "cisney & o'donnell pa reviews" is not a
+    # search anyone runs, so the page one it returns is not the page one the
+    # client is judged on.
+    kw = f"{brand_seed(brand)} reviews".lower()
     payload = [dict({"keyword": kw, "language_code": "en", "depth": 10},
                     **_where(location))]
     data = _post("/serp/google/organic/live/advanced", payload, timeout=45)
@@ -309,9 +473,10 @@ def scan_serp(brand, domain="", location=None):
         elif t == "people_also_search":
             pasf += [x for x in (it.get("items") or []) if isinstance(x, str)][:8]
     # Drop phrases that name a different company BEFORE anything counts them.
-    off_brand = [x for x in (related + pasf) if not names_client(x, brand, domain)]
-    related = [x for x in related if names_client(x, brand, domain)]
-    pasf = [x for x in pasf if names_client(x, brand, domain)]
+    off_brand = [x for x in (related + pasf)
+                 if not names_client(x, brand, domain, alias=alias)]
+    related = [x for x in related if names_client(x, brand, domain, alias=alias)]
+    pasf = [x for x in pasf if names_client(x, brand, domain, alias=alias)]
     neg_related = [x for x in related
                    if any(m in x.lower() for m in NEG_MODIFIERS)]
     neg_pasf = [x for x in pasf if any(m in x.lower() for m in NEG_MODIFIERS)]
@@ -331,7 +496,8 @@ def scan_autocomplete(brand, location=None):
     returns a thinner set). Terms that come back empty get a fallback pass:
     trailing-space (next-word suggestions, matching Brendan's screenshots)
     then last-char-trimmed prefix. Extra calls only fire for empty terms."""
-    kws = [brand.lower(), f"{brand} reviews".lower()]
+    _b = brand_seed(brand)
+    kws = [_b.lower(), f"{_b} reviews".lower()]
 
     def _pull(keywords):
         payload = [dict({"keyword": k, "language_code": "en",
@@ -411,12 +577,16 @@ def scan_locations(brand, limit=200, domain=None, location=None):
             {"filters": [["url", "like", f"%{dom}%"]], "limit": limit,
              "order_by": ["rating.votes_count,desc"], "_via_domain": True},
         ]
+    # THE CORE NAME, NOT THE PAPERWORK. A Google Business listing is titled
+    # the way the business trades, so "Cisney & O'Donnell PA" matched nothing
+    # by name and only the domain attempt found their one listing.
+    nm = brand_seed(brand)
     attempts += [
-        {"title": brand, "limit": limit,
+        {"title": nm, "limit": limit,
          "order_by": ["rating.votes_count,desc"]},
-        {"filters": [["title", "like", f"%{brand.title()}%"]], "limit": limit,
+        {"filters": [["title", "like", f"%{nm.title()}%"]], "limit": limit,
          "order_by": ["rating.votes_count,desc"]},
-        {"filters": [["title", "like", f"%{brand.lower()}%"]], "limit": limit,
+        {"filters": [["title", "like", f"%{nm.lower()}%"]], "limit": limit,
          "order_by": ["rating.votes_count,desc"]},
     ]
     last_err = None
@@ -428,7 +598,11 @@ def scan_locations(brand, limit=200, domain=None, location=None):
     # Cooling". Squashing both sides and asking for one contiguous run drops
     # both, and still tolerates the punctuation and spacing differences the
     # name matching exists for ("Hot Tubs Etc." -> hottubsetc).
-    b_key = _squash(brand)
+    # CONNECTORS STAY IN THIS KEY. _squash dropped the ampersand outright, so a
+    # client listed as "City Heating & Air" failed its own gate while the token
+    # form keeps the "and" that holds "Twin City Heating Air and Electric
+    # Blaine" out. The legal tail comes off; nothing else does.
+    b_key = brand_key(brand)
     for payload in attempts:
         via_domain = payload.pop("_via_domain", False)
         try:
@@ -445,7 +619,8 @@ def scan_locations(brand, limit=200, domain=None, location=None):
                 # Title searches must carry the brand as a phrase; domain
                 # matches skip that gate — a name mismatch is exactly what
                 # they solve.
-                if not via_domain and len(b_key) > 3 and b_key not in _squash(title):
+                if (not via_domain and len(b_key) > 3
+                        and b_key not in brand_key(title)):
                     continue
                 rat = it.get("rating") or {}
                 locs.append({

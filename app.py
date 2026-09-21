@@ -19247,7 +19247,7 @@ def api_rep_scan_terms():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        return jsonify(rep_scan.scan_terms(brand))
+        return jsonify(rep_scan.scan_terms(brand, alias=_rep_alias(d)))
     except Exception as e:
         return jsonify({"error": f"Term scan failed: {e}"}), 502
 
@@ -19262,7 +19262,7 @@ def api_rep_scan_serp():
     try:
         return jsonify(rep_scan.scan_serp(
             brand, (d.get("domain") or "").strip(),
-            location=_rep_market(d)))
+            location=_rep_market(d), alias=_rep_alias(d)))
     except Exception as e:
         return jsonify({"error": f"SERP scan failed: {e}"}), 502
 
@@ -19279,6 +19279,17 @@ def api_rep_scan_autocomplete():
         return jsonify(rep_scan.scan_autocomplete(brand, location=_rep_market(d)))
     except Exception as e:
         return jsonify({"error": f"Autocomplete scan failed: {e}"}), 502
+
+def _rep_alias(d):
+    """The client's OTHER known name, for reconciling the one that was typed.
+
+    The operator types a client name and Google titles the same business
+    something else, and rep_scan needs both to tell a legal suffix or a
+    listing tail from a word that is actually part of the name. Whichever name
+    is in the Client Name field, the scan sends the other one here.
+    """
+    return (d.get("alias") or "").strip()
+
 
 def _rep_market(d):
     """The client's market as DataForSEO names it, or None for the US.

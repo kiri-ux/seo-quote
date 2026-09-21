@@ -757,6 +757,12 @@ $('scanBtn').onclick = async ()=>{
   let brand = $('brand').value.trim();
   if(!brand){ alert('Enter the client / brand name first.'); return; }
   const domain = $('domain').value.trim();
+  // THE OTHER NAME THIS CLIENT GOES BY. Step 1 finds the Google listing title,
+  // which is how the business trades; the field holds what the operator typed,
+  // which is often the legal name. Sending both lets the scan tell a suffix or
+  // a listing tail ("PA", "Builders & Remodelers") from a word that is really
+  // part of the name. Whichever one ends up in the field, the other rides along.
+  let alias = '';
   $('scanBtn').disabled = true;
   $('scanCard').classList.remove('hidden');
   $('scanProg').classList.remove('hidden');
@@ -797,15 +803,18 @@ $('scanBtn').onclick = async ()=>{
       const listName = ((r.locations.slice().sort((a,b)=>(b.reviews||0)-(a.reviews||0))[0]||{}).title||'').trim();
       if(listName && listName.toLowerCase() !== brand.toLowerCase()){
         if(confirm('Google lists this client as \u201c'+listName+'\u201d (found via their website).\n\nScan using that name instead of \u201c'+brand+'\u201d? The term universe, SERP, and auto-suggest results will be much more accurate under the name people actually search.')){
+          alias = brand;       // the typed name still corroborates the head
           brand = listName;
           $('brand').value = listName;
           autoCountLowest();   // name settled — safe to spend on review pulls
+        }else{
+          alias = listName;    // declined, but Google's title still says it
         }
       }
     }
   });
-  await step('2/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
-  await step('3/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
+  await step('2/4 — pulling brand term universe…', async ()=>{ const r = await fetchJSON('/api/rep_scan_terms', {brand, alias}); if(!r.error) window._scanData.terms = r; renderTerms(r); });
+  await step('3/4 — scanning "'+brand+' reviews" SERP…', async ()=>{ const r = await fetchJSON('/api/rep_scan_serp', {brand, domain, alias}); if(!r.error) window._scanData.serp = r; renderSerp(r); });
   await step('4/4 — checking auto-suggest…', async ()=>{ const r = await fetchJSON('/api/rep_scan_autocomplete', {brand}); if(!r.error) window._scanData.autocomplete = r; renderAutocomplete(r); });
   renderReco();
   renderBrandReco();
@@ -898,26 +907,82 @@ function renderTerms(d){
   tb.innerHTML = h;
 }
 
-// Mirror of names_client() in rep_scan.py. The server filters on a fresh pull,
-// but every already-saved quote still carries the unfiltered phrases, so a
-// reopened quote would show a competitor's "complaints" forever. Filtering at
-// render time fixes them all for free.
-function namesClient(phrase, brand, domain){
-  const sq = t => String(t||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const keys = [];
-  const b = sq(brand); if(b.length > 3) keys.push(b);
-  const host = String(domain||'').split('//').pop().split('/')[0].replace(/^www\./,'');
-  const d = sq(host.indexOf('.')>=0 ? host.slice(0, host.lastIndexOf('.')) : host);
-  if(d.length > 3 && keys.indexOf(d) < 0) keys.push(d);
-  if(!keys.length) return true;
-  const p = sq(phrase);
-  return keys.some(k => p.indexOf(k) >= 0);
+// Mirror of brand_core()/classify_term() in rep_scan.py. A CLIENT NAME CARRIES
+// ITS PAPERWORK AND A SEARCH BOX DOES NOT: this tested the name as TYPED
+// against the phrase, so Cisney & O'Donnell PA had their own related searches
+// filed as a different company's — nothing anyone types ends in "pa".
+const CORP_SUFFIX = new Set(('llc inc incorporated corp corporation ltd limited '
+  + 'llp lllp pllc plc pc pa lp co company gmbh').split(' '));
+const CONNECTORS = new Set(['and','of','the']);
+const normTokens = t => String(t||'').toLowerCase().replace(/&/g,' and ')
+  .split(/\s+/).map(w => w.replace(/[^a-z0-9]/g,'')).filter(Boolean);
+const sigTokens = ts => ts.filter(w => !CONNECTORS.has(w));
+function brandCore(brand){
+  const t = normTokens(brand);
+  while(t.length > 1 && CORP_SUFFIX.has(t[t.length-1])) t.pop();
+  while(t.length > 1 && CONNECTORS.has(t[t.length-1])) t.pop();
+  return t;
 }
+// Two names agreeing on a head is evidence; trimming a tail off one on its own
+// would hand "Denver Dental Group" the term "denver dental".
+function matchKey(brand, alias){
+  const core = sigTokens(brandCore(brand)), other = sigTokens(brandCore(alias));
+  if(core.length && other.length){
+    let n = 0;
+    while(n < core.length && n < other.length && core[n] === other[n]) n++;
+    if(n >= 2) return core.slice(0, n);
+  }
+  return core;
+}
+const LEADERS = new Set(['is','are','was','the','a','an','does','do','did','who',
+  'what','why','how','where','when','best','worst','about','for','of','at','near',
+  'reviews','review','rating','ratings','complaints','complaint','lawsuit',
+  'lawsuits','scam','scams']);
+// Only leader words may sit in FRONT of the brand: a name made of common words
+// otherwise collects every other company that shares them.
+function brandRest(phrase, brand, alias){
+  let key = matchKey(brand, alias || '');
+  if(key.length === 1 && key[0].length < 4) key = sigTokens(normTokens(brand));
+  if(!key.length) return null;
+  const sig = sigTokens(normTokens(phrase));
+  let i = -1, eaten = 0;
+  for(let a = 0; a + key.length <= sig.length && i < 0; a++){
+    let hit = true;
+    for(let j = 0; j < key.length; j++) if(sig[a+j] !== key[j]){ hit = false; break; }
+    if(hit){ i = a; eaten = key.length; }
+  }
+  if(i < 0 && key.length >= 2){
+    const sq = key.join('');
+    for(let a = 0; a < sig.length && i < 0; a++) if(sig[a].indexOf(sq) === 0){ i = a; eaten = 1; }
+  }
+  if(i < 0) return null;
+  const lead = sig.slice(0, i);
+  if(!lead.every(w => LEADERS.has(w))) return null;
+  return lead.concat(sig.slice(i + eaten));
+}
+// The server filters on a fresh pull, but every already-saved quote still
+// carries the unfiltered phrases, so a reopened quote would show a
+// competitor's "complaints" forever. Filtering at render time fixes them all
+// for free.
+function namesClient(phrase, brand, domain, alias){
+  const core = sigTokens(brandCore(brand));
+  const host = String(domain||'').split('//').pop().split('/')[0].replace(/^www\./,'');
+  const d = String(host.indexOf('.')>=0 ? host.slice(0, host.lastIndexOf('.')) : host)
+    .toLowerCase().replace(/[^a-z0-9]/g,'');
+  if(!core.length && d.length <= 3) return true;
+  if(core.length && brandRest(phrase, brand, alias) !== null) return true;
+  if(d.length > 3) return sigTokens(normTokens(phrase)).join('').indexOf(d) >= 0;
+  return false;
+}
+// The name Google titles this business, when step 1 found it differing from
+// the one that was typed. Both together are what tell a suffix or a listing
+// tail from a word that is part of the name.
+const pageAlias = () => window._listName || '';
 function offBrand(list, brand, domain){
-  return (list||[]).filter(x => !namesClient(x, brand, domain));
+  return (list||[]).filter(x => !namesClient(x, brand, domain, pageAlias()));
 }
 function onBrand(list, brand, domain){
-  return (list||[]).filter(x => namesClient(x, brand, domain));
+  return (list||[]).filter(x => namesClient(x, brand, domain, pageAlias()));
 }
 // Rebuilt from scratch rather than added to: a Set only grows, so a re-pull left
 // the phrase that prompted the re-pull still sitting in the count.
