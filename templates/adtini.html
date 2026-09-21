@@ -577,6 +577,13 @@ function draw(){
   try { siteLink(); } catch (e) {}
   $('prods').innerHTML = ROWS.map(rowHtml).join('');
   try { addProdButtons(); } catch (e) {}
+  // The unranked-gap prompt sits under the Keywords card, so it is drawn once
+  // the rows exist. Only SEO rows have a grid to have gaps in.
+  ROWS.forEach(x => {
+    if (x.kind !== 'orm' && (x.result || {}).table) {
+      try { renderUnrankedGap(x); } catch (e) {}
+    }
+  });
 }
 
 // THE CLIENT IS ALREADY ON THE PAGE. Quoting them for the other product meant
@@ -1548,6 +1555,7 @@ function plannerView(r){
                + `<td>${rk == null ? 'Not Found' : rk}</td></tr>`;
         }).join('')}
       </table></div>
+      <div class="unrgap" data-unrgap="${r.i}"></div>
     </div>`;
   const cards = `<div class="pview">${rows.map(([k, v]) =>
       `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join('')}</div>`;
@@ -1842,7 +1850,8 @@ function resultsHtml(r, full){
       + (strat.length
          ? `<span class="qsums">${strat.map(x => `<b>${esc(x)}</b>`).join('')}</span>` : '')
       + `</span></summary>
-    <div class="qbody">${tileRow(false)}</div>
+    <div class="qbody">${tileRow(false)}
+      <div class="unrgap" data-unrgap="${r.i}"></div></div>
   </details>`;
   }
   return `
@@ -2894,6 +2903,271 @@ function kbScopeNote(r){
 // compare against, reservation already met, nothing left to promote. Each of
 // those is a different answer, so each one says so. Ported from the legacy
 // panel, which has carried all of them since 2026-08-19. (2026-09-21, Kiri)
+// ---------------------------------------------------------------------------
+// A CLIENT RANKING FOR EVERYTHING HAS NO STORY IN THE PROPOSAL.
+//
+// The build-time reservation (see drawHeadroom) holds grid slots for terms the
+// client does not rank for, but it can only promote from the terms the demand
+// ranking CUT -- so on a list whose seeds all fit the grid it has nothing to
+// work with and says so. Cisney & O'Donnell: 19 seed families, 20 slots,
+// nothing cut.
+//
+// This is the other half, ported from the legacy page. It runs AFTER the rank
+// check, asks the expensive question, and measures rather than infers: the best
+// candidates the grid did not quote, put through the SAME live rank check the
+// grid rows went through. What comes back Not Found is a measured gap.
+//
+// MEASURED, NOT INFERRED, is the whole point. The ranked-keywords report covers
+// a domain NATIONALLY: it can prove a client DOES rank for something and cannot
+// prove they do not, because a position held only in a local result page never
+// appears in it. On Ski Barn it called nineteen of twenty terms unranked that
+// the live SERP found at #1-#4. So it is used only as a SIEVE to skip
+// candidates it already knows about, and everything surviving goes to the SERP.
+// (2026-09-21, Kiri)
+const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 4;
+let _liveCfg = null, UNRANKED_RUNNING = false;
+
+// Operational knobs come from the LIVE config, cached for the session, never
+// from the saved quote: a payload written when the list was built pins the call
+// budget forever, and tuning the number is then invisible until someone
+// rebuilds. The legacy page learned that the expensive way.
+async function liveCfg(){
+  if (_liveCfg) return _liveCfg;
+  try {
+    const r = await fetch('/api/config');
+    _liveCfg = r.ok ? await r.json() : {};
+  } catch (e) { _liveCfg = {}; }
+  return _liveCfg;
+}
+const _cfgNum = (k, dflt) => {
+  const v = (_liveCfg || {})[k];
+  return (v === undefined || v === null || v === '') ? dflt : Number(v);
+};
+const minUnranked = () => _cfgNum('min_unranked_terms', MIN_UNRANKED_DEFAULT);
+const unrankedProbeMax = () => _cfgNum('unranked_probe_max', UNRANKED_PROBE_DEFAULT);
+
+function unrankedCount(r){
+  return (((r.result || {}).table) || []).filter(x => x && x.pos === 'Not Found').length;
+}
+
+// THE CUT LIST FIRST, THEN THE MARKET POOL. The cut is the best source -- those
+// are terms the client named -- but a list that fits the grid cuts nothing, and
+// that is exactly the client this feature exists for. The pool is the market
+// vocabulary the build already measured and did not quote, which is the honest
+// second place to look for something they do not own.
+function unrankedCandidates(r){
+  const kw = r.kw || {};
+  const sr = kw.seed_ranking || {};
+  const inGrid = new Set((kw.all || []).map(x => String(x.kw || '').toLowerCase()));
+  const tried = new Set((r.unrankedTried || []).map(x => String(x).toLowerCase()));
+  const sfx = gridSuffix(r);
+  const out = [];
+  const take = (bare, vol) => {
+    const term = String(bare || '').trim();
+    if (!term) return;
+    const full = (sfx ? `${term} ${sfx}` : term)
+      .toLowerCase().replace(/\s+/g, ' ').trim();
+    if (inGrid.has(full) || tried.has(full)) return;
+    if (out.some(x => x.kw === full)) return;
+    out.push({kw: full, bare: term, vol: Number(vol) || 0, src: 'cut'});
+  };
+  (sr.order || []).forEach(([t, v]) => take(t, v));
+  if (out.length) return out;
+  // Nothing was cut. The market pool, best demand first.
+  const pool = (kw.market_pool || []).slice()
+    .sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0));
+  pool.forEach(x => take(x.keyword, x.volume));
+  out.forEach(x => { x.src = 'pool'; });
+  return out;
+}
+
+// The suffix the grid appends, so a candidate is probed in the form the quote
+// would sell it in.
+function gridSuffix(r){
+  const cities = ((r.kw || {}).grid_cities) || [];
+  return String(cities[0] || '').trim();
+}
+
+async function ownedTerms(r){
+  if (r.ownedCache) return r.ownedCache;
+  const d = r.data || {};
+  if (!d.site) return null;
+  try {
+    const got = await post('/api/ranked_keywords', {
+      domain: d.site, geo_values: geoOf(d), state: stateOf(d),
+      brand: d.brand || '', seeds: [], limit: 1000, own: true});
+    const set = new Set();
+    (got.owned || []).forEach(t => {
+      const v = String(t || '').toLowerCase().trim();
+      if (v) set.add(v);
+    });
+    r.ownedCache = {set, n: set.size};
+    return r.ownedCache;
+  } catch (e) { return null; }
+}
+
+// THE PROMPT. Two different questions, so it says which: this box is about the
+// terms IN the grid, the probe under it goes looking OUTSIDE it. Neither said
+// so on the legacy page at first, and a find below read as a flat contradiction
+// of the claim above it.
+function renderUnrankedGap(r){
+  try { liveCfg().then(() => {}); } catch (e) {}
+  // MORE THAN ONE HOST PER ROW. The prompt shows on the Details pane, where a
+  // planner looks after generating, and on the History view's Keywords card,
+  // which is the only place the grid itself is drawn.
+  const hosts = [...document.querySelectorAll(`[data-unrgap="${r.i}"]`)];
+  if (!hosts.length) return;
+  const min = minUnranked();
+  const paint = h => hosts.forEach(x => { x.innerHTML = h; });
+  if (!min) { paint(''); return; }
+  const table = ((r.result || {}).table) || [];
+  const measured = table.filter(x => x && x.pos !== undefined && x.pos !== null
+                                  && x.pos !== '' && !x.error && !x.queued
+                                  && !x.expired).length;
+  if (!measured) { paint(''); return; }
+  const have = unrankedCount(r);
+  if (have >= min) { paint(''); return; }   // the proposal already has a story
+  const cands = unrankedCandidates(r);
+  const cap = Math.min(cands.length, unrankedProbeMax());
+  paint(`<div class="unrbox">`
+    + `<b>They rank for ${have ? 'all but ' + have + ' of' : 'every one of'}`
+    + ` the quoted terms.</b> `
+    + (have === 0 ? 'No term in the grid is a gap.'
+        : (have === 1 ? '1 term in the grid is' : have + ' terms in the grid are')
+          + ' all there is.')
+    + (cands.length
+        ? ` <button class="btn2 unrfind" type="button" data-unrfind="${r.i}">`
+          + `Find ${min} outside the grid</button>`
+          + ` <span class="hint">checks up to ${cap} `
+          + `${cands[0].src === 'pool' ? 'market terms the grid did not quote'
+                                       : 'terms the grid cut'}</span>`
+        : ' <span class="hint">No candidates left to check.</span>')
+    + `</div>`
+    + (r.unrankedResult ? unrankedFoundHtml(r) : ''));
+  if (UNRANKED_RUNNING) {
+    document.querySelectorAll(`[data-unrfind="${r.i}"]`).forEach(b => {
+      b.disabled = true; b.textContent = 'Checking\u2026';
+    });
+  }
+  // AUTOMATIC WHEN THERE IS NOTHING AT ALL. Zero misses is not a close call --
+  // the proposal has no argument in it and somebody has to go looking. One shot
+  // per quote, so a reprice does not buy a second round of SERP calls, and the
+  // button stays for the 1-of-3 case where a human decides if it is worth it.
+  if (have === 0 && cands.length && !r.unrankedAuto && !UNRANKED_RUNNING) {
+    r.unrankedAuto = true;
+    findUnranked(r, true);
+  }
+}
+
+function unrankedFoundHtml(r){
+  const res = r.unrankedResult || {};
+  const found = res.found || [];
+  const n = x => Number(x || 0).toLocaleString();
+  if (!found.length) {
+    return `<div class="unrbox none"><b>No gap found.</b> `
+      + `${res.measured || 0} of ${res.checked || 0} candidates measured`
+      + (res.sieved ? ` \u00b7 ${res.sieved} skipped, already ranked nationally` : '')
+      + (res.allOwned ? ' \u00b7 every candidate is a term they already rank for' : '')
+      + `</div>`;
+  }
+  return `<div class="unrbox found"><b>${found.length} term`
+    + `${found.length === 1 ? '' : 's'} they do not rank for</b> \u00b7 `
+    + found.map(f => `${esc(f.bare || f.kw)}${f.vol ? ` (${n(f.vol)}/mo)` : ''}`)
+        .join(' \u00b7 ')
+    + ` <span class="hint">measured on the live result page`
+    + (res.sieved ? ` \u00b7 ${res.sieved} skipped, already ranked nationally` : '')
+    + `</span></div>`;
+}
+
+// A SECOND RUN MUST NOT START WHILE ONE IS IN FLIGHT. The panel re-renders while
+// the probe is out, so the running probe's own button is a node no longer in the
+// document -- the guard is on the module, not the button.
+async function findUnranked(r, auto){
+  if (UNRANKED_RUNNING) return;
+  UNRANKED_RUNNING = true;
+  try { await _findUnranked(r, auto); }
+  finally { UNRANKED_RUNNING = false; renderUnrankedGap(r); }
+}
+
+async function _findUnranked(r, auto){
+  try { await liveCfg(); } catch (e) {}
+  const min = minUnranked(), cap = unrankedProbeMax();
+  const setBtn = t => document.querySelectorAll(`[data-unrfind="${r.i}"]`)
+    .forEach(b => { b.disabled = true; b.textContent = t; });
+  let cands = unrankedCandidates(r);
+  if (!cands.length) return;
+  // SIEVE FIRST. Anything the domain already ranks for nationally is not worth
+  // a SERP call, and a term that survives the sieve is one worth spending on.
+  // A failed read falls through and checks the top candidates anyway rather
+  // than guessing.
+  setBtn('Reading their rankings\u2026');
+  let sieve = null;
+  try { sieve = await ownedTerms(r); } catch (e) { sieve = null; }
+  let sieved = 0;
+  if (sieve && sieve.set && sieve.set.size) {
+    const before = cands.length;
+    cands = cands.filter(c => !sieve.set.has(String(c.bare || '').toLowerCase())
+                           && !sieve.set.has(String(c.kw || '').toLowerCase()));
+    sieved = before - cands.length;
+  }
+  cands = cands.slice(0, cap);
+  if (!cands.length) {
+    r.unrankedResult = {found: [], checked: 0, measured: 0, sieved, allOwned: true};
+    return;
+  }
+  r.unrankedTried = (r.unrankedTried || []).concat(cands.map(c => c.kw));
+  const d = r.data || {};
+  const common = {geo_values: geoOf(d), state: stateOf(d),
+                  industry: (d.industry || []).join(', '),
+                  geo_scope: r.band || bandOf(d),
+                  national_demand: (r.band || bandOf(d)) === 'nationwide',
+                  brand: d.brand, domain: d.site, cfg: r.over};
+  const found = [], retry = [];
+  let measured = 0;
+  const read = (got, batch) => {
+    // `results`, NOT `rows`. /api/rankings has always answered with `results`;
+    // the legacy probe asked for `rows`, made every SERP call, got every answer
+    // and threw them all away. Five builds of "none could be read" were
+    // successful lookups read with the wrong key.
+    ((got && (got.results || got.rows)) || []).forEach(row => {
+      const c = batch.find(x => x.kw === row.kw) || {};
+      // ONLY A MEASURED MISS COUNTS. An errored or queued probe says nothing
+      // about the client and must not be offered as an opportunity.
+      if (row.error || row.queued) {
+        const back = batch.find(x => x.kw === row.kw);
+        if (back) retry.push(back);
+        return;
+      }
+      measured++;
+      if (row.pos === 'Not Found') found.push(Object.assign({}, c, {row}));
+    });
+  };
+  for (let i = 0; i < cands.length && found.length < min; i += 3) {
+    const batch = cands.slice(i, i + 3);
+    setBtn(`Checking ${i + 1}\u2013${Math.min(i + 3, cands.length)} of ${cands.length}\u2026`);
+    try {
+      read(await post('/api/rankings',
+                      Object.assign({}, common,
+                                    {batch: batch.map(c => ({kw: c.kw}))})), batch);
+    } catch (e) { continue; }
+  }
+  // The unreadable ones get one more pass: with the per-minute pacing a second
+  // attempt usually lands, and reporting "could not be read" on a term that
+  // would have answered is the same non-finding.
+  if (found.length < min && retry.length) {
+    setBtn(`Retrying ${retry.length} that did not answer\u2026`);
+    for (let i = 0; i < retry.length && found.length < min; i += 3) {
+      const batch = retry.slice(i, i + 3);
+      try {
+        read(await post('/api/rankings',
+                        Object.assign({}, common,
+                                      {batch: batch.map(c => ({kw: c.kw}))})), batch);
+      } catch (e) { continue; }
+    }
+  }
+  r.unrankedResult = {found, checked: cands.length, measured, sieved};
+}
+
 function drawHeadroom(kw){
   const el = document.getElementById('kbHeadroom');
   if (!el) return;
@@ -5025,6 +5299,8 @@ $('prods').addEventListener('click', e => {
   if (pb) { e.preventDefault(); downloadProposal(+pb.dataset.prop); return; }
   const db = e.target.closest('[data-slides]');
   if (db) { e.preventDefault(); downloadProposal(+db.dataset.slides, 'pptx'); return; }
+  const uf = e.target.closest('[data-unrfind]');
+  if (uf) { e.preventDefault(); findUnranked(ROWS[+uf.dataset.unrfind], false); return; }
 });
 
 // RERUN THE CHECKS THAT FAILED. Nineteen of twenty-one came back "\u2014" and the
