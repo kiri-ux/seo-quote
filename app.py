@@ -1158,20 +1158,37 @@ CFG = {
     # pageone_strength's own note) and Brendan sent $3,550 where the formula
     # computes $3,100. +$300 partner cost lands it on $3,550 exactly.
     #
-    # WHETHER IT FIRES ON THE FLOOR SIX IS NOT KNOWN, and that is the thing to
-    # watch. The authority band fired on four of them (Media Venue 650, Junk Bee
-    # Gone 704, Keller 728, Red Shoes 728) and would have overcharged every one.
-    # Those readings are a MAX, though, and a max is set by the single strongest
-    # domain on the page: a Yelp repeating on two of twenty terms reads 1,000
-    # there and about a tenth of the page here, because this counts slots and
-    # needs a majority of them. That is a reason to expect it behaves
-    # differently, not evidence that it does. The back-measure carries it as its own variable
-    # from today, and the floor six are the quotes to run first.
+    # MEASURED ACROSS THE BOOK, 2026-09-21. Fifteen saved quotes, five SERPs
+    # each. The shares came back 0, 0, 0, 0, 2, 6, 6, 16, 16, 17, 19, 29, 31,
+    # 33, 61 -- it fires on ONE of the fifteen, Amare, the quote it was fitted
+    # on. Three things follow:
+    #
+    #   It does not fire where the authority band did. That band fired on four
+    #   of the six clients Brendan priced at the floor (Media Venue 650, Junk
+    #   Bee Gone 704, Keller 728, Red Shoes 728) and would have overcharged
+    #   every one. They read 0%, 19%, 33% and 31% here. A max is set by the
+    #   single strongest domain on the page; this counts slots and needs half
+    #   of them.
+    #
+    #   The cut is not knife-edge. Nothing in the book sits between 34% and
+    #   60%, so the 50% line runs through an empty band rather than between
+    #   two clients a percentage point apart.
+    #
+    #   It does not explain the book's under-quoting, and must not be stretched
+    #   to. The four clients the bench has the tool quoting furthest under
+    #   Brendan read 0% (Skidmore), 29% (MPG), 17% (Rockingham) and 16%
+    #   (Ooten). Raising this constant would not touch any of them. Whatever
+    #   prices those -- and whatever is left of Cota Vera's gap once this has
+    #   fired -- is a different lever, and it has not been found.
+    #
+    # No second firing datapoint in the saved book, and no false positives
+    # either. The constant stays where it is until a second aggregator-held
+    # quote turns up with a price beside it.
     #
     # WHAT IT DOES NOT EXPLAIN: NPAIHB, also $3,550, whose page one is ihs.gov
-    # and Wikipedia. Not an aggregator lock-up, no premium here, still unexplained
-    # by anything in the formula. One datapoint fitted, one left open — a second
-    # aggregator-held quote is what would turn this into evidence.
+    # and Wikipedia. The run above measured it at 6% -- not an aggregator
+    # lock-up, no premium here, and its $3,550 still unexplained by anything in
+    # the formula. One datapoint fitted, one left open.
     #
     # Revert is one number: pageone_aggregator_add back to 0. (2026-09-19)
     "pageone_aggregator_add": 300,
