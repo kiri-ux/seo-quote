@@ -866,7 +866,36 @@ CFG = {
     # where it was. NPAIHB's $3,550 is still unexplained — its page one is ihs.gov
     # and Wikipedia, which is not an aggregator lock-up and draws nothing.
     "tier_step_flat": 650,                    # partner $ per tier; null -> use step_ratio
-    "tier_step_pct_of_base": 0.24,            # step grows past the flat floor on big bases
+    # HIS STEP IS FLAT IN DOLLARS, NOT A RATIO (2026-09-21). Read off the
+    # proposals on this path, the step as a share of the base FALLS as the base
+    # rises: Cota Vera 28% at $4,250, Rockingham 24% at $5,450, Seascape 19% at
+    # $6,950. max(flat, base x pct) holds it constant, which is why raising the
+    # percentage fixed Cota Vera and put Seascape $1,100 and $1,850 over.
+    #
+    # In dollars the same numbers sit still. Every premium step in the book is
+    # $1,200-$1,700 with a median of $1,300 -- Cota Vera 1,200/1,300, Rockingham
+    # 1,300/1,200, Seascape 1,300/1,700 -- and every floor step is $900-$1,115
+    # around $1,000. Two levels, not a curve. So the percentage stays as the
+    # ramp between them and the cap is what it ramps to: $845 partner is $1,300
+    # client, the median of what he actually sends.
+    #
+    # The percentage is now the LIFT-OFF POINT rather than the slope, which is
+    # what it was doing all along. At 0.33 the step leaves the $1,000 floor at a
+    # partner base of ~1,970 and reaches the cap at ~2,561, so the three clients
+    # sitting exactly on a $1,000 step stay there with room to spare. 0.36 scores
+    # identically and holds only by a rounding step -- 1850 x 0.36 rounds to
+    # exactly the flat floor -- and 0.40 lifts them and costs $1,120.
+    #
+    # Bench: total error 5,715 -> 4,415, worst 800 -> 600. Cota Vera's upper
+    # tiers close from -500/-800 to -200/-200 and Seascape's from +250/+150 to
+    # -50/-450. Nothing overshoots, and nothing at the floor moves.
+    #
+    # WHAT THIS DOES NOT FIT, DELIBERATELY. A cap of $975 scores $1,250 better
+    # by landing Rockingham's and Seascape's top tier exactly -- on a base that
+    # is $600 and $100 short. That is the ladder climbing steeper to cover a
+    # base error, which is the one thing a step must never be fitted to.
+    "tier_step_pct_of_base": 0.33,            # where the step leaves the flat floor
+    "tier_step_cap": 845,                     # partner $ ceiling; null = uncapped
     "step_ratio": 0.38,                       # fallback: proportional step
     # CALIBRATED ON 12 BE PROPOSALS (2026-08-10). His base has never gone below
     # $2,925 and sits within $25 of $2,950 in six of them, so a quote landing
@@ -1631,7 +1660,7 @@ def _cfg_apply(d, target):
             target[key] = caster(d[key])
     # Nullable knobs: empty/0 disables (flat step falls back to step_ratio;
     # no cap means volume brackets run uncapped).
-    for key in ("tier_step_flat", "volume_add_cap"):
+    for key in ("tier_step_flat", "volume_add_cap", "tier_step_cap"):
         if key in d:
             v = d[key]
             target[key] = None if v in (None, "", "null", 0, "0") else int(float(v))
@@ -12269,6 +12298,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # roughly a quarter of the hard base once the base outgrows the floor.
         pct = CFG.get("tier_step_pct_of_base", 0.24)
         step = max(r50(flat), r50(base * pct))
+        # AND IT STOPS GROWING. See tier_step_cap.
+        _cap = CFG.get("tier_step_cap")
+        if _cap:
+            step = min(step, r50(_cap))
     else:
         step = r50(base * CFG["step_ratio"])
     hard = {"base": base, "intermediate": base + step, "advanced": base + 2*step}
@@ -15960,6 +15993,7 @@ def api_config_get():
         "cpc_adder_knee": CFG.get("cpc_adder_knee", 62.0),
         "cpc_adder_mult_high": CFG.get("cpc_adder_mult_high", 14.0),
         "tier_step_pct_of_base": CFG.get("tier_step_pct_of_base", 0.24),
+        "tier_step_cap": CFG.get("tier_step_cap"),
         "ecom_anchor_add": CFG.get("ecom_anchor_add", 0),
         "geo_pricing_mode": CFG.get("geo_pricing_mode", "pct"),
         "geo_pct_tiers": CFG.get("geo_pct_tiers", []),

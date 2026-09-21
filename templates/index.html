@@ -6317,6 +6317,7 @@ async function loadConfig(){
       cfgRow('Nationwide','cf_ga_nation',ga.nationwide)+
       cfgRow('Tier step — flat $ (hard)','cf_stepflat',c.tier_step_flat==null?'':c.tier_step_flat,'calibrated to actual quotes: 700 ≈ $950 client/tier. Blank = use ratio below')+
       cfgRow('Step ratio (fallback)','cf_step',c.step_ratio,'0.38 = 38% — only used when flat step is blank')+
+      cfgRow('Tier step cap $ (hard)','cf_stepcap',c.tier_step_cap==null?'':c.tier_step_cap,'the step stops growing here; blank = uncapped')+
       cfgRow('Volume add cap $ (hard)','cf_volcap',c.volume_add_cap==null?'':c.volume_add_cap,'max $ the volume component can add; blank = uncapped')+
       cfgRow('Client floor ($)','cf_floor',c.client_floor,'min client base')+
       `<div class="tierhelp"><b>Add-On Market %</b> — a volume discount for covering more markets on the same site. Each add-on market is the tier price less this rate, and the total count sets one rate for all of them.</div>`+
@@ -6365,7 +6366,8 @@ $('cfgApply').addEventListener('click', async()=>{
     pageone_aggregator_domains:(v('cf_aggdoms')||'').split(/[\s,]+/).filter(Boolean),
     vol_free_below:v('cf_volfree'),
     volume_brackets:readVolBrackets(),
-    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'),
+    step_ratio:v('cf_step'), tier_step_flat:(($('cf_stepflat')||{}).value||'').trim(),
+    tier_step_cap:(($('cf_stepcap')||{}).value||'').trim(), cpc_adder_knee:v('cf_cpcknee'), cpc_adder_mult_high:v('cf_cpchigh'), tier_step_pct_of_base:v('cf_steppct'), volume_add_cap:(($('cf_volcap')||{}).value||'').trim(), client_floor:v('cf_floor'),
     default_markup_pct:v('cf_markup'),
     service_min_volume:v('cf_svcmin'),
     service_upgrade_ratio:v('cf_svcratio'),

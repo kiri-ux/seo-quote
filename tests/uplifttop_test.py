@@ -125,6 +125,33 @@ check("and the floor clients do not move",
       [got[n] for n in ("Visit Central PA", "Junk Bee Gone",
                         "Keller Builds", "Red Shoes")], [2950] * 4)
 
+print("\nTHE STEP IS FLAT IN DOLLARS ABOVE THE FLOOR")
+# His step as a share of the base FALLS as the base rises -- 28% at $4,250, 24%
+# at $5,450, 19% at $6,950 -- so a percentage cannot describe it. In dollars it
+# sits still: every premium step in the book is $1,200-$1,700, median $1,300.
+
+
+def step_of(nr, vol=0, band="contiguous_region", adder=0):
+    t = app.stage4_price(band, adder, False, 0, 35.0, pct_not_ranking=float(nr),
+                         total_volume=vol)["client_tiers"]
+    return t["intermediate"] - t["base"], t["advanced"] - t["intermediate"]
+
+
+check("the step is the same size on both rungs",
+      len(set(step_of(100, vol=60000))), 1)
+check("a premium client steps $1,300", step_of(100, vol=60000)[0], 1300)
+check("and so does a much bigger one, because it is capped",
+      step_of(100, vol=600000)[0], 1300)
+# The three clients sitting exactly on a $1,000 step are what the flat floor is
+# for, and the lift-off point has to clear them with room rather than by a
+# rounding step. 0.36 scores the same and holds only because 1850 x 0.36 rounds
+# to exactly 650.
+check("a floor client still steps $1,000", step_of(5)[0], 1000)
+check("with room under the lift-off, not a rounding step",
+      app.CFG["tier_step_pct_of_base"] * 1850 < app.CFG["tier_step_flat"], True)
+check("and the cap is the median premium step he sends",
+      round(app.CFG["tier_step_cap"] / 0.65 / 50) * 50, 1300)
+
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:
     print("FAILED: " + ", ".join(FAIL))
