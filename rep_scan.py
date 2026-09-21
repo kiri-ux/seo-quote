@@ -298,7 +298,9 @@ def scan_terms(brand, alias=""):
     data = _post("/keywords_data/google_ads/keywords_for_keywords/live",
                  payload, timeout=90)
     by_term = {}
+    returned = 0
     for it in (data["tasks"][0]["result"] or []):
+        returned += 1
         kw = (it.get("keyword") or "").lower()
         vol = it.get("search_volume") or 0
         cls = classify_term(kw, brand, alias=alias)
@@ -329,10 +331,18 @@ def scan_terms(brand, alias=""):
     rows = sorted(by_term.values(), key=lambda r: -r["volume"])
     tot = {c: sum(r["volume"] for r in rows if r["class"] == c)
            for c in ("neutral", "watch", "negative")}
+    # WHAT THE LOOKUP RETURNED, NOT JUST WHAT IT ADDED UP TO. A total of zero
+    # has two causes that price identically and read identically: Google
+    # returned nothing for this brand, or it returned plenty and none of it was
+    # this client's. Cisney & O'Donnell was the second for weeks and there was
+    # no way to tell from the screen. Both counts travel with the total.
+    # (2026-09-21)
     return {"terms": rows[:120],
             "total_volume": sum(tot.values()),
             "negative_volume": tot["negative"],
-            "watch_volume": tot["watch"]}
+            "watch_volume": tot["watch"],
+            "rows_returned": returned,
+            "rows_matched": len(rows)}
 
 
 # --------------------------------------------------------------------- serp

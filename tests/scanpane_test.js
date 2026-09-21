@@ -307,7 +307,11 @@ const SERP = {
           (x.querySelector('h5') || {}).textContent || ''));
         return c ? c.querySelectorAll('li').length : 0;
       })(),
-      boxesInert: getComputedStyle(box.querySelector('.sclx')).pointerEvents === 'none',
+      // NO CHECKBOXES AT ALL ON THE QUOTE'S COPY (2026-09-21). They used to be
+      // drawn and made inert, which asked the reader to work out why a control
+      // was there and dead. The quote shows the listings that were priced; the
+      // live pane keeps the boxes, because that is where one gets unticked.
+      noBoxes: !box.querySelector('.sclx'),
       // one column inside the panel: two across a half-sheet column is a squeeze
       across: getComputedStyle(box.querySelector('.cols.quad4'))
         .gridTemplateColumns.split(' ').length,
@@ -335,7 +339,7 @@ const SERP = {
   say('eachListNamesItsQuery', (fold.queries || []).length >= 2,
       JSON.stringify(fold.queries));
   say('relatedHasItsOwnColumn', (fold.related || 0) > 0, String(fold.related));
-  say('theQuotesCheckboxesAreInert', fold.boxesInert);
+  say('theQuoteCarriesNoCheckboxes', fold.noBoxes);
 
   // ============================================ and it says why when it fails
   await p.unroute('**/api/serp_queue');

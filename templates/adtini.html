@@ -1706,8 +1706,16 @@ function priceRows(r){
     // difference is the whole reason site_debt is nullable.
     ['Site condition', (() => {
       const h = (r.result || {}).health || {};
-      if (p.site_debt == null)
-        return h.error || !h.checked ? 'not measured' : '';
+      if (p.site_debt == null) {
+        // WHY IT WAS NOT MEASURED, WHICH THE SERVER ALREADY KNEW. It returns
+        // health_error -- "no page returned", "lighthouse 40501" -- and this
+        // read h.error, one level down, where there is no such key. So the
+        // reason was fetched on every build and thrown away, and a blocked
+        // crawler looked identical to a site nobody had asked about.
+        const why = ((r.result || {}).signals || {}).health_error || '';
+        return (!h.checked || why)
+          ? 'not measured' + (why ? ' · ' + esc(why) : '') : '';
+      }
       const n = p.site_debt;
       const pctv = p.site_debt_uplift_pct;
       return (pctv > 0 ? `+${pctv}% \u00b7 ` : '')
@@ -3758,9 +3766,16 @@ function snapshotParts(r, live){
                'title+market': 'by name, in market'}[
     (sc.locations || {}).strategy] || '';
   const c = scanCounts(r);
-  const locsHtml = !locs.length ? '' :
+  // THE QUOTE PAGE SHOWS WHAT IS BEING QUOTED. The live pane needs every
+  // listing, because the checkboxes are how a planner unticks one; the
+  // snapshot on the quote is the record of what the price was built on, and a
+  // listing that was unticked is not part of it. Same rule the proposal and
+  // the slides already follow. (2026-09-21, Kiri)
+  const shown = live ? locs : locs.filter(l => scOn(r, l.place_id));
+  const locsHtml = !shown.length ? '' :
     `<div class="sctbl"><div class="scth">Locations`
-    + `<span>${c.locations} of ${locs.length}${how ? ' · ' + how : ''}`
+    + `<span>${live ? `${c.locations} of ${locs.length}` : c.locations}`
+    + `${how ? ' · ' + how : ''}`
     + ((sc.negDone || []).length
         ? ` · ${c.flagged.toLocaleString()} flagged · ${c.weak.toLocaleString()} at 3★` : '')
     + `</span></div>`
@@ -3768,12 +3783,14 @@ function snapshotParts(r, live){
     // with two settings, one of which nobody picks: a 2-star review is a
     // negative review. scanCounts still reads r.negTh so a quote saved on the
     // 1-star setting keeps its own count.
-    + `<table><tr><th></th><th>Location</th><th class="n">Profile</th>`
+    + `<table><tr>${live ? '<th></th>' : ''}<th>Location</th><th class="n">Profile</th>`
     + `<th class="n">1★</th><th class="n">2★</th><th class="n">3★</th></tr>`
-    + locs.map(l => {
+    + shown.map(l => {
         const n = byPid[l.place_id] || {};
-        return `<tr><td><input type="checkbox" class="sclx" data-pid="${esc(l.place_id || '')}"`
-          + `${scOn(r, l.place_id) ? ' checked' : ''}></td>`
+        return `<tr>${live
+            ? `<td><input type="checkbox" class="sclx" data-pid="${esc(l.place_id || '')}"`
+              + `${scOn(r, l.place_id) ? ' checked' : ''}></td>`
+            : ''}`
           + `<td>${esc(l.title || '')}${n.truncated ? '<i class="tg">more beyond depth</i>' : ''}`
           + (l.address ? `<div class="scq">${esc(l.address)}</div>` : '') + `</td>`
           + `<td class="n">${l.rating || '—'}★ / ${(l.reviews || 0).toLocaleString()}</td>`
@@ -3932,9 +3949,34 @@ $('scRun').onclick = async () => {
   }
   // The form follows the scan: the counts are what the quote prices.
   const d = r.data;
-  r.scanOff = {};
-  if (sc.stars) { d.reviews = sc.stars.flagged; d.locations = sc.stars.locations; }
-  else if ((sc.locations || {}).locations) d.locations = sc.locations.locations.length;
+  // UNCHECKING SURVIVES A RE-SCAN. This cleared the whole set, so a planner
+  // who unticked a listing that is not this client's -- Vein Guys Crossville,
+  // sitting at the same address as a Milligan Vein clinic -- got it ticked
+  // again by the next re-run, back in the location count and back in the
+  // price. The listings database returns the same place_ids, so the decision
+  // still applies; only ids the scan no longer returns are dropped.
+  // (2026-09-21, Kiri)
+  {
+    const live = new Set(((sc.locations || {}).locations || [])
+      .map(l => l.place_id).filter(Boolean));
+    const keep = {};
+    Object.keys(r.scanOff || {}).forEach(pid => {
+      if (live.has(pid) && r.scanOff[pid] === true) keep[pid] = true;
+    });
+    r.scanOff = keep;
+  }
+  // THE TICKED ONES ARE THE QUOTE. sc.stars was built off every listing the
+  // pull covered and d.locations off every listing found, so an unticked
+  // listing was still priced. scanCounts already answers this for the panel.
+  {
+    const c = scanCounts(r);
+    if (sc.negDone) {
+      sc.stars = {locations: c.locations, flagged: c.flagged,
+                  one_star: c.done.reduce((z, x) => z + (x.neg_1 || 0), 0)};
+      d.reviews = c.flagged;
+    }
+    if (c.locations) d.locations = c.locations;
+  }
   // A MEASURED ZERO IS A MEASUREMENT. Writing the field only when the total
   // was truthy left it BLANK on a brand the scan had read and found no demand
   // for, so "0/mo brand volume" on the panel sat next to an empty Search
@@ -3948,8 +3990,14 @@ $('scRun').onclick = async () => {
   const rec = scanRecommend(r);
   load(formOf(r), d);
   scanDraw(r);
+  // A ZERO SAYS WHICH ZERO IT IS. Google returning nothing for this brand and
+  // Google returning plenty of somebody else's are the same number on screen
+  // and the same price, and telling them apart took reading the source.
+  const T0 = sc.terms || {};
+  const volNote = (d.volume || 0) || T0.rows_returned == null ? ''
+    : ` (${T0.rows_returned} terms, ${T0.rows_matched} theirs)`;
   say(`Scan complete · ${d.reviews || 0} flagged reviews · ${d.locations || 0} locations`
-      + ` · ${(d.volume || 0).toLocaleString()}/mo brand volume`
+      + ` · ${(d.volume || 0).toLocaleString()}/mo brand volume${volNote}`
       + ` · ${rec.removable} removable page${rec.removable === 1 ? '' : 's'}`
       + ((sc.locations || {}).listed ? ` · Google lists them as “${sc.locations.listed}”` : ''));
   $('scRun').disabled = false;
