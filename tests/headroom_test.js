@@ -68,7 +68,22 @@ const BASE = 'http://127.0.0.1:5203';
       /wanted 4, 0 already in the grid of 27 known ranked terms, 9 candidates below the cut/.test(r.text),
       r.text);
 
-  // ---- nothing to say at all
+  // ---- THE RESERVATION DID NOT RUN. Switched off in config, or no service
+  // slots to reserve from. Without this the panel drew nothing, which is
+  // indistinguishable from the panel not working -- the same silence the other
+  // branches exist to end, one level up.
+  r = await show({order: [['a', 10, 10]], headroom_off: 'grid_headroom_slots is 0'});
+  say('theReserveBeingOffIsReported',
+      /No slots held for unranked terms/.test(r.text)
+      && /grid_headroom_slots is 0/.test(r.text), r.text);
+
+  // ---- an older saved quote: the ranking ran, no headroom key exists at all
+  r = await show({order: [['a', 10, 10]], order_basis: 'x'});
+  say('anOlderBuildSaysSoRatherThanNothing',
+      /No unranked-term reservation on this build/.test(r.text), r.text);
+  say('andSaysWhatToDo', /re-run the build/.test(r.text), r.text);
+
+  // ---- nothing to say at all: no ranking ran either
   r = await show({});
   say('nothingToSayHidesTheLine', r.hidden && r.text === '', JSON.stringify(r));
 

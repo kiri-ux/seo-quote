@@ -2914,6 +2914,18 @@ function drawHeadroom(kw){
         + `rank for</b> \u00b7 past the reservation, nothing swapped${counts}`;
   } else if (seen) {
     out = `\u{1F331} <b>Unranked-term reservation ran and changed nothing</b>${counts}`;
+  } else if (sr.headroom_off) {
+    // IT DID NOT RUN, WHICH IS ALSO AN ANSWER. Without this the panel drew
+    // nothing on a build whose reserve was switched off, which is
+    // indistinguishable from the panel not working.
+    out = `\u26a0 <b>No slots held for unranked terms</b> \u00b7 `
+      + esc(sr.headroom_off);
+  } else if ((sr.order || []).length) {
+    // The seed ranking ran and the reservation left no trace at all. Older
+    // saved quotes are the normal case -- they were built before any of these
+    // keys existed -- and the line says which rather than staying blank.
+    out = `\u{1F331} <b>No unranked-term reservation on this build</b> \u00b7 `
+      + `re-run the build to hold slots for terms they don't rank for`;
   }
   el.innerHTML = out;
   el.hidden = !out;

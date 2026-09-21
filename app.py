@@ -9951,6 +9951,18 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                     # nothing is invented to fill it, and if every candidate is
                     # already ranked the grid is unchanged. (2026-08-19)
                     _room = int(CFG.get("grid_headroom_slots", 4) or 0)
+                    # THE RESERVATION NOT RUNNING IS ALSO AN OUTCOME. Every
+                    # branch below reports itself, but the gate above them did
+                    # not -- so with grid_headroom_slots at 0, or no service
+                    # slots to reserve from, seed_ranking came back carrying
+                    # `order` and not one headroom key, and the panel that
+                    # reads them had nothing to draw and drew nothing. That is
+                    # the same silence the branches were written to end, one
+                    # level up. (2026-09-21, Kiri)
+                    if not (_room and _slots):
+                        seed_ranking["headroom_off"] = (
+                            "grid_headroom_slots is 0" if not _room
+                            else "no service slots to reserve from")
                     if _room and _slots:
                         _vol = {r["term"]: r.get("volume") or 0
                                 for r in _sr["kept"]}
