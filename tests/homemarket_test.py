@@ -249,6 +249,76 @@ check("e2e: the real tie resolves to the client's own town",
 check("e2e: and without the flagship it does not",
       tie_build("")[0] != "oxford, ms", True)
 
+# ---------------------------------------------------------------- AND THE
+# OTHER DOOR: NOT TRUSTING THE SCORES AT ALL.
+#
+# The fix above dropped the scores from the sort key whenever no single term
+# cleared the floor, which left cty_rank, home_rank and then the NAME deciding.
+# On a quote whose markets are all counties with no home match, the name is the
+# only key left.
+#
+# Milligan Vein (milliganvein.com, four TN counties): Knox summed 70/mo and
+# Bradley 10/mo, but Google floors a thin term at 10 so no single term cleared
+# 20 -- and the whole quote was built, rank-checked and priced on BRADLEY,
+# because b sorts before k. (2026-09-21)
+VEIN = {"knox": 10, "cumberland": 0, "hamblen": 0, "bradley": 10}
+VEIN_MK = ["knox county, tn", "cumberland county, tn", "hamblen county, tn",
+           "bradley county, tn"]
+# Seven thin terms in Knox, one in Bradley: 70/mo against 10/mo, and not one
+# of them over the floor.
+VEIN_SEEDS = ["vein clinic", "varicose vein specialist", "vascular ultrasound",
+              "venous insufficiency", "vein doctor", "phlebologist",
+              "phlebectomy"]
+
+
+def vein_build(hint=""):
+    real = app.dfs_post
+
+    def fake(path, payload, *a, **kw):
+        rows = []
+        for k in ((payload[0] or {}).get("keywords") or []):
+            s = str(k).lower()
+            v = 0
+            # Knox reads on every term; Bradley on one. Both at Google's floor.
+            if "knox" in s:
+                v = 10
+            elif "bradley" in s and "vein clinic" in s:
+                v = 10
+            rows.append({"keyword": k, "search_volume": v})
+        return {"tasks": [{"status_code": 20000, "result": rows}]}
+
+    app.dfs_post = fake
+    try:
+        return app.choose_build_markets(list(VEIN_MK), "TN", VEIN_SEEDS,
+                                        hint, primary_hint=hint)
+    finally:
+        app.dfs_post = real
+
+
+picked, exp = vein_build()
+check("the market with the demand is built on, not the first alphabetically",
+      picked[0], "knox county, tn")
+check("and b no longer sorts before k",
+      picked[0] != "bradley county, tn", True)
+# THE READING IS STILL REPORTED AS WEAK. Nothing cleared the floor, so the
+# panel must not print this as a measured ranking.
+check("nothing cleared the floor, and the panel is told so",
+      exp.get("ranked_on_demand"), False)
+# The scores are still carried for the panel to show, and the market that was
+# built on is the one holding the biggest of them. (choose_build_markets probes
+# a reduced term set, so the sum is whatever that set measures -- the property
+# that matters is which market tops it, not the figure.)
+_kept = dict(exp.get("kept") or {})
+check("the scores are still carried for the panel to show",
+      _kept.get("knox county, tn", 0) > 0, True)
+check("and the market built on is the one holding the biggest",
+      max(_kept, key=lambda c: _kept[c]), "knox county, tn")
+# AND THE FLAGSHIP STILL OUTRANKS A SUM. This is what the ENT fix was for:
+# Oxford at 0/mo beats Greenwood at 10/mo because it is the client's own town,
+# and the sum sits BELOW home_rank on the key, not above it.
+check("the client's own town still beats a bigger sum elsewhere",
+      tie_build(PRIMARY)[0], "oxford, ms")
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

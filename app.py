@@ -8000,8 +8000,28 @@ def pick_grid_cities(markets, state, limit, probe_term="", explain=None,
         # Noise is not evidence: when nothing cleared the floor the scores are
         # dropped from the key entirely rather than ordering the list.
         _score_key = (lambda c: -scored.get(c, 0)) if _measured else (lambda c: 0)
+        # WHEN NOTHING CLEARS THE FLOOR, THE SUM IS STILL BETTER EVIDENCE THAN
+        # THE ALPHABET.
+        #
+        # Dropping the scores from the key entirely left cty_rank, home_rank
+        # and then the NAME deciding, and on a quote whose markets are all
+        # counties with no home match the name is the only key left. Milligan
+        # Vein (milliganvein.com, four TN counties): Knox summed 70/mo and
+        # Bradley 10/mo, no single term cleared 20 because Google floors a thin
+        # term at 10, so the reading was discarded and the whole quote was
+        # built, rank-checked and priced on Bradley County -- b sorts before k.
+        # Same shape as the Greenwood/Oxford failure, arriving by the other
+        # door: there the scores were trusted too much, here not at all.
+        #
+        # So the sum stays on the key as the LAST tiebreak before the name. It
+        # sits BELOW home_rank, which is what the ENT fix was for -- Oxford at
+        # 0/mo still beats Greenwood at 10/mo because it is the client's own
+        # town -- and above an alphabetical accident. When something did clear
+        # the floor this key is a no-op, since _score_key is already the sum.
+        # (2026-09-21)
         ranked = sorted(cities, key=lambda c: (_score_key(c), cty_rank(c),
-                                               home_rank(c), c.lower()))
+                                               home_rank(c),
+                                               -scored.get(c, 0), c.lower()))
         if under_cap:
             exp["method"] = "all"
             exp["kept"] = [(c, scored.get(c, 0)) for c in ranked]
