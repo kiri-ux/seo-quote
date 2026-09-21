@@ -1712,9 +1712,16 @@ function priceRows(r){
         // read h.error, one level down, where there is no such key. So the
         // reason was fetched on every build and thrown away, and a blocked
         // crawler looked identical to a site nobody had asked about.
+        // NOTHING PRICED MEANS NOT MEASURED, WHATEVER THE HEALTH BLOCK HOLDS.
+        // This returned '' when checks came back but `failed` was not an
+        // array, and the row filter drops an empty value -- so the line
+        // VANISHED from the breakdown entirely on those quotes, which reads as
+        // a component that does not exist rather than one with no reading.
+        // site_debt is null here by definition: nothing was priced off it.
+        // Same as Page-one competition, which says so unconditionally.
+        // The value is escaped by the row renderer, so it is not escaped here.
         const why = ((r.result || {}).signals || {}).health_error || '';
-        return (!h.checked || why)
-          ? 'not measured' + (why ? ' · ' + esc(why) : '') : '';
+        return 'not measured' + (why ? ' \u00b7 ' + why : '');
       }
       const n = p.site_debt;
       const pctv = p.site_debt_uplift_pct;
