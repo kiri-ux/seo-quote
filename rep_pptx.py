@@ -38,8 +38,8 @@ import rep_docx
 import rep_scan
 from seo_pptx import (BLUE, BLUE_LT, BLUE_MID, GREEN, INK, LINE, MUTED, NAVY,
                       SLIDE_H, SLIDE_W, TINT, WHITE, _blank, _box, _flight,
-                      _heading, _icon, _label_para, _money, _navy_block,
-                      _para, _run, _style, _text_box, _txt)
+                      _heading, _icon, _lines, _money, _navy_block, _para,
+                      _run, _style, _text_box, _txt)
 
 DOC = rep_docx.COPY
 
@@ -111,6 +111,12 @@ COPY = {
 }
 
 STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID}
+
+# Page one, capped so the table cannot reach the legend under it: the table
+# starts at 1.7in and a row is 0.3in, so 9 rows of results plus the header end
+# at 4.7in and the legend has 5.15in onward to itself.
+MAX_RESULTS = 9
+LEGEND_TOP = Inches(5.15)
 
 
 # ------------------------------------------------------------------ reading
@@ -262,49 +268,88 @@ def _browser(slide, img, fx, fy, fw, fh):
 
 
 # ---------------------------------------------------------------- slides 2-4
-def _strategy_slide(prs, lead_label, lead, items, bundle_head=None,
-                    columns=1, item_color=INK):
-    """One Strategy Details slide: the direction, then what it is made of."""
-    slide = _blank(prs)
-    _heading(slide, TITLE + " - Strategy Details", size=25)
-    y = Inches(1.45)
-    if lead:
-        h = Inches(0.92) if len(lead) > 170 else Inches(0.72)
-        box = _box(slide, Inches(0.55), y, Inches(12.2), h)
-        tf = _txt(box, size=12.5, line=1.18)
-        _label_para(tf, lead_label + ": ", lead, size=12.5, first=True,
-                    label_color=BLUE)
-        y = y + h + Inches(0.26)
-    if bundle_head:
-        hb = _text_box(slide, Inches(0.6), y, Inches(12.0), Inches(0.32))
-        _txt(hb, size=12.5, bold=True, color=INK, space_after=0)
-        p = hb.text_frame.paragraphs[0]
-        p.text = bundle_head
-        p.font.italic = True
-        y = y + Inches(0.36)
-    # SIDE BY SIDE OR STACKED IS THE SLIDE'S CALL, NOT THE COUNT'S. Inferring
-    # it from len(items) put the two removal lines in two columns, where the
-    # product slide stacks them full width and runs the label inline.
-    if columns == 2 and len(items) == 2:
-        w = Inches(5.95)
-        for i, (name, text) in enumerate(items):
-            box = _box(slide, Inches(0.55) + (w + Inches(0.3)) * i, y, w,
-                       Inches(1.55))
-            tf = _txt(box, size=11.5, line=1.18)
-            _label_para(tf, name + ":", "", size=11.5, first=True,
-                        label_color=INK)
-            tf.paragraphs[0].font.italic = True
-            p = _para(tf, size=11.5, line=1.18, space_before=4)
-            _run(p, "•  " + text, size=11.5)
-    else:
-        for name, text in items:
-            h = Inches(0.78) if len(text) > 150 else Inches(0.6)
-            box = _box(slide, Inches(0.55), y, Inches(12.2), h)
-            tf = _txt(box, size=11.5, line=1.18)
-            _label_para(tf, name + ": ", text, size=11.5, first=True,
-                        label_color=item_color)
-            y = y + h + Inches(0.16)
-    return slide
+# ONE BOX PER STRATEGY, AND AS MANY STRATEGIES AS FIT.
+#
+# The first cut drew a box per PARAGRAPH and a slide per strategy, so Reactive
+# came out as a lead box, a floating "Search Protection Bundle:" and three more
+# boxes -- four separate cards for one product -- while a removals-only quote
+# got a whole slide holding one sentence and five inches of white. A strategy
+# is one thing, so it gets one box; a slide holds as many boxes as there is
+# room for, and only overflows when it runs out. (2026-09-21, Kiri)
+BODY_PT = 11.5
+LEAD_PT = 12
+BOX_W = Inches(12.2)
+TEXT_W = 11.9                       # inches of usable width inside the box
+TOP = Inches(1.4)
+FLOOR = Inches(6.88)                # the navy band starts at 7.02
+PAD = Inches(0.26)                  # inside the box, top and bottom
+GAP = Inches(0.24)                  # between boxes
+
+
+def _line_h(pt):
+    return Inches(pt * 1.32 / 72.0)
+
+
+def _section_h(sec):
+    """How tall this strategy's box has to be, measured off its own text."""
+    h = PAD
+    if sec.get("lead"):
+        h += _line_h(LEAD_PT) * _lines(
+            "%s: %s" % (sec["label"], sec["lead"]), TEXT_W, LEAD_PT)
+        h += Inches(0.06)
+    if sec.get("bundle_head"):
+        h += _line_h(BODY_PT) + Inches(0.04)
+    for name, text in sec["items"]:
+        h += _line_h(BODY_PT) * _lines("%s: %s" % (name, text), TEXT_W - 0.2,
+                                       BODY_PT)
+        h += Inches(0.08)
+    return h + PAD
+
+
+def _draw_section(slide, sec, y, h):
+    box = _box(slide, Inches(0.55), y, BOX_W, h)
+    tf = _txt(box, size=BODY_PT, line=1.18, space_after=0)
+    first = True
+    if sec.get("lead"):
+        p = tf.paragraphs[0]
+        p.line_spacing = 1.18
+        p.space_after = Pt(3)
+        _run(p, sec["label"] + ": ", size=LEAD_PT, bold=True, color=BLUE)
+        _run(p, sec["lead"], size=LEAD_PT)
+        first = False
+    if sec.get("bundle_head"):
+        p = tf.paragraphs[0] if first else _para(
+            tf, size=BODY_PT, line=1.18, space_before=4, space_after=2)
+        r = _run(p, sec["bundle_head"], size=BODY_PT, bold=True, color=INK)
+        r.font.italic = True
+        first = False
+    for name, text in sec["items"]:
+        p = tf.paragraphs[0] if first else _para(
+            tf, size=BODY_PT, line=1.18, space_before=5, space_after=0)
+        if first:
+            p.line_spacing = 1.18
+            p.space_after = Pt(0)
+        _run(p, name + ": ", size=BODY_PT, bold=True,
+             color=sec.get("item_color") or INK)
+        _run(p, text, size=BODY_PT)
+        first = False
+    return box
+
+
+def _strategy_slides(prs, sections):
+    """Pack the strategy sections onto as few slides as they fit on."""
+    made = []
+    slide, y = None, TOP
+    for sec in sections:
+        h = _section_h(sec)
+        if slide is None or y + h > FLOOR:
+            slide = _blank(prs)
+            _heading(slide, TITLE + " - Strategy Details", size=25)
+            made.append(slide)
+            y = TOP
+        _draw_section(slide, sec, y, h)
+        y = y + h + GAP
+    return made
 
 
 # ------------------------------------------------------------------ slide 5
@@ -397,18 +442,28 @@ def _profiles_block(slide, d):
 
 
 def _results_block(slide, snap):
+    """Page one, and what is to be done about each result.
+
+    THE LEGEND GOES UNDER THE LONGEST TABLE THIS CAN DRAW, not under the
+    height it was estimated at. PowerPoint grows a row to fit its text, so a
+    legend placed at top + row_h * rows landed halfway up a table that had
+    grown past the estimate -- five results printed underneath it. The row
+    count is capped and the legend sits at a fixed foot, so they cannot meet.
+    """
     x, w = Inches(4.0), Inches(4.6)
     _col_head(slide, "Top Google Results", x, Inches(1.32), w)
     page1 = [r for r in ((snap.get("organic") or [])
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
-    page1 = sorted(page1, key=lambda r: _int(r.get("pos")) or 99)[:10]
-    y = Inches(1.7)
+    page1 = sorted(page1, key=lambda r: _int(r.get("pos")) or 99)[:MAX_RESULTS]
+    top, row_h = Inches(1.7), Inches(0.3)
     if page1:
         rows = len(page1) + 1
-        table = slide.shapes.add_table(rows, 3, x, y, w,
-                                       Inches(0.27) * rows).table
-        for c, cw in enumerate((Inches(0.42), Inches(3.4), Inches(0.78))):
+        table = slide.shapes.add_table(rows, 3, x, top, w,
+                                       row_h * rows).table
+        for c, cw in enumerate((Inches(0.4), Inches(3.3), Inches(0.9))):
             table.columns[c].width = cw
+        for r in range(rows):
+            table.rows[r].height = row_h
         for c, label in enumerate(("#", "Result", "Rating")):
             cell = table.cell(0, c)
             cell.text = label
@@ -419,40 +474,40 @@ def _results_block(slide, snap):
             p.alignment = PP_ALIGN.CENTER if c != 1 else PP_ALIGN.LEFT
         for r, res in enumerate(page1, start=1):
             rating = res.get("rating")
-            votes = res.get("votes")
-            rate = ("%s★%s" % (rating, " (%s)" % votes if votes else "")
-                    if rating else "--")
+            # NO VOTE COUNT IN THIS COLUMN. "2.3★ (8)" wrapped to two lines
+            # at this width, which is what grew the rows.
+            rate = ("%s★" % rating) if rating else "--"
             for c, val in enumerate((_int(res.get("pos")) or "", "", rate)):
                 cell = table.cell(r, c)
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = WHITE
+                cell.margin_top = cell.margin_bottom = Inches(0.01)
                 p = cell.text_frame.paragraphs[0]
                 if c == 1:
-                    # THE DOMAIN, THEN WHAT IS TO BE DONE ABOUT IT. The tactic
-                    # is the reason the row is on the slide at all.
-                    _run(p, str(res.get("domain") or ""), size=8.5, color=INK)
-                    _run(p, "   " + ("Owned" if res.get("owned")
-                                     else "3rd party"),
-                         size=7.5, bold=True,
+                    # The domain, then what is to be done about it -- the
+                    # tactic is why the row is on the slide at all.
+                    _run(p, str(res.get("domain") or ""), size=8, color=INK)
+                    _run(p, "  " + ("Owned" if res.get("owned")
+                                    else "3rd party"),
+                         size=7, bold=True,
                          color=(GREEN if res.get("owned") else MUTED))
                     tac = str(res.get("tactic") or "")
                     if tac:
-                        _run(p, "   → " + tac, size=7.5, color=BLUE)
-                    _style(p, 8.5, False, INK)
+                        _run(p, "  \u2192 " + tac, size=7, color=BLUE)
+                    _style(p, 8, False, INK)
                 else:
                     cell.text = str(val)
-                    _style(p, 8.5, False, INK)
+                    _style(p, 8, False, INK)
                     p.alignment = PP_ALIGN.CENTER
-        y = y + Inches(0.27) * rows + Inches(0.12)
     else:
-        nb = _text_box(slide, x, y, w, Inches(0.3))
+        nb = _text_box(slide, x, top, w, Inches(0.3))
         _txt(nb, size=10.5, color=MUTED)
         nb.text_frame.paragraphs[0].text = "No page one captured."
-        y = y + Inches(0.36)
-    legend = _box(slide, x, y, w, Inches(1.18), fill=WHITE, radius=0.03)
+    legend = _box(slide, x, LEGEND_TOP, w, Inches(1.05), fill=WHITE,
+                  radius=0.03)
     tf = _txt(legend, size=7.5, space_after=0, line=1.1)
     for i, (name, text) in enumerate(COPY["tactics"]):
-        p = tf.paragraphs[0] if i == 0 else _para(tf, size=7.5, space_before=3,
+        p = tf.paragraphs[0] if i == 0 else _para(tf, size=7.5, space_before=2,
                                                   space_after=0, line=1.1)
         _run(p, name, size=7.5, bold=True,
              color=(GREEN if name == "Owned" else BLUE))
@@ -580,8 +635,9 @@ def _slide_details(prs, d, cards):
     tb = _text_box(slide, Inches(1.26), Inches(0.44), Inches(10.4), Inches(0.8))
     _txt(tb, size=27, bold=True, color=NAVY)
     tb.text_frame.paragraphs[0].text = TITLE + " Product Details"
-    _navy_block(slide, Inches(-0.9), Inches(-0.55), Inches(2.4), Inches(1.15))
-    _navy_block(slide, Inches(12.3), Inches(6.5), Inches(2.4), Inches(1.4))
+    # ONE CORNER BLOCK, BOTTOM RIGHT. The top-left one sat under the icon and
+    # the title and read as a bar through the heading.
+    _navy_block(slide, Inches(12.3), Inches(6.4), Inches(2.4), Inches(1.4))
 
     flight, months = _flight(d, 6)
     search_m = float(h.get("search_protection_monthly") or 0)
@@ -726,19 +782,29 @@ def build_rep_proposal_pptx(d):
 
     strat = _strategies(d)
     _slide_product(prs, d)
-    if "Proactive" in strat:
-        _strategy_slide(prs, DOC["proactive_heading"], DOC["proactive_lead"],
-                        DOC["proactive_items"], columns=2)
+    # THE ORDER THE DECK READS IN: what the campaign does, then what it takes
+    # down. Removals are their own section rather than a strategy with a lead
+    # -- the document prices them under Brendan's pay-on-success wording and
+    # there is no "Removals:" direction to introduce them with.
+    sections = []
     if "Reactive" in strat:
-        _strategy_slide(prs, DOC["reactive_heading"], DOC["reactive_lead"],
-                        DOC["reactive_items"],
-                        bundle_head=DOC["reactive_bundle_head"])
+        sections.append({"label": DOC["reactive_heading"],
+                         "lead": DOC["reactive_lead"],
+                         "bundle_head": DOC["reactive_bundle_head"],
+                         "items": DOC["reactive_items"]})
+    if "Proactive" in strat:
+        sections.append({"label": DOC["proactive_heading"],
+                         "lead": DOC["proactive_lead"],
+                         "items": DOC["proactive_items"]})
     removals = [r for r in COPY["removals"]
                 if (r[0] == "Review Removals" and "Review Removals" in strat)
                 or (r[0] == "Site/Article Removals"
                     and "Site/Article Removals" in strat)]
     if removals:
-        _strategy_slide(prs, "", "", removals, item_color=BLUE)
+        sections.append({"label": "", "lead": "", "items": removals,
+                         "item_color": BLUE})
+    if sections:
+        _strategy_slides(prs, sections)
     # A SNAPSHOT WITH NOTHING IN IT IS A SLIDE TO DELETE BY HAND.
     snap = _snap(d)
     if any(snap.get(k) for k in ("suggest", "organic", "forums", "locations")):

@@ -100,29 +100,68 @@ FULL = quote(reviews={"count": 10}, articles={"standard": 3},
                      "autosuggest": True, "term_sets": 1},
              shield={"locations": 3})
 prs, d = deck(FULL)
-check("the four-workstream quote prints six slides", len(prs.slides), 6)
+check("the four-workstream quote prints five slides", len(prs.slides), 5)
 check("and they are the product deck's own slides", titles(prs), [
     "Online Reputation Management",
     "Online Reputation Management - Strategy Details",
     "Online Reputation Management - Strategy Details",
-    "Online Reputation Management - Strategy Details",
     "Online Reputation Management - Reputation Snapshot",
     "Online Reputation Management Product Details"])
-check("proactive is its own strategy slide",
-      "SEO Brand Shield & Asset Building:" in all_text(prs.slides[1]), True)
-check("reactive is its own",
-      "Search Protection Bundle:" in all_text(prs.slides[2]), True)
-check("and the removals are theirs",
-      "Site/Article Removals:" in all_text(prs.slides[3]), True)
+check("every strategy is on a strategy slide",
+      all(s in "".join(all_text(x) for x in prs.slides)
+          for s in ("Search Protection Bundle:",
+                    "SEO Brand Shield & Asset Building:",
+                    "Site/Article Removals:")), True)
+
+# AS MANY STRATEGIES PER SLIDE AS FIT. The first cut gave each one a slide of
+# its own, so a removals-only quote got five inches of white under one
+# sentence. Reactive and Proactive together need 5.25in of the 5.48in a slide
+# has, so they share one and the removals go to the second.
+def strategy_slides(prs):
+    return [s for s in prs.slides if "Strategy Details" in all_text(s)]
+
+
+packed = strategy_slides(prs)
+check("reactive and proactive share a slide",
+      ("Search Protection Bundle:" in all_text(packed[0])
+       and "SEO Brand Shield & Asset Building:" in all_text(packed[0])), True)
+check("and the removals overflow to the next", len(packed), 2)
+
+# ONE BOX PER STRATEGY. Reactive used to be a lead box, a floating bundle
+# heading and three more boxes -- four cards for one product.
+def boxes_below_heading(slide):
+    return [sh for sh in slide.shapes
+            if sh.has_text_frame and sh.top is not None
+            and sh.top > Inches(1.1) and sh.text_frame.text.strip()]
+
+
+check("reactive is drawn as one box",
+      len([b for b in boxes_below_heading(packed[0])
+           if "Search Protection Bundle:" in b.text_frame.text]), 1)
+check("and that box holds every component",
+      all(n + ":" in [b for b in boxes_below_heading(packed[0])
+                      if "Search Protection Bundle:" in b.text_frame.text
+                      ][0].text_frame.text
+          for n, _ in rep_pptx.DOC["reactive_items"]), True)
+
+# HER QUOTE: Review Removals + Reactive, which fit together.
+HERS = quote(campaign="reactive", reviews={"count": 4},
+             search={"bundle": True, "volume": 70, "suppression": True,
+                     "autosuggest": True, "term_sets": 1})
+hers, _ = deck(HERS)
+check("review removals ride with reactive rather than taking a slide",
+      len(strategy_slides(hers)), 1)
 
 # A SLIDE WITH NOTHING BEHIND IT IS A SLIDE TO DELETE BY HAND.
 REACTIVE = quote(campaign="reactive",
                  search={"bundle": True, "volume": 5000, "suppression": True,
                          "autosuggest": True, "term_sets": 1})
 prs1, _ = deck(REACTIVE)
-check("a reactive-only quote prints no proactive slide",
+check("a reactive-only quote prints one strategy slide",
       [t for t in titles(prs1)].count(
           "Online Reputation Management - Strategy Details"), 1)
+check("and says nothing about a brand shield",
+      "SEO Brand Shield" in "".join(all_text(s) for s in prs1.slides), False)
 check("and no removals slide",
       "Review Removals:" in "".join(all_text(s) for s in prs1.slides), False)
 check("a scan with nothing in it prints no snapshot",
@@ -191,7 +230,10 @@ check("each bundle says what it scales with",
       ("5,000/mo measured" in txt, "3 locations measured" in txt), (True, True))
 
 # ---------------------------------------------- the snapshot is the scan
-snap_txt = all_text(prs.slides[4])
+# Found by its heading, not by its index: the slide count moves when the
+# strategy sections pack differently.
+snap_txt = all_text([s for s in prs.slides
+                     if "Reputation Snapshot" in all_text(s)][0])
 check("the query the suggestions came from prints",
       "sage dental reviews" in snap_txt, True)
 check("the profiles print", "Sage Dental of Tucker" in snap_txt, True)
@@ -229,6 +271,37 @@ for n, s in enumerate(prs.slides, 1):
                 or sh.top + sh.height > rep_pptx.SLIDE_H + SLACK):
             off.append((n, Emu(int(sh.left)).inches, Emu(int(sh.top)).inches))
 check("every shape sits on the slide", off, [])
+
+# THE LEGEND GOES UNDER THE TABLE, NOT THROUGH IT. PowerPoint grows a row to
+# fit its text, so a legend placed at the estimated table height landed
+# halfway up a table that had grown past it -- five results printed underneath.
+wide = deck(FULL, snap=dict(
+    SNAP, organic=[{"pos": i, "domain": "domain%d.com" % i,
+                    "tactic": "suppression", "rating": 2.3}
+                   for i in range(1, 13)]))[0]
+snapshot = [s for s in wide.slides if "Reputation Snapshot" in all_text(s)][0]
+mid = [sh for sh in snapshot.shapes
+       if sh.left is not None and abs(sh.left - Inches(4.0)) < Inches(0.05)]
+table = [sh for sh in mid if getattr(sh, "has_table", False) and sh.has_table]
+legend = [sh for sh in mid if sh.has_text_frame
+          and "outrank it instead" in sh.text_frame.text]
+check("page one is capped so it cannot reach the legend",
+      len(table) == 1 and len(table[0].table.rows) <= rep_pptx.MAX_RESULTS + 1,
+      True)
+check("and the legend starts below the table's last row",
+      len(legend) == 1
+      and legend[0].top >= table[0].top + table[0].height, True)
+check("the rating column carries no vote count to wrap on",
+      "(" in "".join(c.text for c in table[0].table.rows[1].cells), False)
+
+# NOTHING UNDER THE TITLE. A navy corner block sat beneath the icon and the
+# heading and read as a bar drawn through it.
+det = prs.slides[-1]
+banded = [sh for sh in det.shapes
+          if sh.top is not None and sh.top < Inches(1.3)
+          and sh.width is not None and sh.width < rep_pptx.SLIDE_W
+          and not (sh.has_text_frame and sh.text_frame.text.strip())]
+check("no blank shape overlaps the heading", banded, [])
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))

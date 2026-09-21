@@ -3345,6 +3345,62 @@ const domainStem = u => {
     .replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[\/?#]/)[0];
   return d ? d.split('.')[0].replace(/[^a-z0-9]/g, '') : '';
 };
+// A DOMAIN IS ONE WORD AND A COMPANY NAME IS NOT. "Use the name from the
+// website" title-cased the stem and handed back "Cisneyremodeling", which is
+// not anybody's client name -- and it went straight into the Brand Name field,
+// where every match in the scan reads it.
+//
+// The run-together stem is split against the words this client is ALREADY
+// known by: Google's listing title and the name that was typed. Both were on
+// screen when the link was drawn, and "cisneyremodeling" against
+// {cisney, odonnell, builders, remodelers} splits at the only place it can.
+// Four characters minimum, longest first: "and" is on the stop list and would
+// otherwise turn andersonplumbing.com into "And Ersonplumbing".
+function splitStem(stem, sources){
+  if (!stem) return '';
+  const known = [];
+  (sources || []).filter(Boolean).forEach(s => normTokens(s).forEach(t => {
+    if (t.length >= 4 && known.indexOf(t) < 0) known.push(t);
+  }));
+  _BRAND_STOP.forEach(t => {
+    if (t.length >= 4 && known.indexOf(t) < 0) known.push(t);
+  });
+  known.sort((a, b) => b.length - a.length);
+  const out = [];
+  let rest = stem;
+  while (rest) {
+    const hit = known.find(t => rest.indexOf(t) === 0);
+    if (!hit) break;
+    out.push(hit);
+    rest = rest.slice(hit.length);
+  }
+  if (!out.length) return '';
+  if (rest) out.push(rest);
+  return out.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// THE NAME THE WEBSITE USES FOR ITSELF. The split first, then the title of
+// their own page-one result cut at its separator -- an SEO title often leads
+// with a service, so it is the second answer rather than the first -- then the
+// bare stem, which is where this started.
+function nameFromSite(r){
+  const sc = r.scan || {}, S = sc.serp || {};
+  const stem = domainStem(scSite(r));
+  if (!stem) return '';
+  // The typed name comes off the FIELD, not off the saved row: the link sits
+  // next to the banner comparing the two, so it is whatever is in there now.
+  const split = splitStem(stem, [(sc.locations || {}).listed,
+                                 scBrand(r) || (r.data || {}).brand]);
+  if (split) return split;
+  const own = (S.organic || []).find(x => x && x.owned && x.title);
+  if (own) {
+    const head = String(own.title)
+      .split(/\s+[|\u2013\u2014\-:\u00b7]\s+/)[0].trim();
+    if (head && head.length <= 60 && /[a-z]/i.test(head)) return head;
+  }
+  return stem.charAt(0).toUpperCase() + stem.slice(1);
+}
+
 function domainCore(stemmed){
   let d = String(stemmed || '');
   _BRAND_STOP.slice().sort((a, b) => b.length - a.length).forEach(w => {
@@ -3702,9 +3758,8 @@ function scanDraw(r){
   const ud = $('scUseDomain');
   if (ud) ud.onclick = e => {
     e.preventDefault();
-    const stem = domainStem(scSite(r));
-    if (!stem) return;
-    const name = stem.charAt(0).toUpperCase() + stem.slice(1);
+    const name = nameFromSite(r);
+    if (!name) return;
     r.data.brand = name;
     load(formOf(r), r.data);
     scanDraw(r);

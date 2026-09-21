@@ -1404,6 +1404,53 @@ function _esc(v){
   return String(v==null?'':v).replace(/[&<>"']/g, c=>(
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// A DOMAIN IS ONE WORD AND A COMPANY NAME IS NOT. "Use the name from the
+// website" title-cased the stem and handed back "Cisneyremodeling", which is
+// not anybody's client name -- and it goes straight into Brand Name, where
+// every match in the scan reads it. The stem is split against the words this
+// client is ALREADY known by: Google's listing title and the name that was
+// typed. Four characters minimum, longest first, or "and" off the stop list
+// turns andersonplumbing.com into "And Ersonplumbing". (2026-09-21)
+function splitStem(stem, sources){
+  if(!stem) return '';
+  const known = [];
+  (sources||[]).filter(Boolean).forEach(s => normTokens(s).forEach(t => {
+    if(t.length >= 4 && known.indexOf(t) < 0) known.push(t);
+  }));
+  _BRAND_STOP.forEach(t => {
+    if(t.length >= 4 && known.indexOf(t) < 0) known.push(t);
+  });
+  known.sort((a,b) => b.length - a.length);
+  const out = [];
+  let rest = stem;
+  while(rest){
+    const hit = known.find(t => rest.indexOf(t) === 0);
+    if(!hit) break;
+    out.push(hit);
+    rest = rest.slice(hit.length);
+  }
+  if(!out.length) return '';
+  if(rest) out.push(rest);
+  return out.map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+}
+
+// The split first, then the title of their own page-one result cut at its
+// separator -- an SEO title often leads with a service, so it is the second
+// answer rather than the first -- then the bare stem.
+function nameFromSite(){
+  const stem = domainStem($('domain').value);
+  if(!stem) return '';
+  const split = splitStem(stem, [window._listName, $('brand').value]);
+  if(split) return split;
+  const S = ((window._scanData||{}).serp)||{};
+  const own = (S.organic||[]).find(x => x && x.owned && x.title);
+  if(own){
+    const head = String(own.title).split(/\s+[|\u2013\u2014\-:\u00b7]\s+/)[0].trim();
+    if(head && head.length <= 60 && /[a-z]/i.test(head)) return head;
+  }
+  return stem.charAt(0).toUpperCase()+stem.slice(1);
+}
+
 function domainStem(url){
   let d = String(url||'').trim().toLowerCase()
     .replace(/^https?:\/\//,'').replace(/^www\./,'').split(/[\/?#]/)[0];
@@ -1489,10 +1536,10 @@ function renderBrandDomainWarning(){
   const a=document.getElementById('useDomainName');
   if(a) a.onclick=(e)=>{
     e.preventDefault();
-    const stem=domainStem($('domain').value);
-    if(!stem) return;
-    // Title-case the domain stem as a starting point; the operator edits it.
-    $('brand').value = stem.charAt(0).toUpperCase()+stem.slice(1);
+    const name = nameFromSite();
+    if(!name) return;
+    // A starting point; the operator edits the field.
+    $('brand').value = name;
     box.remove();
   };
 }
