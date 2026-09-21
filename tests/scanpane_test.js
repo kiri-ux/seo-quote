@@ -108,7 +108,10 @@ const SERP = {
                  .map(x => x.dataset.k).join(',')} : null;
   });
   say('demoOnlyFieldsAreFolded', demo && demo.closed, JSON.stringify(demo));
-  say('andHoldOrderIdAndPartner', demo && demo.holds === 'order_no,partner',
+  // AND THE FLIGHT, since 2026-09-21: the ORM deck prints the dates across the
+  // top of its Product Details slide, the same way the SEO deck does.
+  say('andHoldOrderIdPartnerAndTheFlight',
+      demo && demo.holds === 'order_no,partner,start_date,end_date,months',
       JSON.stringify(demo));
   // Strategy first, then the four counts in the order they are read in.
   const order = await p.evaluate(() => [...document.querySelectorAll('#form .f')]

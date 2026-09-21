@@ -215,6 +215,14 @@
               <input type="text" data-k="order_no" placeholder="e.g. 56310"></div>
             <div class="f"><label>Partner</label>
               <input type="text" data-k="partner"></div>
+            <!-- The flight prints across the top of the Product Details
+                 slide, the same way it does on the SEO deck. -->
+            <div class="f"><label>Start date <span class="i" data-tip="Prints on the slides" aria-label="Prints on the slides">i</span></label>
+              <input type="date" data-k="start_date"></div>
+            <div class="f"><label>End date <span class="i" data-tip="Prints on the slides" aria-label="Prints on the slides">i</span></label>
+              <input type="date" data-k="end_date"></div>
+            <div class="f"><label>Months running <span class="i" data-tip="Blank reads it off the dates" aria-label="Blank reads it off the dates">i</span></label>
+              <input type="number" data-k="months" min="1" placeholder="from the dates"></div>
           </div>
         </details>
 
@@ -1777,9 +1785,9 @@ function resultsHtml(r, full){
       <p class="hint qnote" data-row="${r.i}"${r.note ? '' : ' hidden'}>${esc(
         [r.saveNote, r.note].filter(Boolean).join(' \u00b7 '))}</p>
       <div class="qacts">
-        <button class="btn" type="button" data-prop="${r.i}">Download proposal</button>`
-      + (r.kind === 'orm' ? '' : `<button class="btn2" type="button"
-           data-slides="${r.i}">Download slides</button>`) + `
+        <button class="btn" type="button" data-prop="${r.i}">Download proposal</button>
+        <button class="btn2" type="button" data-slides="${r.i}">Download slides</button>`
+      + `
         <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>
         <span class="hint" data-propmsg="${r.i}"></span>
       </div>
@@ -3565,13 +3573,11 @@ function snapshotParts(r, live){
        + (neg.length ? ` — ${neg.map(esc).join(', ')}` : '')
        + `<div class="scq">${esc(S.ai_overview.slice(0, 300))}…</div></div>`;
   }
-  const offb = (S.off_brand_phrases && S.off_brand_phrases.length) ? S.off_brand_phrases
-    : offBrand([...(S.related || []), ...(S.pasf || [])], brand, domain, alias);
-  if (offb.length) {
-    w += `<div class="scw" title="${esc(offb.join(' · '))}">`
-       + `${offb.length} phrase${offb.length === 1 ? '' : 's'} excluded`
-       + ` — they name a different company</div>`;
-  }
+  // NO BANNER FOR WHAT THE FILTER DROPPED (2026-09-21, Kiri). Google's related
+  // searches are topical, so a competitor or a manufacturer turning up is
+  // routine rather than news. The phrases are still filtered everywhere they
+  // count -- the lists, the negative-phrase count and the price -- they are
+  // just not announced.
   // ------------------------------------------------------------- the lists
   // WHAT IS WRONG, NOT WHAT IS THERE (2026-09-18, Kiri). Auto-suggest listed
   // every suggestion the scan pulled, so nine rows carried two negatives and
@@ -4587,13 +4593,21 @@ async function downloadProposal(i, as){
   // handler, so pressing Download on an ORM row posted a reputation quote to
   // the SEO builder and handed back an SEO proposal -- keyword grid, ranking
   // table and all -- for a client who bought none of it. (2026-09-18, Kiri)
-  const url = r.kind === 'orm' ? '/api/rep_proposal.docx'
-            : deck ? '/api/proposal.pptx' : '/api/proposal.docx';
+  // FOUR DELIVERABLES, TWO PRODUCTS. A reputation quote has its own document
+  // AND its own deck; pressing Download slides on an ORM row used to be
+  // impossible, because the button was not drawn. (2026-09-21, Kiri)
+  const url = r.kind === 'orm'
+            ? (deck ? '/api/rep_proposal.pptx' : '/api/rep_proposal.docx')
+            : (deck ? '/api/proposal.pptx' : '/api/proposal.docx');
   const sc = r.scan || {};
   const S = sc.serp || {}, T = sc.terms || {};
   const strat = asList(d.strategy);
   const body = r.kind === 'orm' ? JSON.stringify({
     brand: d.brand || '', order_no: d.order_no || '',
+    // The flight, as typed on the form. The slides print it; the document
+    // does not read it.
+    start_date: d.start_date || '', end_date: d.end_date || '',
+    months: d.months || '',
     campaign: strat.includes('Proactive') && strat.includes('Reactive') ? 'bundle'
             : strat.includes('Proactive') ? 'proactive' : 'reactive',
     margin_pct: parseFloat(String((r.cfg || {}).markup || d.markup || 35)) / 100,

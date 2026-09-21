@@ -203,7 +203,8 @@ FINGERPRINT_FILES = ("app.py", "storage.py", "templates/index.html",
                      "templates/reputation.html", "templates/adtini.html",
                      "templates/adtini_home.html",
                      "static/adtini.css",
-                     "rep_pricing.py", "rep_scan.py", "rep_docx.py")
+                     "rep_pricing.py", "rep_scan.py", "rep_docx.py",
+                     "rep_pptx.py")
 
 def _source_fingerprint():
     import hashlib
@@ -19607,6 +19608,51 @@ def api_rep_proposal_docx():
                                                      d.get("order_no")),
                      mimetype="application/vnd.openxmlformats-officedocument."
                               "wordprocessingml.document")
+
+
+# THE ORM DECK, FROM THE SAME QUOTE AS THE REPUTATION DOCUMENT. The SEO row has
+# had /api/proposal.pptx since 2026-09-19; the reputation row had only the
+# letter, so the ORM slides were still being rebuilt by hand off the product
+# deck. (2026-09-21, Kiri)
+@app.route("/api/rep_proposal.pptx", methods=["POST"])
+def api_rep_proposal_pptx():
+    """The reputation quote as the adtini ORM slides."""
+    d = request.get_json(force=True) or {}
+    # SAME WINDOW THE DOCUMENT AND THE ROW SHOW. The capture is stored whole so
+    # the frame can be moved without recapturing; handed over uncut, a
+    # landscape frame on screen prints as a column of scroll.
+    import base64 as _b64
+    shots = []
+    for sh in (d.get("serp_shots") or []):
+        if not isinstance(sh, dict):
+            continue
+        url = str(sh.get("data_url") or "")
+        if "," in url and url.lower().startswith("data:image"):
+            try:
+                raw = _window_serp_image(_b64.b64decode(url.split(",", 1)[1]),
+                                         sh.get("y"))
+                sh = dict(sh, data_url="data:image/jpeg;base64,"
+                                       + _b64.b64encode(raw).decode("ascii"))
+            except Exception:                                 # noqa: BLE001
+                pass
+        shots.append(sh)
+    if shots:
+        d["serp_shots"] = shots
+    try:
+        import rep_pptx
+        buf = rep_pptx.build_rep_proposal_pptx(d)
+    except ImportError:
+        return jsonify({"error": "python-pptx is not installed on this "
+                                 "server."}), 500
+    except Exception as e:                                    # noqa: BLE001
+        app.logger.exception("rep proposal pptx failed")
+        return jsonify({"error": str(e)[:200]}), 500
+    return send_file(buf, as_attachment=True,
+                     download_name=proposal_filename(d.get("brand"),
+                                                     d.get("order_no"),
+                                                     ext="pptx"),
+                     mimetype="application/vnd.openxmlformats-officedocument."
+                              "presentationml.presentation")
 
 
 @app.route("/api/rep_volume", methods=["POST"])
