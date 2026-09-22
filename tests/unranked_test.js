@@ -121,6 +121,23 @@ const BASE = 'http://127.0.0.1:5203';
       !/measured on the live result page/.test(res.text)
       && !/skipped, already ranked/.test(res.text), res.text);
 
+  // ---- A FOUND GAP IS A PRESS AWAY FROM THE LIST. Printing the terms and
+  // making her retype them into the seed box is not a finding, it is homework.
+  const add = await p.evaluate(() => {
+    const before = kbSeeds().length;
+    const b = document.querySelector('.unrbox.found ~ [data-compadd]')
+           || [...document.querySelectorAll('[data-unrgap] [data-compadd]')][0];
+    if (!b) return {err: '(no chip)'};
+    const term = b.dataset.compadd;
+    b.click();
+    return {term, before, after: kbSeeds().length,
+            onList: kbSeeds().map(x => String(x).toLowerCase())
+              .indexOf(String(term).toLowerCase()) >= 0};
+  });
+  say('aFoundGapIsAChip', !add.err && !!add.term, JSON.stringify(add));
+  say('andPressingItSeedsTheList',
+      add.after === add.before + 1 && add.onList === true, JSON.stringify(add));
+
   // ---- THE SIEVE SKIPS WHAT THE DOMAIN ALREADY RANKS FOR NATIONALLY, and is
   // only a sieve: it can prove a client DOES rank, never that they do not.
   owned = ['bathroom showroom'];

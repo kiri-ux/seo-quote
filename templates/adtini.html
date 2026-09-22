@@ -3269,10 +3269,21 @@ function unrankedFoundHtml(r){
     return `<div class="unrbox none">No gap found in `
       + `${res.measured || 0} term${res.measured === 1 ? '' : 's'} checked.</div>`;
   }
+  // A FOUND GAP THAT GOES NOWHERE IS NOT A FINDING. The point of the probe is
+  // getting these onto the proposal, and it used to print them as text -- read
+  // them, retype them into the seed box, rebuild. They are chips now, the same
+  // ones the competitor reader makes, so one press puts a gap on the list.
+  // (2026-09-22, Kiri)
+  const seeded = new Set(kbSeeds().map(x => String(x).trim().toLowerCase()));
   return `<div class="unrbox found"><b>${found.length} term`
-    + `${found.length === 1 ? '' : 's'} they don't rank for</b> \u00b7 `
-    + found.map(f => `${esc(f.bare || f.kw)}${f.vol ? ` (${n(f.vol)}/mo)` : ''}`)
-        .join(' \u00b7 ') + `</div>`;
+    + `${found.length === 1 ? '' : 's'} they don't rank for</b></div>`
+    + found.map(f => {
+        const bare = String(f.bare || f.kw || '');
+        const on = seeded.has(bare.trim().toLowerCase());
+        return `<button class="compchip${on ? ' on' : ''}" type="button"`
+          + ` data-compadd="${esc(bare)}"${on ? ' disabled' : ''}>${esc(bare)}`
+          + `${f.vol ? `<small>${n(f.vol)}/mo</small>` : ''}</button>`;
+      }).join('');
 }
 
 // A SECOND RUN MUST NOT START WHILE ONE IS IN FLIGHT. The panel re-renders while
