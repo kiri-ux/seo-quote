@@ -102,9 +102,28 @@ const BASE = 'http://127.0.0.1:5203';
     r.unrankedTried = null; r.unrankedResult = null; r.unrankedAuto = true;
     draw();
   });
-  await p.evaluate(() => findUnranked(ROWS[0], false));
-  await p.waitForFunction(() => !UNRANKED_RUNNING && ROWS[0].unrankedResult,
-                          null, {timeout: 20000});
+  // PRESSED, NOT CALLED. The handler was bound to #prods and the prompt moved
+  // into the Keyword Builder, so the button rendered, read as enabled and did
+  // nothing at all when pressed. Calling findUnranked directly, which is what
+  // this test did, could never have caught that. (2026-09-22, Kiri)
+  const pressed = await p.evaluate(() => {
+    const btn = document.querySelector('[data-unrfind]');
+    if (!btn) return '(no button)';
+    btn.click();
+    return 'clicked';
+  });
+  say('theButtonIsThere', pressed === 'clicked', pressed);
+  // A PRESS THAT DOES NOTHING MUST NAME ITSELF. With no handler bound this
+  // waited out the full timeout and died in the runner, which reads as a slow
+  // test rather than a dead button.
+  let ran = true;
+  try {
+    await p.waitForFunction(() => !UNRANKED_RUNNING && ROWS[0].unrankedResult,
+                            null, {timeout: 20000});
+  } catch (e) { ran = false; }
+  say('andPressingItRunsTheProbe', ran && probes.length > 0,
+      ran ? JSON.stringify(probes) : 'the press did nothing');
+  if (!ran) { console.log('FAILED', bad); await b.close(); process.exit(1); }
   const res = await p.evaluate(() => ({
     found: (ROWS[0].unrankedResult.found || []).map(f => f.bare),
     sieved: ROWS[0].unrankedResult.sieved,
@@ -124,19 +143,45 @@ const BASE = 'http://127.0.0.1:5203';
   // ---- A FOUND GAP IS A PRESS AWAY FROM THE LIST. Printing the terms and
   // making her retype them into the seed box is not a finding, it is homework.
   const add = await p.evaluate(() => {
+    const r = ROWS[0];
+    // Snapshot, because accepting a term really does change the list now and
+    // the sieve case below needs the term back outside the grid.
+    window.__snap = {all: (r.kw.all || []).slice(),
+                     focus: ((r.data || {}).focus || []).slice(),
+                     ultra: (r.kw.ultra || []).slice(),
+                     competitive: (r.kw.competitive || []).slice(),
+                     long_tail: (r.kw.long_tail || []).slice(),
+                     total: r.kw.total_volume};
     const before = kbSeeds().length;
-    const b = document.querySelector('.unrbox.found ~ [data-compadd]')
-           || [...document.querySelectorAll('[data-unrgap] [data-compadd]')][0];
+    const gridBefore = (r.kw.all || []).map(x => x.kw);
+    const b = [...document.querySelectorAll('[data-unrgap] [data-compadd]')][0];
     if (!b) return {err: '(no chip)'};
     const term = b.dataset.compadd;
     b.click();
+    const all = (r.kw.all || []).map(x => x.kw);
+    const row = (r.kw.all || []).find(x => x.kw.indexOf(term) === 0);
     return {term, before, after: kbSeeds().length,
-            onList: kbSeeds().map(x => String(x).toLowerCase())
-              .indexOf(String(term).toLowerCase()) >= 0};
+            onSeeds: kbSeeds().map(x => String(x).toLowerCase())
+              .indexOf(String(term).toLowerCase()) >= 0,
+            gridBefore, all, vol: row ? row.vol : null,
+            // NOTHING THE BUILD ALREADY MEASURED MAY BE DISTURBED. Accepting a
+            // term used to mean rebuilding, which reseeds and remeasures -- a
+            // list you liked comes back different, and pays for the calls.
+            keptTheRest: gridBefore.every(k => all.indexOf(k) >= 0),
+            tiers: ['ultra', 'competitive', 'long_tail']
+              .filter(k => (r.kw[k] || []).some(x => x.kw.indexOf(term) === 0))};
   });
   say('aFoundGapIsAChip', !add.err && !!add.term, JSON.stringify(add));
   say('andPressingItSeedsTheList',
-      add.after === add.before + 1 && add.onList === true, JSON.stringify(add));
+      add.after === add.before + 1 && add.onSeeds === true, JSON.stringify(add));
+  // ---- AND LANDS ON THE LIST WITHOUT A REBUILD
+  say('andTheTermIsOnTheListNow',
+      add.all.length === add.gridBefore.length + 1, JSON.stringify(add));
+  say('andItKeepsTheListYouHad', add.keptTheRest === true, JSON.stringify(add));
+  say('andItCarriesTheMeasuredVolume', add.vol === 40, JSON.stringify(add));
+  say('andItLandsInExactlyOneTier', add.tiers.length === 1, JSON.stringify(add));
+  say('andTheTermIsSoldInTheGridsForm',
+      /huntingdon pa$/.test(add.all[add.all.length - 1]), JSON.stringify(add.all));
 
   // ---- THE SIEVE SKIPS WHAT THE DOMAIN ALREADY RANKS FOR NATIONALLY, and is
   // only a sieve: it can prove a client DOES rank, never that they do not.
@@ -144,6 +189,12 @@ const BASE = 'http://127.0.0.1:5203';
   probes = [];
   await p.evaluate(() => {
     const r = ROWS[0];
+    const s = window.__snap;
+    if (s) {
+      r.kw.all = s.all; r.kw.ultra = s.ultra;
+      r.kw.competitive = s.competitive; r.kw.long_tail = s.long_tail;
+      r.kw.total_volume = s.total; r.data.focus = s.focus;
+    }
     r.unrankedTried = null; r.unrankedResult = null; r.ownedCache = null;
     r.unrankedAuto = true;
     draw();

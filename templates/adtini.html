@@ -2977,22 +2977,73 @@ function kbSeeds(){
   return (((ROWS[ROW] || {}).data || {}).focus || []).slice();
 }
 
+// TIER IS A JUDGEMENT, NOT A THRESHOLD. The planner decides per service and
+// there is no number on this screen that reproduces it, so a term added here is
+// placed against the volumes the build ALREADY tiered rather than a cutoff
+// invented client-side.
+function tierFor(kw, vol){
+  const v = Number(vol) || 0;
+  const floor = k => {
+    const vs = (kw[k] || []).map(x => Number(x.vol) || 0).filter(n => n > 0);
+    return vs.length ? Math.min.apply(null, vs) : null;
+  };
+  const u = floor('ultra'), c = floor('competitive');
+  if (u != null && v >= u) return 'ultra';
+  if (c != null && v >= c) return 'competitive';
+  return 'long_tail';
+}
+
+// A TERM ACCEPTED IS ON THE LIST, NOT QUEUED FOR A REBUILD. Every rebuild is a
+// fresh round of DataForSEO calls AND a list that comes back different -- the
+// planner reseeds and remeasures -- so taking one chip used to cost the list
+// you already liked. The volume beside the chip was measured to put it there
+// and the term is probed in the form the grid sells it in, so the row has
+// everything it needs to go straight on. (2026-09-22, Kiri)
+//
+// Returns false when there is no list yet: then the seed is all there is, and
+// the first build is the one that measures it.
+function addTermToList(r, bare, vol){
+  const kw = r.kw;
+  if (!kw || !(kw.all || []).length) return false;
+  const sfx = gridSuffix(r);
+  const full = (sfx ? `${bare} ${sfx}` : bare).replace(/\s+/g, ' ').trim();
+  if ((kw.all || []).some(x => String(x.kw).toLowerCase() === full.toLowerCase()))
+    return false;
+  const bk = tierFor(kw, vol);
+  const row = {kw: full, vol: Number(vol) || 0, src: 'accepted'};
+  (kw[bk] = kw[bk] || []).push(row);
+  (kw.all = kw.all || []).push(row);
+  if ((bk === 'ultra' || bk === 'competitive') && kw.head) kw.head.push(row);
+  if (kw.total_volume != null)
+    kw.total_volume = Number(kw.total_volume) + (Number(vol) || 0);
+  return true;
+}
+
 // ACCEPTED BY HAND BECOMES THE PLANNER'S OWN SEED. Not marked as a suggestion:
 // the competitor-name filter cuts rivals' product names out of TOOL-proposed
 // terms, and it would cut this straight back out again.
-function addCompetitorSeed(term){
+function addCompetitorSeed(term, vol){
   const r = ROWS[ROW];
   const t = String(term || '').trim().toLowerCase();
   if (!r || !t) return;
   const d = r.data = r.data || {};
   d.focus = (d.focus || []).slice();
-  if (d.focus.some(x => String(x).trim().toLowerCase() === t)) return;
-  d.focus.push(t);
-  if (SEED_SRC) delete SEED_SRC[t];
-  if (r.seedSrc) delete r.seedSrc[t];
-  chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+  const seeded = d.focus.some(x => String(x).trim().toLowerCase() === t);
+  if (!seeded) {
+    d.focus.push(t);
+    if (SEED_SRC) delete SEED_SRC[t];
+    if (r.seedSrc) delete r.seedSrc[t];
+    chipbox(document.querySelector('#paneKw [data-chips="seeds"]'), d.focus.slice());
+  }
+  // The seed is kept either way, so a rebuild whenever one happens keeps the
+  // term. The list gets it now.
+  const put = addTermToList(r, t, vol);
   const b = document.querySelector(`[data-compadd="${CSS.escape(t)}"]`);
   if (b) { b.disabled = true; b.classList.add('on'); }
+  if (put) {
+    kbDraw(r);
+    $('saved').textContent = `Added \u201c${t}\u201d to the list.`;
+  }
 }
 
 // PULLED, NOT TYPED. The rank check has already read page one for every term
@@ -3104,7 +3155,7 @@ async function readCompetitors(){
           const n = Number(x.volume) || 0;
           const c = Number(x.competitors) || 0;
           return `<button class="compchip" type="button"`
-            + ` data-compadd="${esc(x.term)}"`
+            + ` data-compadd="${esc(x.term)}" data-compvol="${n}"`
             + ` title="${esc((x.on || []).join(', '))}">${esc(x.term)}`
             + `<small>${c > 1 ? `${c} rivals` : '1 rival'}`
             + `${n ? ` \u00b7 ${n.toLocaleString()}/mo` : ''}</small></button>`;
@@ -3281,7 +3332,8 @@ function unrankedFoundHtml(r){
         const bare = String(f.bare || f.kw || '');
         const on = seeded.has(bare.trim().toLowerCase());
         return `<button class="compchip${on ? ' on' : ''}" type="button"`
-          + ` data-compadd="${esc(bare)}"${on ? ' disabled' : ''}>${esc(bare)}`
+          + ` data-compadd="${esc(bare)}" data-compvol="${Number(f.vol) || 0}"`
+          + `${on ? ' disabled' : ''}>${esc(bare)}`
           + `${f.vol ? `<small>${n(f.vol)}/mo</small>` : ''}</button>`;
       }).join('');
 }
@@ -5457,8 +5509,6 @@ $('prods').addEventListener('click', e => {
   if (pb) { e.preventDefault(); downloadProposal(+pb.dataset.prop); return; }
   const db = e.target.closest('[data-slides]');
   if (db) { e.preventDefault(); downloadProposal(+db.dataset.slides, 'pptx'); return; }
-  const uf = e.target.closest('[data-unrfind]');
-  if (uf) { e.preventDefault(); findUnranked(ROWS[+uf.dataset.unrfind], false); return; }
 });
 document.addEventListener('click', e => {
   const cp = e.target.closest('#kbCompPull');
@@ -5466,7 +5516,16 @@ document.addEventListener('click', e => {
   const cr = e.target.closest('#kbCompRead');
   if (cr) { e.preventDefault(); readCompetitors(); return; }
   const ca = e.target.closest('[data-compadd]');
-  if (ca) { e.preventDefault(); addCompetitorSeed(ca.dataset.compadd); return; }
+  if (ca) {
+    e.preventDefault();
+    addCompetitorSeed(ca.dataset.compadd, ca.dataset.compvol);
+    return;
+  }
+  // ON THE DOCUMENT, NOT ON #prods. The gap prompt moved into the Keyword
+  // Builder and this listener did not -- the button rendered, read as enabled
+  // and did nothing at all when pressed. (2026-09-22, Kiri)
+  const uf = e.target.closest('[data-unrfind]');
+  if (uf) { e.preventDefault(); findUnranked(ROWS[+uf.dataset.unrfind], false); return; }
 });
 
 // RERUN THE CHECKS THAT FAILED. Nineteen of twenty-one came back "\u2014" and the
