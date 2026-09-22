@@ -1135,6 +1135,8 @@ CFG = {
     # In a thin market the domain appears somewhere in the top 100 for nearly
     # every phrase, so "absent from the top 100" found nothing, ever.
     "gap_rank_max": 10,
+    # Resubmits for a DataForSEO-side transient (40101 Internal SE Server Error).
+    "serp_retry_transient": 2,
     # FOUR, NOT TEN — THE PROBES WERE STARVING EACH OTHER. The pacing holds the
     # process to dfs_calls_per_minute; a probe that queues ten SERP lookups, then
     # retries the ones that did not answer, then hands over to the cross-market
@@ -11747,6 +11749,21 @@ def market_for_keyword(kw, markets, state=""):
 _SERP_LOC_USED = {}
 
 
+def _serp_transient(task0):
+    """DataForSEO's own backend failing, as opposed to a bad request.
+
+    401xx is their internal-error family -- 40101 "Internal SE Server Error" --
+    and 5xxxx their server errors. Both mean resubmit; the request was fine.
+    40501 is an unusable location, which the ladder below handles by MOVING,
+    and a 404xx is not coming back however many times you ask.
+    """
+    try:
+        c = int(task0.get("status_code") or 0)
+    except Exception:                                     # noqa: BLE001
+        return False
+    return (40100 <= c <= 40199) or c >= 50000
+
+
 def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
               loc_override=""):
     """One keyword's SERP call. Returns (position, [paa questions], [rival domains]).
@@ -11838,6 +11855,35 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
         except Exception as e:
             last_err = e
             task0 = {"status_code": 40501, "status_message": str(e)}
+    # 40101 IS THEIR SERVER, NOT THIS REQUEST AND NOT A CLIENT WHO DOES NOT RANK.
+    #
+    # It arrives HTTP 200 with the problem inside the task, so the transport
+    # retry at the top -- which only catches dfs_post RAISING -- never saw it and
+    # the keyword died on a single attempt. Five of twelve gap probes went this
+    # way on Cisney & O'Donnell, reported as "5 did not answer"; the same error
+    # is what leaves "—" cells in a finished rank check.
+    #
+    # Resubmitting the identical request is the documented remedy. The ladder
+    # above MOVES location for a 40501; this one stays put and asks again.
+    # (2026-09-22, Kiri)
+    _tries = 0
+    while _serp_transient(task0) and _tries < int(CFG.get("serp_retry_transient", 2)):
+        remaining = (deadline - time.time()) if deadline else 20
+        # Never spend the batch's last seconds here: the platform kills the whole
+        # request near 30s, which would fail keywords that already finished.
+        if remaining < 6:
+            break
+        _tries += 1
+        time.sleep(min(1.0 * _tries, max(0.5, remaining - 5)))
+        try:
+            data = dfs_post("/serp/google/organic/live/regular",
+                            [{"keyword": kw, "location_name": used_loc,
+                              "language_code": "en", "depth": depth}],
+                            timeout=min(14, max(5, remaining - 1)))
+            task0 = ((data or {}).get("tasks") or [{}])[0] or {}
+        except Exception as e:                            # noqa: BLE001
+            last_err = e
+            break
     if task0.get("status_code") not in (20000, None):
         raise RuntimeError(f"{task0.get('status_code')}: {task0.get('status_message')}")
     _SERP_LOC_USED[kw] = used_loc
