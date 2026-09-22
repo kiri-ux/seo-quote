@@ -2997,27 +2997,57 @@ function addCompetitorSeed(term){
 // in the grid, so the competitors are in hand -- there is nothing to look up
 // and nothing to pay for. Needs a rank check behind it, and says so when there
 // is not one.
-function pullCompetitors(){
+async function pullCompetitors(){
   const r = ROWS[ROW];
-  const ta = $('kbCompIn'), out = $('kbCompOut');
-  if (!r || !ta || !out) return;
-  const rivals = realRivals(r);
-  if (!rivals.length) {
-    out.innerHTML = `<span class="hint">`
-      + ((r.result || {}).rivals
-          ? 'Page one is all directories and the client\u2019s own site.'
-          : 'No rank check on this quote yet \u00b7 generate it first.')
-      + `</span>`;
+  const ta = $('kbCompIn'), out = $('kbCompOut'), btn = $('kbCompPull');
+  if (!r || !ta || !out || COMP_RUNNING) return;
+  const fill = rivals => {
+    const top = rivals.slice(0, 6);
+    const have = String(ta.value || '').split(/[\s,;]+/)
+      .map(x => x.trim().toLowerCase()).filter(Boolean);
+    const add = top.map(x => x.domain).filter(d => have.indexOf(d) < 0);
+    ta.value = have.concat(add).join(', ');
+    out.innerHTML = '';
+    return top.length;
+  };
+  // Already paid for: the rank check read page one for every term in the grid.
+  const had = realRivals(r);
+  if (had.length) { fill(had); return; }
+  // NO WAITING FOR THE WHOLE QUOTE. This needed r.result.rivals, which only
+  // exists after Generate -- so the order of work was pull, fail, leave the
+  // builder, generate, come back, pull, read. One SERP batch on the terms
+  // already in hand answers the same question here. (2026-09-22, Kiri)
+  const terms = (((r.kw || {}).all) || []).map(x => x.kw)
+    .concat(((r.data || {}).focus || [])).filter(Boolean).slice(0, 3);
+  if (!terms.length) {
+    out.innerHTML = '<span class="hint">Build the keyword list first.</span>';
     return;
   }
-  const top = rivals.slice(0, 6);
-  const have = new Set(String(ta.value || '').split(/[\s,;]+/)
-    .map(x => x.trim().toLowerCase()).filter(Boolean));
-  const add = top.map(x => x.domain).filter(d => !have.has(d));
-  ta.value = [...have, ...add].join(', ');
-  out.innerHTML = `<span class="hint">${top.length} from page one, `
-    + `most-seen first \u00b7 ${top.map(x =>
-        `${esc(x.domain)} (${x.appearances})`).join(', ')}</span>`;
+  COMP_RUNNING = true;
+  btn.disabled = true;
+  btn.textContent = 'Reading page one\u2026';
+  try {
+    const d = r.data || {};
+    const got = await postWait('/api/rankings', {
+      geo_values: geoOf(d), state: stateOf(d),
+      industry: (d.industry || []).join(', '),
+      geo_scope: r.band || bandOf(d),
+      national_demand: (r.band || bandOf(d)) === 'nationwide',
+      brand: d.brand, domain: d.site, cfg: r.over,
+      batch: terms.map(kw => ({kw}))});
+    r.result = r.result || {};
+    r.result.rivals = addRivals(r.result.rivals, got.rivals);
+    r.result.agg = addAgg(r.result.agg, got.aggregators);
+    if (!fill(realRivals(r))) {
+      out.innerHTML = '<span class="hint">Page one is directories only.</span>';
+    }
+  } catch (e) {
+    out.innerHTML = `<span class="hint">${esc(e.message)}</span>`;
+  } finally {
+    COMP_RUNNING = false;
+    btn.disabled = false;
+    btn.textContent = 'Pull from page one';
+  }
 }
 
 let COMP_RUNNING = false;
@@ -3055,13 +3085,12 @@ async function readCompetitors(){
     }
     // The overlap first: it is the category's vocabulary rather than one
     // rival's angle.
-    out.innerHTML = `<div class="hint">${rows.length} term`
-      + `${rows.length === 1 ? '' : 's'} from ${(got.domains_read || []).length} `
-      + `competitor${(got.domains_read || []).length === 1 ? '' : 's'}`
-      + `${got.already_seeded ? ` \u00b7 ${got.already_seeded} already on your list` : ''}`
-      + `${(got.domains_failed || []).length
-            ? ` \u00b7 ${got.domains_failed.length} could not be read` : ''}`
-      + ` \u00b7 click to add</div>`
+    // The counts are facts and they are short. The instruction was not.
+    out.innerHTML = `<div class="hint">${rows.length} from `
+      + `${(got.domains_read || []).length} of ${doms.length} site`
+      + `${doms.length === 1 ? '' : 's'}`
+      + `${got.already_seeded ? ` \u00b7 ${got.already_seeded} already seeded` : ''}`
+      + `</div>`
       + rows.slice(0, 24).map(x => {
           const n = Number(x.volume) || 0;
           const c = Number(x.competitors) || 0;
@@ -3188,47 +3217,34 @@ async function ownedTerms(r){
 // of the claim above it.
 function renderUnrankedGap(r){
   try { liveCfg().then(() => {}); } catch (e) {}
-  // MORE THAN ONE HOST PER ROW. The prompt shows on the Details pane, where a
-  // planner looks after generating, and on the History view's Keywords card,
-  // which is the only place the grid itself is drawn.
   const hosts = [...document.querySelectorAll(`[data-unrgap="${r.i}"]`)];
   if (!hosts.length) return;
-  const min = minUnranked();
   const paint = h => hosts.forEach(x => { x.innerHTML = h; });
-  if (!min) { paint(''); return; }
+  const min = minUnranked();
   const table = ((r.result || {}).table) || [];
   const measured = table.filter(x => x && x.pos !== undefined && x.pos !== null
                                   && x.pos !== '' && !x.error && !x.queued
                                   && !x.expired).length;
-  if (!measured) { paint(''); return; }
   const have = unrankedCount(r);
-  if (have >= min) { paint(''); return; }   // the proposal already has a story
-  const cands = unrankedCandidates(r);
-  const cap = Math.min(cands.length, unrankedProbeMax());
-  paint(`<div class="unrbox">`
-    + `<b>They rank for ${have ? 'all but ' + have + ' of' : 'every one of'}`
-    + ` the quoted terms.</b> `
-    + (have === 0 ? 'No term in the grid is a gap.'
-        : (have === 1 ? '1 term in the grid is' : have + ' terms in the grid are')
-          + ' all there is.')
-    + (cands.length
-        ? ` <button class="btn2 unrfind" type="button" data-unrfind="${r.i}">`
-          + `Find ${min} outside the grid</button>`
-          + ` <span class="hint">checks up to ${cap} `
-          + `${cands[0].src === 'pool' ? 'market terms the grid did not quote'
-                                       : 'terms the grid cut'}</span>`
-        : ' <span class="hint">No candidates left to check.</span>')
-    + `</div>`
+  const cands = min && measured && have < min ? unrankedCandidates(r) : [];
+  // NOTHING TO PRESS, NOTHING TO SHOW, NO BOX. It used to print "They rank for
+  // every one of the quoted terms. No term in the grid is a gap. No candidates
+  // left to check." -- three sentences to say it could not help. The box earns
+  // its place when there is a button in it or a finding under it.
+  // (2026-09-22, Kiri)
+  if (!cands.length && !r.unrankedResult) { paint(''); return; }
+  paint((cands.length
+      ? `<div class="unrbox"><b>They rank for `
+        + `${have ? 'all but ' + have + ' of' : 'every one of'} the quoted terms.</b>`
+        + ` <button class="btn2 unrfind" type="button" data-unrfind="${r.i}">`
+        + `Find ${min} outside the grid</button></div>`
+      : '')
     + (r.unrankedResult ? unrankedFoundHtml(r) : ''));
   if (UNRANKED_RUNNING) {
     document.querySelectorAll(`[data-unrfind="${r.i}"]`).forEach(b => {
       b.disabled = true; b.textContent = 'Checking\u2026';
     });
   }
-  // AUTOMATIC WHEN THERE IS NOTHING AT ALL. Zero misses is not a close call --
-  // the proposal has no argument in it and somebody has to go looking. One shot
-  // per quote, so a reprice does not buy a second round of SERP calls, and the
-  // button stays for the 1-of-3 case where a human decides if it is worth it.
   if (have === 0 && cands.length && !r.unrankedAuto && !UNRANKED_RUNNING) {
     r.unrankedAuto = true;
     findUnranked(r, true);
@@ -3240,19 +3256,13 @@ function unrankedFoundHtml(r){
   const found = res.found || [];
   const n = x => Number(x || 0).toLocaleString();
   if (!found.length) {
-    return `<div class="unrbox none"><b>No gap found.</b> `
-      + `${res.measured || 0} of ${res.checked || 0} candidates measured`
-      + (res.sieved ? ` \u00b7 ${res.sieved} skipped, already ranked nationally` : '')
-      + (res.allOwned ? ' \u00b7 every candidate is a term they already rank for' : '')
-      + `</div>`;
+    return `<div class="unrbox none">No gap found in `
+      + `${res.measured || 0} term${res.measured === 1 ? '' : 's'} checked.</div>`;
   }
   return `<div class="unrbox found"><b>${found.length} term`
-    + `${found.length === 1 ? '' : 's'} they do not rank for</b> \u00b7 `
+    + `${found.length === 1 ? '' : 's'} they don't rank for</b> \u00b7 `
     + found.map(f => `${esc(f.bare || f.kw)}${f.vol ? ` (${n(f.vol)}/mo)` : ''}`)
-        .join(' \u00b7 ')
-    + ` <span class="hint">measured on the live result page`
-    + (res.sieved ? ` \u00b7 ${res.sieved} skipped, already ranked nationally` : '')
-    + `</span></div>`;
+        .join(' \u00b7 ') + `</div>`;
 }
 
 // A SECOND RUN MUST NOT START WHILE ONE IS IN FLIGHT. The panel re-renders while
@@ -3348,73 +3358,22 @@ function drawHeadroom(kw){
   const el = document.getElementById('kbHeadroom');
   if (!el) return;
   const sr = (kw || {}).seed_ranking || {};
-  const seen = sr.headroom_seen;
-  const counts = seen
-    ? ` \u00b7 wanted ${seen.want}, ${seen.fresh} already in the grid of `
-      + `${seen.own} known ranked terms, ${seen.pool} candidates below the cut`
-    : '';
   const held = sr.headroom || [];
+  // ONLY WHAT IT DID. Every other outcome -- the reserve switched off, the
+  // seeds all fitting the grid, the ranked-keywords report disagreeing with
+  // the live rank check -- was a line explaining why there was no line. Each
+  // one is a fact about the machinery rather than about the client, so it
+  // belongs in the code and not on the screen. Held slots are the only thing
+  // here that changes the quote. (2026-09-22, Kiri)
+  if (!held.length) { el.innerHTML = ''; el.hidden = true; return; }
   const n = x => Number(x || 0).toLocaleString();
-  let out = '';
-  if (held.length) {
-    out = `\u{1F331} <b>${held.length} slot${held.length === 1 ? '' : 's'} held `
-      + `for terms they don't rank for yet</b> \u00b7 `
-      + held.map(([t, v]) => `${esc(t)} (${n(v)}/mo)`).join(' \u00b7 ')
-      + ((sr.headroom_displaced || []).length
-          ? `, in place of ${sr.headroom_displaced.map(([t]) => esc(t)).join(' \u00b7 ')}`
-          : '')
-      + (sr.headroom_basis ? ` \u00b7 ${esc(sr.headroom_basis)}` : '');
-  } else if (sr.headroom_skipped) {
-    // The one case that needs a human: nothing known about their positions, so
-    // the grid filled on demand alone.
-    out = `\u26a0 <b>No slots held for unranked terms</b> \u00b7 what this client `
-      + `already ranks for ${esc(sr.headroom_skipped)}`;
-  } else if (sr.headroom_dry) {
-    out = `\u{1F331} <b>No slots held for unranked terms</b> \u00b7 `
-      + esc(sr.headroom_dry) + counts;
-  } else if (sr.headroom_met) {
-    // THE RANK CHECK OUTRANKS THE RANKED-KEYWORDS REPORT, AND SAYS SO. On Ski
-    // Barn this read "20 of the quoted terms are ones they don't rank for"
-    // directly above "19/19 found in top 100" -- two numbers about the same
-    // twenty terms, flatly contradicting each other, because the reservation
-    // asks ranked_keywords at BUILD time and the rank check asks the live
-    // result page for each keyword in the market it names. When the rank check
-    // has run, it is the answer.
-    const t = ((ROWS[ROW] || {}).result || {}).table || [];
-    const measured = t.filter(x => x && !x.error && !x.queued && !x.expired
-                              && x.pos !== undefined && x.pos !== null && x.pos !== '');
-    const miss = measured.filter(x => x.pos === 'Not Found').length;
-    out = (measured.length && miss < sr.headroom_met)
-      ? `\u{1F331} <b>The reservation read ${sr.headroom_met} of the quoted terms `
-        + `as unranked \u00b7 the rank check found ${miss === 0 ? 'none' : 'only ' + miss}`
-        + ` of ${measured.length} measured</b>${counts}`
-      : `\u{1F331} <b>${sr.headroom_met} of the quoted terms are ones they don't `
-        + `rank for</b> \u00b7 past the reservation, nothing swapped${counts}`;
-  } else if (seen) {
-    out = `\u{1F331} <b>Unranked-term reservation ran and changed nothing</b>${counts}`;
-  } else if (sr.headroom_off) {
-    // IT DID NOT RUN, WHICH IS ALSO AN ANSWER. Without this the panel drew
-    // nothing on a build whose reserve was switched off, which is
-    // indistinguishable from the panel not working.
-    out = `\u26a0 <b>No slots held for unranked terms</b> \u00b7 `
-      + esc(sr.headroom_off);
-  } else if (sr.skipped) {
-    // THE RANKING ITSELF DID NOT RUN, which is the case that was silent: on a
-    // list whose seeds all fit the grid, nothing is cut, so there is nothing
-    // to reserve FROM. The server says which of those it was.
-    out = `\u{1F331} <b>No slots held for unranked terms</b> \u00b7 `
-      + esc(sr.skipped);
-  } else if (sr.failed) {
-    out = `\u26a0 <b>Seeds could not be ranked</b> \u00b7 ${esc(sr.failed)}`;
-  } else if ((sr.order || []).length) {
-    // The seed ranking ran and the reservation left no trace at all. A saved
-    // quote built before any of these keys existed is the normal case, and the
-    // line says which rather than staying blank.
-    out = `\u{1F331} <b>No unranked-term reservation on this build</b> \u00b7 `
-      + `re-run the build to hold slots for terms they don't rank for`;
-  }
-  el.innerHTML = out;
-  el.hidden = !out;
+  el.innerHTML = `\u{1F331} <b>${held.length} slot${held.length === 1 ? '' : 's'} `
+    + `held for terms they don't rank for</b> \u00b7 `
+    + held.map(([t, v]) => `${esc(t)}${v ? ` (${n(v)}/mo)` : ''}`).join(' \u00b7 ')
+    + ((sr.headroom_displaced || []).length
+        ? `, in place of ${sr.headroom_displaced.map(([t]) => esc(t)).join(' \u00b7 ')}`
+        : '');
+  el.hidden = false;
 }
 
 function kbDraw(r){

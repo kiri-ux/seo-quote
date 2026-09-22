@@ -83,9 +83,11 @@ const BASE = 'http://127.0.0.1:5203';
   // THE OVERLAP LEADS: three rivals holding a term is the category's vocabulary.
   say('theRivalCountLeadsTheChip', /3 rivals/.test(out.firstLabel || ''), out.firstLabel);
   say('andTheVolumeIsThere', /90\/mo/.test(out.firstLabel || ''), out.firstLabel);
-  say('itSaysHowManySitesWereRead', /from 2 competitors/.test(out.text), out.text);
-  say('andHowManyCouldNot', /1 could not be read/.test(out.text), out.text);
-  say('andWhatWasAlreadyOnTheList', /2 already on your list/.test(out.text), out.text);
+  // COUNTS, NOT SENTENCES. The line used to carry four clauses and an
+  // instruction; the counts are the only part that is a fact about the read.
+  say('itSaysHowManyOfHowManySites', /2 from 2 of 3 sites/.test(out.text), out.text);
+  say('andWhatWasAlreadySeeded', /2 already seeded/.test(out.text), out.text);
+  say('andNoInstruction', !/click to add/.test(out.text), out.text);
 
   // ---- ACCEPTED BY HAND BECOMES THE PLANNER'S OWN SEED. Not marked as a
   // suggestion: the competitor-name filter cuts rivals' product names out of
@@ -134,17 +136,50 @@ const BASE = 'http://127.0.0.1:5203';
   say('mostSeenFirst',
       pulled.box.indexOf('bigremodeler') < pulled.box.indexOf('smallremodel'),
       pulled.box);
-  say('andItSaysHowOftenEachWasSeen', /bigremodeler\.com \(7\)/.test(pulled.note),
-      pulled.note);
+  // THE DOMAINS IN THE BOX ARE THE ANSWER. It used to narrate the pull
+  // underneath -- "6 from page one, most-seen first, a.com (7), b.com (4)" --
+  // which is the same information twice.
+  say('andSaysNothingAboutHavingDoneIt', pulled.note.trim() === '',
+      JSON.stringify(pulled.note));
 
-  // No rank check behind it is a different answer from no competitors.
-  const noRank = await p.evaluate(() => {
-    ROWS[0].result = {};
+  // NO WAITING FOR THE WHOLE QUOTE. Pull needed r.result.rivals, which only
+  // exists after Generate, so the order of work was pull, fail, leave the
+  // builder, generate, come back, pull, read. With no rank check behind it, one
+  // SERP batch on the terms already in hand answers the same question here.
+  let rankBody = null;
+  await p.route('**/api/rankings', r2 => {
+    try { rankBody = JSON.parse(r2.request().postData() || '{}'); } catch (e) {}
+    return json(r2, {results: [], aggregators: {slots: 4, aggregator_slots: 1,
+                                                terms: 1, domains: ['yelp.com']},
+                     rivals: [{domain: 'yelp.com', appearances: 4},
+                              {domain: 'localpro.com', appearances: 3}]});
+  });
+  const fresh = await p.evaluate(async () => {
+    const r = ROWS[0];
+    r.result = {};                      // no quote generated
+    r.kw = {all: [{kw: 'kitchen remodel huntingdon pa'}]};
     document.getElementById('kbCompIn').value = '';
-    pullCompetitors();
+    await pullCompetitors();
+    return {box: document.getElementById('kbCompIn').value,
+            note: document.getElementById('kbCompOut').textContent.trim()};
+  });
+  say('pullWorksWithNoQuoteGenerated', /localpro\.com/.test(fresh.box), fresh.box);
+  say('andStillLeavesTheAggregatorOut', !/yelp/.test(fresh.box), fresh.box);
+  say('andSaysNothingWhenItWorked', fresh.note === '', JSON.stringify(fresh.note));
+  say('itChecksTheTermsAlreadyInHand',
+      ((rankBody || {}).batch || []).length > 0
+      && rankBody.batch[0].kw === 'kitchen remodel huntingdon pa',
+      JSON.stringify(rankBody && rankBody.batch));
+
+  // Nothing built yet is the one case it cannot answer.
+  const bare = await p.evaluate(async () => {
+    const r = ROWS[0];
+    r.result = {}; r.kw = {}; r.data.focus = [];
+    document.getElementById('kbCompIn').value = '';
+    await pullCompetitors();
     return document.getElementById('kbCompOut').textContent;
   });
-  say('noRankCheckSaysSo', /No rank check on this quote yet/.test(noRank), noRank);
+  say('withNothingBuiltItSaysSo', /Build the keyword list first/.test(bare), bare);
 
   // ---- nothing typed, and nothing to say
   await p.fill('#kbCompIn', '  ');

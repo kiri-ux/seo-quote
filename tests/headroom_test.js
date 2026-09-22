@@ -33,90 +33,39 @@ const BASE = 'http://127.0.0.1:5203';
   const SEEN = {want: 4, fresh: 0, own: 27, pool: 9,
                 source: '27 ranked keywords read for skibarn.com'};
 
-  // ---- slots actually held: the terms, their volume, and what they displaced
+  // ---- WHAT IT DID, AND NOTHING ELSE.
+  //
+  // Held slots are the only outcome that changes the quote. Every other one --
+  // the reserve switched off, the seeds all fitting the grid, the
+  // ranked-keywords report disagreeing with the live rank check -- was a line
+  // explaining why there was no line, and each is a fact about the machinery
+  // rather than about the client. They live in the code now.
   let r = await show({headroom: [['ski tuning', 320], ['snowboard rental', 210]],
                       headroom_displaced: [['ski shop', 2420]],
                       headroom_basis: '27 ranked keywords read for skibarn.com',
                       headroom_seen: SEEN});
-  say('heldSlotsAreNamed', /2 slots held for terms they don't rank for yet/.test(r.text), r.text);
+  say('heldSlotsAreNamed', /2 slots held for terms they don't rank for/.test(r.text),
+      r.text);
   say('withTheirVolumes', /ski tuning \(320\/mo\)/.test(r.text), r.text);
   say('andWhatTheyDisplaced', /in place of ski shop/.test(r.text), r.text);
-  say('andWhereTheRankingsCameFrom', /27 ranked keywords read for skibarn\.com/.test(r.text), r.text);
+  say('andNoBasisNarration', !/ranked keywords read for/.test(r.text), r.text);
+  say('andNoSlotArithmetic', !/wanted 4/.test(r.text), r.text);
 
-  // ---- THE CASE SHE ASKED FOR: they already rank for everything quoted, and
-  // the reservation says so instead of staying quiet.
-  r = await show({headroom_met: 3, headroom_seen: Object.assign({}, SEEN, {fresh: 3})});
-  say('pastTheReservationIsReported',
-      /3 of the quoted terms are ones they don't rank for/.test(r.text), r.text);
-  say('andSaysNothingWasSwapped', /nothing swapped/.test(r.text), r.text);
-
-  // ---- nothing known about their positions: this one needs a human
-  r = await show({headroom_skipped: 'could not be read (403)'});
-  say('noRankingsIsAWarning', /No slots held for unranked terms/.test(r.text), r.text);
-  say('andNamesWhy', /could not be read \(403\)/.test(r.text), r.text);
-
-  // ---- every candidate below the cut is also already ranked
-  r = await show({headroom_dry: 'every candidate the ranking cut is also a term they already rank for',
-                  headroom_seen: SEEN});
-  say('dryIsReported', /every candidate the ranking cut/.test(r.text), r.text);
-
-  // ---- it ran and changed nothing. THE SILENT CASE.
-  r = await show({headroom_seen: SEEN});
-  say('theSilentCaseIsNoLongerSilent',
-      /ran and changed nothing/.test(r.text), r.text);
-  say('andTheCountsAreThere',
-      /wanted 4, 0 already in the grid of 27 known ranked terms, 9 candidates below the cut/.test(r.text),
-      r.text);
-
-  // ---- THE RESERVATION DID NOT RUN. Switched off in config, or no service
-  // slots to reserve from. Without this the panel drew nothing, which is
-  // indistinguishable from the panel not working -- the same silence the other
-  // branches exist to end, one level up.
-  r = await show({order: [['a', 10, 10]], headroom_off: 'grid_headroom_slots is 0'});
-  say('theReserveBeingOffIsReported',
-      /No slots held for unranked terms/.test(r.text)
-      && /grid_headroom_slots is 0/.test(r.text), r.text);
-
-  // ---- an older saved quote: the ranking ran, no headroom key exists at all
-  r = await show({order: [['a', 10, 10]], order_basis: 'x'});
-  say('anOlderBuildSaysSoRatherThanNothing',
-      /No unranked-term reservation on this build/.test(r.text), r.text);
-  say('andSaysWhatToDo', /re-run the build/.test(r.text), r.text);
-
-  // ---- THE RANKING ITSELF DID NOT RUN. This is the case that was silent on a
-  // real build: seed_ranking comes back {} when every seed fits the grid, so
-  // nothing is cut and there is nothing to reserve FROM -- and {} is exactly
-  // what the panel read as "nothing to say".
-  r = await show({skipped: '18 seeds for 20 slots, so every seed is quoted and '
-                          + 'nothing was cut to reserve from'});
-  say('aSkippedRankingIsReported',
-      /No slots held for unranked terms/.test(r.text)
-      && /18 seeds for 20 slots/.test(r.text), r.text);
-
-  // ---- the volume lookup failed outright
-  r = await show({failed: 'no volume data', was: ['contractor']});
-  say('aFailedRankingIsReported',
-      /Seeds could not be ranked/.test(r.text) && /no volume data/.test(r.text),
-      r.text);
-
-  // ---- nothing to say at all: no seed_ranking of any kind
-  r = await show({});
-  say('nothingToSayHidesTheLine', r.hidden && r.text === '', JSON.stringify(r));
-
-  // ---- THE RANK CHECK OUTRANKS THE RANKED-KEYWORDS REPORT. On Ski Barn this
-  // read "20 of the quoted terms are ones they don't rank for" directly above
-  // "19/19 found in top 100" -- two numbers about the same twenty terms,
-  // contradicting each other, because the reservation asks ranked_keywords at
-  // build time and the rank check asks the live result page.
-  const clash = await p.evaluate(() => {
-    ROWS[ROW = 0].result = {table: [
-      {kw: 'a', pos: 3}, {kw: 'b', pos: 7}, {kw: 'c', pos: 'Not Found'}]};
-    drawHeadroom({seed_ranking: {headroom_met: 20,
-                  headroom_seen: {want: 4, fresh: 20, own: 27, pool: 9, source: 'x'}}});
-    return document.getElementById('kbHeadroom').textContent.replace(/\s+/g, ' ');
-  });
-  say('theRankCheckIsGivenTheLastWord',
-      /the rank check found only 1 of 3 measured/.test(clash), clash);
+  // Every outcome that held nothing renders nothing at all.
+  for (const [label, sr] of [
+    ['past the reservation', {headroom_met: 3, headroom_seen: SEEN}],
+    ['the reserve is off', {order: [['a', 10, 10]], headroom_off: 'grid_headroom_slots is 0'}],
+    ['nothing was cut', {skipped: '19 seeds for 20 slots'}],
+    ['every candidate is ranked', {headroom_dry: 'x', headroom_seen: SEEN}],
+    ['it ran and did nothing', {headroom_seen: SEEN}],
+    ['the ranking failed', {failed: 'no volume data'}],
+    ['an older build', {order: [['a', 10, 10]]}],
+    ['nothing at all', {}],
+  ]) {
+    r = await show(sr);
+    say(`nothingHeldDrawsNothing: ${label}`, r.hidden && r.text === '',
+        JSON.stringify(r));
+  }
 
   // ---- AND THE BUILD'S OWN ANSWER SURVIVES THE REFINE PASS.
   //

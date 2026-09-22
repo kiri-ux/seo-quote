@@ -65,7 +65,10 @@ const BASE = 'http://127.0.0.1:5203';
   say('itSaysTheyRankForEverything',
       /rank for every one of the quoted terms/.test(txt), txt);
   say('andOffersToLookOutsideTheGrid', /Find 3 outside the grid/.test(txt), txt);
-  say('fromTheTermsTheGridCut', /terms the grid cut/.test(txt), txt);
+  // THE BUTTON IS THE OFFER. Naming the candidate source under it was a
+  // sentence about the machinery; which well it drew from does not change what
+  // the operator does next.
+  say('andNoSourceNarration', !/terms the grid cut/.test(txt), txt);
 
   // ---- AND THE MARKET POOL WHEN NOTHING WAS CUT. This is Cisney: 19 seeds for
   // 20 slots, so seed_ranking carries `skipped` and no order at all.
@@ -74,14 +77,16 @@ const BASE = 'http://127.0.0.1:5203';
                           + 'nothing was cut to reserve from'},
     market_pool: [{keyword: 'basement finishing', volume: 90},
                   {keyword: 'deck builder', volume: 70}]}});
-  say('nothingCutFallsBackToTheMarketPool',
-      /market terms the grid did not quote/.test(txt), txt);
-  say('andStillOffersTheProbe', /Find 3 outside the grid/.test(txt), txt);
+  // NOTHING CUT FALLS BACK TO THE MARKET POOL. This is Cisney: 19 seeds for 20
+  // slots, so seed_ranking carries `skipped` and no order at all.
+  say('nothingCutStillOffersTheProbe', /Find 3 outside the grid/.test(txt), txt);
 
-  // ---- no candidates anywhere: it says so rather than offering a dead button
+  // ---- NO CANDIDATES, NO BOX. It used to print "They rank for every one of
+  // the quoted terms. No term in the grid is a gap. No candidates left to
+  // check." -- three sentences to say it could not help. The box earns its
+  // place when there is a button in it or a finding under it.
   txt = await setup({auto: false, kw: {seed_ranking: {skipped: 'x'}}});
-  say('noCandidatesSaysSo', /No candidates left to check/.test(txt), txt);
-  say('andOffersNoButton', !/Find 3 outside/.test(txt), txt);
+  say('noCandidatesDrawsNothing', txt === '', JSON.stringify(txt));
 
   // ---- THE PROBE ITSELF, measured on the live rank check
   probes = [];
@@ -105,10 +110,11 @@ const BASE = 'http://127.0.0.1:5203';
   say('andTheSuffixIsOnTheProbedTerm',
       probes.flat().every(k => /huntingdon pa$/.test(k)), JSON.stringify(probes));
   say('andTheFindingIsShown',
-      /terms they do not rank for/.test(res.text)
+      /terms they don't rank for/.test(res.text)
       && /bathroom showroom/.test(res.text), res.text);
-  say('measuredOnTheLiveResultPage',
-      /measured on the live result page/.test(res.text), res.text);
+  say('andTheFindingDoesNotNarrateItself',
+      !/measured on the live result page/.test(res.text)
+      && !/skipped, already ranked/.test(res.text), res.text);
 
   // ---- THE SIEVE SKIPS WHAT THE DOMAIN ALREADY RANKS FOR NATIONALLY, and is
   // only a sieve: it can prove a client DOES rank, never that they do not.
