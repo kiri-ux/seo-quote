@@ -1137,18 +1137,18 @@ CFG = {
     "gap_rank_max": 10,
     # Resubmits for a DataForSEO-side transient (40101 Internal SE Server Error).
     "serp_retry_transient": 2,
-    # FOUR, NOT TEN — THE PROBES WERE STARVING EACH OTHER. The pacing holds the
-    # process to dfs_calls_per_minute; a probe that queues ten SERP lookups, then
-    # retries the ones that did not answer, then hands over to the cross-market
-    # check, puts more than a minute of work into a minute. The later calls sit
-    # waiting for a slot until the request times out, and a timed-out probe is
-    # reported as "could not be read" — which is how six of ten and then two of
-    # two came back unread on a client whose earlier runs answered fine.
+    # WAS FOUR, WHEN A PROBE MEANT A DEPTH-100 SERP AND SERP SHARED THE VOLUME
+    # LOOKUPS' 10-A-MINUTE BUCKET. Both of those are gone: SERP has its own
+    # 300-a-minute cap (see _dfs_family), and the probe asks at page-one depth,
+    # which is a fraction of the payload and the time.
     #
-    # Four candidates is two batches. With the sieve in front of it that is
-    # usually enough to find three misses, and what it does not spend is what
-    # the cross-market check needs. (2026-08-21)
-    "unranked_probe_max": 8,
+    # Four was not enough for the client this feature exists for. Cisney &
+    # O'Donnell rank on page one for nearly every remodeling phrase in
+    # Huntingdon: eight candidates yielded ONE gap. Twenty-four, six at a time,
+    # is four round trips, and it still stops the moment it has its three -- so
+    # a client with real gaps costs the same three or four calls it always did.
+    # (2026-09-22, Kiri)
+    "unranked_probe_max": 24,
     # Google Ads LIVE endpoints — the keyword volume lookups — allow 12 calls a
     # minute per account. Pacing at 10 leaves headroom without tripping the cap.
     # This cap governs those endpoints only; see _dfs_take_slot(). 0 disables it.
@@ -11202,7 +11202,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # from, and how many it is trying to find. Carried on the payload so
             # the panel never has to guess either. (2026-08-20)
             "min_unranked_terms": int(CFG.get("min_unranked_terms", 3) or 0),
-            "unranked_probe_max": int(CFG.get("unranked_probe_max", 8) or 0),
+            "unranked_probe_max": int(CFG.get("unranked_probe_max", 24) or 0),
             "gap_rank_max": int(CFG.get("gap_rank_max", 10) or 0),
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
@@ -16142,7 +16142,7 @@ def api_config_get():
         # Wednesday's call budget and every change to these was invisible until
         # someone rebuilt step 1. The panel prefers these. (2026-08-21)
         "min_unranked_terms": CFG.get("min_unranked_terms", 3),
-        "unranked_probe_max": CFG.get("unranked_probe_max", 8),
+        "unranked_probe_max": CFG.get("unranked_probe_max", 24),
         "gap_rank_max": CFG.get("gap_rank_max", 10),
         "dfs_calls_per_minute": CFG.get("dfs_calls_per_minute", 10),
         "competitive_adder": CFG["competitive_adder"],

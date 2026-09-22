@@ -24,7 +24,7 @@ const BASE = 'http://127.0.0.1:5203';
 
   let probes = [], owned = ['contractor huntingdon pa'];
   await p.route('**/api/config', r => json(r, {min_unranked_terms: 3,
-                                               unranked_probe_max: 4}));
+                                               unranked_probe_max: 24}));
   await p.route('**/api/ranked_keywords', r => json(r, {owned}));
   // DEEP, NOT ABSENT. Cisney sits somewhere in the top 100 for every remodeling
   // phrase in Huntingdon -- seven probes, seven positions, no gap reported.
@@ -222,6 +222,32 @@ const BASE = 'http://127.0.0.1:5203';
   say('andItLandsInExactlyOneTier', add.tiers.length === 1, JSON.stringify(add));
   say('andTheTermIsSoldInTheGridsForm',
       /huntingdon pa$/.test(add.all[add.all.length - 1]), JSON.stringify(add.all));
+
+  // ---- SIX AT A TIME, AND IT KEEPS GOING PAST EIGHT. Eight candidates found
+  // ONE gap on Cisney: seven of the eight were on page one, which is exactly
+  // the client this feature exists for. At page-one depth the call is a
+  // fraction of what it was, so the budget is 24 in batches of six.
+  // (2026-09-22, Kiri)
+  probes = [];
+  // setup() rewrites r.kw wholesale, and the sieve case below needs the
+  // fixture it was given, so this one puts it back.
+  await p.evaluate(() => { window.__kw = JSON.parse(JSON.stringify(ROWS[0].kw)); });
+  await setup({auto: false, kw: {
+    all: [{kw: 'contractor huntingdon pa', vol: 10}],
+    seed_ranking: {order: Array.from({length: 20},
+                                     (_, i) => ['service ' + i, 100 - i])}}});
+  await p.evaluate(() => findUnranked(ROWS[0], false));
+  await p.waitForFunction(() => !UNRANKED_RUNNING && ROWS[0].unrankedResult,
+                          null, {timeout: 30000});
+  say('itAsksSixAtATime', (probes[0] || []).length === 6,
+      JSON.stringify(probes[0]));
+  const probed = await p.evaluate(() => ROWS[0].unrankedResult.checked);
+  say('andItGoesWellPastEight', probed > 8, String(probed));
+  say('andNotPastTheBudget', probed <= 24, String(probed));
+  await p.evaluate(() => {
+    if (window.__kw) ROWS[0].kw = window.__kw;
+    ROWS[0].unrankedTried = null; ROWS[0].unrankedResult = null;
+  });
 
   // ---- A DEEP RANK IS A GAP. The probe borrowed zero_ranking_top_n, which is
   // 100 because it drives the PRICE, so a gap meant "absent from the top 100".

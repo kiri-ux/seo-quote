@@ -3189,12 +3189,14 @@ async function readCompetitors(){
 // the live SERP found at #1-#4. So it is used only as a SIEVE to skip
 // candidates it already knows about, and everything surviving goes to the SERP.
 // (2026-09-21, Kiri)
-// EIGHT, NOT FOUR. The probe stops the moment it has its three, so a client
-// with real gaps still costs three or four calls -- the budget only gets spent
-// on the client who ranks for nearly everything, which is the only client this
-// exists for. Four calls was a token effort that reported "no gap found" and
-// left you where you started.
-const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 8, GAP_RANK_DEFAULT = 10;
+// TWENTY-FOUR, AND SIX AT A TIME. Eight candidates found one gap on Cisney --
+// seven of the eight were on page one, which is the whole problem with this
+// client. The budget was set when a probe meant a depth-100 SERP; at page-one
+// depth the call is a fraction of that, the server runs twelve in parallel, and
+// four round trips of six fit inside one batch budget. It still stops the
+// moment it has its three.
+const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 24, GAP_RANK_DEFAULT = 10;
+const UNRANKED_BATCH = 6;
 let _liveCfg = null, UNRANKED_RUNNING = false;
 
 // Operational knobs come from the LIVE config, cached for the session, never
@@ -3481,9 +3483,11 @@ async function _findUnranked(r, auto){
         found.push(Object.assign({}, c, {row, pos: row.pos}));
     });
   };
-  for (let i = 0; i < cands.length && found.length < min && !dead; i += 3) {
-    const batch = cands.slice(i, i + 3);
-    setBtn(`Checking ${i + 1}\u2013${Math.min(i + 3, cands.length)} of ${cands.length}\u2026`);
+  for (let i = 0; i < cands.length && found.length < min && !dead;
+       i += UNRANKED_BATCH) {
+    const batch = cands.slice(i, i + UNRANKED_BATCH);
+    setBtn(`Checking ${i + 1}\u2013${Math.min(i + UNRANKED_BATCH, cands.length)}`
+           + ` of ${cands.length}\u2026`);
     try {
       read(await post('/api/rankings',
                       Object.assign({}, common,
@@ -3500,8 +3504,9 @@ async function _findUnranked(r, auto){
   const mostlyFailed = retry.length > measured;
   if (found.length < min && retry.length && !dead && !mostlyFailed) {
     setBtn(`Retrying ${retry.length} that did not answer\u2026`);
-    for (let i = 0; i < retry.length && found.length < min && !dead; i += 3) {
-      const batch = retry.slice(i, i + 3);
+    for (let i = 0; i < retry.length && found.length < min && !dead;
+         i += UNRANKED_BATCH) {
+      const batch = retry.slice(i, i + UNRANKED_BATCH);
       try {
         read(await post('/api/rankings',
                         Object.assign({}, common,
