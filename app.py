@@ -15418,7 +15418,25 @@ def api_rankings():
     markets = measure_first(markets, state, d.get("primary_market"))
     markets = rank_markets([(x.get("kw") if isinstance(x, dict) else x)
                             for x in (batch or [])], markets, state)
+    # A PAGE-ONE QUESTION DESERVES A PAGE-ONE CALL.
+    #
+    # zero_ranking_top_n is 100 because it drives the PRICE, and every rank
+    # check inherited that depth. A depth-100 live SERP is a large response this
+    # box parses on 0.1 vCPU, which is how Cisney's gap probe hit "Read timed
+    # out (read timeout=20)" on four keywords out of four and ran for fifteen
+    # minutes to report nothing.
+    #
+    # The gap probe only asks whether they are ON PAGE ONE. Ten results answers
+    # that, in a fraction of the payload and the time. A caller that asks for
+    # nothing keeps the pricing depth, and the rank cache is keyed on top_n, so
+    # a shallow read never stands in for a deep one. (2026-09-22, Kiri)
     top_n = CFG["zero_ranking_top_n"]
+    try:
+        _want_n = int(d.get("top_n") or 0)
+        if 0 < _want_n < top_n:
+            top_n = max(10, _want_n)
+    except Exception:                                     # noqa: BLE001
+        pass
     nat, _r = resolve_national_demand(d.get("industry") or "",
                                       d.get("geo_scope") or d.get("band") or "",
                                       bool(d.get("national_demand")),

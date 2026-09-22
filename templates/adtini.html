@@ -3387,11 +3387,12 @@ function unrankedFoundHtml(r){
         const on = seeded.has(bare.trim().toLowerCase());
         // WHERE THEY ACTUALLY SIT. Not ranked and #63 are both gaps and they
         // are not the same conversation, so the chip says which.
-        const at = f.pos === 'Not Found' ? 'not ranked' : `#${f.pos}`;
+        const at = (f.pos === 'Not Found' || f.pos == null) ? '' : `#${f.pos}`;
         return `<button class="compchip${on ? ' on' : ''}" type="button"`
           + ` data-compadd="${esc(bare)}" data-compvol="${Number(f.vol) || 0}"`
           + `${on ? ' disabled' : ''}>${esc(bare)}`
-          + `<small>${f.vol ? `${n(f.vol)}/mo \u00b7 ` : ''}${esc(at)}</small>`
+          + `<small>${[f.vol ? `${n(f.vol)}/mo` : '', at]
+                .filter(Boolean).join(' \u00b7 ')}</small>`
           + `</button>`;
       }).join('');
 }
@@ -3438,7 +3439,12 @@ async function _findUnranked(r, auto){
                   industry: (d.industry || []).join(', '),
                   geo_scope: r.band || bandOf(d),
                   national_demand: (r.band || bandOf(d)) === 'nationwide',
-                  brand: d.brand, domain: d.site, cfg: r.over};
+                  brand: d.brand, domain: d.site, cfg: r.over,
+                  // TEN RESULTS ANSWERS A PAGE-ONE QUESTION. The rank check
+                  // reads 100 deep because that depth sets the PRICE; this
+                  // probe only asks whether they are on page one, and a
+                  // depth-100 live SERP is what timed out at 20s a keyword.
+                  top_n: gapMax};
   const found = [], retry = [];
   let measured = 0;
   // THE ENDPOINT ALREADY KNOWS WHY. It returns error_reason -- the most common

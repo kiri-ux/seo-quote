@@ -94,6 +94,49 @@ out, seen = run([task_err(40501, "Invalid Field: 'location_name'.")])
 check("a 40501 moves instead of repeating",
       len(seen) > 1 and len({x[1] for x in seen}) == len(seen), True)
 
+
+# ---------------------------------------------- A PAGE-ONE QUESTION, A
+# PAGE-ONE CALL. zero_ranking_top_n is 100 because it sets the PRICE, and every
+# rank check inherited that depth -- a large live SERP this box parses on 0.1
+# vCPU. Cisney's probe: "4 did not answer · Read timed out (read timeout=20)".
+def depth_used(body):
+    seen = []
+    real = app.dfs_post
+    # The rank cache is keyed on top_n -- which is the point, a shallow read
+    # must never stand in for a deep one -- so it is cleared between cases.
+    try:
+        app.RANK_CACHE.clear()
+    except Exception:                                     # noqa: BLE001
+        pass
+
+    def fake(path, payload, timeout=None, **kw):
+        seen.append(payload[0].get("depth"))
+        return OK
+    app.dfs_post = fake
+    app.app.config["TESTING"] = True
+    try:
+        c = app.app.test_client()
+        c.post("/api/rankings", json=body)
+        return seen
+    finally:
+        app.dfs_post = real
+
+
+BASE = {"batch": [{"kw": "deck builder huntingdon pa"}],
+        "domain": "cisneyremodeling.com", "geo_values": ["Huntingdon, PA"],
+        "state": "PA", "brand": "Cisney & O'Donnell"}
+
+check("the pricing depth is what a caller gets by default",
+      depth_used(dict(BASE)), [int(app.CFG["zero_ranking_top_n"])])
+check("and a page-one caller gets a page-one call",
+      depth_used(dict(BASE, top_n=10)), [10])
+# NEVER DEEPER THAN THE PRICING DEPTH, and never shallower than Google's page.
+check("a caller cannot ask for more than the pricing depth",
+      depth_used(dict(BASE, top_n=500)), [int(app.CFG["zero_ranking_top_n"])])
+check("nor for less than a page", depth_used(dict(BASE, top_n=3)), [10])
+check("and junk is ignored", depth_used(dict(BASE, top_n="x")),
+      [int(app.CFG["zero_ranking_top_n"])])
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

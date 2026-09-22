@@ -30,8 +30,10 @@ const BASE = 'http://127.0.0.1:5203';
   // phrase in Huntingdon -- seven probes, seven positions, no gap reported.
   // `deep` is that shape; the default is the outright miss.
   let deep = false;
-  await p.route('**/api/rankings', r => {
-    const body = JSON.parse(r.request().postData() || '{}');
+  await p.route('**/api/rankings', async r => {
+    const raw = r.request().postData() || '{}';
+    const body = JSON.parse(raw);
+    await p.evaluate(b => { window.__lastRankBody = b; }, raw).catch(() => {});
     probes.push((body.batch || []).map(x => x.kw));
     return json(r, {results: (body.batch || []).map((x, i) => ({
       kw: x.kw, pos: deep ? 40 + i : 'Not Found'}))});
@@ -170,7 +172,10 @@ const BASE = 'http://127.0.0.1:5203';
   say('andTheFindingIsShown',
       /terms off page one/.test(res.text)
       && /bathroom showroom/.test(res.text), res.text);
-  say('andAnOutrightMissSaysSo', /not ranked/.test(res.text), res.text);
+  // TEN RESULTS DEEP, SO EVERY FIND IS SIMPLY OFF PAGE ONE. There is no deep
+  // position left to print and the header already makes the claim.
+  const sent = JSON.parse(await p.evaluate(() => window.__lastRankBody || '{}'));
+  say('andTheProbeAsksAPageOneQuestion', sent.top_n === 10, JSON.stringify(sent.top_n));
   say('andTheFindingDoesNotNarrateItself',
       !/measured on the live result page/.test(res.text)
       && !/skipped, already ranked/.test(res.text), res.text);
