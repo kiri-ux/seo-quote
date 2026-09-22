@@ -3189,7 +3189,12 @@ async function readCompetitors(){
 // the live SERP found at #1-#4. So it is used only as a SIEVE to skip
 // candidates it already knows about, and everything surviving goes to the SERP.
 // (2026-09-21, Kiri)
-const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 4;
+// EIGHT, NOT FOUR. The probe stops the moment it has its three, so a client
+// with real gaps still costs three or four calls -- the budget only gets spent
+// on the client who ranks for nearly everything, which is the only client this
+// exists for. Four calls was a token effort that reported "no gap found" and
+// left you where you started.
+const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 8;
 let _liveCfg = null, UNRANKED_RUNNING = false;
 
 // Operational knobs come from the LIVE config, cached for the session, never
@@ -3215,35 +3220,66 @@ function unrankedCount(r){
   return (((r.result || {}).table) || []).filter(x => x && x.pos === 'Not Found').length;
 }
 
+// A CLIENT WHO RANKS FOR EVERYTHING RANKS FOR THE VARIANTS TOO. The cut list is
+// ordered by demand, so the probe spent its whole budget on the highest-volume
+// cut terms -- which on a remodeler are "bathroom remodeler", "bathroom
+// remodels", "bathroom remodeling" against a quoted "bathroom remodel". Four
+// calls, four terms they obviously rank for, no gap found. A candidate that
+// introduces no new word cannot be a gap; one that does, might be.
+//
+// So a term is novel when at least one of its stemmed content words appears
+// nowhere in the quoted grid. Novel first, cut list ahead of the pool inside
+// that, demand deciding the rest.
+// The modifiers go in too, because a new WORD is only a new SERVICE when it
+// names one. "general contractors" against a quoted "contractor" is the same
+// job with an adjective on it, and it used to outrank "deck builder" -- which
+// is an actual service they do not sell -- on volume alone.
+const _SVC_STOP = ['near', 'me', 'in', 'for', 'the', 'a', 'an', 'and', 'of',
+                   'best', 'top', 'local', 'my',
+                   'general', 'residential', 'commercial', 'professional',
+                   'licensed', 'affordable', 'cheap', 'quality', 'trusted',
+                   'service', 'company', 'companies'];
+// Crude on purpose: it only has to make remodel/remodeler/remodeling/remodels
+// one word, and contractor/contractors another.
+const svcStem = w => String(w || '').replace(/(ings|ing|ers|er|ors|or|ions|ion|s)$/, '');
+function svcWords(term, stop){
+  return (String(term || '').toLowerCase().match(/[a-z]+/g) || [])
+    .filter(w => !stop.has(w)).map(svcStem).filter(Boolean);
+}
+
 // THE CUT LIST FIRST, THEN THE MARKET POOL. The cut is the best source -- those
-// are terms the client named -- but a list that fits the grid cuts nothing, and
-// that is exactly the client this feature exists for. The pool is the market
-// vocabulary the build already measured and did not quote, which is the honest
-// second place to look for something they do not own.
+// are terms the client named -- but a cut list of pure variants has no gap in
+// it, and neither does a list that fit the grid and cut nothing at all. The
+// pool is the market vocabulary the build already measured and did not quote,
+// so it runs on behind the cut list rather than only in its place.
 function unrankedCandidates(r){
   const kw = r.kw || {};
   const sr = kw.seed_ranking || {};
   const inGrid = new Set((kw.all || []).map(x => String(x.kw || '').toLowerCase()));
   const tried = new Set((r.unrankedTried || []).map(x => String(x).toLowerCase()));
   const sfx = gridSuffix(r);
+  const stop = new Set(_SVC_STOP.concat(
+    (String(sfx || '').toLowerCase().match(/[a-z]+/g) || []),
+    (geoOf(r.data) || []).join(' ').toLowerCase().match(/[a-z]+/g) || [],
+    [String(stateOf(r.data) || '').toLowerCase()]));
+  const quoted = new Set();
+  (kw.all || []).forEach(x => svcWords(x.kw, stop).forEach(w => quoted.add(w)));
   const out = [];
-  const take = (bare, vol) => {
+  const take = (bare, vol, src) => {
     const term = String(bare || '').trim();
     if (!term) return;
     const full = (sfx ? `${term} ${sfx}` : term)
       .toLowerCase().replace(/\s+/g, ' ').trim();
     if (inGrid.has(full) || tried.has(full)) return;
     if (out.some(x => x.kw === full)) return;
-    out.push({kw: full, bare: term, vol: Number(vol) || 0, src: 'cut'});
+    const words = svcWords(term, stop);
+    out.push({kw: full, bare: term, vol: Number(vol) || 0, src: src,
+              novel: words.some(w => !quoted.has(w))});
   };
-  (sr.order || []).forEach(([t, v]) => take(t, v));
-  if (out.length) return out;
-  // Nothing was cut. The market pool, best demand first.
-  const pool = (kw.market_pool || []).slice()
-    .sort((a, b) => (Number(b.volume) || 0) - (Number(a.volume) || 0));
-  pool.forEach(x => take(x.keyword, x.volume));
-  out.forEach(x => { x.src = 'pool'; });
-  return out;
+  (sr.order || []).forEach(([t, v]) => take(t, v, 'cut'));
+  (kw.market_pool || []).forEach(x => take(x.keyword, x.volume, 'pool'));
+  const rank = x => (x.novel ? 0 : 2) + (x.src === 'cut' ? 0 : 1);
+  return out.sort((a, b) => rank(a) - rank(b) || (b.vol || 0) - (a.vol || 0));
 }
 
 // The suffix the grid appends, so a candidate is probed in the form the quote

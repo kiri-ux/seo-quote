@@ -1140,7 +1140,7 @@ CFG = {
     # Four candidates is two batches. With the sieve in front of it that is
     # usually enough to find three misses, and what it does not spend is what
     # the cross-market check needs. (2026-08-21)
-    "unranked_probe_max": 4,
+    "unranked_probe_max": 8,
     # Google Ads LIVE endpoints — the keyword volume lookups — allow 12 calls a
     # minute per account. Pacing at 10 leaves headroom without tripping the cap.
     # This cap governs those endpoints only; see _dfs_take_slot(). 0 disables it.
@@ -11194,7 +11194,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # from, and how many it is trying to find. Carried on the payload so
             # the panel never has to guess either. (2026-08-20)
             "min_unranked_terms": int(CFG.get("min_unranked_terms", 3) or 0),
-            "unranked_probe_max": int(CFG.get("unranked_probe_max", 10) or 0),
+            "unranked_probe_max": int(CFG.get("unranked_probe_max", 8) or 0),
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
@@ -16071,7 +16071,7 @@ def api_config_get():
         # Wednesday's call budget and every change to these was invisible until
         # someone rebuilt step 1. The panel prefers these. (2026-08-21)
         "min_unranked_terms": CFG.get("min_unranked_terms", 3),
-        "unranked_probe_max": CFG.get("unranked_probe_max", 4),
+        "unranked_probe_max": CFG.get("unranked_probe_max", 8),
         "dfs_calls_per_minute": CFG.get("dfs_calls_per_minute", 10),
         "competitive_adder": CFG["competitive_adder"],
         "bid_score_breaks": CFG["bid_score_breaks"],

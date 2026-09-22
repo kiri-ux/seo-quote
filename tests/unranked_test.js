@@ -64,6 +64,37 @@ const BASE = 'http://127.0.0.1:5203';
                      : '(no host)';
   }, extra);
 
+  // ---- A CUT LIST OF PURE VARIANTS IS NOT A GAP LIST. Cisney, live: 60-odd
+  // seeds, 28 quoted, everything cut a rewording of something quoted. The probe
+  // spent all four calls on the highest-volume cut terms -- "bathroom
+  // remodeler" against a quoted "bathroom remodel" -- and reported no gap
+  // found. (2026-09-22, Kiri)
+  await setup({auto: false, kw: {
+    all: [{kw: 'bathroom remodel huntingdon pa', vol: 10},
+          {kw: 'kitchen remodel huntingdon pa', vol: 10},
+          {kw: 'contractor huntingdon pa', vol: 10}],
+    seed_ranking: {order: [['bathroom remodeler', 90], ['bathroom remodeling', 80],
+                           ['bathroom remodels', 70], ['kitchen remodeling', 60],
+                           ['kitchen remodelers', 50], ['general contractors', 40],
+                           ['deck builder', 20]]},
+    market_pool: [{keyword: 'basement finishing', volume: 30}]}});
+  const ord = await p.evaluate(() => unrankedCandidates(ROWS[0]).map(
+    x => [x.bare, x.novel, x.src]));
+  say('theVariantsAreNotProbedFirst',
+      ord.slice(0, 2).every(x => x[1] === true), JSON.stringify(ord));
+  say('andTheNewWordLeadsEvenOnLowerDemand',
+      ord[0][0] === 'deck builder', JSON.stringify(ord));
+  say('andTheCutListStillLeadsThePool',
+      ord[1][0] === 'basement finishing' && ord[1][2] === 'pool',
+      JSON.stringify(ord));
+  say('andTheVariantsAreStillThereBehindThem',
+      ord.length === 8 && ord.slice(2).every(x => x[1] === false),
+      JSON.stringify(ord));
+  // THE POOL RUNS ON BEHIND THE CUT LIST, not only in its place. A cut list of
+  // variants used to end the search.
+  say('andThePoolIsReachedThoughSomethingWasCut',
+      ord.some(x => x[2] === 'pool'), JSON.stringify(ord));
+
   // ---- THE CUT LIST IS THE FIRST SOURCE
   let txt = await setup({auto: false, kw: {
     seed_ranking: {order: [['bathroom showroom', 40], ['kitchen showroom', 30]]}}});
