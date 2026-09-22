@@ -54,9 +54,14 @@ const BASE = 'http://127.0.0.1:5203';
     r.unrankedTried = null; r.unrankedResult = null;
     r.unrankedAuto = e.auto === false ? true : false;
     r.ownedCache = null;
+    ROW = 0;
     draw();
-    const hs = [...document.querySelectorAll('[data-unrgap="0"]')];
-    return hs.length ? hs[0].textContent.replace(/\s+/g, ' ').trim() : '(no host)';
+    // THE PROMPT LIVES WHERE THE SEEDS ARE. On the quote row it was a yellow
+    // note over a price nobody can act on from there. (2026-09-22)
+    renderUnrankedGap(r);
+    const hs = [...document.querySelectorAll('[data-unrgap]')];
+    return hs.length ? hs.map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim()
+                     : '(no host)';
   }, extra);
 
   // ---- THE CUT LIST IS THE FIRST SOURCE
@@ -103,8 +108,8 @@ const BASE = 'http://127.0.0.1:5203';
   const res = await p.evaluate(() => ({
     found: (ROWS[0].unrankedResult.found || []).map(f => f.bare),
     sieved: ROWS[0].unrankedResult.sieved,
-    text: (document.querySelector('[data-unrgap="0"]') || {textContent: '(absent)'})
-      .textContent.replace(/\s+/g, ' ').trim(),
+    text: [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim(),
   }));
   say('theProbeFindsTheGaps', res.found.length >= 3, JSON.stringify(res.found));
   say('andTheSuffixIsOnTheProbedTerm',
@@ -148,8 +153,8 @@ const BASE = 'http://127.0.0.1:5203';
                       {kw: 'c', pos: 'Not Found'}, {kw: 'd', pos: 4}];
     r.unrankedResult = null;
     draw();
-    return (document.querySelector('[data-unrgap="0"]') || {textContent: ''})
-      .textContent.trim();
+    return [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join('').trim();
   });
   say('threeGapsAlreadyIsAStoryAndNoPrompt', txt === '', JSON.stringify(txt));
 
@@ -158,8 +163,8 @@ const BASE = 'http://127.0.0.1:5203';
     const r = ROWS[0];
     r.kind = 'orm';
     draw();
-    const h = document.querySelector('[data-unrgap="0"]');
-    return h ? h.textContent.trim() : '(absent)';
+    const hs = [...document.querySelectorAll('[data-unrgap]')];
+    return hs.length ? hs.map(x => x.textContent).join('').trim() : '(absent)';
   });
   say('anOrmRowGetsNoPrompt', orm === '(absent)' || orm === '', JSON.stringify(orm));
 

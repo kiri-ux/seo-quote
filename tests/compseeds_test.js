@@ -27,6 +27,12 @@ const BASE = 'http://127.0.0.1:5203';
       {term: 'basement finishing', volume: 90, competitors: 3,
        on: ['a.com', 'b.com', 'c.com'], position: 4},
       {term: 'deck builder', volume: 70, competitors: 1, on: ['a.com'], position: 8},
+      // FLAGGED BY THE ENDPOINT ON PURPOSE: "x alternative" is the comparison
+      // term a B2B campaign is built on, so it returns these rather than
+      // dropping them. On a remodeler it is a rival's name offered as a thing
+      // to buy, so the panel makes the call.
+      {term: 'web-don inc', volume: 720, competitors: 1, on: ['a.com'],
+       position: 1, vendor_terms: ['web-don']},
     ],
     domains_read: ['a.com', 'b.com'], domains_failed: ['c.com'],
     total: 12, shared: 1, already_seeded: 2, family_capped: [],
@@ -79,6 +85,8 @@ const BASE = 'http://127.0.0.1:5203';
   }));
   say('bothTermsAreOffered',
       JSON.stringify(out.chips) === JSON.stringify(['basement finishing', 'deck builder']),
+      JSON.stringify(out.chips));
+  say('andARivalsOwnNameIsNot', out.chips.indexOf('web-don inc') < 0,
       JSON.stringify(out.chips));
   // THE OVERLAP LEADS: three rivals holding a term is the category's vocabulary.
   say('theRivalCountLeadsTheChip', /3 rivals/.test(out.firstLabel || ''), out.firstLabel);

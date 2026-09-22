@@ -18508,6 +18508,24 @@ def api_ranked_keywords():
                                  if (r["position"] or 999) <= 20)})
 
 
+_US_CITIES = None
+
+
+def _us_city_names():
+    """Every US city name, lowercased, once. Empty set when the dataset is not
+    installed -- the caller then skips the geo test rather than guessing."""
+    global _US_CITIES
+    if _US_CITIES is None:
+        try:
+            import zipcodes
+            _US_CITIES = {str(r.get("city", "")).lower()
+                          for r in zipcodes.list_all()
+                          if r.get("country") == "US" and r.get("city")}
+        except Exception:                                 # noqa: BLE001
+            _US_CITIES = set()
+    return _US_CITIES
+
+
 @app.route("/api/competitor_seeds", methods=["POST"])
 @_json_error_guard
 def api_competitor_seeds():
@@ -18619,6 +18637,49 @@ def api_competitor_seeds():
         e["competitors"] = len(e["on"])
         e["vendor_terms"] = _vendor(e["term"])
         rows.append(e)
+
+    # A SERVICE THEY COULD SELL, NOT EVERYTHING THE RIVAL RANKS FOR. A general
+    # contractor who also does bush hogging ranks for bush hogging, and reading
+    # their keywords hands a remodeler grass cutters, dog grooming, epoxy floors
+    # and a roofing tax credit. claude_seed_kinds already answers exactly this
+    # question -- service, item, other_business, reference -- per client, with
+    # the business in front of it. Only a service survives.
+    #
+    # It returns {} with no key, no network or bad JSON, and the whole list is
+    # kept in that case: an unavailable judgement is not a negative one.
+    if rows:
+        try:
+            _kinds = claude_seed_kinds(
+                [r["term"] for r in rows], _brand_in, d.get("domain") or "",
+                d.get("industry") or "", d.get("business_desc") or "", None)
+        except Exception:                                 # noqa: BLE001
+            app.logger.exception("competitor seeds: seed kinds failed")
+            _kinds = {}
+        if _kinds:
+            rows = [r for r in rows
+                    if (_kinds.get(r["term"], {}).get("kind") or "service")
+                    == "service"]
+
+    # THE RIGHT SERVICE IN THE WRONG PLACE IS STILL WRONG. A rival ranking for
+    # "kitchen remodel pittsburgh" is not a term a Huntingdon client can buy --
+    # the grid appends their own city, so it would quote "kitchen remodel
+    # pittsburgh huntingdon pa". Only a geo in the position a geo is actually
+    # written in counts, which is the last word or the one after in/near:
+    # Bath is a town in Maine and "kitchen and bath showroom" is not about it.
+    _own_geo = {w for m in markets for w in re.findall(r"[a-z]+", m.lower())}
+    _own_geo |= {str(state or "").lower()}
+    _cities = _us_city_names()
+    def _foreign_city(term):
+        toks = re.findall(r"[a-z]+", term.lower())
+        if not toks:
+            return False
+        spots = [toks[-1]]
+        for i, t in enumerate(toks[:-1]):
+            if t in ("in", "near"):
+                spots.append(toks[i + 1])
+        return any(s in _cities and s not in _own_geo for s in spots)
+    if _cities:
+        rows = [r for r in rows if not _foreign_city(r["term"])]
 
     # Nine wordings of one service is not nine services — the same cap the
     # client-side panel uses, and the planner’s own seeds are exempt from it.
