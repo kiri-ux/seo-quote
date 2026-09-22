@@ -546,7 +546,10 @@ input.cell.ord{width:86px;font-variant-numeric:tabular-nums}
 /* The unranked-gap prompt: a client ranking for everything has no story in the
    proposal, so the box sits under the Keywords card it is about. Amber for the
    question, green once a gap has been measured. */
+/* The competitor panel used to carry the rule that separated this from the
+   toggles above; it went with the panel. */
 .unrgap:empty{display:none}
+.unrgap{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .unrbox{margin-top:8px;padding:8px 11px;border-radius:9px;font-size:12.5px;
   background:#FDF1D8;border:1px solid #E8C98A;color:#7A5410;line-height:1.45}
 .unrbox .hint{color:#8A6A2A;font-size:11.5px}
@@ -562,14 +565,6 @@ input.cell.ord{width:86px;font-variant-numeric:tabular-nums}
 
 /* The competitor reader: the seed source that does not start from the client.
    Sits with the builder's other seed options, above Build. */
-.kbcomp{margin:12px 0 4px;padding-top:12px;border-top:1px solid var(--line)}
-.kbcomp label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
-.kbcomp textarea{width:100%;font:inherit;font-size:12.5px;padding:7px 9px;
-  border:1px solid var(--line);border-radius:8px;resize:vertical}
-.kbcomp .btn2{margin-top:6px;padding:5px 13px;font-size:12.5px}
-.kbcompout{margin-top:7px}
-.kbcompout .hint{display:block;margin-bottom:5px}
-/* The overlap is the signal, so the rival count leads the sub-label. */
 .compchip{display:inline-flex;flex-direction:column;align-items:flex-start;gap:1px;
   margin:0 6px 6px 0;padding:4px 11px;border-radius:13px;cursor:pointer;
   border:1px solid #9DB3C8;background:#fff;color:var(--velocity);

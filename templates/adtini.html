@@ -250,19 +250,6 @@
             <div class="f"><label>Spread across markets <span class="i" data-tip="Geography earns the term budget only when more than one market has measurable demand. Yes repeats the seeds across every market anyway." aria-label="Geography earns the term budget only when more than one market has measurable demand">i</span></label>
               <div class="yn" id="kbAxis"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">Auto</button></div></div>
           </div>
-          <!-- WHAT THE COMPETITORS RANK FOR, when the client's own list cannot
-               say. Every other seed source starts from the client: their site,
-               their focus terms, their own rankings. That works while they sell
-               into the market being quoted and fails completely when every term
-               they name is one they already own. -->
-          <div class="kbcomp">
-            <label for="kbCompIn">✦ Competitor websites</label>
-            <textarea id="kbCompIn" rows="2"
-              placeholder="lowes.com, homedepot.com"></textarea>
-            <button class="btn2" type="button" id="kbCompPull">Pull from page one</button>
-            <button class="btn2" type="button" id="kbCompRead">Read their rankings</button>
-            <div class="kbcompout" id="kbCompOut"></div>
-          </div>
           <!-- THE GAP PROMPT BELONGS WHERE THE SEEDS ARE. On the quote row it
                was a yellow note over a price nobody could act on from there. -->
           <div class="unrgap" data-unrgap="kb"></div>
@@ -2946,23 +2933,6 @@ function addRivals(store, list){
   return s;
 }
 
-// The rivals worth reading: not the client, and not an aggregator. Yelp ranks
-// for everything and sells none of it, so its vocabulary is Yelp's rather than
-// a remodeler's -- seeding from one would fill the grid with directory words.
-function realRivals(r){
-  const res = r.result || {};
-  const store = res.rivals || {};
-  const own = String((r.data || {}).site || '').toLowerCase()
-    .replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-  const aggs = new Set(((res.agg || {}).domains || [])
-    .map(d => String(d).toLowerCase()));
-  return Object.keys(store)
-    .filter(d => d !== own && !aggs.has(d)
-                 && !/(^|\.)(google|facebook|instagram|youtube|linkedin|x|twitter|tiktok|pinterest|wikipedia)\./.test(d + '.'))
-    .sort((a, b) => store[b] - store[a])
-    .map(d => ({domain: d, appearances: store[d]}));
-}
-
 // WHAT THE COMPETITORS RANK FOR, when the client's own list cannot say.
 //
 // Every other seed source starts from the client: their site, their focus
@@ -3027,9 +2997,8 @@ function addTermToList(r, bare, vol){
   return true;
 }
 
-// ACCEPTED BY HAND BECOMES THE PLANNER'S OWN SEED. Not marked as a suggestion:
-// the competitor-name filter cuts rivals' product names out of TOOL-proposed
-// terms, and it would cut this straight back out again.
+// ACCEPTED BY HAND BECOMES THE PLANNER'S OWN SEED, not a suggestion: the
+// filters that cut tool-proposed terms would cut this straight back out.
 function addCompetitorSeed(term, vol){
   const r = ROWS[ROW];
   const t = String(term || '').trim().toLowerCase();
@@ -3057,129 +3026,7 @@ function addCompetitorSeed(term, vol){
   try { persist(r); } catch (e) {}
 }
 
-// PULLED, NOT TYPED. The rank check has already read page one for every term
-// in the grid, so the competitors are in hand -- there is nothing to look up
-// and nothing to pay for. Needs a rank check behind it, and says so when there
-// is not one.
-async function pullCompetitors(){
-  const r = ROWS[ROW];
-  const ta = $('kbCompIn'), out = $('kbCompOut'), btn = $('kbCompPull');
-  if (!r || !ta || !out || COMP_RUNNING) return;
-  const fill = rivals => {
-    const top = rivals.slice(0, 6);
-    const have = String(ta.value || '').split(/[\s,;]+/)
-      .map(x => x.trim().toLowerCase()).filter(Boolean);
-    const add = top.map(x => x.domain).filter(d => have.indexOf(d) < 0);
-    ta.value = have.concat(add).join(', ');
-    out.innerHTML = '';
-    return top.length;
-  };
-  // Already paid for: the rank check read page one for every term in the grid.
-  const had = realRivals(r);
-  if (had.length) { fill(had); return; }
-  // NO WAITING FOR THE WHOLE QUOTE. This needed r.result.rivals, which only
-  // exists after Generate -- so the order of work was pull, fail, leave the
-  // builder, generate, come back, pull, read. One SERP batch on the terms
-  // already in hand answers the same question here. (2026-09-22, Kiri)
-  const terms = (((r.kw || {}).all) || []).map(x => x.kw)
-    .concat(((r.data || {}).focus || [])).filter(Boolean).slice(0, 3);
-  if (!terms.length) {
-    out.innerHTML = '<span class="hint">Build the keyword list first.</span>';
-    return;
-  }
-  COMP_RUNNING = true;
-  btn.disabled = true;
-  btn.textContent = 'Reading page one\u2026';
-  try {
-    const d = r.data || {};
-    const got = await postWait('/api/rankings', {
-      geo_values: geoOf(d), state: stateOf(d),
-      industry: (d.industry || []).join(', '),
-      geo_scope: r.band || bandOf(d),
-      national_demand: (r.band || bandOf(d)) === 'nationwide',
-      brand: d.brand, domain: d.site, cfg: r.over,
-      batch: terms.map(kw => ({kw}))});
-    r.result = r.result || {};
-    r.result.rivals = addRivals(r.result.rivals, got.rivals);
-    r.result.agg = addAgg(r.result.agg, got.aggregators);
-    if (!fill(realRivals(r))) {
-      out.innerHTML = '<span class="hint">Page one is directories only.</span>';
-    }
-  } catch (e) {
-    out.innerHTML = `<span class="hint">${esc(e.message)}</span>`;
-  } finally {
-    COMP_RUNNING = false;
-    btn.disabled = false;
-    btn.textContent = 'Pull from page one';
-  }
-}
-
 let COMP_RUNNING = false;
-async function readCompetitors(){
-  const r = ROWS[ROW];
-  const ta = $('kbCompIn'), out = $('kbCompOut'), btn = $('kbCompRead');
-  if (!r || !ta || !out || COMP_RUNNING) return;
-  const doms = String(ta.value || '').split(/[\s,;]+/)
-    .map(x => x.trim()).filter(Boolean);
-  if (!doms.length) {
-    out.innerHTML = '<span class="hint">Add at least one competitor website.</span>';
-    return;
-  }
-  COMP_RUNNING = true;
-  btn.disabled = true;
-  btn.textContent = `Reading ${doms.length}\u2026`;
-  out.innerHTML = `<span class="hint">Reading what ${doms.length} competitor`
-    + `${doms.length === 1 ? '' : 's'} rank for\u2026</span>`;
-  const d = r.data || {};
-  try {
-    const got = await post('/api/competitor_seeds', {
-      competitors: doms, seeds: kbSeeds(), brand: d.brand || '',
-      domain: d.site || '', geo_values: geoOf(d), state: stateOf(d)});
-    if (got.error) {
-      out.innerHTML = `<span class="hint">${esc(got.error)}</span>`;
-      return;
-    }
-    // A RIVAL'S OWN NAME IS NOT A SERVICE TO SELL. The endpoint flags these
-    // and returns them on purpose -- "pipelogix alternative" is the comparison
-    // term a B2B campaign is built on, and deciding which is which is a
-    // judgement about the campaign. On a remodeler it is masco sayre, web-don
-    // inc and american remodeling offered as things to buy, so the judgement
-    // is made here rather than in the endpoint that serves both.
-    // (2026-09-22, Kiri)
-    const rows = (got.keywords || []).filter(x => !(x.vendor_terms || []).length);
-    if (!rows.length) {
-      out.innerHTML = `<span class="hint">`
-        + `${got.already_seeded ? `All ${got.already_seeded} terms they rank for are `
-                                + `already on your list.`
-                                : 'Nothing came back for those sites.'}</span>`;
-      return;
-    }
-    // The overlap first: it is the category's vocabulary rather than one
-    // rival's angle.
-    // The counts are facts and they are short. The instruction was not.
-    out.innerHTML = `<div class="hint">${rows.length} from `
-      + `${(got.domains_read || []).length} of ${doms.length} site`
-      + `${doms.length === 1 ? '' : 's'}`
-      + `${got.already_seeded ? ` \u00b7 ${got.already_seeded} already seeded` : ''}`
-      + `</div>`
-      + rows.slice(0, 24).map(x => {
-          const n = Number(x.volume) || 0;
-          const c = Number(x.competitors) || 0;
-          return `<button class="compchip" type="button"`
-            + ` data-compadd="${esc(x.term)}" data-compvol="${n}"`
-            + ` title="${esc((x.on || []).join(', '))}">${esc(x.term)}`
-            + `<small>${c > 1 ? `${c} rivals` : '1 rival'}`
-            + `${n ? ` \u00b7 ${n.toLocaleString()}/mo` : ''}</small></button>`;
-        }).join('');
-  } catch (e) {
-    out.innerHTML = `<span class="hint">Could not read them \u00b7 ${esc(e.message)}</span>`;
-  } finally {
-    COMP_RUNNING = false;
-    btn.disabled = false;
-    btn.textContent = 'Read their rankings';
-  }
-}
-
 // A CLIENT RANKING FOR EVERYTHING HAS NO STORY IN THE PROPOSAL.
 //
 // The build-time reservation (see drawHeadroom) holds grid slots for terms the
@@ -5676,10 +5523,6 @@ $('prods').addEventListener('click', e => {
   if (db) { e.preventDefault(); downloadProposal(+db.dataset.slides, 'pptx'); return; }
 });
 document.addEventListener('click', e => {
-  const cp = e.target.closest('#kbCompPull');
-  if (cp) { e.preventDefault(); pullCompetitors(); return; }
-  const cr = e.target.closest('#kbCompRead');
-  if (cr) { e.preventDefault(); readCompetitors(); return; }
   const ca = e.target.closest('[data-compadd]');
   if (ca) {
     e.preventDefault();
