@@ -349,6 +349,26 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
 # Brendan's numbers exactly).
 ART_CAL_MARGIN = 0.35
 
+# MULTI-SITE DISCOUNT (2026-09-22, Kiri). A manual checkbox on the quote: the
+# planner ticks it when the order carries several sites and says how many line
+# items. Taken off the CLIENT price only -- partner cost does not move, so the
+# discount comes out of margin. SEO: every client figure. ORM: the monthly
+# lines only; removals stay at full rate.
+MULTISITE_DISCOUNT_TIERS = [(1, 5), (10, 10), (26, 15)]   # (min line items, % off)
+
+
+def multisite_pct(line_items):
+    """% off for an order with this many line items, 0 when none."""
+    try:
+        n = int(line_items or 0)
+    except (TypeError, ValueError):
+        return 0
+    pct = 0
+    for lo, p in MULTISITE_DISCOUNT_TIERS:
+        if n >= lo:
+            pct = p
+    return pct
+
 # Vici internal delivery cost, modeled as a % of partner hard cost.
 # Editable live via the pricing config panel.
 INTERNAL_COST_PCT = {"pct": 0.20}
@@ -1046,6 +1066,19 @@ def build_rep_quote(payload):
         apply_monthly_override(phase1 + phase2, ov["monthly_hard"],
                                payload.get("margin_pct"))
 
+    # MULTI-SITE DISCOUNT: monthly lines only, after any override, so the
+    # override still sets the partner cost and the discount comes off retail.
+    ms_items = int(payload.get("multisite_items") or 0) if payload.get("multisite") else 0
+    ms_pct = multisite_pct(ms_items)
+    if ms_pct:
+        for ln in phase1 + phase2:
+            if ln.get("kind") not in MONTHLY_KINDS:
+                continue
+            ln["list_total"] = ln["total"]
+            ln["total"] = int(round(ln["total"] * (1 - ms_pct / 100.0)))
+            ln["notes"] = list(ln.get("notes") or []) + [
+                "Multi-site discount: %d%% off (%d line items)." % (ms_pct, ms_items)]
+
     for ln in phase1:
         ln["phase"] = 1
     for ln in phase2:
@@ -1198,6 +1231,9 @@ def build_rep_quote(payload):
         # because a line for it is on the quote, so the four sections are
         # independent and every combination is covered by the same four rules.
         "strategy": _strategy,
+        "multisite_discount": bool(ms_pct),
+        "multisite_line_items": ms_items if ms_pct else 0,
+        "multisite_discount_pct": ms_pct,
         # CLIENT MINUS PARTNER ON THE RECURRING LINES, STATED RATHER THAN
         # DERIVED. Each client line rounds UP to $50 and each partner line does
         # not, so a margin percentage does not reproduce it: $12,100 against
