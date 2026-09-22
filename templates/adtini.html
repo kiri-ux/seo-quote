@@ -3194,7 +3194,7 @@ async function readCompetitors(){
 // on the client who ranks for nearly everything, which is the only client this
 // exists for. Four calls was a token effort that reported "no gap found" and
 // left you where you started.
-const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 8;
+const MIN_UNRANKED_DEFAULT = 3, UNRANKED_PROBE_DEFAULT = 8, GAP_RANK_DEFAULT = 10;
 let _liveCfg = null, UNRANKED_RUNNING = false;
 
 // Operational knobs come from the LIVE config, cached for the session, never
@@ -3215,6 +3215,14 @@ const _cfgNum = (k, dflt) => {
 };
 const minUnranked = () => _cfgNum('min_unranked_terms', MIN_UNRANKED_DEFAULT);
 const unrankedProbeMax = () => _cfgNum('unranked_probe_max', UNRANKED_PROBE_DEFAULT);
+// A GAP IS A TERM THEY DO NOT WIN, NOT ONE THEY ARE INVISIBLE FOR. The rank
+// check reads 100 results deep because zero_ranking_top_n drives the PRICE, and
+// the probe borrowed that bar -- so a gap meant "absent from the top 100". In
+// Huntingdon, 170/mo across 28 terms, this domain appears somewhere in the
+// hundred for every remodeling phrase there is, and seven probes found nothing
+// because nothing could be found. Page one is the bar that matters to a
+// proposal: #63 is a term you sell against. (2026-09-22, Kiri)
+const gapRankMax = () => _cfgNum('gap_rank_max', GAP_RANK_DEFAULT);
 
 function unrankedCount(r){
   return (((r.result || {}).table) || []).filter(x => x && x.pos === 'Not Found').length;
@@ -3363,14 +3371,18 @@ function unrankedFoundHtml(r){
   // (2026-09-22, Kiri)
   const seeded = new Set(kbSeeds().map(x => String(x).trim().toLowerCase()));
   return `<div class="unrbox found"><b>${found.length} term`
-    + `${found.length === 1 ? '' : 's'} they don't rank for</b></div>`
+    + `${found.length === 1 ? '' : 's'} off page one</b></div>`
     + found.map(f => {
         const bare = String(f.bare || f.kw || '');
         const on = seeded.has(bare.trim().toLowerCase());
+        // WHERE THEY ACTUALLY SIT. Not ranked and #63 are both gaps and they
+        // are not the same conversation, so the chip says which.
+        const at = f.pos === 'Not Found' ? 'not ranked' : `#${f.pos}`;
         return `<button class="compchip${on ? ' on' : ''}" type="button"`
           + ` data-compadd="${esc(bare)}" data-compvol="${Number(f.vol) || 0}"`
           + `${on ? ' disabled' : ''}>${esc(bare)}`
-          + `${f.vol ? `<small>${n(f.vol)}/mo</small>` : ''}</button>`;
+          + `<small>${f.vol ? `${n(f.vol)}/mo \u00b7 ` : ''}${esc(at)}</small>`
+          + `</button>`;
       }).join('');
 }
 
@@ -3386,7 +3398,7 @@ async function findUnranked(r, auto){
 
 async function _findUnranked(r, auto){
   try { await liveCfg(); } catch (e) {}
-  const min = minUnranked(), cap = unrankedProbeMax();
+  const min = minUnranked(), cap = unrankedProbeMax(), gapMax = gapRankMax();
   const setBtn = t => document.querySelectorAll(`[data-unrfind="${r.i}"]`)
     .forEach(b => { b.disabled = true; b.textContent = t; });
   let cands = unrankedCandidates(r);
@@ -3434,7 +3446,11 @@ async function _findUnranked(r, auto){
         return;
       }
       measured++;
-      if (row.pos === 'Not Found') found.push(Object.assign({}, c, {row}));
+      // OFF PAGE ONE IS THE GAP. Absent from the top 100 is the PRICING bar and
+      // it found nothing on a client who ranks shallowly for everything.
+      const _p = Number(row.pos);
+      if (row.pos === 'Not Found' || (isFinite(_p) && _p > gapMax))
+        found.push(Object.assign({}, c, {row, pos: row.pos}));
     });
   };
   for (let i = 0; i < cands.length && found.length < min; i += 3) {

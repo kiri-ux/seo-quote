@@ -26,12 +26,15 @@ const BASE = 'http://127.0.0.1:5203';
   await p.route('**/api/config', r => json(r, {min_unranked_terms: 3,
                                                unranked_probe_max: 4}));
   await p.route('**/api/ranked_keywords', r => json(r, {owned}));
+  // DEEP, NOT ABSENT. Cisney sits somewhere in the top 100 for every remodeling
+  // phrase in Huntingdon -- seven probes, seven positions, no gap reported.
+  // `deep` is that shape; the default is the outright miss.
+  let deep = false;
   await p.route('**/api/rankings', r => {
     const body = JSON.parse(r.request().postData() || '{}');
     probes.push((body.batch || []).map(x => x.kw));
-    return json(r, {results: (body.batch || []).map(x => ({
-      // Everything probed is a miss, which is the case this exists for.
-      kw: x.kw, pos: 'Not Found'}))});
+    return json(r, {results: (body.batch || []).map((x, i) => ({
+      kw: x.kw, pos: deep ? 40 + i : 'Not Found'}))});
   });
 
   await p.goto(BASE + '/adtini/forecast', {waitUntil: 'domcontentloaded'});
@@ -165,8 +168,9 @@ const BASE = 'http://127.0.0.1:5203';
   say('andTheSuffixIsOnTheProbedTerm',
       probes.flat().every(k => /huntingdon pa$/.test(k)), JSON.stringify(probes));
   say('andTheFindingIsShown',
-      /terms they don't rank for/.test(res.text)
+      /terms off page one/.test(res.text)
       && /bathroom showroom/.test(res.text), res.text);
+  say('andAnOutrightMissSaysSo', /not ranked/.test(res.text), res.text);
   say('andTheFindingDoesNotNarrateItself',
       !/measured on the live result page/.test(res.text)
       && !/skipped, already ranked/.test(res.text), res.text);
@@ -213,6 +217,41 @@ const BASE = 'http://127.0.0.1:5203';
   say('andItLandsInExactlyOneTier', add.tiers.length === 1, JSON.stringify(add));
   say('andTheTermIsSoldInTheGridsForm',
       /huntingdon pa$/.test(add.all[add.all.length - 1]), JSON.stringify(add.all));
+
+  // ---- A DEEP RANK IS A GAP. The probe borrowed zero_ranking_top_n, which is
+  // 100 because it drives the PRICE, so a gap meant "absent from the top 100".
+  // On a client ranking shallowly for everything that finds nothing, ever:
+  // "No gap found in 7 terms checked" on Cisney, twice. (2026-09-22, Kiri)
+  deep = true;
+  probes = [];
+  await p.evaluate(() => {
+    const r = ROWS[0];
+    const s = window.__snap;
+    if (s) {
+      r.kw.all = s.all; r.kw.ultra = s.ultra;
+      r.kw.competitive = s.competitive; r.kw.long_tail = s.long_tail;
+      r.kw.total_volume = s.total; r.data.focus = s.focus;
+    }
+    r.unrankedTried = null; r.unrankedResult = null; r.ownedCache = null;
+    r.unrankedAuto = true;
+    draw();
+  });
+  await p.evaluate(() => findUnranked(ROWS[0], false));
+  await p.waitForFunction(() => !UNRANKED_RUNNING && ROWS[0].unrankedResult,
+                          null, {timeout: 20000});
+  const dp = await p.evaluate(() => ({
+    found: (ROWS[0].unrankedResult.found || []).map(f => [f.bare, f.pos]),
+    text: [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim(),
+  }));
+  say('aDeepRankIsAGap', dp.found.length >= 3, JSON.stringify(dp.found));
+  say('andThePositionIsCarried',
+      dp.found.every(f => Number(f[1]) >= 40), JSON.stringify(dp.found));
+  // WHERE THEY SIT IS THE WHOLE POINT. #63 and not-ranked are both gaps and
+  // they are not the same conversation.
+  say('andTheChipSaysWhereTheySit', /#4[0-9]/.test(dp.text), dp.text);
+  say('andTheClaimIsPageOne', /off page one/.test(dp.text), dp.text);
+  deep = false;
 
   // ---- THE SIEVE SKIPS WHAT THE DOMAIN ALREADY RANKS FOR NATIONALLY, and is
   // only a sieve: it can prove a client DOES rank, never that they do not.

@@ -1129,6 +1129,12 @@ CFG = {
     # lookup called 19 terms unranked that the SERP found at #1-#4. 0 turns it
     # off. (2026-08-20)
     "min_unranked_terms": 3,
+    # WHAT COUNTS AS A GAP FOR THE PROPOSAL. Separate from zero_ranking_top_n,
+    # which is 100 and drives the PRICE: a term the client sits at #63 for is
+    # correctly "ranked" for pricing and is absolutely a gap to sell against.
+    # In a thin market the domain appears somewhere in the top 100 for nearly
+    # every phrase, so "absent from the top 100" found nothing, ever.
+    "gap_rank_max": 10,
     # FOUR, NOT TEN — THE PROBES WERE STARVING EACH OTHER. The pacing holds the
     # process to dfs_calls_per_minute; a probe that queues ten SERP lookups, then
     # retries the ones that did not answer, then hands over to the cross-market
@@ -11195,6 +11201,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # the panel never has to guess either. (2026-08-20)
             "min_unranked_terms": int(CFG.get("min_unranked_terms", 3) or 0),
             "unranked_probe_max": int(CFG.get("unranked_probe_max", 8) or 0),
+            "gap_rank_max": int(CFG.get("gap_rank_max", 10) or 0),
             "seed_services_used": seed_used,
             "seed_services_total": seed_total,
             "seed_services_dropped": max(0, seed_total - seed_used),
@@ -16072,6 +16079,7 @@ def api_config_get():
         # someone rebuilt step 1. The panel prefers these. (2026-08-21)
         "min_unranked_terms": CFG.get("min_unranked_terms", 3),
         "unranked_probe_max": CFG.get("unranked_probe_max", 8),
+        "gap_rank_max": CFG.get("gap_rank_max", 10),
         "dfs_calls_per_minute": CFG.get("dfs_calls_per_minute", 10),
         "competitive_adder": CFG["competitive_adder"],
         "bid_score_breaks": CFG["bid_score_breaks"],
