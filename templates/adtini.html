@@ -3052,6 +3052,9 @@ function addCompetitorSeed(term, vol){
     kbDraw(r);
     $('saved').textContent = `Added \u201c${t}\u201d to the list.`;
   }
+  // The term is on the keyword list or in the seed box; either way the quote
+  // changed and nothing else here was going to write it.
+  try { persist(r); } catch (e) {}
 }
 
 // PULLED, NOT TYPED. The rank check has already read page one for every term
@@ -3355,13 +3358,22 @@ function renderUnrankedGap(r){
   // its place when there is a button in it or a finding under it.
   // (2026-09-22, Kiri)
   if (!cands.length && !r.unrankedResult) { paint(''); return; }
+  // THREE IS THE TARGET, NOT THE LIMIT. Once it had three the button vanished
+  // and there was no way to keep looking -- and three is a floor for the
+  // proposal, not a cap on what is worth selling. There are candidates left
+  // while `more` is true. (2026-09-22, Kiri)
+  const more = !need && got && unrankedCandidates(r).length;
   paint((cands.length
       ? `<div class="unrbox"><b>They rank for `
         + `${have ? 'all but ' + have + ' of' : 'every one of'} the quoted terms.</b>`
         + ` <button class="btn2 unrfind" type="button" data-unrfind="${r.i}">`
         + `Find ${need} outside the grid</button></div>`
       : '')
-    + (r.unrankedResult ? unrankedFoundHtml(r) : ''));
+    + (r.unrankedResult ? unrankedFoundHtml(r) : '')
+    + (more
+        ? `<div class="unrbox more"><button class="btn2 unrfind" type="button"`
+          + ` data-unrfind="${r.i}" data-unrmore="1">Find more</button></div>`
+        : ''));
   if (UNRANKED_RUNNING) {
     document.querySelectorAll(`[data-unrfind="${r.i}"]`).forEach(b => {
       b.disabled = true; b.textContent = 'Checking\u2026';
@@ -3420,20 +3432,34 @@ function unrankedFoundHtml(r){
 // A SECOND RUN MUST NOT START WHILE ONE IS IN FLIGHT. The panel re-renders while
 // the probe is out, so the running probe's own button is a node no longer in the
 // document -- the guard is on the module, not the button.
-async function findUnranked(r, auto){
+async function findUnranked(r, auto, more){
   if (UNRANKED_RUNNING) return;
   UNRANKED_RUNNING = true;
-  try { await _findUnranked(r, auto); }
-  finally { UNRANKED_RUNNING = false; renderUnrankedGap(r); }
+  const before = (((r.unrankedResult || {}).found || []).length);
+  try { await _findUnranked(r, auto, more); }
+  finally {
+    UNRANKED_RUNNING = false;
+    renderUnrankedGap(r);
+    // RIDING ON THE PAYLOAD IS NOT THE SAME AS BEING SAVED. Nothing in this
+    // path called persist, so a finding that cost a SERP call each sat in
+    // memory until some unrelated action happened to write the quote.
+    // (2026-09-22, Kiri)
+    if ((((r.unrankedResult || {}).found || []).length) !== before) {
+      try { persist(r); } catch (e) {}
+    }
+  }
 }
 
-async function _findUnranked(r, auto){
+async function _findUnranked(r, auto, more){
   try { await liveCfg(); } catch (e) {}
   const min = minUnranked(), cap = unrankedProbeMax(), gapMax = gapRankMax();
   // The target is what is still missing. A run that already holds two gaps
   // looks for one, and stops there.
-  const need = Math.max(1, min - unrankedCount(r)
-                           - (((r.unrankedResult || {}).found || []).length));
+  // `more` means the target is already met and this press is for extra: look
+  // for another `min` rather than the one the target formula would allow.
+  const need = more ? min
+    : Math.max(1, min - unrankedCount(r)
+                      - (((r.unrankedResult || {}).found || []).length));
   const setBtn = t => document.querySelectorAll(`[data-unrfind="${r.i}"]`)
     .forEach(b => { b.disabled = true; b.textContent = t; });
   let cands = unrankedCandidates(r);
@@ -5654,7 +5680,11 @@ document.addEventListener('click', e => {
   // Builder and this listener did not -- the button rendered, read as enabled
   // and did nothing at all when pressed. (2026-09-22, Kiri)
   const uf = e.target.closest('[data-unrfind]');
-  if (uf) { e.preventDefault(); findUnranked(ROWS[+uf.dataset.unrfind], false); return; }
+  if (uf) {
+    e.preventDefault();
+    findUnranked(ROWS[+uf.dataset.unrfind], false, !!uf.dataset.unrmore);
+    return;
+  }
 });
 
 // RERUN THE CHECKS THAT FAILED. Nineteen of twenty-one came back "\u2014" and the

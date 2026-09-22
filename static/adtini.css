@@ -555,6 +555,10 @@ input.cell.ord{width:86px;font-variant-numeric:tabular-nums}
 .unrbox.found .hint{color:#2E7D52}
 .unrbox.none{background:var(--fill);border-color:var(--line);color:var(--muted)}
 .unrbox .unrfind{margin-left:4px;padding:3px 11px;font-size:12px}
+/* The target is met; this is the one that keeps looking. No claim beside it,
+   so it carries no colour of its own. */
+.unrbox.more{background:none;border:0;padding:0;margin-top:6px}
+.unrbox.more .unrfind{margin-left:0}
 
 /* The competitor reader: the seed source that does not start from the client.
    Sits with the builder's other seed options, above Build. */

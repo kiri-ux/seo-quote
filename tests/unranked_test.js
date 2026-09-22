@@ -314,6 +314,25 @@ const BASE = 'http://127.0.0.1:5203';
   });
   say('threeInHandStopsAsking', !/outside the grid/.test(enough), enough);
   say('andStillShowsWhatItFound', /3 terms off page one/.test(enough), enough);
+  // THREE IS THE TARGET, NOT THE LIMIT. The button used to vanish at three
+  // with no way to keep looking.
+  say('andThereIsStillAWayToFindMore', /Find more/.test(enough), enough);
+  const moreRun = await p.evaluate(async () => {
+    const r = ROWS[0];
+    const b = document.querySelector('[data-unrmore]');
+    if (!b) return {err: '(no button)'};
+    b.click();
+    await new Promise(z => setTimeout(z, 50));
+    await new Promise(z => {
+      const t = setInterval(() => {
+        if (!UNRANKED_RUNNING) { clearInterval(t); z(); }
+      }, 50);
+      setTimeout(() => { clearInterval(t); z(); }, 15000);
+    });
+    return {n: (r.unrankedResult.found || []).length};
+  });
+  say('andPressingItLooksAgain', !moreRun.err && moreRun.n > 3,
+      JSON.stringify(moreRun));
   await p.evaluate(() => {
     if (window.__kw2) ROWS[0].kw = window.__kw2;
     ROWS[0].unrankedTried = null; ROWS[0].unrankedResult = null;
