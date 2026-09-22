@@ -3360,9 +3360,19 @@ function unrankedFoundHtml(r){
   const res = r.unrankedResult || {};
   const found = res.found || [];
   const n = x => Number(x || 0).toLocaleString();
+  // NOTHING MEASURED IS NOT NOTHING FOUND. Seven probes where six did not
+  // answer reported "No gap found in 7 terms checked" -- a claim about the
+  // client made from a rank check that never ran. The endpoint returns the
+  // failure verbatim; it goes on the screen. (2026-09-22, Kiri)
+  if (!found.length && (res.failed || 0) && !res.measured) {
+    return `<div class="unrbox none">Rank check failed`
+      + `${res.reason ? ` \u00b7 ${esc(res.reason)}` : ''}</div>`;
+  }
   if (!found.length) {
     return `<div class="unrbox none">No gap found in `
-      + `${res.measured || 0} term${res.measured === 1 ? '' : 's'} checked.</div>`;
+      + `${res.measured || 0} term${res.measured === 1 ? '' : 's'} checked`
+      + `${(res.failed || 0) ? ` \u00b7 ${res.failed} did not answer`
+          + `${res.reason ? ` \u00b7 ${esc(res.reason)}` : ''}` : ''}.</div>`;
   }
   // A FOUND GAP THAT GOES NOWHERE IS NOT A FINDING. The point of the probe is
   // getting these onto the proposal, and it used to print them as text -- read
@@ -3431,12 +3441,24 @@ async function _findUnranked(r, auto){
                   brand: d.brand, domain: d.site, cfg: r.over};
   const found = [], retry = [];
   let measured = 0;
+  // THE ENDPOINT ALREADY KNOWS WHY. It returns error_reason -- the most common
+  // failure in the batch, verbatim, precisely so the panel can say it -- and
+  // the panel was throwing it away. "6 that did not answer" is not a fact
+  // anybody can act on; "40501 Invalid Field: 'location_name'" is.
+  // (2026-09-22, Kiri)
+  let reason = '', dead = false;
   const read = (got, batch) => {
+    if (got && got.error_reason && !reason) reason = String(got.error_reason);
     // `results`, NOT `rows`. /api/rankings has always answered with `results`;
     // the legacy probe asked for `rows`, made every SERP call, got every answer
     // and threw them all away. Five builds of "none could be read" were
     // successful lookups read with the wrong key.
-    ((got && (got.results || got.rows)) || []).forEach(row => {
+    const rows = (got && (got.results || got.rows)) || [];
+    // A BATCH IN WHICH NOTHING ANSWERED IS NOT PACING. The next three fail the
+    // same way, and working through all eight and then retrying six is how one
+    // press ran for fifteen minutes and reported nothing.
+    if (rows.length && rows.every(x => x.error || x.queued)) dead = true;
+    rows.forEach(row => {
       const c = batch.find(x => x.kw === row.kw) || {};
       // ONLY A MEASURED MISS COUNTS. An errored or queued probe says nothing
       // about the client and must not be offered as an opportunity.
@@ -3453,7 +3475,7 @@ async function _findUnranked(r, auto){
         found.push(Object.assign({}, c, {row, pos: row.pos}));
     });
   };
-  for (let i = 0; i < cands.length && found.length < min; i += 3) {
+  for (let i = 0; i < cands.length && found.length < min && !dead; i += 3) {
     const batch = cands.slice(i, i + 3);
     setBtn(`Checking ${i + 1}\u2013${Math.min(i + 3, cands.length)} of ${cands.length}\u2026`);
     try {
@@ -3465,9 +3487,14 @@ async function _findUnranked(r, auto){
   // The unreadable ones get one more pass: with the per-minute pacing a second
   // attempt usually lands, and reporting "could not be read" on a term that
   // would have answered is the same non-finding.
-  if (found.length < min && retry.length) {
+  //
+  // ONE ATTEMPT IS PACING, SIX OUT OF SEVEN IS BROKEN. Retrying a run that
+  // mostly failed is how a single press ground for fifteen minutes and then
+  // said "no gap found" -- which was not true, nothing had been measured.
+  const mostlyFailed = retry.length > measured;
+  if (found.length < min && retry.length && !dead && !mostlyFailed) {
     setBtn(`Retrying ${retry.length} that did not answer\u2026`);
-    for (let i = 0; i < retry.length && found.length < min; i += 3) {
+    for (let i = 0; i < retry.length && found.length < min && !dead; i += 3) {
       const batch = retry.slice(i, i + 3);
       try {
         read(await post('/api/rankings',
@@ -3476,7 +3503,8 @@ async function _findUnranked(r, auto){
       } catch (e) { continue; }
     }
   }
-  r.unrankedResult = {found, checked: cands.length, measured, sieved};
+  r.unrankedResult = {found, checked: cands.length, measured, sieved,
+                      failed: retry.length, reason: reason};
 }
 
 function drawHeadroom(kw){

@@ -253,6 +253,56 @@ const BASE = 'http://127.0.0.1:5203';
   say('andTheClaimIsPageOne', /off page one/.test(dp.text), dp.text);
   deep = false;
 
+  // ---- A RANK CHECK THAT DID NOT RUN IS NOT A CLIENT WHO RANKS FOR
+  // EVERYTHING. Cisney, live: "Retrying 6 that did not answer", fifteen minutes
+  // on one press, and then "No gap found in 7 terms checked" -- a claim about
+  // the client from a check that never happened. (2026-09-22, Kiri)
+  let broke = true;
+  await p.unroute('**/api/rankings');
+  let calls = 0;
+  await p.route('**/api/rankings', r => {
+    const body = JSON.parse(r.request().postData() || '{}');
+    calls++;
+    probes.push((body.batch || []).map(x => x.kw));
+    if (!broke) {
+      return json(r, {results: (body.batch || []).map(x => ({
+        kw: x.kw, pos: deep ? 40 : 'Not Found'}))});
+    }
+    return json(r, {error_reason: "40501 Invalid Field: 'location_name'",
+                    results: (body.batch || []).map(x => ({
+                      kw: x.kw, pos: '\u2014', error: true}))});
+  });
+  probes = []; calls = 0;
+  await p.evaluate(() => {
+    const r = ROWS[0];
+    const s = window.__snap;
+    if (s) {
+      r.kw.all = s.all; r.kw.ultra = s.ultra;
+      r.kw.competitive = s.competitive; r.kw.long_tail = s.long_tail;
+      r.kw.total_volume = s.total; r.data.focus = s.focus;
+    }
+    r.unrankedTried = null; r.unrankedResult = null; r.ownedCache = null;
+    r.unrankedAuto = true;
+    draw();
+  });
+  await p.evaluate(() => findUnranked(ROWS[0], false));
+  await p.waitForFunction(() => !UNRANKED_RUNNING && ROWS[0].unrankedResult,
+                          null, {timeout: 20000});
+  const br = await p.evaluate(() => ({
+    res: ROWS[0].unrankedResult,
+    text: [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim(),
+  }));
+  say('aDeadCheckIsNotNoGapFound',
+      !/No gap found/.test(br.text), br.text);
+  say('andItSaysTheRankCheckFailed', /Rank check failed/.test(br.text), br.text);
+  // THE ENDPOINT ALREADY KNOWS WHY AND THE PANEL WAS DISCARDING IT.
+  say('andItSaysWhy', /location_name/.test(br.text), br.text);
+  // ONE DEAD BATCH MEANS THE NEXT ONE DIES TOO. Eight probes then six retries
+  // is how one press ran for fifteen minutes.
+  say('andItStopsRatherThanGrinding', calls === 1, String(calls));
+  broke = false;
+
   // ---- THE SIEVE SKIPS WHAT THE DOMAIN ALREADY RANKS FOR NATIONALLY, and is
   // only a sieve: it can prove a client DOES rank, never that they do not.
   owned = ['bathroom showroom'];
