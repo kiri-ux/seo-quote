@@ -197,10 +197,16 @@ const BASE = 'http://127.0.0.1:5203';
     const b = [...document.querySelectorAll('[data-unrgap] [data-compadd]')][0];
     if (!b) return {err: '(no chip)'};
     const term = b.dataset.compadd;
-    b.click();
+    // Seed it first: the cut list is made of seeds, so this is the real state.
+    const d0 = r.data = r.data || {};
+    d0.focus = (d0.focus || []).concat([term]);
+    renderUnrankedGap(r);
+    const b2 = document.querySelector(`[data-compadd="${CSS.escape(term)}"]`);
+    const wasSeeded = true, wasOff = !!(b2 && b2.disabled);
+    (b2 || b).click();
     const all = (r.kw.all || []).map(x => x.kw);
     const row = (r.kw.all || []).find(x => x.kw.indexOf(term) === 0);
-    return {term, before, after: kbSeeds().length,
+    return {term, before, after: kbSeeds().length, wasSeeded, wasOff,
             onSeeds: kbSeeds().map(x => String(x).toLowerCase())
               .indexOf(String(term).toLowerCase()) >= 0,
             gridBefore, all, vol: row ? row.vol : null,
@@ -211,7 +217,12 @@ const BASE = 'http://127.0.0.1:5203';
             tiers: ['ultra', 'competitive', 'long_tail']
               .filter(k => (r.kw[k] || []).some(x => x.kw.indexOf(term) === 0))};
   });
+  // EVERY CUT-LIST GAP IS ALREADY A SEED -- that is what "cut" means -- and the
+  // chip disabled itself on exactly that test, so not one found gap was ever
+  // clickable. (2026-09-22, Kiri)
   say('aFoundGapIsAChip', !add.err && !!add.term, JSON.stringify(add));
+  say('andASeededGapIsStillClickable', add.wasSeeded === true && add.wasOff === false,
+      JSON.stringify(add));
   say('andPressingItSeedsTheList',
       add.after === add.before + 1 && add.onSeeds === true, JSON.stringify(add));
   // ---- AND LANDS ON THE LIST WITHOUT A REBUILD

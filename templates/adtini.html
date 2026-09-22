@@ -3411,12 +3411,22 @@ function unrankedFoundHtml(r){
   // them, retype them into the seed box, rebuild. They are chips now, the same
   // ones the competitor reader makes, so one press puts a gap on the list.
   // (2026-09-22, Kiri)
-  const seeded = new Set(kbSeeds().map(x => String(x).trim().toLowerCase()));
+  // ON THE LIST, NOT IN THE SEED BOX. This tested whether the term was a seed
+  // -- and every candidate the probe draws from the cut list IS a seed, that is
+  // what "cut" means. So every gap it found rendered disabled and greyed, and
+  // not one of them could be clicked. The question is whether the term is on
+  // the KEYWORD LIST, which is what the press puts it there for.
+  // (2026-09-22, Kiri)
+  const sfx = gridSuffix(r);
+  const onList = new Set(((r.kw || {}).all || [])
+    .map(x => String(x.kw || '').toLowerCase()));
+  const full = b => (sfx ? `${b} ${sfx}` : b)
+    .toLowerCase().replace(/\s+/g, ' ').trim();
   return `<div class="unrbox found"><b>${found.length} term`
     + `${found.length === 1 ? '' : 's'} off page one</b></div>`
     + found.map(f => {
         const bare = String(f.bare || f.kw || '');
-        const on = seeded.has(bare.trim().toLowerCase());
+        const on = onList.has(full(bare.trim()));
         // WHERE THEY ACTUALLY SIT. Not ranked and #63 are both gaps and they
         // are not the same conversation, so the chip says which.
         const at = (f.pos === 'Not Found' || f.pos == null) ? '' : `#${f.pos}`;
