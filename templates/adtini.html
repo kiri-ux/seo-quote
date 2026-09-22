@@ -721,6 +721,12 @@ function savePayload(r){
              // thirteen identical chips.
              seedSrc: r.seedSrc || {},
              seedDrop: (r.seedDrop || []).slice(),
+             // THE GAPS ARE A MEASURED FINDING, NOT A SCREEN STATE. They cost
+             // a SERP call each and they are what the proposal is written
+             // from, and they lived only in memory -- a reload asked for them
+             // again. (2026-09-22, Kiri)
+             unrankedResult: r.unrankedResult || null,
+             unrankedTried: (r.unrankedTried || []).slice(),
              suggested: (r.suggested || []).slice(),
              rankedSeeds: (r.rankedSeeds || []).slice(),
              history: (r.history || []).slice(0, 20)},
@@ -1015,6 +1021,8 @@ async function loadClient(){
         // quote, and dropped here on the way back in -- so every chip opened
         // solid after a reload.
         seedSrc: a.seedSrc || {}, seedDrop: a.seedDrop || [],
+        unrankedResult: a.unrankedResult || null,
+        unrankedTried: a.unrankedTried || [],
         suggested: a.suggested || [], rankedSeeds: a.rankedSeeds || [],
       };
       if (row.result && !row.result.headline) row.result.headline = headlineOf(row);
@@ -3333,7 +3341,14 @@ function renderUnrankedGap(r){
                                   && x.pos !== '' && !x.error && !x.queued
                                   && !x.expired).length;
   const have = unrankedCount(r);
-  const cands = min && measured && have < min ? unrankedCandidates(r) : [];
+  // WHAT IS STILL MISSING, NOT WHAT THE TARGET WAS. Gaps already found count
+  // toward the three; without this the button kept offering to find three more
+  // after it had found two, and each press paid for a target it had nearly
+  // met. `have` stays the GRID's count because the sentence beside the button
+  // is about the quoted terms. (2026-09-22, Kiri)
+  const got = ((r.unrankedResult || {}).found || []).length;
+  const need = Math.max(0, min - have - got);
+  const cands = need && measured ? unrankedCandidates(r) : [];
   // NOTHING TO PRESS, NOTHING TO SHOW, NO BOX. It used to print "They rank for
   // every one of the quoted terms. No term in the grid is a gap. No candidates
   // left to check." -- three sentences to say it could not help. The box earns
@@ -3344,7 +3359,7 @@ function renderUnrankedGap(r){
       ? `<div class="unrbox"><b>They rank for `
         + `${have ? 'all but ' + have + ' of' : 'every one of'} the quoted terms.</b>`
         + ` <button class="btn2 unrfind" type="button" data-unrfind="${r.i}">`
-        + `Find ${min} outside the grid</button></div>`
+        + `Find ${need} outside the grid</button></div>`
       : '')
     + (r.unrankedResult ? unrankedFoundHtml(r) : ''));
   if (UNRANKED_RUNNING) {
@@ -3352,7 +3367,10 @@ function renderUnrankedGap(r){
       b.disabled = true; b.textContent = 'Checking\u2026';
     });
   }
-  if (have === 0 && cands.length && !r.unrankedAuto && !UNRANKED_RUNNING) {
+  // A RELOAD ARRIVES WITH THE SAVED FINDING AND unrankedAuto UNSET, so this
+  // would probe the client again, for money, on every reopen.
+  if (have === 0 && cands.length && !r.unrankedAuto && !r.unrankedResult
+      && !UNRANKED_RUNNING) {
     r.unrankedAuto = true;
     findUnranked(r, true);
   }
@@ -3412,6 +3430,10 @@ async function findUnranked(r, auto){
 async function _findUnranked(r, auto){
   try { await liveCfg(); } catch (e) {}
   const min = minUnranked(), cap = unrankedProbeMax(), gapMax = gapRankMax();
+  // The target is what is still missing. A run that already holds two gaps
+  // looks for one, and stops there.
+  const need = Math.max(1, min - unrankedCount(r)
+                           - (((r.unrankedResult || {}).found || []).length));
   const setBtn = t => document.querySelectorAll(`[data-unrfind="${r.i}"]`)
     .forEach(b => { b.disabled = true; b.textContent = t; });
   let cands = unrankedCandidates(r);
@@ -3432,10 +3454,11 @@ async function _findUnranked(r, auto){
   }
   cands = cands.slice(0, cap);
   if (!cands.length) {
-    r.unrankedResult = {found: [], checked: 0, measured: 0, sieved, allOwned: true};
+    r.unrankedResult = Object.assign(
+      {checked: 0, measured: 0, sieved, allOwned: true},
+      {found: ((r.unrankedResult || {}).found || [])});
     return;
   }
-  r.unrankedTried = (r.unrankedTried || []).concat(cands.map(c => c.kw));
   const d = r.data || {};
   const common = {geo_values: geoOf(d), state: stateOf(d),
                   industry: (d.industry || []).join(', '),
@@ -3447,7 +3470,7 @@ async function _findUnranked(r, auto){
                   // probe only asks whether they are on page one, and a
                   // depth-100 live SERP is what timed out at 20s a keyword.
                   top_n: gapMax};
-  const found = [], retry = [];
+  const found = [], retry = [], done = [];
   let measured = 0;
   // THE ENDPOINT ALREADY KNOWS WHY. It returns error_reason -- the most common
   // failure in the batch, verbatim, precisely so the panel can say it -- and
@@ -3476,6 +3499,7 @@ async function _findUnranked(r, auto){
         return;
       }
       measured++;
+      done.push(row.kw);
       // OFF PAGE ONE IS THE GAP. Absent from the top 100 is the PRICING bar and
       // it found nothing on a client who ranks shallowly for everything.
       const _p = Number(row.pos);
@@ -3483,7 +3507,7 @@ async function _findUnranked(r, auto){
         found.push(Object.assign({}, c, {row, pos: row.pos}));
     });
   };
-  for (let i = 0; i < cands.length && found.length < min && !dead;
+  for (let i = 0; i < cands.length && found.length < need && !dead;
        i += UNRANKED_BATCH) {
     const batch = cands.slice(i, i + UNRANKED_BATCH);
     setBtn(`Checking ${i + 1}\u2013${Math.min(i + UNRANKED_BATCH, cands.length)}`
@@ -3502,9 +3526,9 @@ async function _findUnranked(r, auto){
   // mostly failed is how a single press ground for fifteen minutes and then
   // said "no gap found" -- which was not true, nothing had been measured.
   const mostlyFailed = retry.length > measured;
-  if (found.length < min && retry.length && !dead && !mostlyFailed) {
+  if (found.length < need && retry.length && !dead && !mostlyFailed) {
     setBtn(`Retrying ${retry.length} that did not answer\u2026`);
-    for (let i = 0; i < retry.length && found.length < min && !dead;
+    for (let i = 0; i < retry.length && found.length < need && !dead;
          i += UNRANKED_BATCH) {
       const batch = retry.slice(i, i + UNRANKED_BATCH);
       try {
@@ -3514,7 +3538,21 @@ async function _findUnranked(r, auto){
       } catch (e) { continue; }
     }
   }
-  r.unrankedResult = {found, checked: cands.length, measured, sieved,
+  // EVERY PRESS ADDS TO WHAT YOU HAVE. This assignment used to REPLACE the
+  // result, so the second press threw away the first press's finds: one term
+  // found, press again, and the term you had was gone. Every probed candidate
+  // is also marked tried, so a re-press never re-probes what it already
+  // measured -- which means the only way the list could grow was by keeping
+  // it. (2026-09-22, Kiri)
+  // ONLY WHAT ANSWERED IS SPENT. Every candidate handed to the loop used to be
+  // marked tried up front, so a batch that failed burned its terms -- pressing
+  // Find again skipped the very terms that were never measured. A term is
+  // tried when it came back.
+  r.unrankedTried = (r.unrankedTried || []).concat(done);
+  const had = ((r.unrankedResult || {}).found || []);
+  const seen = new Set(had.map(f => String(f.kw || '').toLowerCase()));
+  const all = had.concat(found.filter(f => !seen.has(String(f.kw || '').toLowerCase())));
+  r.unrankedResult = {found: all, checked: cands.length, measured, sieved,
                       failed: retry.length, reason: reason};
 }
 

@@ -249,6 +249,76 @@ const BASE = 'http://127.0.0.1:5203';
     ROWS[0].unrankedTried = null; ROWS[0].unrankedResult = null;
   });
 
+  // ---- EVERY PRESS ADDS TO WHAT YOU HAVE, AND IT IS SAVED. The result used to
+  // be REPLACED on each press: one term found, press again, the term you had
+  // was gone. And it lived only in memory, so a reload asked for it again --
+  // for money. (2026-09-22, Kiri)
+  await p.evaluate(() => {
+    const r = ROWS[0];
+    // The whole file drives ONE row, so every block that changes the fixture
+    // puts it back -- otherwise the next block tests the previous one's data.
+    window.__kw2 = JSON.parse(JSON.stringify(r.kw));
+    r.kw.seed_ranking = {order: [['gap one', 40], ['gap two', 30],
+                                 ['gap three', 20], ['gap four', 10]]};
+    r.unrankedTried = ['gap two huntingdon pa', 'gap three huntingdon pa',
+                       'gap four huntingdon pa'];
+    r.unrankedResult = {found: [{kw: 'kept one huntingdon pa', bare: 'kept one',
+                                 vol: 90, pos: 'Not Found'}],
+                        checked: 1, measured: 1, sieved: 0, failed: 0};
+    draw();
+  });
+  await p.evaluate(() => findUnranked(ROWS[0], false));
+  await p.waitForFunction(() => !UNRANKED_RUNNING, null, {timeout: 20000});
+  const acc = await p.evaluate(() => ({
+    found: (ROWS[0].unrankedResult.found || []).map(f => f.bare),
+    text: [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim(),
+  }));
+  say('anEarlierFindIsNotThrownAway',
+      acc.found.indexOf('kept one') >= 0, JSON.stringify(acc.found));
+  say('andTheNewOneIsAddedToIt',
+      acc.found.indexOf('gap one') >= 0, JSON.stringify(acc.found));
+  say('andBothAreOnScreen',
+      /kept one/.test(acc.text) && /gap one/.test(acc.text), acc.text);
+  // SAVED WITH THE QUOTE. A measured finding that cost a SERP call each is not
+  // screen state.
+  const saved = await p.evaluate(() => {
+    const pay = savePayload(ROWS[0]);
+    return {found: ((pay.adtini.unrankedResult || {}).found || []).map(f => f.bare),
+            tried: (pay.adtini.unrankedTried || []).length};
+  });
+  say('andItRidesOnTheSavePayload',
+      saved.found.indexOf('kept one') >= 0 && saved.found.indexOf('gap one') >= 0,
+      JSON.stringify(saved));
+  say('andSoDoesWhatWasAlreadyProbed', saved.tried > 3, JSON.stringify(saved));
+  // IT ASKS FOR WHAT IS MISSING. With two gaps in hand the button offered to
+  // find three more, and paid for a target it had nearly met.
+  const asks = await p.evaluate(() => {
+    const r = ROWS[0];
+    r.unrankedResult = {found: [{kw: 'a huntingdon pa', bare: 'a', vol: 9},
+                                {kw: 'b huntingdon pa', bare: 'b', vol: 8}],
+                        checked: 2, measured: 2, sieved: 0, failed: 0};
+    r.unrankedTried = null;
+    draw(); renderUnrankedGap(r);
+    return [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim();
+  });
+  say('twoInHandAsksForOne', /Find 1 outside the grid/.test(asks), asks);
+  // AND STOPS OFFERING ONCE IT HAS ENOUGH.
+  const enough = await p.evaluate(() => {
+    const r = ROWS[0];
+    r.unrankedResult.found.push({kw: 'c huntingdon pa', bare: 'c', vol: 7});
+    draw(); renderUnrankedGap(r);
+    return [...document.querySelectorAll('[data-unrgap]')]
+      .map(x => x.textContent).join(' ').replace(/\s+/g, ' ').trim();
+  });
+  say('threeInHandStopsAsking', !/outside the grid/.test(enough), enough);
+  say('andStillShowsWhatItFound', /3 terms off page one/.test(enough), enough);
+  await p.evaluate(() => {
+    if (window.__kw2) ROWS[0].kw = window.__kw2;
+    ROWS[0].unrankedTried = null; ROWS[0].unrankedResult = null;
+  });
+
   // ---- A DEEP RANK IS A GAP. The probe borrowed zero_ranking_top_n, which is
   // 100 because it drives the PRICE, so a gap meant "absent from the top 100".
   // On a client ranking shallowly for everything that finds nothing, ever:
