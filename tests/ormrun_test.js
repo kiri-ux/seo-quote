@@ -225,7 +225,7 @@ const QUOTE = {
       + ' | Review removals: 14 × $100'],
     'res.foldsStartClosed': [res.closed, true],
     'order.sections': [res.ordSections.join(' / '),
-      'Product card / Partner cost and margin'],
+      'Product card / Partner cost and margin / Pages quoted'],
     'proposal.sections': [res.proSections.join(' / '), 'Proposal payload'],
     'order.reviewsCounted': [res.reviewsRow.join(' | '), '# of Reviewsreviews_count | 14'],
     'proposal.snapshotTerms': [res.snapshotRow[1],
