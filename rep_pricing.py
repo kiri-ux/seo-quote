@@ -350,17 +350,19 @@ def price_reviews(n, margin_pct=None, scan_meta=None, hard_override=None):
 ART_CAL_MARGIN = 0.35
 
 # MULTI-SITE DISCOUNT (2026-09-22, Kiri). A manual checkbox on the quote: the
-# planner ticks it when the order carries several sites and says how many line
-# items. Taken off the CLIENT price only -- partner cost does not move, so the
-# discount comes out of margin. SEO: every client figure. ORM: the monthly
+# planner ticks it when the order carries several sites and says how many.
+# Each site is submitted as its own line item, so the count is TOTAL SITES
+# (2026-09-23). Taken off the CLIENT price only -- partner cost does not move,
+# so the discount comes out of margin. SEO: every client figure. ORM: the monthly
 # lines only; removals stay at full rate.
-MULTISITE_DISCOUNT_TIERS = [(1, 5), (10, 10), (26, 15)]   # (min line items, % off)
+MULTISITE_DISCOUNT_TIERS = [(1, 5), (10, 10), (26, 15)]   # (min total sites, % off)
 
 
-def multisite_pct(line_items):
-    """% off for an order with this many line items, 0 when none."""
+def multisite_pct(sites):
+    """% off for an order with this many sites, 0 when none. Each site is
+    submitted as its own line item, so the count is sites."""
     try:
-        n = int(line_items or 0)
+        n = int(sites or 0)
     except (TypeError, ValueError):
         return 0
     pct = 0
@@ -1077,7 +1079,7 @@ def build_rep_quote(payload):
             ln["list_total"] = ln["total"]
             ln["total"] = int(round(ln["total"] * (1 - ms_pct / 100.0)))
             ln["notes"] = list(ln.get("notes") or []) + [
-                "Multi-site discount: %d%% off (%d line items)." % (ms_pct, ms_items)]
+                "Multi-site discount: %d%% off (%d total sites)." % (ms_pct, ms_items)]
 
     for ln in phase1:
         ln["phase"] = 1
@@ -1232,7 +1234,7 @@ def build_rep_quote(payload):
         # independent and every combination is covered by the same four rules.
         "strategy": _strategy,
         "multisite_discount": bool(ms_pct),
-        "multisite_line_items": ms_items if ms_pct else 0,
+        "multisite_total_sites": ms_items if ms_pct else 0,
         "multisite_discount_pct": ms_pct,
         # CLIENT MINUS PARTNER ON THE RECURRING LINES, STATED RATHER THAN
         # DERIVED. Each client line rounds UP to $50 and each partner line does

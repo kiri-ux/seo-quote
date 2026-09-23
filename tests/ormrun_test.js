@@ -154,7 +154,7 @@ const QUOTE = {
     R.ordSections = [...ordFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
     R.proSections = [...proFold.querySelectorAll('tr.sec th')].map(t => t.textContent.trim());
     R.reviewsRow = rowIn(ordFold, 'reviews_count');
-    R.snapshotRow = rowIn(proFold, 'negative_terms');
+    R.snapshotRow = rowIn(proFold, 'autosuggest_terms');
     R.starsRow = rowIn(proFold, 'review_breakdown');
     R.partnerRow = rowIn(ordFold, 'partner_monthly_cost');
     R.partnerNotOnProposal = rowIn(proFold, 'partner_monthly_cost');
@@ -229,7 +229,7 @@ const QUOTE = {
     'proposal.sections': [res.proSections.join(' / '), 'Proposal payload'],
     'order.reviewsCounted': [res.reviewsRow.join(' | '), '# of Reviewsreviews_count | 14'],
     'proposal.snapshotTerms': [res.snapshotRow[1],
-      '3 · sage dental reviews, sage dental lawsuit, sage dental complaints'],
+      '2 · sage dental sued, sage dental near me'],
     'proposal.starsCaptured': [res.starsRow[1], 'locations: 3 · flagged: 14 · one_star: 9'],
     'order.partnerCost': [res.partnerRow.join(' | '),
       'Partner Hard Cost — per monthpartner_monthly_cost | $2,015'],

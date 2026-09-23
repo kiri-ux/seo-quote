@@ -12627,7 +12627,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         _ad_pct, _ad_basis = 0.0, "not applied — manual per-market rate"
         addon_schedule = []
     # MULTI-SITE DISCOUNT (2026-09-22, Kiri). A manual checkbox: the order
-    # carries several sites, and every client figure comes down by the line-item
+    # carries several sites, and every client figure comes down by the total-sites
     # bracket (rep_pricing.MULTISITE_DISCOUNT_TIERS). Partner cost does not
     # move, so it comes out of margin -- and everything below it (combined,
     # handoff, margin $) is computed from the discounted figures. Whole dollars,
@@ -12745,7 +12745,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # books without anyone reverse-engineering the rounding:
         #     Package $  -  Partner Hard Cost  =  Margin $
         "multisite_discount": bool(ms_pct),
-        "multisite_line_items": int(multisite_items or 0) if ms_pct else 0,
+        "multisite_total_sites": int(multisite_items or 0) if ms_pct else 0,
         "multisite_discount_pct": ms_pct,
         "margin_dollars": ({k: _ai_solo[k] - hard_cost[k] for k in client}
                            if _ai_only
@@ -12879,7 +12879,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                          for k in client_addon},
             "markup_pct": markup_pct, "addon_markets": addon_markets,
             "multisite_discount_pct": ms_pct,
-            "multisite_line_items": int(multisite_items or 0) if ms_pct else 0,
+            "multisite_total_sites": int(multisite_items or 0) if ms_pct else 0,
             "tiers": client, "addon_per_market": client_addon}
 
 # ---------------------------------------------------------------------------
@@ -15955,7 +15955,7 @@ def api_price():
                     "margin_pct_of_gross": p["margin_pct_of_gross"],
                     "handoff": p.get("handoff", {}),
                     "multisite_discount_pct": p.get("multisite_discount_pct", 0),
-                    "multisite_line_items": p.get("multisite_line_items", 0),
+                    "multisite_total_sites": p.get("multisite_total_sites", 0),
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
 def _perf_fill_bids(d, eligible=True):

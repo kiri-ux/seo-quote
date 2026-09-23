@@ -126,9 +126,9 @@
 
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
 
-        <div class="f"><label>Multi-site discount <span class="i" data-tip="1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
+        <div class="f"><label>Multi-site discount <span class="i" data-tip="1-9 sites: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="1-9 sites: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
           <div class="checks"><label><input type="checkbox" data-k="multisite"> Order qualifies</label></div></div>
-        <div class="f" data-geo="multisite" hidden><label>Line items on the order</label>
+        <div class="f" data-geo="multisite" hidden><label>Total sites for multi-site discount</label>
           <input type="number" data-k="multisite_items" min="1" placeholder="e.g. 12"></div>
 
         <!-- IN ADTINI THESE ARRIVE WITH THE ORDER. They sat third and fourth in
@@ -213,9 +213,9 @@
              for a hand-built blend. -->
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
 
-        <div class="f"><label>Multi-site discount <span class="i" data-tip="Monthly budget only. 1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="Monthly budget only. 1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
+        <div class="f"><label>Multi-site discount <span class="i" data-tip="Monthly budget only. 1-9 sites: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="Monthly budget only. 1-9 sites: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
           <div class="checks"><label><input type="checkbox" data-k="multisite"> Order qualifies</label></div></div>
-        <div class="f" data-geo="multisite" hidden><label>Line items on the order</label>
+        <div class="f" data-geo="multisite" hidden><label>Total sites for multi-site discount</label>
           <input type="number" data-k="multisite_items" min="1" placeholder="e.g. 12"></div>
 
         <details class="f wide demofold">
@@ -1300,8 +1300,8 @@ const SEND_SEO = [
     ['addon_markets', 'Add-on markets', 'both', r => H(r).addon_markets],
     ['multisite_discount_pct', 'Multi-Site Discount %', 'both',
      r => H(r).multisite_discount_pct || SKIP],
-    ['multisite_line_items', 'Multi-Site Line Items', 'order',
-     r => H(r).multisite_line_items || SKIP],
+    ['multisite_total_sites', 'Total Sites for Multi-Site Discount', 'order',
+     r => H(r).multisite_total_sites || SKIP],
     ['addon_market_price', 'Add-On Market Price — per tier', 'both',
      r => ifAddon(r, H(r).addon_market_price)],
   ]],
@@ -1352,6 +1352,22 @@ const ifSite = (r, v) => RH(r).standard_sites ? v : SKIP;
 const ifSearch = (r, v) => RH(r).search_protection_monthly ? v : SKIP;
 const ifShield = (r, v) => RH(r).brand_shield_monthly ? v : SKIP;
 
+function autosuggestOf(sc){
+  const ac = sc.autocomplete;
+  if (!ac) return undefined;
+  const seen = new Set(), out = [];
+  Object.keys(ac).forEach(q => {
+    const a = ac[q] || {}, neg = new Set((a.negative || []).map(x => String(x).toLowerCase()));
+    (a.suggestions || []).forEach(t => {
+      const key = String(t).toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({term: t, query: q, negative: neg.has(key)});
+    });
+  });
+  return out;
+}
+
 const SEND_ORM = [
   ['Product card', [
     ['review_removals', 'Review Removals', 'order',
@@ -1369,8 +1385,8 @@ const SEND_ORM = [
     ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
     ['multisite_discount_pct', 'Multi-Site Discount % (monthly)', 'both',
      r => RH(r).multisite_discount_pct || SKIP],
-    ['multisite_line_items', 'Multi-Site Line Items', 'order',
-     r => RH(r).multisite_line_items || SKIP],
+    ['multisite_total_sites', 'Total Sites for Multi-Site Discount', 'order',
+     r => RH(r).multisite_total_sites || SKIP],
     ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
     ['strategy', 'Strategy', 'order', r => RH(r).strategy || r.data.strategy],
   ]],
@@ -1394,7 +1410,11 @@ const SEND_ORM = [
      r => ifShield(r, RH(r).partner_brand_shield_monthly)],
     ['search_volume', 'Search Volume', 'prop', r => ifSearch(r, RH(r).search_volume)],
     ['locations', '# of Locations', 'prop', r => RH(r).locations],
-    ['negative_terms', 'Negative Terms Array', 'prop', r => (SC(r).terms || {}).terms],
+    // THE SEARCH BOX, NOT THE TERM LIST (2026-09-23, Kiri). This sent the
+    // step 1 related-keyword universe; the Reputation Snapshot slide shows what
+    // Google suggests as you type the brand. Every suggestion for the brand and
+    // for "{brand} reviews", each marked negative when the scan flagged it.
+    ['autosuggest_terms', 'Auto-Suggested Terms', 'prop', r => autosuggestOf(SC(r))],
     ['page_one', 'Top Google Results Array', 'prop', r => (SC(r).serp || {}).organic],
     ['location_reviews', 'Location & Review Array', 'prop',
      r => (SC(r).locations || {}).locations],

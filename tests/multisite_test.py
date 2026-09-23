@@ -1,6 +1,6 @@
 """THE MULTI-SITE DISCOUNT IS A CHECKBOX AND A LINE-ITEM COUNT.
 
-1-9 line items 5% off, 10-25 10%, 26+ 15%. SEO: every client figure. ORM: the
+1-9 sites 5% off, 10-25 10%, 26+ 15%. SEO: every client figure. ORM: the
 monthly lines only -- removals stay at full rate. Partner cost never moves.
 (2026-09-22, Kiri)
 """
@@ -30,7 +30,7 @@ def check(name, got, want):
 
 bad = 0
 for n, want in ((0, 0), (1, 5), (9, 5), (10, 10), (25, 10), (26, 15), (100, 15)):
-    bad += check(f"{n} line items -> {want}%", rp.multisite_pct(n), want)
+    bad += check(f"{n} sites -> {want}%", rp.multisite_pct(n), want)
 
 # ---- SEO
 a = app.stage4_price("single_city", 200, False, 2, 35, ai_search=True)
@@ -47,7 +47,7 @@ for k in a["client_tiers"]:
 bad += check("SEO partner cost unchanged", b["handoff"]["partner_hard_cost"],
              a["handoff"]["partner_hard_cost"])
 bad += check("SEO handoff carries the rate", b["handoff"]["multisite_discount_pct"], 10)
-bad += check("SEO handoff carries the count", b["handoff"]["multisite_line_items"], 12)
+bad += check("SEO handoff carries the count", b["handoff"]["multisite_total_sites"], 12)
 bad += check("SEO unticked is untouched", a["handoff"]["multisite_discount_pct"], 0)
 
 with app.app.test_client() as c:
