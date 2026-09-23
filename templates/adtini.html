@@ -1324,7 +1324,10 @@ const SEND_SEO = [
      r => H(r).partner_core_seo_cost],
     ['partner_ai_search_cost', 'Partner AI Search Cost — per tier', 'order',
      r => ifAi(r, H(r).partner_ai_search_cost)],
-    ['margin_dollars', 'Margin $ — per tier', 'order', r => H(r).margin_dollars],
+    // NO MARGIN $ (2026-09-23, Kiri). Billing reads the IO, which already has
+    // the client price and the partner cost; the difference is arithmetic,
+    // and the price is editable on the IO, so a sent figure could go stale.
+    // The quote still shows it on screen.
   ]],
   ['Proposal payload', [
     ['keywords', 'Keywords — term, Google rank, competitiveness', 'prop',
@@ -1398,8 +1401,10 @@ const SEND_ORM = [
      r => ifRev(r, RH(r).partner_hard_cost_per_review)],
     ['partner_hard_cost_per_standard_site', 'Partner Cost per Site Removal', 'order',
      r => ifSite(r, RH(r).partner_hard_cost_per_standard_site)],
-    ['margin_dollars_monthly', 'Margin $ — monthly', 'order',
-     r => RH(r).margin_dollars_monthly],
+    // NO MARGIN $ (2026-09-23, Kiri). Billing reads the IO, which already has
+    // the client price and the partner cost; the difference is arithmetic,
+    // and the price is editable on the IO, so a sent figure could go stale.
+    // The quote still shows it on screen.
   ]],
   ['Proposal payload', [
     ['partner_search_protection_monthly', 'Reactive Partner Hard Cost', 'prop',
