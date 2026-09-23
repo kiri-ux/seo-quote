@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 import contextvars
 from html.parser import HTMLParser
 import requests
-from flask import Flask, render_template, request, jsonify, send_file, g
+from flask import Flask, render_template, request, jsonify, send_file, g, redirect
 import time as _time
 import sys as _sys
 import storage
@@ -13300,7 +13300,14 @@ PROPOSAL = {
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+# THE BARE DOMAIN LANDS ON THE QUOTES PAGE (2026-09-23, Kiri). quote.reporting.zone
+# is where planners start, and "/" used to open the legacy builder. The legacy
+# builder moves to /legacy.
 @app.route("/")
+def root():
+    return redirect("/adtini")
+
+@app.route("/legacy")
 def index():
     return render_template("index.html", build=BUILD_STR)
 

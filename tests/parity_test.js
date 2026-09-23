@@ -66,7 +66,7 @@ const stub = async (p, calls) => {
   const lp = await b.newPage();
   lp.on('pageerror', e => errs.push('legacy: ' + e.message));
   await stub(lp, legacyCalls);
-  await lp.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await lp.goto(BASE + '/legacy', { waitUntil: 'domcontentloaded' });
   await lp.evaluate(([seeds, city]) => {
     document.getElementById('brand').value = 'Sage Dental';
     (document.getElementById('sites_in') || {}).value = '';
