@@ -1309,8 +1309,6 @@ const SEND_SEO = [
     ['core_seo_price', 'Core SEO Price — per tier', 'both', r => H(r).core_seo_price],
     ['ai_search_price', 'AI Search Price — per tier', 'both', r => ifAi(r, H(r).ai_search_price)],
     ['ai_search_pct', 'AI Search %', 'order', r => ifAi(r, H(r).ai_search_pct)],
-    ['ai_search_pct_effective', 'AI Search % — effective per tier', 'order',
-     r => ifAi(r, H(r).ai_search_pct_effective)],
   ]],
   ['Add-on market brackets', [
     ['addon_market_discount_pct', 'Add-On Market Discount %', 'both',
