@@ -12664,8 +12664,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     #     source: the IO still derives client price from Package $ and Margin %
     #     (ticket RULE 2.d.ii), because a $50-rounded cost run back through the
     #     margin comes out $50 wrong on 86 of 182 tier values. Sent as the
-    #     figure to BILL, not the figure to price from. `margin_dollars` closes the
-    #     gap between the two so nothing has to be reverse-engineered.
+    #     figure to BILL, not the figure to price from.
     #   * Partner Add-On Market Cost IS here, because the reverse applies:
     #     Add-On Market Price / (1 - Margin %) misses by $7.50-$17.50 a market,
     #     the partner figure having rounded to $10 and the sell figure to $50
@@ -12737,21 +12736,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                   else dict(hard_cost)),
         "partner_ai_search_cost": (dict(hard_cost) if _ai_only
                                    else {k: _ai_hard.get(k, 0) for k in hard_cost}),
-        # PACKAGE - PARTNER HARD COST, STATED RATHER THAN DERIVED.
-        # Package x (1 - Margin %) does NOT return Partner Hard Cost and is not
-        # meant to: the client figure rounds UP to $50 and each partner figure
-        # rounds to the NEAREST $50, so the two drift by up to ~$75 a tier. That
-        # drift is margin, and it is Vici's. Sending the dollars closes the
-        # books without anyone reverse-engineering the rounding:
-        #     Package $  -  Partner Hard Cost  =  Margin $
         "multisite_discount": bool(ms_pct),
         "multisite_total_sites": int(multisite_items or 0) if ms_pct else 0,
         "multisite_discount_pct": ms_pct,
-        "margin_dollars": ({k: _ai_solo[k] - hard_cost[k] for k in client}
-                           if _ai_only
-                           else {k: (client[k] + _ai_add.get(k, 0))
-                                    - (hard_cost[k] + _ai_hard.get(k, 0))
-                                 for k in client}),
+        # NO MARGIN $ (2026-09-23, Kiri). It is Package $ - Partner Hard Cost,
+        # both already here, and Package $ is editable on the IO, so a sent
+        # figure could go stale. Billing works it out from the IO.
     }
     # ---- THE PRICE THE FORMULA WOULD HAVE GIVEN --------------------------
     # An override REPLACES a component, so the quote it produces is partly the

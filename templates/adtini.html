@@ -1252,8 +1252,8 @@ function H(r){
   };
 }
 
-// MARGIN $ IS CLIENT LESS PARTNER. The quote sends it, but an older one does
-// not -- and "$0 / $0 / $0" reads as no margin rather than as not sent.
+// MARGIN $ IS CLIENT LESS PARTNER, worked out here. The handoff stopped
+// sending it (2026-09-23); an old quote that carried it still reads it.
 function marginDollars(r){
   const h = H(r);
   const have = h.margin_dollars || {};
@@ -1530,7 +1530,8 @@ function plannerView(r){
     if (rh.search_protection_monthly)
       add('Brand search volume', (rh.search_volume || 0).toLocaleString() + '/mo');
     add('Locations', rh.locations);
-    add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.margin_dollars_monthly) + '/mo');
+    add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.monthly_budget != null && rh.partner_monthly_cost != null
+      ? rh.monthly_budget - rh.partner_monthly_cost : null) + '/mo');
   } else {
     // THREE FIGURES IN TIER ORDER. The tile above is already labelled base /
     // intermediate / advanced, so repeating the package name on every number
@@ -1728,7 +1729,8 @@ function ormPriceRows(r){
     'a maximum, not a committed spend', '', money(tot.one_time)]);
   if (mg != null) sums.push([`Margin \u00b7 ${mg}% of gross`,
     'agency share \u00b7 everything left of it is partner cost', '',
-    h.margin_dollars_monthly ? money(h.margin_dollars_monthly) + '/mo' : '']);
+    h.monthly_budget != null && h.partner_monthly_cost != null
+      ? money(h.monthly_budget - h.partner_monthly_cost) + '/mo' : '']);
   return `<table class="send orm"><thead><tr><th>Line</th><th>Priced on</th>`
     + `<th>Partner cost</th><th>Client price</th></tr></thead><tbody>`
     + lines.map(l =>

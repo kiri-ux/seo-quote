@@ -1236,19 +1236,8 @@ def build_rep_quote(payload):
         "multisite_discount": bool(ms_pct),
         "multisite_total_sites": ms_items if ms_pct else 0,
         "multisite_discount_pct": ms_pct,
-        # CLIENT MINUS PARTNER ON THE RECURRING LINES, STATED RATHER THAN
-        # DERIVED. Each client line rounds UP to $50 and each partner line does
-        # not, so a margin percentage does not reproduce it: $12,100 against
-        # $7,800 is $4,300, where 35% of $12,100 says $4,235. That $65 exists
-        # only as a subtraction. The SEO handoff sends the same field.
-        #
-        # The removal lines get no equivalent. They are rate x count on both
-        # sides with no rounding between them, so the difference is exact
-        # arithmetic on two figures already sent -- and being pay-on-success,
-        # any total is a maximum rather than money that will be booked.
-        "margin_dollars_monthly": round(
-            sum(l["total"] for l in monthly_lines)
-            - sum(float(l.get("hard_total") or 0) for l in monthly_lines), 2),
+        # NO MARGIN $ (2026-09-23, Kiri). Monthly Budget - partner monthly
+        # cost, both already here; Billing works it out from the IO.
     }
 
     return {"campaign": campaign, "lines": lines, "totals": totals,

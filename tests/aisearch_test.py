@@ -109,11 +109,9 @@ check("at the same cost a Core SEO campaign would have run",
 check("the pair still bills both legs",
       both["partner_hard_cost"]["base"],
       both["partner_core_seo_cost"]["base"] + both["partner_ai_search_cost"]["base"])
-# Package - Partner Hard Cost = Margin $, on every shape.
+# Margin $ is not sent; Billing works it out as Package - Partner Hard Cost.
 for name, h in (("Core SEO", core), ("both", both), ("AI Search alone", solo)):
-    check("margin still reconciles on a %s quote" % name,
-          {k: h["package"][k] - h["partner_hard_cost"][k] for k in h["package"]},
-          h["margin_dollars"])
+    check("no margin $ on a %s quote" % name, "margin_dollars" in h, False)
 
 # ---------------------------------------------- the route, and old callers
 check("the route reads it off the payload",

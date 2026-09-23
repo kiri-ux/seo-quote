@@ -41,9 +41,6 @@ for k in a["client_tiers"]:
                  round(a["client_tiers"][k] * 0.9))
     bad += check(f"SEO {k} package 10% off", b["handoff"]["package"][k],
                  round(a["handoff"]["package"][k] * 0.9))
-    bad += check(f"SEO {k} margin $ is package less partner",
-                 b["handoff"]["margin_dollars"][k],
-                 b["handoff"]["package"][k] - b["handoff"]["partner_hard_cost"][k])
 bad += check("SEO partner cost unchanged", b["handoff"]["partner_hard_cost"],
              a["handoff"]["partner_hard_cost"])
 bad += check("SEO handoff carries the rate", b["handoff"]["multisite_discount_pct"], 10)
