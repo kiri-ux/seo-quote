@@ -12162,7 +12162,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  national_demand=False, geo_override=None, addon_override=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  pageone_agg_share=None, pageone_agg_terms=None,
-                 _formula_pass=False):
+                 multisite_items=0, _formula_pass=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
@@ -12626,6 +12626,26 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         hard_addon_list, client_addon_list = dict(hard_addon), dict(client_addon)
         _ad_pct, _ad_basis = 0.0, "not applied — manual per-market rate"
         addon_schedule = []
+    # MULTI-SITE DISCOUNT (2026-09-22, Kiri). A manual checkbox: the order
+    # carries several sites, and every client figure comes down by the line-item
+    # bracket (rep_pricing.MULTISITE_DISCOUNT_TIERS). Partner cost does not
+    # move, so it comes out of margin -- and everything below it (combined,
+    # handoff, margin $) is computed from the discounted figures. Whole dollars,
+    # so the client's calculator lands on the advertised rate.
+    import rep_pricing as _rp
+    ms_pct = _rp.multisite_pct(multisite_items)
+    if ms_pct:
+        _off = lambda v: int(round(v * (1 - ms_pct / 100.0)))
+        client = {k: _off(v) for k, v in client.items()}
+        client_addon = {k: _off(v) for k, v in client_addon.items()}
+        client_addon_list = {k: _off(v) for k, v in client_addon_list.items()}
+        for _b in addon_schedule:
+            _b["client"] = {k: _off(v) for k, v in _b["client"].items()}
+        if ai:
+            ai["client_add"] = {k: _off(v) for k, v in ai["client_add"].items()}
+            if ai.get("client_list"):
+                ai["client_list"] = {k: _off(v) for k, v in ai["client_list"].items()}
+            ai["client_total"] = {k: client[k] + ai["client_add"][k] for k in client}
     # True partner cost is a share of RETAIL, so derive it from the client
     # tiers rather than from the calibration basis.
     hard_true = dict(hard_cost)          # already clean $50 figures
@@ -12724,6 +12744,9 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
         # drift is margin, and it is Vici's. Sending the dollars closes the
         # books without anyone reverse-engineering the rounding:
         #     Package $  -  Partner Hard Cost  =  Margin $
+        "multisite_discount": bool(ms_pct),
+        "multisite_line_items": int(multisite_items or 0) if ms_pct else 0,
+        "multisite_discount_pct": ms_pct,
         "margin_dollars": ({k: _ai_solo[k] - hard_cost[k] for k in client}
                            if _ai_only
                            else {k: (client[k] + _ai_add.get(k, 0))
@@ -12753,6 +12776,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                pageone_rank=pageone_rank, site_rebuild=site_rebuild,
                                pageone_agg_share=pageone_agg_share,
                                pageone_agg_terms=pageone_agg_terms,
+                               multisite_items=multisite_items,
                                _formula_pass=True)
             _formula = {"client_tiers": _fp["client_tiers"],
                         "ai_search": ({"client_add": _fp["ai_search"]["client_add"],
@@ -12854,6 +12878,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "addon_savings_per_market": {k: client_addon_list[k] - client_addon[k]
                                          for k in client_addon},
             "markup_pct": markup_pct, "addon_markets": addon_markets,
+            "multisite_discount_pct": ms_pct,
+            "multisite_line_items": int(multisite_items or 0) if ms_pct else 0,
             "tiers": client, "addon_per_market": client_addon}
 
 # ---------------------------------------------------------------------------
@@ -15878,7 +15904,9 @@ def api_price():
                      geo_override=d.get("geo_override"),
                      addon_override=d.get("addon_override"),
                      goal=(d.get("goal") or ""),
-                     site_rebuild=(d.get("site_rebuild") or ""))
+                     site_rebuild=(d.get("site_rebuild") or ""),
+                     multisite_items=(int(d.get("multisite_items") or 0)
+                                      if d.get("multisite") else 0))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "site_rebuild": p.get("site_rebuild", ""),
                     "rebuild_applied": p.get("rebuild_applied", False),
@@ -15926,6 +15954,8 @@ def api_price():
                     "addon_savings_per_market": p["addon_savings_per_market"],
                     "margin_pct_of_gross": p["margin_pct_of_gross"],
                     "handoff": p.get("handoff", {}),
+                    "multisite_discount_pct": p.get("multisite_discount_pct", 0),
+                    "multisite_line_items": p.get("multisite_line_items", 0),
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
 def _perf_fill_bids(d, eligible=True):

@@ -126,6 +126,11 @@
 
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
 
+        <div class="f"><label>Multi-site discount <span class="i" data-tip="1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
+          <div class="checks"><label><input type="checkbox" data-k="multisite"> Order qualifies</label></div></div>
+        <div class="f" data-geo="multisite" hidden><label>Line items on the order</label>
+          <input type="number" data-k="multisite_items" min="1" placeholder="e.g. 12"></div>
+
         <!-- IN ADTINI THESE ARRIVE WITH THE ORDER. They sat third and fourth in
              the form, ahead of what the client sells, and a planner working a
              real order never touches either. Folded away where the ORM form
@@ -207,6 +212,11 @@
              The per-tactic pricer that took the flag is still in rep_pricing
              for a hand-built blend. -->
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
+
+        <div class="f"><label>Multi-site discount <span class="i" data-tip="Monthly budget only. 1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="Monthly budget only. 1-9 line items: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
+          <div class="checks"><label><input type="checkbox" data-k="multisite"> Order qualifies</label></div></div>
+        <div class="f" data-geo="multisite" hidden><label>Line items on the order</label>
+          <input type="number" data-k="multisite_items" min="1" placeholder="e.g. 12"></div>
 
         <details class="f wide demofold">
           <summary>Fields for demo tool only</summary>
@@ -1288,6 +1298,10 @@ const SEND_SEO = [
     ['package', 'Package $ (Core + AI) — per tier', 'order', r => H(r).package],
     ['margin_pct', 'Margin %', 'order', r => H(r).margin_pct],
     ['addon_markets', 'Add-on markets', 'both', r => H(r).addon_markets],
+    ['multisite_discount_pct', 'Multi-Site Discount %', 'both',
+     r => H(r).multisite_discount_pct || SKIP],
+    ['multisite_line_items', 'Multi-Site Line Items', 'order',
+     r => H(r).multisite_line_items || SKIP],
     ['addon_market_price', 'Add-On Market Price — per tier', 'both',
      r => ifAddon(r, H(r).addon_market_price)],
   ]],
@@ -1329,6 +1343,10 @@ const SEND_SEO = [
 // does not count; `not captured` stays for a field that SHOULD be here and
 // is not.
 const SKIP = Symbol('skip');
+// MULTI-SITE DISCOUNT RIDES ON EVERY PRICING CALL, read off the form as it
+// stands now, so a reprice picks up a box ticked after the run.
+const msReq = d => ({multisite: !!(d && d.multisite),
+                     multisite_items: (d && +d.multisite_items) || 0});
 const ifRev = (r, v) => RH(r).reviews_count ? v : SKIP;
 const ifSite = (r, v) => RH(r).standard_sites ? v : SKIP;
 const ifSearch = (r, v) => RH(r).search_protection_monthly ? v : SKIP;
@@ -1349,6 +1367,10 @@ const SEND_ORM = [
     ['price_per_standard_site_removal', 'Price per Site Removal', 'order',
      r => ifSite(r, RH(r).price_per_standard_site_removal)],
     ['monthly_budget', 'Monthly Budget', 'order', r => RH(r).monthly_budget],
+    ['multisite_discount_pct', 'Multi-Site Discount % (monthly)', 'both',
+     r => RH(r).multisite_discount_pct || SKIP],
+    ['multisite_line_items', 'Multi-Site Line Items', 'order',
+     r => RH(r).multisite_line_items || SKIP],
     ['margin_pct', 'Margin %', 'order', r => RH(r).margin_pct],
     ['strategy', 'Strategy', 'order', r => RH(r).strategy || r.data.strategy],
   ]],
@@ -2277,7 +2299,7 @@ $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) close()
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('scrim').hidden) close(); });
 
 document.addEventListener('change', e => {
-  const c = e.target.closest('[data-k^="g_"]');
+  const c = e.target.closest('[data-k^="g_"], [data-k="multisite"]');
   if (c && c.type === 'checkbox') geoFields(c.closest('form'));
 });
 document.addEventListener('click', e => {
@@ -4703,6 +4725,7 @@ async function generateOrm(){
              keywords: 1 + negPhrases(r).length,
              threats: pages.length},
     overrides: {},
+    ...msReq(d),
   };
   $('gen').disabled = true;
   $('saved').textContent = 'Pricing…';
@@ -5045,7 +5068,8 @@ async function generate(){
       // above, so it costs no extra call. Null until the rank check has read a
       // page one -- not measured is not "no aggregators".
       pageone_agg_share: agg ? agg.share : null,
-      pageone_agg_terms: agg ? agg.terms : null};
+      pageone_agg_terms: agg ? agg.terms : null,
+      ...msReq(d)};
     const price = await post('/api/price', priceReq);
 
     r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
@@ -5164,7 +5188,7 @@ async function reprice(){
       cfg: priceCfg(r),
       base_override: r.cfg.ov_core || '',
       geo_override: r.cfg.ov_ai || '',
-      addon_override: r.cfg.ov_addon || ''});
+      addon_override: r.cfg.ov_addon || ''}, msReq(r.data));
     // The count of add-on markets is the planner's to set; left blank it keeps
     // the recommendation the run measured.
     const addonOv = String(r.cfg.addon_markets || '').trim();
@@ -5651,7 +5675,8 @@ async function recheckRanks(i){
       // The page one this pass just read, on top of what the build read.
       pageone_agg_share: res.agg ? res.agg.share : (base.pageone_agg_share ?? null),
       pageone_agg_terms: res.agg ? res.agg.terms : (base.pageone_agg_terms ?? null),
-      zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10});
+      zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10},
+      msReq(d));
     say('repricing\u2026');
     const price = await postWait('/api/price', req, null, say);
     res.pricing = price;
