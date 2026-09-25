@@ -4378,6 +4378,14 @@ function snapshotParts(r, live){
       + (live ? ` <a href="#" id="scUseDomain">Use the name from the website</a>` : '')
       + `</div>`;
   }
+  // PAGE ONE WAS MOSTLY SOMEBODY ELSE'S. "seascape reviews" is a cruise ship.
+  // (2026-09-25)
+  if (S.suggested_query) {
+    const off = (S.off_brand_results || []).length;
+    w += `<div class="scw bad">${off} of ${off + page1.length} page-one results`
+       + ` are another company's. Try <b>${esc(S.suggested_query)}</b>`
+       + (live ? ` <a href="#" id="scUseQuery">Search it</a>` : '') + `</div>`;
+  }
   if (T.negative_volume) {
     w += `<div class="scw bad">${T.negative_volume.toLocaleString()}/mo on negative terms`
        + (T.watch_volume ? ` · ${T.watch_volume.toLocaleString()}/mo on watch terms` : '')
@@ -4529,6 +4537,14 @@ function scanDraw(r){
   $('scWarn').innerHTML = P.warn;
   $('scLocs').innerHTML = P.locs;
   if (!sc) return;
+  const uq = $('scUseQuery');
+  if (uq) uq.onclick = e => {
+    e.preventDefault();
+    const f = formOf(r).querySelector('[data-k="search_as"]');
+    if (!f) return;
+    f.value = (sc.serp || {}).suggested_query || '';
+    $('scRun').click();
+  };
   const ud = $('scUseDomain');
   if (ud) ud.onclick = e => {
     e.preventDefault();
