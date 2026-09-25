@@ -21,7 +21,12 @@ const SERP = {
      tactic: 'positive — leave', rating: 4.6},
   ],
   forums: [{pos: 7, domain: 'reddit.com', url: 'https://reddit.com/x',
-            title: 'r/dentistry thread', tactic: 'site removal'}],
+            title: 'r/dentistry thread', tactic: 'site removal'},
+           // Saved before the title rule: praise on reddit, still tagged for
+           // removal. It must not be counted or shown as one. (2026-09-25)
+           {pos: 7, domain: 'reddit.com', url: 'https://reddit.com/y',
+            title: 'Positive Reviews on Bright Dental : r/dentistry',
+            tactic: 'site removal'}],
   owned_in_top10: 1,
   ai_overview: 'Bright Dental has faced a lawsuit over billing practices.',
   ai_negative: ['lawsuit'],
@@ -301,6 +306,12 @@ const SERP = {
       queries: [...box.querySelectorAll('.col .scq')].map(x => x.textContent.trim()),
       ratingShown: /1\.4★ \(90\)/.test(box.textContent),
       tacticShown: /SITE REMOVAL/i.test(box.textContent),
+      linked: !!box.querySelector('a[href="https://r/1"][target="_blank"]'),
+      praiseLeft: (() => {
+        const a = box.querySelector('a[href="https://reddit.com/y"]');
+        return a ? /positive/i.test(a.closest('td').textContent)
+          && !/site removal/i.test(a.closest('td').textContent) : false;
+      })(),
       related: (() => {
         const cols = [...box.querySelectorAll('.col')];
         const c = cols.find(x => /Related searches/.test(
@@ -335,6 +346,8 @@ const SERP = {
   say('locationsAreOnTheQuote', fold.locations);
   say('withRatings', fold.ratingShown);
   say('withTactics', fold.tacticShown);
+  say('resultLinksToThePage', fold.linked);
+  say('praiseIsNotARemoval', fold.praiseLeft);
   say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
   say('eachListNamesItsQuery', (fold.queries || []).length >= 2,
       JSON.stringify(fold.queries));

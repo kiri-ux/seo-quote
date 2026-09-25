@@ -21,6 +21,8 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 
+from rep_scan import tactic_of
+
 ATLAS = RGBColor(0x00, 0x2D, 0x58)
 
 # The one third-party figure the analysis carries. Attributed, so it can be
@@ -706,7 +708,7 @@ def _snapshot(doc, d, brand):
             str(o.get("pos") or "\u2014"),
             str(o.get("domain") or ""),
             ("owned" if o.get("owned") else "third party")
-            + (f" \u2014 {o.get('tactic')}" if o.get("tactic") else ""),
+            + (f" \u2014 {tactic_of(o)}" if tactic_of(o) else ""),
             (f"{rating}\u2605" if rating else "\u2014"),
         ])
     if rows:

@@ -516,7 +516,7 @@ def _results_block(slide, snap):
                 _run(p, "  " + ("Owned" if res.get("owned") else "3rd party"),
                      size=7, bold=True,
                      color=(GREEN if res.get("owned") else MUTED))
-                tac = str(res.get("tactic") or "")
+                tac = str(rep_scan.tactic_of(res))
                 if tac:
                     _run(p, "  \u2192 " + tac, size=7, color=BLUE)
                 _style(p, 8, False, INK)

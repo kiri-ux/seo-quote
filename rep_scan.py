@@ -365,9 +365,35 @@ ROUTES = [
       "ripoffreport.", "gripeo.", "reddit.", "quora."), "site removal"),
 ]
 
-def route_tactic(domain, owned=False, forum=False, rating=None):
+# A page whose own title says it is praise is not a removal target, whatever
+# host it sits on. "Positive Reviews on MSC Seascape : r/MSCCruises" was
+# routed to site removal because it was on reddit. (2026-09-25, Kiri)
+POS_TITLE = ("positive review", "love ", "loved ", "great ", "amazing",
+             "excellent", "recommend", "5 star", "five star", "5-star",
+             "best ")
+NEG_TITLE = ("negative", "bad ", "terrible", "awful", "disappoint", "never again",
+             "don't", "do not", "beware")
+
+def positive_title(title):
+    t = f" {(title or '').lower()} "
+    if any(m in t for m in NEG_MODIFIERS) or any(m in t for m in NEG_TITLE):
+        return False
+    return any(m in t for m in POS_TITLE)
+
+
+def tactic_of(res):
+    """The tactic a saved result should show now: a scan saved before the
+    title rule still says site removal on a page titled as praise."""
+    if not res.get("owned") and positive_title(res.get("title")):
+        return "positive \u2014 leave"
+    return res.get("tactic") or ""
+
+
+def route_tactic(domain, owned=False, forum=False, rating=None, title=None):
     if owned:
         return "owned \u2014 boost"
+    if positive_title(title):
+        return "positive \u2014 leave"
     # A third-party result showing a strong rating is an asset working in the
     # client's favour — suppressing it would bury the brand's own good
     # reviews. Leave it, and let it help push the actual negatives down.
@@ -455,7 +481,8 @@ def scan_serp(brand, domain="", location=None, alias=""):
                 "tactic": route_tactic(_domain(it.get("domain")),
                                        bool(own) and own == _domain(it.get("domain")),
                                        rating=rat.get("value") or _rating_from_text(
-                                           it.get("description"), it.get("title"))),
+                                           it.get("description"), it.get("title")),
+                                       title=it.get("title")),
             })
         elif t in ("discussions_and_forums", "found_on_web"):
             for el in (it.get("items") or [])[:6]:
@@ -467,7 +494,7 @@ def scan_serp(brand, domain="", location=None, alias=""):
                     "domain": dom,
                     "title": el.get("title"),
                     "url": el.get("url") or "",
-                    "tactic": route_tactic(dom, forum=True),
+                    "tactic": route_tactic(dom, forum=True, title=el.get("title")),
                 })
         elif t == "ai_overview":
             parts = []
