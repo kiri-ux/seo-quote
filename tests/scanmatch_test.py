@@ -282,6 +282,14 @@ def lawn_post(path, payload, timeout=None):
          "title": "SeaScape | Coventry RI"},
         {"type": "organic", "rank_group": 5, "domain": "yelp.com", "url": "https://y",
          "title": "Seascape Inc - Los Alamitos, CA - Yelp"},
+        # Names no state: known only by the words the other company uses.
+        {"type": "organic", "rank_group": 6, "domain": "yelp.com", "url": "https://y2",
+         "title": "SeaScape - Lawn Services"},
+        {"type": "organic", "rank_group": 7, "domain": "simplyhired.com", "url": "https://s",
+         "title": "SeaScape Lawn Care Inc Employment and Reviews"},
+        # A title cut short still reads as an address.
+        {"type": "organic", "rank_group": 8, "domain": "glassdoor.com", "url": "https://g",
+         "title": "Working at SeaScape, Inc in Coventry, RI..."},
     ]}]}]}
 
 
