@@ -4380,11 +4380,10 @@ function snapshotParts(r, live){
   }
   // PAGE ONE WAS MOSTLY SOMEBODY ELSE'S. "seascape reviews" is a cruise ship.
   // (2026-09-25)
-  if (S.suggested_query) {
-    const off = (S.off_brand_results || []).length;
-    w += `<div class="scw bad">${off} of ${off + page1.length} page-one results`
-       + ` are another company's. Try <b>${esc(S.suggested_query)}</b>`
-       + (live ? ` <a href="#" id="scUseQuery">Search it</a>` : '') + `</div>`;
+  if (S.switched) {
+    w += `<div class="scw">Searched <b>${esc(S.query || '')}</b> · `
+       + `${S.switched.off} of ${S.switched.of} results for `
+       + `\u201c${esc(S.switched.from)}\u201d were another company's.</div>`;
   }
   if (T.negative_volume) {
     w += `<div class="scw bad">${T.negative_volume.toLocaleString()}/mo on negative terms`
@@ -4537,14 +4536,6 @@ function scanDraw(r){
   $('scWarn').innerHTML = P.warn;
   $('scLocs').innerHTML = P.locs;
   if (!sc) return;
-  const uq = $('scUseQuery');
-  if (uq) uq.onclick = e => {
-    e.preventDefault();
-    const f = formOf(r).querySelector('[data-k="search_as"]');
-    if (!f) return;
-    f.value = (sc.serp || {}).suggested_query || '';
-    $('scRun').click();
-  };
   const ud = $('scUseDomain');
   if (ud) ud.onclick = e => {
     e.preventDefault();
@@ -4611,7 +4602,7 @@ $('scRun').onclick = async () => {
   r.data.brand = brand; r.data.site = domain;
   // THE TERM THE PLANNER TYPED, WHEN THE NAME IS ALSO A COMMON WORD.
   // "seascape reviews" is a cruise ship. (2026-09-25)
-  const query = String(r.data.search_as || '').trim();
+  let query = String(r.data.search_as || '').trim();
   const sc = r.scan = {};
   $('scRun').disabled = true;
   const say = t => { $('scProg').textContent = t; };
@@ -4636,12 +4627,34 @@ $('scRun').onclick = async () => {
   // O'Donnell Builders & Remodelers" agree on the head, and that agreement is
   // what stops their brand universe summing to zero.
   const alias = ((sc.locations || {}).listed || '');
-  await step('2/4 — brand term universe…', async () => {
-    sc.terms = await post('/api/rep_scan_terms', {brand, alias, query});
+  // PAGE ONE FIRST, so a term that turns out to be somebody else's is
+  // swapped before the volume and auto-suggest are spent on it.
+  const serpOf = q => post('/api/rep_scan_serp',
+    {brand, domain, alias, query: q, geo_values: geoOf(r.data), state: stateOf(r.data)});
+  await step('2/4 — "' + (query || brand) + ' reviews" SERP…', async () => {
+    sc.serp = await serpOf(query);
   });
-  await step('3/4 — "' + (query || brand) + ' reviews" SERP…', async () => {
-    sc.serp = await post('/api/rep_scan_serp',
-      {brand, domain, alias, query, geo_values: geoOf(r.data), state: stateOf(r.data)});
+  // MOSTLY ANOTHER COMPANY'S: SEARCH THE SUGGESTED TERM ON ITS OWN. The
+  // planner used to read the warning and click. The swap is written onto the
+  // form so the next re-run keeps it, and the first pull's count is kept for
+  // the note. (2026-09-25, Kiri)
+  const sug = (sc.serp || {}).suggested_query;
+  if (sug && !query) {
+    const first = sc.serp;
+    await step('2/4 — "' + sug + ' reviews" SERP…', async () => {
+      sc.serp = await serpOf(sug);
+      sc.serp.switched = {from: first.query || '',
+        off: (first.off_brand_results || []).length,
+        of: (first.off_brand_results || []).length
+            + (first.organic || []).length + (first.forums || []).length};
+    });
+    query = sug;
+    r.data.search_as = sug;
+    const f = formOf(r).querySelector('[data-k="search_as"]');
+    if (f) f.value = sug;
+  }
+  await step('3/4 — brand term universe…', async () => {
+    sc.terms = await post('/api/rep_scan_terms', {brand, alias, query});
   });
   await step('4/4 — auto-suggest…', async () => {
     sc.autocomplete = await post('/api/rep_scan_autocomplete',

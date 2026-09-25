@@ -174,8 +174,10 @@ const QUOTE = {
     'orm.noSeparateScanPane': [pane.noScanPane, true],
     'orm.noKeywordBuilderButton': [pane.secondPaneHidden, true],
     'orm.brandFromRow': [pane.brand, 'Sage Dental'],
+    // Page one before the volume: a term that turns out to be another
+    // company's is swapped before anything else is spent on it. (2026-09-25)
     'scan.order': [seq.slice(0, 4).join(','),
-      '/api/rep_scan_locations,/api/rep_scan_terms,/api/rep_scan_serp,/api/rep_scan_autocomplete'],
+      '/api/rep_scan_locations,/api/rep_scan_serp,/api/rep_scan_terms,/api/rep_scan_autocomplete'],
     'scan.countsReviews': [seq.slice(4, 6).join(','),
       '/api/rep_reviews_submit,/api/rep_reviews_collect'],
     'scan.locationsSayHowTheyMatched':
