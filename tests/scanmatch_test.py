@@ -327,6 +327,12 @@ def many_post(path, payload, timeout=None):
         t(8, "facebook.com", "Seascape Foods | Los Alamitos"),
         t(9, "glassdoor.com", "Seascape Inc Reviews | Glassdoor"),
         t(10, "linkedin.com", "Seascape, Inc. | LinkedIn"),
+        {"type": "organic", "rank_group": 11, "domain": "instagram.com",
+         "url": "https://www.instagram.com/seascapefoods.inc/",
+         "title": "Seascape, Inc. (@seascapefoods.inc) - Los Alamitos, CA"},
+        {"type": "organic", "rank_group": 12, "domain": "instagram.com",
+         "url": "https://www.instagram.com/seascapekayak/",
+         "title": "Seascape Kayak Tours (@seascapekayak)"},
     ]}]}]}
 
 
@@ -336,7 +342,14 @@ sr = rep_scan.scan_serp("Seascape, Inc", "https://www.seascapeinc.net/",
                         home="10571 Calle Lee #137, Los Alamitos, CA 90720")
 check("only the client's own pages stay",
       [o["domain"] for o in sr["organic"]],
-      ["seascapeinc.net", "yelp.com", "facebook.com", "glassdoor.com", "linkedin.com"])
+      ["seascapeinc.net", "yelp.com", "facebook.com", "glassdoor.com", "linkedin.com",
+       "instagram.com"])
+# THEIR OWN INSTAGRAM IS THEIRS, not a 3rd party to suppress; another
+# Seascape's Instagram was already set aside above. (2026-09-25)
+ig = sr["organic"][-1]
+check("their own social profile counts as theirs",
+      (ig["owned"], ig.get("profile"), ig["tactic"]), (True, True, "owned \u2014 boost"))
+check("and counts toward client-controlled", sr["owned_in_top10"], 2)
 
 # ----------------------------------------------- THE PLANNER'S SEARCH TERM
 # A typed term is searched as typed: "seascape inc" keeps its "inc", where the

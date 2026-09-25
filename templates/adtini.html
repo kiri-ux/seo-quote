@@ -4483,7 +4483,7 @@ function snapshotParts(r, live){
         + `<td>${/^https?:\/\//i.test(x.url || "")
             ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.domain || x.url)}</a>`
             : esc(x.domain || '')}`
-        + `<i class="tg ${x.owned ? 'own' : ''}">${x.owned ? 'owned' : '3rd party'}</i>`
+        + `<i class="tg ${x.owned ? 'own' : ''}">${x.profile ? 'their profile' : x.owned ? 'owned' : '3rd party'}</i>`
         + (x.tactic ? `<i class="tg ${/leave|boost/.test(x.tactic) ? 'ok' : 'act'}">${esc(x.tactic)}</i>` : '')
         + (x.title ? `<div class="scq">${esc(x.title)}</div>` : '')
         + `</td><td class="n">${rated(x) || '—'}</td></tr>`).join('')
