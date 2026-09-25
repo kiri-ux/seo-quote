@@ -21,7 +21,12 @@ const SERP = {
      tactic: 'positive — leave', rating: 4.6},
   ],
   forums: [{pos: 7, domain: 'reddit.com', url: 'https://reddit.com/x',
-            title: 'r/dentistry thread', tactic: 'site removal'}],
+            title: 'r/dentistry thread', tactic: 'site removal'},
+           // Saved before the title rule: praise on reddit, still tagged for
+           // removal. It must not be counted or shown as one. (2026-09-25)
+           {pos: 7, domain: 'reddit.com', url: 'https://reddit.com/y',
+            title: 'Positive Reviews on Bright Dental : r/dentistry',
+            tactic: 'site removal'}],
   owned_in_top10: 1,
   ai_overview: 'Bright Dental has faced a lawsuit over billing practices.',
   ai_negative: ['lawsuit'],
@@ -85,6 +90,8 @@ const SERP = {
   // this client's and the flag threshold, were stranded over there.
   await p.fill('#form [data-k="brand"]', 'Bright Dental Co');
   await p.fill('#form [data-k="site"]', 'https://www.brightdental.com/');
+  // THE PLANNER'S SEARCH TERM GOES TO THE SCAN. (2026-09-25)
+  await p.fill('#form [data-k="search_as"]', 'bright dental co nyc');
   const step1 = await p.evaluate(() => ({
     // The pill sits where the SEO row's Keyword Builder does.
     runInTopBar: !!document.querySelector('.toppills #scRun')
@@ -118,7 +125,8 @@ const SERP = {
     .map(f => (f.querySelector('[data-k],[data-chips]') || {}).dataset)
     .filter(Boolean).map(d => d.k || d.chips));
   say('strategySitsUnderBrandAndSite',
-      order.slice(0, 3).join(',') === 'brand,site,strategy', order.slice(0, 5).join(','));
+      order.slice(0, 4).join(',') === 'brand,site,search_as,strategy',
+      order.slice(0, 5).join(','));
   say('theFourCountsAreInReadingOrder',
       order.join(',').includes('volume,locations,reviews,std'), order.join(','));
   say('noIndustryField',
@@ -168,6 +176,8 @@ const SERP = {
   // full of companies in other states.
   say('theScanIsToldWhichMarket',
       (serpBody.geo_values || []).length > 0, JSON.stringify(serpBody.geo_values));
+  say('theSearchTermIsSent', serpBody.query === 'bright dental co nyc',
+      JSON.stringify(serpBody.query));
   // The locations lookup gets it too: the website match is identity, but the
   // name fallback is a guess and the market narrows it.
   say('soIsTheLocationsLookup',
@@ -301,6 +311,12 @@ const SERP = {
       queries: [...box.querySelectorAll('.col .scq')].map(x => x.textContent.trim()),
       ratingShown: /1\.4★ \(90\)/.test(box.textContent),
       tacticShown: /SITE REMOVAL/i.test(box.textContent),
+      linked: !!box.querySelector('a[href="https://r/1"][target="_blank"]'),
+      praiseLeft: (() => {
+        const a = box.querySelector('a[href="https://reddit.com/y"]');
+        return a ? /positive/i.test(a.closest('td').textContent)
+          && !/site removal/i.test(a.closest('td').textContent) : false;
+      })(),
       related: (() => {
         const cols = [...box.querySelectorAll('.col')];
         const c = cols.find(x => /Related searches/.test(
@@ -335,6 +351,8 @@ const SERP = {
   say('locationsAreOnTheQuote', fold.locations);
   say('withRatings', fold.ratingShown);
   say('withTactics', fold.tacticShown);
+  say('resultLinksToThePage', fold.linked);
+  say('praiseIsNotARemoval', fold.praiseLeft);
   say('negativeTermLeads', fold.firstTerm === 'bright dental co lawsuit', fold.firstTerm);
   say('eachListNamesItsQuery', (fold.queries || []).length >= 2,
       JSON.stringify(fold.queries));

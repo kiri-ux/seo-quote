@@ -164,6 +164,8 @@
           <input type="text" data-k="brand"></div>
         <div class="f"><label>Client Website <span class="i" data-tip="Tags a result as owned" aria-label="Tags a result as owned">i</span></label>
           <input type="text" data-k="site"></div>
+        <div class="f"><label>Search Term <span class="i" data-tip="Blank searches the brand name" aria-label="Blank searches the brand name">i</span></label>
+          <input type="text" data-k="search_as" placeholder="brand name"></div>
 
         <!-- STEP 1 IS THE PILL TOP RIGHT, where the SEO row's Keyword
              Builder sits. What the scan finds and what the planner can
@@ -1663,6 +1665,7 @@ const RUN_SEO = [
 ];
 const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
+  ['search_as', 'Search term'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
   ['locations', '# of locations'], ['std', 'Flagged sites'],
   ['volume', 'Brand search volume'],
@@ -4322,6 +4325,24 @@ function scanApply(r){
 // ONE SNAPSHOT, TWO SCREENS. The scan pane draws it live, with the location
 // checkboxes and the flag threshold wired up; the quote page draws the same
 // thing as a record of what the price was built on, with the controls off.
+// A PAGE THAT SAYS IT IS PRAISE IS LEFT ALONE. Mirrors rep_scan.positive_title
+// so a scan saved before that rule reads the same as a fresh one: a reddit
+// thread titled "Positive Reviews on ..." was tagged for site removal.
+// (2026-09-25, Kiri)
+const POS_TITLE = ['positive review', 'love ', 'loved ', 'great ', 'amazing',
+  'excellent', 'recommend', '5 star', 'five star', '5-star', 'best '];
+const NEG_TITLE = ['negative', 'bad ', 'terrible', 'awful', 'disappoint',
+  'never again', "don't", 'do not', 'beware', 'lawsuit', 'complaint', 'scam',
+  'fraud', 'ripoff', 'rip-off', 'sue', 'settlement', 'class action', 'recall',
+  'arrest', 'controversy', 'scandal', 'investigation', 'warning', 'problem',
+  'horror', 'worst', 'avoid', 'shut down', 'closing', 'bankrupt', 'bbb'];
+function tacticOf(x){
+  const t = ` ${String(x.title || '').toLowerCase()} `;
+  if (!x.owned && POS_TITLE.some(m => t.includes(m))
+      && !NEG_TITLE.some(m => t.includes(m))) return 'positive \u2014 leave';
+  return x.tactic || '';
+}
+
 // `live` is what tells them apart.
 function snapshotParts(r, live){
   const sc = r.scan;
@@ -4334,7 +4355,7 @@ function snapshotParts(r, live){
   const allTerms = T.terms || [];
   const flagged = allTerms.filter(t => t['class'] === 'negative' || t['class'] === 'watch');
   const organic = S.organic || [], forums = S.forums || [];
-  const page1 = organic.concat(forums);
+  const page1 = organic.concat(forums).map(x => Object.assign({}, x, {tactic: tacticOf(x)}));
   const sugg = [];
   Object.keys(sc.autocomplete || {}).forEach(k => {
     ((sc.autocomplete[k] || {}).negative || []).forEach(x => sugg.push(x));
@@ -4439,7 +4460,9 @@ function snapshotParts(r, live){
     + `<span>${S.owned_in_top10 || 0} of ${organic.length} client-controlled</span></div>`
     + `<table><tr><th>#</th><th>Result</th><th class="n">Rating</th></tr>`
     + page1.map(x => `<tr><td class="n">${x.pos == null ? '—' : x.pos}</td>`
-        + `<td>${esc(x.domain || x.url || '')}`
+        + `<td>${/^https?:\/\//i.test(x.url || "")
+            ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.domain || x.url)}</a>`
+            : esc(x.domain || '')}`
         + `<i class="tg ${x.owned ? 'own' : ''}">${x.owned ? 'owned' : '3rd party'}</i>`
         + (x.tactic ? `<i class="tg ${/leave|boost/.test(x.tactic) ? 'ok' : 'act'}">${esc(x.tactic)}</i>` : '')
         + (x.title ? `<div class="scq">${esc(x.title)}</div>` : '')
@@ -4548,7 +4571,7 @@ function scanRecommend(r){
   const sc = r.scan || {}, d = r.data;
   const S = sc.serp || {}, T = sc.terms || {};
   const page1 = (S.organic || []).concat(S.forums || []);
-  const removable = page1.filter(x => x.tactic === 'site removal');
+  const removable = page1.filter(x => tacticOf(x) === 'site removal');
   d.std = removable.length;
   const strat = new Set(d.strategy || []);
   if (d.reviews > 0) strat.add('Review Removals');
@@ -4570,6 +4593,9 @@ $('scRun').onclick = async () => {
   const brand = scBrand(r).trim(), domain = scSite(r).trim();
   if (!brand) { $('scProg').textContent = 'Brand name first.'; return; }
   r.data.brand = brand; r.data.site = domain;
+  // THE TERM THE PLANNER TYPED, WHEN THE NAME IS ALSO A COMMON WORD.
+  // "seascape reviews" is a cruise ship. (2026-09-25)
+  const query = String(r.data.search_as || '').trim();
   const sc = r.scan = {};
   $('scRun').disabled = true;
   const say = t => { $('scProg').textContent = t; };
@@ -4595,15 +4621,15 @@ $('scRun').onclick = async () => {
   // what stops their brand universe summing to zero.
   const alias = ((sc.locations || {}).listed || '');
   await step('2/4 — brand term universe…', async () => {
-    sc.terms = await post('/api/rep_scan_terms', {brand, alias});
+    sc.terms = await post('/api/rep_scan_terms', {brand, alias, query});
   });
-  await step('3/4 — "' + brand + ' reviews" SERP…', async () => {
+  await step('3/4 — "' + (query || brand) + ' reviews" SERP…', async () => {
     sc.serp = await post('/api/rep_scan_serp',
-      {brand, domain, alias, geo_values: geoOf(r.data), state: stateOf(r.data)});
+      {brand, domain, alias, query, geo_values: geoOf(r.data), state: stateOf(r.data)});
   });
   await step('4/4 — auto-suggest…', async () => {
     sc.autocomplete = await post('/api/rep_scan_autocomplete',
-      {brand, geo_values: geoOf(r.data), state: stateOf(r.data)});
+      {brand, query, geo_values: geoOf(r.data), state: stateOf(r.data)});
   });
   // Star breakdown: the review pull is queued and collected, so it is polled.
   const pids = ((sc.locations || {}).locations || [])
