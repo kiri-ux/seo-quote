@@ -483,6 +483,17 @@ _US_STATES = {
 _ABBR_STATE = {v: k for k, v in _US_STATES.items()}
 
 
+def _words(t):
+    return re.findall(r"[a-z0-9']+", (t or "").lower())
+
+
+# Words that follow a name on any company's pages, so they say nothing about
+# which company it is.
+_GENERIC_AFTER = frozenset("""reviews review employee employees employment
+jobs job careers home about contact complaints complaint ratings rating
+company official website site page profile info photos near""".split())
+
+
 def home_of(address):
     """(city, state abbreviation) off a listing address like "10571 Calle
     Lee #137, Los Alamitos, CA 90720"; (None, None) when it does not parse."""
@@ -499,9 +510,14 @@ def states_named(text):
     low = t.lower()
     out = {ab for name, ab in _US_STATES.items()
            if re.search(r"\b" + name + r"\b", low)}
-    for m in re.finditer(r"\b[A-Z][a-z]+,?\s+([A-Z]{2})(?=\s*(?:$|\d{5}|[|,\-\u2013\u00b7)]))", t):
-        if m.group(1) in _ABBR_STATE:
-            out.add(m.group(1))
+    # "Coventry, RI" with a comma reads as an address whatever follows it --
+    # a title cut to "Coventry, RI..." slipped through (2026-09-25). Without
+    # the comma it has to end the phrase, so "Reviews IN the US" is not Indiana.
+    for pat in (r"\b[A-Z][a-z]+,\s+([A-Z]{2})(?![A-Za-z])",
+                r"\b[A-Z][a-z]+\s+([A-Z]{2})(?=\s*(?:$|\d{5}|[|,.\-\u2013\u2026\u00b7)]))"):
+        for m in re.finditer(pat, t):
+            if m.group(1) in _ABBR_STATE:
+                out.add(m.group(1))
     return out
 
 
@@ -625,9 +641,36 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
         if st and named and st not in named:
             return False
         return names_client(x.get("title") or "", brand, domain, alias=alias)
-    off_brand_results = [x for x in organic + forums if not _ours(x)]
-    organic = [x for x in organic if _ours(x)]
-    forums = [x for x in forums if _ours(x)]
+    # WHAT THE OTHER COMPANY CALLS ITSELF. Once a result is somebody else's by
+    # state or domain, the words after the name in it ("SeaScape Lawn Care
+    # Inc") mark that company's other pages too: "SeaScape - Lawn Services"
+    # on Yelp names no state. Words in the client's own name or on their own
+    # site's title are never learned. (2026-09-25, Kiri)
+    theirs = set(_words(brand)) | set(_words(alias)) | set(_words(" ".join(
+        x.get("title") or "" for x in organic if x.get("owned"))))
+    def _after_name(x):
+        w = _words(x.get("title") or "")
+        out = []
+        for i, t in enumerate(w):
+            if core and _squash(t).startswith(core[:max(4, len(core) - 1)]):
+                for u in w[i + 1:i + 3]:
+                    if u in _CORP_SUFFIX:
+                        break
+                    out.append(u)
+        return [u for u in out if len(u) > 2 and u not in theirs
+                and u not in _GENERIC_AFTER]
+    first = [x for x in organic + forums if not _ours(x)]
+    learned = set()
+    for x in first:
+        if not names_client(x.get("title") or "", brand, domain, alias=alias) \
+                and not (own and core in _squash((x.get("domain") or "").rsplit(".", 1)[0])):
+            continue       # a cruise ship's page teaches nothing about this name
+        learned.update(_after_name(x))
+    def _kept(x):
+        return _ours(x) and (x.get("owned") or not (learned & set(_after_name(x))))
+    off_brand_results = [x for x in organic + forums if not _kept(x)]
+    organic = [x for x in organic if _kept(x)]
+    forums = [x for x in forums if _kept(x)]
     # Drop phrases that name a different company BEFORE anything counts them.
     off_brand = [x for x in (related + pasf)
                  if not names_client(x, brand, domain, alias=alias)]
