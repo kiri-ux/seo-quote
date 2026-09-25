@@ -19558,7 +19558,9 @@ def api_rep_scan_serp():
         return jsonify(rep_scan.scan_serp(
             brand, (d.get("domain") or "").strip(),
             location=_rep_market(d), alias=_rep_alias(d),
-            query=(d.get("query") or "").strip()))
+            query=(d.get("query") or "").strip(),
+            tried=[str(t) for t in (d.get("tried") or [])][:10],
+            home=str(d.get("home") or "")[:200]))
     except Exception as e:
         return jsonify({"error": f"SERP scan failed: {e}"}), 502
 
