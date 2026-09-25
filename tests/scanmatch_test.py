@@ -310,6 +310,34 @@ sr = rep_scan.scan_serp("Seascape, Inc", "https://www.seascapeinc.net/",
 check("a market on the order still wins",
       lawn_asked[-1].get("location_name"), "Denver,Colorado,United States")
 
+# ------------------------------------------ THE WORD AFTER THE NAME
+# Six other companies named Seascape-something, none naming a state.
+# (2026-09-25)
+def many_post(path, payload, timeout=None):
+    t = lambda n, d, title: {"type": "organic", "rank_group": n, "domain": d,
+                             "url": "https://" + d, "title": title}
+    return {"tasks": [{"result": [{"items": [
+        t(1, "buildzoom.com", "SEASCAPE ENTERPRISES | Rossmoor"),
+        t(2, "seascapeinc.net", "Frozen Seafood and Food Service Supplier - Seascape Inc"),
+        t(3, "ambitionbox.com", "Seascape Technologies Reviews by 2 Employees"),
+        t(4, "bbb.org", "SeaScape Property Management, Inc. | BBB Business Profile"),
+        t(5, "salary.com", "Seascape Resort Average Salary and Pay Ranges"),
+        t(6, "tripadvisor.com", "Seascape Kayak Tours Inc. - All You SHOULD Know Before"),
+        t(7, "yelp.com", "Seascape Inc - Los Alamitos - Yelp"),
+        t(8, "facebook.com", "Seascape Foods | Los Alamitos"),
+        t(9, "glassdoor.com", "Seascape Inc Reviews | Glassdoor"),
+        t(10, "linkedin.com", "Seascape, Inc. | LinkedIn"),
+    ]}]}]}
+
+
+rep_scan.init(many_post)
+sr = rep_scan.scan_serp("Seascape, Inc", "https://www.seascapeinc.net/",
+                        query="seascape inc",
+                        home="10571 Calle Lee #137, Los Alamitos, CA 90720")
+check("only the client's own pages stay",
+      [o["domain"] for o in sr["organic"]],
+      ["seascapeinc.net", "yelp.com", "facebook.com", "glassdoor.com", "linkedin.com"])
+
 # ----------------------------------------------- THE PLANNER'S SEARCH TERM
 # A typed term is searched as typed: "seascape inc" keeps its "inc", where the
 # brand alone would search "seascape". (2026-09-25)
