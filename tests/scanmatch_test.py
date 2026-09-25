@@ -255,8 +255,52 @@ sr = rep_scan.scan_serp("Seascape", "seascapeinc.com",
                         location="Los Alamitos,California,United States")
 check("or the name plus their city", sr["suggested_query"],
       "seascape los alamitos")
-sr = rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com", query="seascape inc")
-check("never over a term the planner typed", sr["suggested_query"], "")
+sr = rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com", query="seascape inc",
+                        location="Los Alamitos,California,United States")
+check("still wrong: the next term, not the one just searched",
+      sr["suggested_query"], "seascape los alamitos")
+sr = rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com", query="seascape inc los alamitos",
+                        tried=["seascape inc", "seascape los alamitos"],
+                        location="Los Alamitos,California,United States")
+check("and nothing once every term is spent", sr["suggested_query"], "")
+
+# ------------------------------------------------ A NAME IS NOT A COMPANY
+# "seascape inc reviews" was SeaScape Lawn Care, Inc in Coventry, RI: same
+# name, other state, other domain. The client's listing is Los Alamitos, CA.
+# (2026-09-25)
+lawn_asked = []
+def lawn_post(path, payload, timeout=None):
+    lawn_asked.append(payload[0])
+    return {"tasks": [{"result": [{"items": [
+        {"type": "organic", "rank_group": 1, "domain": "seascapeinc.net",
+         "url": "https://seascapeinc.net", "title": "Frozen Seafood Supplier - Seascape Inc"},
+        {"type": "organic", "rank_group": 2, "domain": "indeed.com", "url": "https://i",
+         "title": "SeaScape Lawn Care Inc Employee Reviews in Coventry, RI"},
+        {"type": "organic", "rank_group": 3, "domain": "seascapeinc.com",
+         "url": "https://seascapeinc.com", "title": "Home - SeaScape, Inc."},
+        {"type": "organic", "rank_group": 4, "domain": "facebook.com", "url": "https://f",
+         "title": "SeaScape | Coventry RI"},
+        {"type": "organic", "rank_group": 5, "domain": "yelp.com", "url": "https://y",
+         "title": "Seascape Inc - Los Alamitos, CA - Yelp"},
+    ]}]}]}
+
+
+rep_scan.init(lawn_post)
+sr = rep_scan.scan_serp("Seascape, Inc", "https://www.seascapeinc.net/",
+                        query="seascape inc",
+                        home="10571 Calle Lee #137, Los Alamitos, CA 90720")
+check("searched from their town when the order is nationwide",
+      lawn_asked[-1].get("location_name"), "Los Alamitos,California,United States")
+check("the other state's company and its lookalike domain are set aside",
+      [o["domain"] for o in sr["organic"]], ["seascapeinc.net", "yelp.com"])
+check("and the note can say where", sr["searched_from"],
+      "Los Alamitos,California,United States")
+sr = rep_scan.scan_serp("Seascape, Inc", "https://www.seascapeinc.net/",
+                        query="seascape inc",
+                        location="Denver,Colorado,United States",
+                        home="10571 Calle Lee #137, Los Alamitos, CA 90720")
+check("a market on the order still wins",
+      lawn_asked[-1].get("location_name"), "Denver,Colorado,United States")
 
 # ----------------------------------------------- THE PLANNER'S SEARCH TERM
 # A typed term is searched as typed: "seascape inc" keeps its "inc", where the

@@ -164,8 +164,6 @@
           <input type="text" data-k="brand"></div>
         <div class="f"><label>Client Website <span class="i" data-tip="Tags a result as owned" aria-label="Tags a result as owned">i</span></label>
           <input type="text" data-k="site"></div>
-        <div class="f"><label>Search Term <span class="i" data-tip="Blank searches the brand name" aria-label="Blank searches the brand name">i</span></label>
-          <input type="text" data-k="search_as" placeholder="brand name"></div>
 
         <!-- STEP 1 IS THE PILL TOP RIGHT, where the SEO row's Keyword
              Builder sits. What the scan finds and what the planner can
@@ -1665,7 +1663,6 @@ const RUN_SEO = [
 ];
 const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
-  ['search_as', 'Search term'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
   ['locations', '# of locations'], ['std', 'Flagged sites'],
   ['volume', 'Brand search volume'],
@@ -4380,10 +4377,26 @@ function snapshotParts(r, live){
   }
   // PAGE ONE WAS MOSTLY SOMEBODY ELSE'S. "seascape reviews" is a cruise ship.
   // (2026-09-25)
-  if (S.switched) {
-    w += `<div class="scw">Searched <b>${esc(S.query || '')}</b> · `
-       + `${S.switched.off} of ${S.switched.of} results for `
-       + `\u201c${esc(S.switched.from)}\u201d were another company's.</div>`;
+  // DID IT FIND THE RIGHT CLIENT. One line: the term, how much of page one
+  // names them, their own site's rank, and the terms it moved off.
+  // (2026-09-25, Kiri)
+  if (S.query) {
+    const offHere = (S.off_brand_results || []).length;
+    const ofHere = offHere + page1.length;
+    const own = organic.find(x => x.owned);
+    const tried = Array.isArray(S.switched) ? S.switched : [];
+    const right = page1.length && offHere * 2 < ofHere;
+    w += `<div class="scw ${right ? 'ok' : 'bad'}">`
+       + `Searched <b>${esc(S.query)}</b>`
+       + (S.searched_from ? ` from ${esc(String(S.searched_from).split(',')[0])}` : '')
+       + ` · ${page1.length} of ${ofHere} results name `
+       + `<b>${esc(brand)}</b> · `
+       + (own ? `${esc(own.domain)} #${own.pos}`
+            : `${esc(String(domain).replace(/^https?:\/\//i, '').replace(/^www\./i, '')
+                .split('/')[0] || 'Their site')} not on page one`)
+       + tried.map(t => ` · \u201c${esc(t.query)}\u201d: ${t.off} of ${t.of}`
+           + ` another company's`).join('')
+       + `</div>`;
   }
   if (T.negative_volume) {
     w += `<div class="scw bad">${T.negative_volume.toLocaleString()}/mo on negative terms`
@@ -4600,9 +4613,9 @@ $('scRun').onclick = async () => {
   const brand = scBrand(r).trim(), domain = scSite(r).trim();
   if (!brand) { $('scProg').textContent = 'Brand name first.'; return; }
   r.data.brand = brand; r.data.site = domain;
-  // THE TERM THE PLANNER TYPED, WHEN THE NAME IS ALSO A COMMON WORD.
-  // "seascape reviews" is a cruise ship. (2026-09-25)
-  let query = String(r.data.search_as || '').trim();
+  // THE TERM IS FOUND, NOT TYPED (2026-09-25, Kiri). Every scan starts from
+  // the brand; the page-one loop below settles on the term.
+  let query = '';
   const sc = r.scan = {};
   $('scRun').disabled = true;
   const say = t => { $('scProg').textContent = t; };
@@ -4620,6 +4633,9 @@ $('scRun').onclick = async () => {
       .sort((a, b) => (b.reviews || 0) - (a.reviews || 0))[0];
     const listed = ((best || {}).title || '').trim();
     if (listed && listed.toLowerCase() !== brand.toLowerCase()) sc.locations.listed = listed;
+    // WHERE THEY ARE, for page one: searched from their town when the order
+    // is nationwide, and a result naming another state is not theirs.
+    sc.locations.home = ((best || {}).address || '').trim();
   });
   // THE NAME GOOGLE USES, SENT ALONGSIDE THE ONE THAT WAS TYPED. The two
   // together are how the scan tells a legal suffix or a listing tail from a
@@ -4630,29 +4646,44 @@ $('scRun').onclick = async () => {
   // PAGE ONE FIRST, so a term that turns out to be somebody else's is
   // swapped before the volume and auto-suggest are spent on it.
   const serpOf = q => post('/api/rep_scan_serp',
-    {brand, domain, alias, query: q, geo_values: geoOf(r.data), state: stateOf(r.data)});
+    {brand, domain, alias, query: q, home: (sc.locations || {}).home || '', geo_values: geoOf(r.data), state: stateOf(r.data)});
   await step('2/4 — "' + (query || brand) + ' reviews" SERP…', async () => {
     sc.serp = await serpOf(query);
   });
-  // MOSTLY ANOTHER COMPANY'S: SEARCH THE SUGGESTED TERM ON ITS OWN. The
-  // planner used to read the warning and click. The swap is written onto the
-  // form so the next re-run keeps it, and the first pull's count is kept for
-  // the note. (2026-09-25, Kiri)
-  const sug = (sc.serp || {}).suggested_query;
-  if (sug && !query) {
-    const first = sc.serp;
+  // MOSTLY ANOTHER COMPANY'S: SEARCH THE NEXT TERM ON ITS OWN, and again
+  // while each comes back somebody else's, up to three more. "seascape" is a
+  // cruise ship. Every pull is kept for the note; the one with the most of
+  // the client's own results is what the quote is built on. (2026-09-25, Kiri)
+  const share = x => {
+    const off = (x.off_brand_results || []).length;
+    const of = off + (x.organic || []).length + (x.forums || []).length;
+    return {query: x.query || '', off, of};
+  };
+  const pulls = sc.serp ? [sc.serp] : [];
+  const tried = [];
+  for (let n = 0; n < 3; n++) {
+    const last = pulls[pulls.length - 1] || {};
+    const sug = last.suggested_query;
+    if (!sug) break;
+    if (last.term) tried.push(last.term);
+    let got = null;
     await step('2/4 — "' + sug + ' reviews" SERP…', async () => {
-      sc.serp = await serpOf(sug);
-      sc.serp.switched = {from: first.query || '',
-        off: (first.off_brand_results || []).length,
-        of: (first.off_brand_results || []).length
-            + (first.organic || []).length + (first.forums || []).length};
+      got = await post('/api/rep_scan_serp', {brand, domain, alias, query: sug, tried,
+        home: (sc.locations || {}).home || '',
+        geo_values: geoOf(r.data), state: stateOf(r.data)});
     });
-    query = sug;
-    r.data.search_as = sug;
-    const f = formOf(r).querySelector('[data-k="search_as"]');
-    if (f) f.value = sug;
+    if (!got) break;
+    got.term = sug;
+    pulls.push(got);
   }
+  if (pulls.length > 1) {
+    const rate = x => { const t = share(x); return t.of ? t.off / t.of : 1; };
+    const best = pulls.reduce((z, x) => rate(x) < rate(z) ? x : z);
+    best.switched = pulls.filter(x => x !== best).map(share);
+    sc.serp = best;
+    query = best.term || '';
+  }
+  r.data.search_as = query;
   await step('3/4 — brand term universe…', async () => {
     sc.terms = await post('/api/rep_scan_terms', {brand, alias, query});
   });

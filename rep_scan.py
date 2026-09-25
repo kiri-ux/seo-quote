@@ -291,17 +291,20 @@ def _carries(phrase, query=""):
     return not q or q in " ".join((phrase or "").lower().split())
 
 
-def suggest_query(brand, alias="", location=None, tried=""):
-    """A term to search instead, when the brand alone is somebody else's
-    page one. First that differs from what was searched: the name with its
-    legal tail ("seascape inc"), the name Google lists them under, the core
-    plus their city. (2026-09-25)"""
-    tried = " ".join((tried or "").lower().split())
+def suggest_query(brand, alias="", location=None, tried=()):
+    """The next term to search when page one was somebody else's, in order:
+    the name with its legal tail ("seascape inc"), the name Google lists them
+    under, the core plus their city, the full name plus their city. None left
+    that has not been tried: "". (2026-09-25)"""
     plain = lambda x: " ".join(re.sub(r"[^\w&' ]", " ", x or "").lower().split())
-    city = (location or "").split(",")[0].strip()
+    if isinstance(tried, str):
+        tried = [tried]
+    done = {plain(t) for t in tried} | {brand_seed(brand).lower()}
+    city = plain((location or "").split(",")[0])
     for c in (plain(brand), plain(alias),
-              f"{brand_seed(brand).lower()} {city.lower()}".strip()):
-        if c and c != tried and len(c) > len(tried):
+              f"{brand_seed(brand).lower()} {city}".strip(),
+              f"{plain(brand)} {city}".strip()):
+        if c and c not in done:
             return c
     return ""
 
@@ -461,6 +464,47 @@ def _rating_from_text(*texts):
     return None
 
 
+_US_STATES = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
+    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+}
+_ABBR_STATE = {v: k for k, v in _US_STATES.items()}
+
+
+def home_of(address):
+    """(city, state abbreviation) off a listing address like "10571 Calle
+    Lee #137, Los Alamitos, CA 90720"; (None, None) when it does not parse."""
+    m = re.search(r",\s*([A-Za-z .'-]+),\s*([A-Z]{2})\s+\d{5}", address or "")
+    if not m or m.group(2) not in _ABBR_STATE:
+        return None, None
+    return m.group(1).strip(), m.group(2)
+
+
+def states_named(text):
+    """US states a result names: full names anywhere, abbreviations only
+    where an address puts them ("Coventry, RI", "Coventry RI 02816")."""
+    t = text or ""
+    low = t.lower()
+    out = {ab for name, ab in _US_STATES.items()
+           if re.search(r"\b" + name + r"\b", low)}
+    for m in re.finditer(r"\b[A-Z][a-z]+,?\s+([A-Z]{2})(?=\s*(?:$|\d{5}|[|,\-\u2013\u00b7)]))", t):
+        if m.group(1) in _ABBR_STATE:
+            out.add(m.group(1))
+    return out
+
+
 def _where(location):
     """Ask Google from the client's market when we know it, the US when we do
     not. A reputation problem is local: scanning "City Heating and Air reviews"
@@ -471,7 +515,8 @@ def _where(location):
             else {"location_code": 2840})
 
 
-def scan_serp(brand, domain="", location=None, alias="", query=""):
+def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
+              home=""):
     """Top-10 for '{brand} reviews': organic results (with ratings parsed from
     snippet text when Google omits star markup), the Reddit/forums block, the
     AI Overview, related searches — owned tagging against the client domain."""
@@ -480,9 +525,27 @@ def scan_serp(brand, domain="", location=None, alias="", query=""):
     # client is judged on.
     q = _query(brand, query)
     kw = q if "review" in q else f"{q} reviews"
-    payload = [dict({"keyword": kw, "language_code": "en", "depth": 10},
-                    **_where(location))]
-    data = _post("/serp/google/organic/live/advanced", payload, timeout=45)
+    # FROM THEIR TOWN WHEN THE ORDER IS NATIONWIDE. "seascape inc reviews"
+    # asked of the whole country was a lawn care company in Rhode Island; the
+    # client's Google listing says Los Alamitos. (2026-09-25)
+    city, st = home_of(home)
+    if not location and city:
+        location = f"{city},{_ABBR_STATE[st].title()},United States"
+        try:
+            data = _post("/serp/google/organic/live/advanced",
+                         [dict({"keyword": kw, "language_code": "en", "depth": 10},
+                               **_where(location))], timeout=45)
+            if (data.get("tasks") or [{}])[0].get("result") is None:
+                raise ValueError("location refused")
+        except Exception:
+            location = None
+            data = None
+    else:
+        data = None
+    if data is None:
+        data = _post("/serp/google/organic/live/advanced",
+                     [dict({"keyword": kw, "language_code": "en", "depth": 10},
+                           **_where(location))], timeout=45)
     own = _domain(domain)
     organic, related, forums, pasf = [], [], [], []
     ai_text = ""
@@ -545,9 +608,23 @@ def scan_serp(brand, domain="", location=None, alias="", query=""):
     # all MSC Seascape, a cruise ship, and each page was tagged and priced as
     # Seascape, Inc's. A result whose title names somebody else is set aside
     # with the phrases below; the client's own site always stays. (2026-09-25)
+    #
+    # A NAME IS NOT A COMPANY. "SeaScape Lawn Care Inc" in Coventry, RI names
+    # "seascape" as well as the client does. Two more tells, from what the
+    # scan already knows about the client: a site whose domain carries their
+    # name but is not theirs (seascapeinc.com beside seascapeinc.net), and a
+    # result that names a state they are not in. (2026-09-25)
+    core = _squash(brand_seed(brand))
     def _ours(x):
-        return x.get("owned") or names_client(x.get("title") or "", brand,
-                                              domain, alias=alias)
+        if x.get("owned"):
+            return True
+        host = (x.get("domain") or "").rsplit(".", 1)[0]
+        if own and len(core) > 3 and core in _squash(host):
+            return False
+        named = states_named(f"{x.get('title') or ''} {x.get('snippet') or ''}")
+        if st and named and st not in named:
+            return False
+        return names_client(x.get("title") or "", brand, domain, alias=alias)
     off_brand_results = [x for x in organic + forums if not _ours(x)]
     organic = [x for x in organic if _ours(x)]
     forums = [x for x in forums if _ours(x)]
@@ -561,12 +638,11 @@ def scan_serp(brand, domain="", location=None, alias="", query=""):
     neg_pasf = [x for x in pasf if any(m in x.lower() for m in NEG_MODIFIERS)]
     ai_negative = [m for m in NEG_MODIFIERS if m in ai_text.lower()]
     owned_top10 = sum(1 for o in organic if o["owned"])
-    # MOSTLY SOMEBODY ELSE'S: offer a narrower term. Only when the planner has
-    # not typed one; a typed term is theirs to change.
+    # MOSTLY SOMEBODY ELSE'S: name the next term to try. The page asks again
+    # with it, and passes every term already tried so none repeats.
     seen = len(organic) + len(forums) + len(off_brand_results)
-    suggested = (suggest_query(brand, alias, location, tried=q)
-                 if not query and seen and len(off_brand_results) * 2 >= seen
-                 else "")
+    suggested = (suggest_query(brand, alias, location, tried=[q, *tried])
+                 if seen and len(off_brand_results) * 2 >= seen else "")
     return {"query": kw, "organic": organic[:10], "forums": forums,
             "ai_overview": ai_text, "ai_negative": ai_negative,
             "related": related, "negative_related": neg_related,
@@ -574,6 +650,7 @@ def scan_serp(brand, domain="", location=None, alias="", query=""):
             "off_brand_phrases": off_brand,
             "off_brand_results": off_brand_results,
             "suggested_query": suggested,
+            "searched_from": location or "United States",
             "owned_in_top10": owned_top10}
 
 

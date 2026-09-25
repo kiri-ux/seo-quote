@@ -801,6 +801,7 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .scw{background:#FDF3E2;border:1px solid #E8C98A;border-radius:10px;
   padding:9px 12px;font-size:12.5px;line-height:1.5;color:var(--text)}
 .scw.bad{background:#FDECEA;border-color:#E0A49C;color:#7A2318}
+.scw.ok{background:#E9F6EC;border-color:#9FD0AA;color:#1D5A2B}
 .scw a{color:inherit;font-weight:600}
 .scq{color:var(--muted);font-size:11.5px;margin-top:3px;line-height:1.45}
 /* one tag shape for owned / 3rd party / tactic / term class */
