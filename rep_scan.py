@@ -491,7 +491,11 @@ def _words(t):
 # which company it is.
 _GENERIC_AFTER = frozenset("""reviews review employee employees employment
 jobs job careers home about contact complaints complaint ratings rating
-company official website site page profile info photos near""".split())
+company official website site page profile info photos near salary salaries
+pay hours phone number address location locations prices pricing cost login
+news overview in at of the and vs for is on by a an with from to legit safe
+good bad worth""".split()) | frozenset(
+    w for m in NEG_MODIFIERS for w in m.split())
 
 
 def home_of(address):
@@ -641,33 +645,36 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
         if st and named and st not in named:
             return False
         return names_client(x.get("title") or "", brand, domain, alias=alias)
-    # WHAT THE OTHER COMPANY CALLS ITSELF. Once a result is somebody else's by
-    # state or domain, the words after the name in it ("SeaScape Lawn Care
-    # Inc") mark that company's other pages too: "SeaScape - Lawn Services"
-    # on Yelp names no state. Words in the client's own name or on their own
-    # site's title are never learned. (2026-09-25, Kiri)
-    theirs = set(_words(brand)) | set(_words(alias)) | set(_words(" ".join(
-        x.get("title") or "" for x in organic if x.get("owned"))))
-    def _after_name(x):
+    # THE WORD AFTER THE NAME SAYS WHOSE PAGE IT IS. "Seascape Enterprises",
+    # "Seascape Technologies", "SeaScape Property Management", "Seascape
+    # Kayak Tours" all name "seascape" and are six other companies. A result
+    # stays only when what follows the name is the client's own: a legal
+    # suffix, a word from their name, their Google listing, their own site's
+    # title or their town, or a word any company's page puts there
+    # ("reviews", "jobs"). (2026-09-25, Kiri)
+    stem = lambda w: w[:-1] if len(w) > 3 and w.endswith("s") else w
+    theirs = {stem(w) for w in _words(" ".join(
+        [brand, alias, city or ""]
+        + [f"{x.get('title') or ''} {x.get('snippet') or ''}"
+           for x in organic if x.get("owned")]))}
+    bt = _words(brand_seed(brand))
+    def _next_word(x):
         w = _words(x.get("title") or "")
-        out = []
-        for i, t in enumerate(w):
-            if core and _squash(t).startswith(core[:max(4, len(core) - 1)]):
-                for u in w[i + 1:i + 3]:
-                    if u in _CORP_SUFFIX:
-                        break
-                    out.append(u)
-        return [u for u in out if len(u) > 2 and u not in theirs
-                and u not in _GENERIC_AFTER]
-    first = [x for x in organic + forums if not _ours(x)]
-    learned = set()
-    for x in first:
-        if not names_client(x.get("title") or "", brand, domain, alias=alias) \
-                and not (own and core in _squash((x.get("domain") or "").rsplit(".", 1)[0])):
-            continue       # a cruise ship's page teaches nothing about this name
-        learned.update(_after_name(x))
+        for i in range(len(w)):
+            if w[i:i + len(bt)] == bt:
+                return w[i + len(bt)] if i + len(bt) < len(w) else None
+            if len(bt) > 1 and _squash(w[i]) == core:
+                return w[i + 1] if i + 1 < len(w) else None
+        return None
     def _kept(x):
-        return _ours(x) and (x.get("owned") or not (learned & set(_after_name(x))))
+        if x.get("owned"):
+            return True
+        if not _ours(x):
+            return False
+        nw = _next_word(x)
+        return (nw is None or nw in _CORP_SUFFIX or nw in _GENERIC_AFTER
+                or stem(nw) in theirs or nw in _US_STATES
+                or nw.upper() in _ABBR_STATE)
     off_brand_results = [x for x in organic + forums if not _kept(x)]
     organic = [x for x in organic if _kept(x)]
     forums = [x for x in forums if _kept(x)]
