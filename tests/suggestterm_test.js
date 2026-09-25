@@ -1,5 +1,5 @@
 // THE SCAN OFFERS A NARROWER TERM when page one is mostly somebody else's.
-// "seascape reviews" is a cruise ship; one click searches "seascape inc".
+// "seascape reviews" is a cruise ship; the scan searches "seascape inc" itself.
 // (2026-09-25)
 const {chromium} = require('/root/work/node_modules/playwright-core');
 const BASE = 'http://127.0.0.1:5203';
@@ -40,16 +40,23 @@ const BASE = 'http://127.0.0.1:5203';
   await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent), {timeout: 30000});
 
   const warn = await p.textContent('#scWarn');
-  say('saysHowManyAreSomebodyElses', /2 of 3 page-one results are another company's/.test(warn), warn);
-  say('namesTheTerm', /Try seascape inc/.test(warn), warn);
-
-  await p.click('#scUseQuery');
-  await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent)
-    && !document.getElementById('scUseQuery'), {timeout: 30000}).catch(() => {});
-  say('fillsTheField', await p.inputValue('#form [data-k="search_as"]') === 'seascape inc');
-  say('andSearchesIt', bodies.length === 2 && bodies[1].query === 'seascape inc',
+  say('searchesTheSuggestedTermOnItsOwn',
+      bodies.length === 2 && !bodies[0].query && bodies[1].query === 'seascape inc',
       JSON.stringify(bodies.map(x => x.query)));
-  say('theSuggestionIsGoneOnceUsed', !(await p.$('#scUseQuery')));
+  say('writesItOntoTheForm',
+      await p.inputValue('#form [data-k="search_as"]') === 'seascape inc');
+  say('andSaysWhy',
+      /Searched seascape inc reviews · 2 of 3 results for .seascape reviews. were another company's/
+        .test(warn), warn);
+  say('noButtonToClick', !(await p.$('#scUseQuery')));
+
+  // A RE-RUN KEEPS THE TERM: it is on the form now, so no second swap.
+  bodies.length = 0;
+  await p.click('#scRun');
+  await p.waitForFunction(() => /^Scan complete/.test(scProg.textContent)
+    && !document.getElementById('scRun').disabled, {timeout: 30000});
+  say('aReRunSearchesItOnce', bodies.length === 1 && bodies[0].query === 'seascape inc',
+      JSON.stringify(bodies.map(x => x.query)));
 
   await b.close();
   console.log(bad ? 'failed=' + bad : 'ok all');
