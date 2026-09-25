@@ -423,6 +423,23 @@ def tactic_of(res):
     return res.get("tactic") or ""
 
 
+# A PROFILE THE CLIENT RUNS IS THEIRS. The URL shape, not the host: a
+# Facebook page is theirs, a post or group thread on Facebook is not.
+_PROFILE_URL = re.compile(
+    r"^https?://(?:www\.|m\.)?(?:"
+    r"facebook\.com/(?!groups/|events/|photo|story|permalink|watch|share)[^/?#]+"
+    r"|instagram\.com/(?!p/|reel/|explore/)[^/?#]+"
+    r"|(?:x|twitter)\.com/(?!i/|search)[^/?#]+"
+    r"|tiktok\.com/@[^/?#]+"
+    r"|youtube\.com/(?:@|c/|channel/|user/)[^/?#]+"
+    r"|linkedin\.com/company/[^/?#]+"
+    r")/?(?:[?#].*)?$", re.I)
+
+
+def is_profile(url):
+    return bool(_PROFILE_URL.match(url or ""))
+
+
 def route_tactic(domain, owned=False, forum=False, rating=None, title=None):
     if owned:
         return "owned \u2014 boost"
@@ -678,6 +695,14 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
     off_brand_results = [x for x in organic + forums if not _kept(x)]
     organic = [x for x in organic if _kept(x)]
     forums = [x for x in forums if _kept(x)]
+    # THEIR OWN SOCIAL PROFILE IS CLIENT-CONTROLLED. "Seascape, Inc.
+    # (@seascapefoods.inc)" on Instagram was tagged 3rd party and priced for
+    # suppression. Only after the filter above, so another Seascape's page is
+    # never taken for theirs. (2026-09-25, Kiri)
+    for x in organic:
+        if not x["owned"] and is_profile(x.get("url")):
+            x["owned"] = x["profile"] = True
+            x["tactic"] = "owned \u2014 boost"
     # Drop phrases that name a different company BEFORE anything counts them.
     off_brand = [x for x in (related + pasf)
                  if not names_client(x, brand, domain, alias=alias)]
