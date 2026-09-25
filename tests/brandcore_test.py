@@ -52,7 +52,7 @@ check("and the core is tokens, not a string",
 check("a name with no tail is left alone",
       rep_scan.brand_seed("City Heating and Air"), "City Heating and Air")
 check("periods in the suffix do not hide it",
-      rep_scan.brand_seed("Cisney & O'Donnell, P.A."), "Cisney & O'Donnell,")
+      rep_scan.brand_seed("Cisney & O'Donnell, P.A."), "Cisney & O'Donnell")
 check("a LEADING suffix word is part of the name",
       rep_scan.brand_seed("PA Roofing"), "PA Roofing")
 check("and a hyphenated one is not a suffix at all",

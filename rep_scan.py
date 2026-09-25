@@ -121,7 +121,9 @@ def brand_seed(brand):
             words.pop()
         else:
             break
-    return " ".join(words).strip()
+    # "Seascape, Inc" left "Seascape," and the scan searched "seascape,
+    # reviews". (2026-09-25)
+    return " ".join(words).strip().rstrip(",.;:-").strip()
 
 
 def _match_key(brand, alias=""):
@@ -278,7 +280,18 @@ def classify_term(term, brand, alias=""):
 PROBE_MODIFIERS = ["lawsuit", "complaints", "scam", "fraud", "class action",
                    "settlement", "reviews", "legit"]
 
-def scan_terms(brand, alias=""):
+def _query(brand, query=""):
+    """What gets searched: the planner's term as typed, else the core name."""
+    return " ".join((query or "").lower().split()) or brand_seed(brand).lower()
+
+
+def _carries(phrase, query=""):
+    """With no term typed every phrase passes; with one, it has to be there."""
+    q = " ".join((query or "").lower().split())
+    return not q or q in " ".join((phrase or "").lower().split())
+
+
+def scan_terms(brand, alias="", query=""):
     """Brand term universe via keywords_for_keywords (US national), PLUS an
     exact-match probe of the canonical negative/watch variants. KFK returns
     GROUPED volumes that merge close variants (the same quirk the SEO tool
@@ -292,7 +305,10 @@ def scan_terms(brand, alias=""):
     # SEEDED ON THE CORE NAME. "cisney & o'donnell pa" is a phrase nobody
     # types, so Google Ads had little to expand and the probe asked after
     # eight more phrases nobody types either.
-    b = brand_seed(brand).lower()
+    # THE PLANNER'S SEARCH TERM WINS. A one-word core like "seascape" is also a
+    # cruise ship, and its volume was priced as Seascape, Inc's. When a term is
+    # typed, it seeds the lookup and a phrase has to carry it. (2026-09-25)
+    b = _query(brand, query)
     payload = [{"keywords": [b], "location_code": 2840,
                 "language_code": "en", "sort_by": "search_volume"}]
     data = _post("/keywords_data/google_ads/keywords_for_keywords/live",
@@ -304,7 +320,7 @@ def scan_terms(brand, alias=""):
         kw = (it.get("keyword") or "").lower()
         vol = it.get("search_volume") or 0
         cls = classify_term(kw, brand, alias=alias)
-        if cls:
+        if cls and _carries(kw, query):
             by_term[kw] = {"term": kw, "volume": vol, "class": cls, "src": "kfk"}
 
     # exact-match probe: canonical variants + any flagged KFK terms
@@ -320,7 +336,7 @@ def scan_terms(brand, alias=""):
                 kw = (it.get("keyword") or "").lower()
                 vol = ((it.get("keyword_info") or {}).get("search_volume")) or 0
                 cls = classify_term(kw, brand, alias=alias)
-                if not cls:
+                if not cls or not _carries(kw, query):
                     continue
                 # exact volume overrides the grouped KFK number
                 by_term[kw] = {"term": kw, "volume": vol, "class": cls,
@@ -440,14 +456,15 @@ def _where(location):
             else {"location_code": 2840})
 
 
-def scan_serp(brand, domain="", location=None, alias=""):
+def scan_serp(brand, domain="", location=None, alias="", query=""):
     """Top-10 for '{brand} reviews': organic results (with ratings parsed from
     snippet text when Google omits star markup), the Reddit/forums block, the
     AI Overview, related searches — owned tagging against the client domain."""
     # THE CORE NAME IS THE QUERY. "cisney & o'donnell pa reviews" is not a
     # search anyone runs, so the page one it returns is not the page one the
     # client is judged on.
-    kw = f"{brand_seed(brand)} reviews".lower()
+    q = _query(brand, query)
+    kw = q if "review" in q else f"{q} reviews"
     payload = [dict({"keyword": kw, "language_code": "en", "depth": 10},
                     **_where(location))]
     data = _post("/serp/google/organic/live/advanced", payload, timeout=45)
@@ -538,14 +555,14 @@ def scan_serp(brand, domain="", location=None, alias=""):
             "owned_in_top10": owned_top10}
 
 
-def scan_autocomplete(brand, location=None):
+def scan_autocomplete(brand, location=None, query=""):
     """Auto-suggest for the brand and '{brand} reviews' — negative flags.
     Uses client=gws-wiz (the actual Google search-box client; the DFS default
     returns a thinner set). Terms that come back empty get a fallback pass:
     trailing-space (next-word suggestions, matching Brendan's screenshots)
     then last-char-trimmed prefix. Extra calls only fire for empty terms."""
-    _b = brand_seed(brand)
-    kws = [_b.lower(), f"{_b} reviews".lower()]
+    _b = _query(brand, query)
+    kws = [_b, f"{_b} reviews"]
 
     def _pull(keywords):
         payload = [dict({"keyword": k, "language_code": "en",

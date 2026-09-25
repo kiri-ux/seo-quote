@@ -249,6 +249,41 @@ check("nor is their reddit thread", sr["forums"], [])
 check("both are kept aside, not lost",
       [o["url"] for o in sr["off_brand_results"]], ["https://c/1", "https://x"])
 
+# ----------------------------------------------- THE PLANNER'S SEARCH TERM
+# A typed term is searched as typed: "seascape inc" keeps its "inc", where the
+# brand alone would search "seascape". (2026-09-25)
+asked = []
+def q_post(path, payload, timeout=None):
+    asked.append((path, payload[0]))
+    if "keywords_for_keywords" in path:
+        return {"tasks": [{"result": [
+            {"keyword": "seascape inc", "search_volume": 90},
+            {"keyword": "seascape cruise", "search_volume": 40000},
+            {"keyword": "seascape inc reviews", "search_volume": 20}]}]}
+    return {"tasks": [{"result": [{"items": []}]}]}
+
+
+rep_scan.init(q_post)
+rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com", query="Seascape Inc")
+check("the SERP searches the typed term", asked[-1][1]["keyword"],
+      "seascape inc reviews")
+rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com")
+check("blank searches the brand", asked[-1][1]["keyword"], "seascape reviews")
+out = rep_scan.scan_terms("Seascape, Inc", query="seascape inc")
+check("the term universe is seeded on it",
+      [p["keywords"] for x, p in asked if "keywords_for_keywords" in x][-1],
+      ["seascape inc"])
+check("and only phrases carrying it count",
+      sorted(t["term"] for t in out["terms"]),
+      ["seascape inc", "seascape inc reviews"])
+try:
+    rep_scan.scan_autocomplete("Seascape, Inc", query="seascape inc")
+except Exception:
+    pass
+check("auto-suggest asks after it too",
+      any(p.get("keyword") == "seascape inc" for x, p in asked
+          if "autocomplete" in x), True)
+
 # ------------------------------------------------- A NAME MATCH IN THEIR TOWN
 # The domain match is identity and needs no help. The name fallback is a guess,
 # and a brand made of common words still collects Green City, Queen City and

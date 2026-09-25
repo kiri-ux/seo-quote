@@ -90,6 +90,8 @@ const SERP = {
   // this client's and the flag threshold, were stranded over there.
   await p.fill('#form [data-k="brand"]', 'Bright Dental Co');
   await p.fill('#form [data-k="site"]', 'https://www.brightdental.com/');
+  // THE PLANNER'S SEARCH TERM GOES TO THE SCAN. (2026-09-25)
+  await p.fill('#form [data-k="search_as"]', 'bright dental co nyc');
   const step1 = await p.evaluate(() => ({
     // The pill sits where the SEO row's Keyword Builder does.
     runInTopBar: !!document.querySelector('.toppills #scRun')
@@ -123,7 +125,8 @@ const SERP = {
     .map(f => (f.querySelector('[data-k],[data-chips]') || {}).dataset)
     .filter(Boolean).map(d => d.k || d.chips));
   say('strategySitsUnderBrandAndSite',
-      order.slice(0, 3).join(',') === 'brand,site,strategy', order.slice(0, 5).join(','));
+      order.slice(0, 4).join(',') === 'brand,site,search_as,strategy',
+      order.slice(0, 5).join(','));
   say('theFourCountsAreInReadingOrder',
       order.join(',').includes('volume,locations,reviews,std'), order.join(','));
   say('noIndustryField',
@@ -173,6 +176,8 @@ const SERP = {
   // full of companies in other states.
   say('theScanIsToldWhichMarket',
       (serpBody.geo_values || []).length > 0, JSON.stringify(serpBody.geo_values));
+  say('theSearchTermIsSent', serpBody.query === 'bright dental co nyc',
+      JSON.stringify(serpBody.query));
   // The locations lookup gets it too: the website match is identity, but the
   // name fallback is a guess and the market narrows it.
   say('soIsTheLocationsLookup',

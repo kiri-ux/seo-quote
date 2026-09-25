@@ -19541,7 +19541,8 @@ def api_rep_scan_terms():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        return jsonify(rep_scan.scan_terms(brand, alias=_rep_alias(d)))
+        return jsonify(rep_scan.scan_terms(brand, alias=_rep_alias(d),
+                                                query=(d.get("query") or "").strip()))
     except Exception as e:
         return jsonify({"error": f"Term scan failed: {e}"}), 502
 
@@ -19556,7 +19557,8 @@ def api_rep_scan_serp():
     try:
         return jsonify(rep_scan.scan_serp(
             brand, (d.get("domain") or "").strip(),
-            location=_rep_market(d), alias=_rep_alias(d)))
+            location=_rep_market(d), alias=_rep_alias(d),
+            query=(d.get("query") or "").strip()))
     except Exception as e:
         return jsonify({"error": f"SERP scan failed: {e}"}), 502
 
@@ -19570,7 +19572,8 @@ def api_rep_scan_autocomplete():
     if not brand:
         return jsonify({"error": "Brand name required."}), 400
     try:
-        return jsonify(rep_scan.scan_autocomplete(brand, location=_rep_market(d)))
+        return jsonify(rep_scan.scan_autocomplete(
+            brand, location=_rep_market(d), query=(d.get("query") or "").strip()))
     except Exception as e:
         return jsonify({"error": f"Autocomplete scan failed: {e}"}), 502
 
