@@ -832,6 +832,7 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
   overflow-wrap:anywhere}
 .sctbl tr:last-child td{border-bottom:0}
 .sctbl .n{text-align:right;white-space:nowrap}
+.sctbl td a{color:var(--blue)}
 .sctbl th.n{text-align:right}
 .sctbl .sclx{accent-color:var(--blue);width:15px;height:15px;margin:1px 0 0}
 /* the auto-suggest facsimile: Google's own row shape, from live data */

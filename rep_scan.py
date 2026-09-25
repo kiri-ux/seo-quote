@@ -509,6 +509,16 @@ def scan_serp(brand, domain="", location=None, alias=""):
             related = [x for x in (it.get("items") or []) if x][:10]
         elif t == "people_also_search":
             pasf += [x for x in (it.get("items") or []) if isinstance(x, str)][:8]
+    # PAGE ONE FOR THE NAME, NOT FOR THE WORD. "seascape reviews" came back
+    # all MSC Seascape, a cruise ship, and each page was tagged and priced as
+    # Seascape, Inc's. A result whose title names somebody else is set aside
+    # with the phrases below; the client's own site always stays. (2026-09-25)
+    def _ours(x):
+        return x.get("owned") or names_client(x.get("title") or "", brand,
+                                              domain, alias=alias)
+    off_brand_results = [x for x in organic + forums if not _ours(x)]
+    organic = [x for x in organic if _ours(x)]
+    forums = [x for x in forums if _ours(x)]
     # Drop phrases that name a different company BEFORE anything counts them.
     off_brand = [x for x in (related + pasf)
                  if not names_client(x, brand, domain, alias=alias)]
@@ -524,6 +534,7 @@ def scan_serp(brand, domain="", location=None, alias=""):
             "related": related, "negative_related": neg_related,
             "pasf": pasf, "negative_pasf": neg_pasf,
             "off_brand_phrases": off_brand,
+            "off_brand_results": off_brand_results,
             "owned_in_top10": owned_top10}
 
 

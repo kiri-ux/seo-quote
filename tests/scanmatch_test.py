@@ -203,13 +203,13 @@ check("the seven other companies are gone",
 def serp_post(path, payload, timeout=None):
     return {"tasks": [{"result": [{"items": [
         {"type": "organic", "rank_group": 1, "rank_absolute": 6,
-         "domain": "ripoffreport.com", "url": "https://r/1", "title": "t"},
+         "domain": "ripoffreport.com", "url": "https://r/1", "title": "City Heating and Air reviews"},
         {"type": "organic", "rank_group": 2, "rank_absolute": 7,
-         "domain": "yelp.com", "url": "https://y/2", "title": "t"},
+         "domain": "yelp.com", "url": "https://y/2", "title": "City Heating and Air reviews"},
         {"type": "organic", "rank_group": 9, "rank_absolute": 14,
-         "domain": "angi.com", "url": "https://a/3", "title": "t"},
+         "domain": "angi.com", "url": "https://a/3", "title": "City Heating and Air reviews"},
         {"type": "discussions_and_forums", "rank_absolute": 11,
-         "items": [{"domain": "reddit.com", "url": "https://x", "title": "t"}]},
+         "items": [{"domain": "reddit.com", "url": "https://x", "title": "City Heating and Air reviews"}]},
     ]}]}]}
 
 
@@ -223,6 +223,31 @@ check("not by absolute position on the page",
 # reading there and stays.
 check("a forum block keeps its position on the page",
       [f["pos"] for f in sr["forums"]], [11])
+
+# ------------------------------------------- PAGE ONE FOR THE NAME, NOT THE WORD
+# "seascape reviews" came back all MSC Seascape, a cruise ship, and each page
+# was tagged and priced as Seascape, Inc's. (2026-09-25)
+def ship_post(path, payload, timeout=None):
+    return {"tasks": [{"result": [{"items": [
+        {"type": "organic", "rank_group": 1, "domain": "cruisecritic.com",
+         "url": "https://c/1", "title": "MSC Seascape Review"},
+        {"type": "organic", "rank_group": 2, "domain": "yelp.com",
+         "url": "https://y/2", "title": "Seascape Inc - Los Alamitos - Yelp"},
+        {"type": "organic", "rank_group": 3, "domain": "seascapeinc.com",
+         "url": "https://seascapeinc.com", "title": "Home"},
+        {"type": "discussions_and_forums", "rank_absolute": 9,
+         "items": [{"domain": "reddit.com", "url": "https://x",
+                    "title": "MSC Seascape : r/MSCCruises"}]},
+    ]}]}]}
+
+
+rep_scan.init(ship_post)
+sr = rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com")
+check("a page about somebody else's Seascape is not page one",
+      [o["domain"] for o in sr["organic"]], ["yelp.com", "seascapeinc.com"])
+check("nor is their reddit thread", sr["forums"], [])
+check("both are kept aside, not lost",
+      [o["url"] for o in sr["off_brand_results"]], ["https://c/1", "https://x"])
 
 # ------------------------------------------------- A NAME MATCH IN THEIR TOWN
 # The domain match is identity and needs no help. The name fallback is a guess,
