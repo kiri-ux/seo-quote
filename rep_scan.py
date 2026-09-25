@@ -291,6 +291,21 @@ def _carries(phrase, query=""):
     return not q or q in " ".join((phrase or "").lower().split())
 
 
+def suggest_query(brand, alias="", location=None, tried=""):
+    """A term to search instead, when the brand alone is somebody else's
+    page one. First that differs from what was searched: the name with its
+    legal tail ("seascape inc"), the name Google lists them under, the core
+    plus their city. (2026-09-25)"""
+    tried = " ".join((tried or "").lower().split())
+    plain = lambda x: " ".join(re.sub(r"[^\w&' ]", " ", x or "").lower().split())
+    city = (location or "").split(",")[0].strip()
+    for c in (plain(brand), plain(alias),
+              f"{brand_seed(brand).lower()} {city.lower()}".strip()):
+        if c and c != tried and len(c) > len(tried):
+            return c
+    return ""
+
+
 def scan_terms(brand, alias="", query=""):
     """Brand term universe via keywords_for_keywords (US national), PLUS an
     exact-match probe of the canonical negative/watch variants. KFK returns
@@ -546,12 +561,19 @@ def scan_serp(brand, domain="", location=None, alias="", query=""):
     neg_pasf = [x for x in pasf if any(m in x.lower() for m in NEG_MODIFIERS)]
     ai_negative = [m for m in NEG_MODIFIERS if m in ai_text.lower()]
     owned_top10 = sum(1 for o in organic if o["owned"])
+    # MOSTLY SOMEBODY ELSE'S: offer a narrower term. Only when the planner has
+    # not typed one; a typed term is theirs to change.
+    seen = len(organic) + len(forums) + len(off_brand_results)
+    suggested = (suggest_query(brand, alias, location, tried=q)
+                 if not query and seen and len(off_brand_results) * 2 >= seen
+                 else "")
     return {"query": kw, "organic": organic[:10], "forums": forums,
             "ai_overview": ai_text, "ai_negative": ai_negative,
             "related": related, "negative_related": neg_related,
             "pasf": pasf, "negative_pasf": neg_pasf,
             "off_brand_phrases": off_brand,
             "off_brand_results": off_brand_results,
+            "suggested_query": suggested,
             "owned_in_top10": owned_top10}
 
 

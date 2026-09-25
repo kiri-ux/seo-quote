@@ -248,6 +248,15 @@ check("a page about somebody else's Seascape is not page one",
 check("nor is their reddit thread", sr["forums"], [])
 check("both are kept aside, not lost",
       [o["url"] for o in sr["off_brand_results"]], ["https://c/1", "https://x"])
+# ...and the scan offers a narrower term: 2 of 4 results were the ship.
+check("the scan suggests the name with its legal tail",
+      sr["suggested_query"], "seascape inc")
+sr = rep_scan.scan_serp("Seascape", "seascapeinc.com",
+                        location="Los Alamitos,California,United States")
+check("or the name plus their city", sr["suggested_query"],
+      "seascape los alamitos")
+sr = rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com", query="seascape inc")
+check("never over a term the planner typed", sr["suggested_query"], "")
 
 # ----------------------------------------------- THE PLANNER'S SEARCH TERM
 # A typed term is searched as typed: "seascape inc" keeps its "inc", where the
