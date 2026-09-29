@@ -2321,10 +2321,13 @@ function genLabel(){
   const r = ROW != null ? ROWS[ROW] : null;
   const ran = !!(r || {}).result;
   $('gen').textContent = VIEW === 'kw' ? 'Apply to the quote'
-    : (VIEW === 'cfg' && canReprice(r)) ? 'Reprice'
+    : ((VIEW === 'cfg' && canReprice(r)) || formReprices(r)) ? 'Reprice'
     : ran ? 'Regenerate Quote' : 'Generate Quote';
 }
 $('paneCfg').addEventListener('input', genLabel);
+// Chips are added and removed without an input event, so the form is watched.
+['input', 'change'].forEach(ev => $('fseo').addEventListener(ev, genLabel));
+new MutationObserver(genLabel).observe($('fseo'), {childList: true, subtree: true});
 function close(){ $('scrim').hidden = true; document.body.style.overflow = ''; }
 $('close').onclick = close;
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) close(); });
@@ -2819,6 +2822,29 @@ function canReprice(r){
   const typed = (VIEW === 'cfg' && $('cfgGlobal').children.length)
     ? cfgOverride() : null;
   return !needsFullRun(r, typed);
+}
+// WHAT THE MEASUREMENT PASSES READ OFF THE FORM. Adding AI Search to a quote
+// ran the rank check again -- minutes on a build that already had its ranks --
+// when Strategy, markup, multi-site and the order fields only reach /api/price.
+// The keyword list, the markets, the site, the brand, industry and goals feed
+// competition scoring or the rank check; anything else on the form is a
+// reprice. A run with no settings or keyword list stored cannot be compared,
+// so it takes the whole forecast. (2026-09-29, Kiri)
+const MEASURE_FIELDS = ['brand', 'site', 'g_city', 'g_county', 'g_state',
+  'g_country', 'city', 'county', 'state', 'countries', 'industry', 'goals'];
+function formNeedsRun(r, d){
+  const was = (r.result || {}).settings;
+  const ranKw = ((r.history || [])[0] || {}).kw;
+  if (!was || !ranKw) return true;
+  const norm = v => JSON.stringify(asList(v)
+    .map(x => String(x).trim().toLowerCase()).sort());
+  if (MEASURE_FIELDS.some(k => norm(d[k]) !== norm(was[k]))) return true;
+  const kws = k => norm(((k || {}).all || []).map(x => x.kw));
+  return kws(r.kw) !== kws(ranKw);
+}
+function formReprices(r){
+  if (VIEW !== 'form' || !canReprice(r)) return false;
+  return !formNeedsRun(r, Object.assign({}, r.data, collect(formOf(r))));
 }
 
 // ---------------------------------------------------------------- step 1
@@ -5306,7 +5332,11 @@ async function reprice(){
       cfg: priceCfg(r),
       base_override: r.cfg.ov_core || '',
       geo_override: r.cfg.ov_ai || '',
-      addon_override: r.cfg.ov_addon || ''}, msReq(r.data));
+      addon_override: r.cfg.ov_addon || '',
+      // Strategy is read off the form as it stands, so adding AI Search to a
+      // quote reprices it with the AI Search leg.
+      ai_search: hasStrategy(r.data, 'ai search'),
+      core_seo: hasStrategy(r.data, 'core seo')}, msReq(r.data));
     // The count of add-on markets is the planner's to set; left blank it keeps
     // the recommendation the run measured.
     const addonOv = String(r.cfg.addon_markets || '').trim();
@@ -5319,6 +5349,7 @@ async function reprice(){
     // pricing fold cannot disagree with the tiles above them.
     res.cfg = Object.assign({}, r.cfg);
     res.over = JSON.parse(JSON.stringify(r.over));
+    res.settings = JSON.parse(JSON.stringify(r.data));
     res.headline = headlineOf(r);
     // THE OPEN RUN HOLDS ITS OWN COPY. Reloaded from storage, history[0].quote
     // is a separate object from r.result, so repricing the row left the run on
@@ -5366,7 +5397,9 @@ $('save').onclick = async () => {
 };
 $('gen').onclick = () => {
   if (ROWS[ROW].kind === 'orm') { generateOrm(); return; }
-  if (VIEW === 'cfg' && canReprice(ROWS[ROW])) { reprice(); return; }
+  if ((VIEW === 'cfg' && canReprice(ROWS[ROW])) || formReprices(ROWS[ROW])) {
+    reprice(); return;
+  }
   if (VIEW === 'kw') {
     const r = ROWS[ROW];
     r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
