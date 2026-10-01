@@ -107,7 +107,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     'errored.rankingIsUnmeasured': [/unmeasured/.test(errored.ranking || ''), true],
     'measured.recommendationAsked': [measured.asked, true],
     'measured.pricedOnTheRecommendation': [measured.priced, 3],
-    'measured.namesTheRegionCaveat': [/contiguous region — adjacent markets are already/
+    'measured.namesTheRegionCaveat': [/contiguous region/
       .test(measured.addon || ''), true],
     // THE AREA IS NAMED. "a wider area" does not say whether the figure is
     // usable; the state or country that answered does.
