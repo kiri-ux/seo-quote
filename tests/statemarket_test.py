@@ -35,7 +35,14 @@ with app.app.test_client() as c:
     check("not unplaced", g["unplaced"], [])
     two = c.post("/api/geo_scope", json={"markets": ["Washington", "Oregon"],
                                          "states": ["Washington", "Oregon"]}).get_json()
-    check("two states", (two["band"], two["reason"]), ("statewide", "2 states."))
+    check("two adjacent states", (two["band"], two["reason"]),
+          ("statewide", "2 adjacent states."))
+    far = c.post("/api/geo_scope", json={"markets": ["Washington", "Florida"],
+                                         "states": ["Washington", "Florida"]}).get_json()
+    check("two states that do not touch", far["band"], "non_contiguous_region")
+    chain = c.post("/api/geo_scope", json={"markets": ["WA", "OR", "CA"],
+                                           "states": ["WA", "OR", "CA"]}).get_json()
+    check("a chain of neighbours is one block", chain["band"], "statewide")
     city = c.post("/api/geo_scope", json={"markets": ["Seattle, WA"]}).get_json()
     check("cities unchanged", city["band"], "single_city")
 
