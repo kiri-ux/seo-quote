@@ -36,20 +36,24 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     if (!ok) bad++;
   };
 
-  // 45 terms: three batches of twenty, twenty and five.
+  // 45 terms: four batches of ten and one of five, three in flight at a time.
   const N = 45;
   const batchesSeen = [];
+  let inflight = 0, peak = 0;
   await p.route('**/api/rankings', async route => {
     const body = route.request().postDataJSON() || {};
     const kws = (body.batch || []).map(x => x.kw);
     batchesSeen.push(kws.length);
-    const nth = kws.length ? Number(String(kws[0]).split(' ')[1]) / 20 : 0;
+    inflight++; peak = Math.max(peak, inflight);
+    const nth = kws.length ? Number(String(kws[0]).split(' ')[1]) / 10 : 0;
     // The first batch comes back LAST, and the second one throws.
-    if (nth === 0) await new Promise(r => setTimeout(r, 700));
+    await new Promise(r => setTimeout(r, nth === 0 ? 700 : 100));
+    inflight--;
     if (nth === 1) return route.abort();
+    // The fourth batch answers with a failed lookup and says why.
     return route.fulfill({status: 200, contentType: 'application/json',
-      body: JSON.stringify({results: kws.map(kw => ({
-        kw, pos: 3, ranked_top: true, error: false}))})});
+      body: JSON.stringify({error_reason: nth === 3 ? 'Read timed out' : '',
+        results: kws.map(kw => ({kw, pos: 3, ranked_top: true, error: false}))})});
   });
   await p.route('**/api/price', route =>
     route.fulfill({status: 200, contentType: 'application/json',
@@ -92,7 +96,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
 
   // Every term comes back, including the batch that threw.
   say('no batch is lost when one fails', out.n === N, out.n + ' of ' + N);
-  say('and only that batch is unmeasured', out.errored === 20, out.errored);
+  say('and only that batch is unmeasured', out.errored === 10, out.errored);
   // THE POINT OF THE SORT. The first batch answered last; without the re-sort
   // the proposal would open on term 20.
   const asked = Array.from({length: N}, (_, i) => 'term ' + i);
@@ -100,7 +104,10 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
       out.order.join(',') === asked.join(','), out.order.slice(0, 3));
   // Three from the build. A fourth of ten follows it -- that is the automatic
   // rerun picking up the failed batch's terms, and it batches by its own size.
-  say('the build sent three batches', batchesSeen.slice(0, 3).join(',') === '20,20,5',
+  say('never more than three batches in flight', peak <= 3, peak);
+  const why = await p.evaluate(() => (ROWS[0].result || {}).rankError);
+  say('the run keeps why lookups failed', /timed out|abort|fetch|fail/i.test(why || ''), why);
+  say('the build sent five batches', batchesSeen.slice(0, 5).join(',') === '10,10,10,10,5',
       batchesSeen);
   // Counting completions, not position: the counter must never go backwards and
   // must finish on the full count.
