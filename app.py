@@ -1486,6 +1486,9 @@ CFG = {
     "axis_city_volume_floor": 20,
     "axis_min_seeds_for_services": 8,
     "grid_max_cities": 5,             # cities crossed against each service
+    # Markets whose demand counts toward total_volume, whether or not the grid
+    # crosses them. See off_grid_volume.
+    "volume_max_markets": 12,
     # When a city needs no ", ST" in the keyword. Brendan writes "adhd treatment
     # san diego" but "auto insurance alexandria va" — the test is whether the
     # name is unmistakable on its own. It used to be "is this city in the
@@ -3725,7 +3728,52 @@ def canonical_city_name(city, st=""):
     return out
 
 
-def fetch_local_volume(terms, markets, state, national=False):
+def off_grid_volume(services, shown, markets, state):
+    """Demand in the client's markets that the grid does not cross.
+
+    The grid keeps as many cities as the services leave room for, and the volume
+    pull only ever asked about those -- so Valero's five markets priced on Seattle
+    and Las Vegas alone, and Palm Springs, Reno and Salinas added nothing. The
+    client named those markets; their demand is part of the campaign whether or
+    not a row shows it. Measured as the all-market total less the shown-market
+    total off the same lookup, so the dedupe rules in fetch_local_volume apply
+    to both and nothing is counted twice. Cached volume makes the shown markets
+    free. (2026-10-01, Kiri)
+
+    Returns {"markets": [...], "volume": int, "error": str|None}."""
+    out = {"markets": [], "volume": 0, "error": None}
+    seen = {_bare_city(c, state) for c in (shown or [])}
+    rest = [m for m in (markets or []) if m and m.strip()
+            and (not state or m.strip().lower() != state.strip().lower())
+            and _bare_city(m, state) not in seen]
+    rest = list(dict.fromkeys(rest))
+    if not rest or not services:
+        return out
+    cap = int(CFG.get("volume_max_markets", 12) or 12)
+    try:
+        # The third value is a note on success and the reason on failure; an
+        # empty total is what says the lookup failed.
+        allv, _apc, anote = fetch_local_volume(services, list(shown or []) + rest,
+                                               state, cap=cap)
+        if not allv:
+            out["error"] = anote or "no volume returned"
+            return out
+        shownv = {}
+        if shown:
+            shownv, _spc, snote = fetch_local_volume(services, list(shown), state,
+                                                     cap=cap)
+            if not shownv:
+                out["error"] = snote or "no volume returned"
+                return out
+        tot = lambda v: sum(int(v.get(x.lower(), 0) or 0) for x in services)
+        out["volume"] = max(0, tot(allv) - tot(shownv))
+        out["markets"] = rest[:max(0, cap - len(shown or []))]
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
+def fetch_local_volume(terms, markets, state, national=False, cap=None):
     """Search volume for bare service terms across THE CITIES BEING TARGETED.
 
     A single lookup only covers markets[0], which undercounts a multi-city grid
@@ -3746,7 +3794,7 @@ def fetch_local_volume(terms, markets, state, national=False):
         cities = [""]
     if not cities:
         cities = [""]                      # nationwide / no city: single lookup
-    cities = cities[:CFG.get("grid_max_cities", 10)]
+    cities = cities[:int(cap or CFG.get("grid_max_cities", 10))]
     kws = [t.lower() for t in terms]
 
     resolved_codes = {}
@@ -11130,6 +11178,10 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                   "or a directory the client publishes, the count is not theirs "
                   "and national is right \u2014 check before trusting it.")
 
+        off_grid = ({"markets": [], "volume": 0, "error": None}
+                    if national_demand
+                    else off_grid_volume(svc_names, cities, markets, state))
+
         return {
             "ultra": g["ultra"], "competitive": g["competitive"],
             "long_tail": g["long_tail"],
@@ -11249,7 +11301,13 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                                          or c.strip().lower() in STATE_ABBREV
                                          for c in cities),
             "grid_cities": [] if national_demand else cities,
-            "total_volume": sum(service_volume.values()),   # unique, not per-row
+            "total_volume": sum(service_volume.values())    # unique, not per-row
+                            + int(off_grid["volume"] or 0),
+            # Client markets the grid does not cross, and their demand, which
+            # is in total_volume above.
+            "off_grid_markets": off_grid["markets"],
+            "off_grid_volume": off_grid["volume"],
+            "off_grid_error": off_grid["error"],
             # Topic coverage: what the operator's terms are ABOUT, how many
             # services each topic got, and any swap made to keep a topic alive.
             "topic_source": topic_source,
