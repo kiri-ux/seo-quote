@@ -465,7 +465,12 @@ CFG = {
     # and "starting from scratch" are different claims — the uplift keys off the
     # latter. Depth <=100 is the same DataForSEO billing unit, so no cost change.
     # Tier thresholds unchanged; re-run Serene Health to confirm its fit holds.
-    "zero_ranking_top_n": 100,
+    # 100 -> 50 (2026-10-01, Kiri). Since Google dropped num=100, depth is
+    # billed per page of ten: 100 is ten fetches per term, slow enough that
+    # most live reads timed out, at ten times the cost the note above assumed.
+    # 50 still catches the page 3-5 footholds that move the uplift (Media
+    # Venue's 25/27/33; its 51 now reads as not ranking).
+    "zero_ranking_top_n": 50,
     "zero_ranking_frac": 0.10,
     # --- Brendan #5: TIERED zero-ranking. % of head terms NOT ranking in top-N
     # maps to a % uplift on the hard base. Each tier: [min_pct_not_ranking, uplift_pct].
@@ -20650,7 +20655,7 @@ def build_proposal_docx(d, _notes=None):
     demand = sum(r["vol"] for r in rows)
     if rows:
         body(f"Of the {len(rows)} terms above, {brand} currently ranks in the "
-             f"top 100 for {ranked}"
+             f"top {int(CFG.get('zero_ranking_top_n', 50))} for {ranked}"
              + (f", against roughly {format(demand, ',')} searches a month "
                 f"across the list" if demand else "")
              + ".")
