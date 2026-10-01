@@ -2844,7 +2844,7 @@ function formNeedsRun(r, d){
   // prices on. (2026-10-01, Kiri)
   const kws = k => JSON.stringify([
     norm(((k || {}).all || []).map(x => `${x.kw}|${Number(x.vol) || 0}`)),
-    Number((k || {}).total_volume) || 0,
+    Number((k || {}).total_volume) || 0, (k || {}).builtAt || 0,
     norm(((k || {}).off_grid_probes || []).map(x => x.kw))]);
   return kws(r.kw) !== kws(ranKw);
 }
@@ -3596,7 +3596,8 @@ function kbDraw(r){
   $('kbNote').textContent = `${total.toLocaleString()}/mo measured \u00b7 ${where}`
     + (wideN ? ` \u00b7 ${wideN} answered from a wider area` : '')
     + (offM.length ? ` \u00b7 includes ${offN.toLocaleString()}/mo from `
-                     + `${offM.join(', ')} (not in the table)` : '');
+                     + `${offM.join(', ')} (not in the table)` : '')
+    + (kw.off_grid_error ? ` \u00b7 ${kw.off_grid_error}` : '');
   // WHY THE LIST IS THE SIZE IT IS. A ten-term list off nine markets looks
   // broken until you know the build MEASURED those markets and spent the budget
   // on services instead -- which it reports, and nothing on screen showed.
@@ -4020,6 +4021,10 @@ $('kbBuild').onclick = async () => {
     // nothing, on a build that had done the work. Refine's keys win where it
     // has one; the build's stand where it does not. (2026-09-21, Kiri)
     r.kw = (ref && ref.all) ? mergeBuild(kw, ref) : kw;
+    // EVERY BUILD IS A NEW LIST. A rebuild that came back term-for-term the
+    // same still offered only Reprice, so the run never saw what the build
+    // measured. The stamp is what the form compares. (2026-10-01, Kiri)
+    r.kw.builtAt = Date.now();
     // Which axis got the term budget, and the evidence for it.
     r.axis = (ref && ref.grid_axis) || kw.grid_axis || null;
     // THE BUILD CAN DISCOVER NATIONAL DEMAND. The refine pass says so, and the
