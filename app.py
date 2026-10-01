@@ -14438,8 +14438,15 @@ def api_import_report():
     })
 
 
+_VARIANT_MODIFIERS = frozenset("""
+best top rated affordable cheap cheapest local near me open now nearby good
+great top-rated reviews review low cost free emergency 24 hour hours same day
+""".split())
+
+
 def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
-               national=False, industry="", k=None):
+               national=False, industry="", k=None, seeds=None,
+               business_desc="", brand="", levers=None):
     """A cheaper or a bigger version of a quote's keyword list.
 
     The price follows the list: the competition adder is the median click price
@@ -14467,16 +14474,48 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
         by_svc.setdefault(svc_of(r["kw"]), []).append(r)
     head_svcs = list(dict.fromkeys(svc_of(h) for h in (head or [])))
     used = set(by_svc)
+    # GROUNDED IN THE CLIENT'S OWN WORDS. The build's pool is ranked by
+    # volume, so its top holds competitors and neighbouring practices: Valero's
+    # first cheaper swap was "trust attorney", Alamo Biscuit's "la popular
+    # bakery". Every word of a candidate has to come from the seeds, the
+    # services already quoted or the description -- or be a place name or a
+    # plain modifier ("best", "near me"). The same rule the build's grounding
+    # filter uses, applied to the swap. (2026-10-01, Kiri)
+    words = lambda t: [w for w in re.split(r"[^a-z0-9]+", (t or "").lower()) if w]
+    vocab = set()
+    for t in list(seeds or []) + list(by_svc) + [business_desc or ""]:
+        vocab.update(_seed_stem(w) for w in words(t))
+    geo = set()
+    for m in list(markets or []) + [state or ""]:
+        geo.update(words(m))
+        st_ = (market_state(m, state) or "").lower()
+        geo.update(words(st_))
+        ab = STATE_ABBREV.get(st_, "")
+        if ab:
+            geo.add(ab)
+
+    def grounded(t):
+        if brand and is_brand_term(t, brand):
+            return False
+        for w in words(t):
+            if (w in _VARIANT_MODIFIERS or w in _SEED_SHAPE or w in _FORM_SKIP
+                    or w in _PREPOSITIONS or w in geo):
+                continue
+            if _seed_stem(w) not in vocab:
+                return False
+        return True
+
     cands = []
     for x in (pool or []):
         b = svc_of(str(x.get("keyword") or x.get("kw") or ""))
-        if b and b not in used and b not in cands and len(b.split()) <= 6:
+        if (b and b not in used and b not in cands and len(b.split()) <= 6
+                and grounded(b)):
             cands.append(b)
     cands = cands[:int(CFG.get("variant_candidates", 30))]
     out = {"direction": direction, "out": [], "in": [], "rows": rows,
            "adder": None, "volume_delta": 0, "error": None}
     if not cands:
-        out["error"] = "no unused terms in this build's pool"
+        out["error"] = "no related unused terms in this build"
         return out
     cities = list(dict.fromkeys(r.get("city") for r in rows if r.get("city")))
     shown = [m for m in markets if _bare_city(m, state) in set(cities)] or markets
@@ -14489,7 +14528,15 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
     cands = [c for c in cands if cand_vol[c] > 0]
     svc_vol = {s_: sum(int(r.get("vol") or 0) for r in rs) for s_, rs in by_svc.items()}
     n_head = len(head_svcs)
-    k = int(k or max(1, round(n_head * float(CFG.get("variant_share", 0.3)))))
+    k = int(k or max(1, round(n_head * float(CFG.get("variant_share", 0.4)))))
+    # WHICH LEVER MOVES THIS PRICE. Swapping by click price did nothing on a
+    # restaurant priced on volume: Alamo Biscuit's 397,130/mo sits far past the
+    # volume cap, and the swap took out breakfast and brunch and left
+    # "restaurant san antonio tx" (246,000) where it was. A lever counts only
+    # when it is live on the run. (2026-10-01, Kiri)
+    lv = levers or {}
+    vol_on = bool(lv.get("volume", True))
+    cpc_on = bool(lv.get("adder", True))
 
     def template_rows(svc_old, svc_new):
         """The old service's rows with the new service's text, market by market."""
@@ -14503,18 +14550,28 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
                          "origin": "added"})
         return made
 
+    if direction == "lower" and not (vol_on or cpc_on):
+        out["error"] = "no volume add or competitive adder on this price to lower"
+        return out
     if direction == "lower":
         m_c = stage3_metrics([{"keyword": c} for c in cands], markets, state,
                              national=national, industry=industry)
         cand_cpc = {c: float((m_c.get("cpc") or {}).get(c) or 0) for c in cands}
         now = {s_: float((cpc_now or {}).get(s_) or (cpc_now or {}).get(s_ + " near me")
                          or 0) for s_ in head_svcs}
-        priciest = sorted([s_ for s_ in head_svcs if s_ in by_svc and now[s_] > 0],
-                          key=lambda s_: (-now[s_], -svc_vol.get(s_, 0)))[:k]
+        live = [s_ for s_ in head_svcs if s_ in by_svc]
+        top_v = max([svc_vol.get(s_, 0) for s_ in live] or [1]) or 1
+        top_c = max([now[s_] for s_ in live] or [1]) or 1
+        weight = lambda s_: ((svc_vol.get(s_, 0) / top_v if vol_on else 0)
+                             + (now[s_] / top_c if cpc_on else 0))
+        priciest = sorted([s_ for s_ in live if weight(s_) > 0],
+                          key=lambda s_: -weight(s_))[:k]
         taken = set()
         for old in priciest:
-            fits = [c for c in cands if c not in taken and 0 < cand_cpc[c] < now[old]
-                    and cand_vol[c] * max(len(by_svc[old]), 1) < svc_vol.get(old, 0)]
+            fits = [c for c in cands if c not in taken
+                    and (not cpc_on or not now[old] or cand_cpc[c] < now[old])
+                    # A cheaper list never carries more demand than it had.
+                    and cand_vol[c] < svc_vol.get(old, 0)]
             if not fits:
                 continue
             new = max(fits, key=lambda c: cand_vol[c])
@@ -14573,7 +14630,11 @@ def api_kw_variant():
         out = kw_variant(d.get("direction") or "lower", d.get("rows") or [],
                          d.get("head") or [], d.get("pool") or [], markets, state,
                          d.get("cpc") or {}, national=nat,
-                         industry=(d.get("industry") or ""))
+                         industry=(d.get("industry") or ""),
+                         seeds=d.get("seeds") or [],
+                         business_desc=(d.get("business_desc") or ""),
+                         brand=(d.get("brand") or ""),
+                         levers=d.get("levers") or None)
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}."}), 502
     except Exception as e:

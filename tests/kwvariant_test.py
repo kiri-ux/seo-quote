@@ -32,11 +32,13 @@ HEAD = [r["kw"] for r in ROWS]
 POOL = [{"keyword": "slip and fall lawyer seattle", "volume": 70},
         {"keyword": "premises liability lawyer", "volume": 50},
         {"keyword": "truck accident lawyer", "volume": 300}]
+SEEDS = ["car accident attorney", "dog bite lawyer", "slip and fall lawyer",
+         "premises liability lawyer", "truck accident lawyer"]
 CPC_NOW = {"car accident attorney": 180.0, "dog bite lawyer": 40.0}
 VOL = {"slip and fall lawyer": 160, "premises liability lawyer": 140,
        "truck accident lawyer": 900}
 CPC = {"slip and fall lawyer": 60.0, "premises liability lawyer": 30.0,
-       "truck accident lawyer": 150.0}
+       "truck accident lawyer": 200.0}
 heads_priced = []
 
 def fake_vol(terms, markets, state, national=False, cap=None):
@@ -53,7 +55,8 @@ app.fetch_local_volume = fake_vol
 app.stage3_metrics = fake_metrics
 
 with app.app.test_request_context("/"):
-    lo = app.kw_variant("lower", ROWS, HEAD, POOL, MK, "", CPC_NOW, k=1)
+    lo = app.kw_variant("lower", ROWS, HEAD, POOL, MK, "", CPC_NOW, k=1, seeds=SEEDS,
+                        levers={"adder": True, "volume": False})
 check("lower: no error", lo["error"], None)
 check("lower: the priciest head service goes", [x["service"] for x in lo["out"]],
       ["car accident attorney"])
@@ -74,7 +77,7 @@ check("lower: adder recomputed on the new head",
 
 heads_priced.clear()
 with app.app.test_request_context("/"):
-    up = app.kw_variant("grow", ROWS, HEAD, POOL, MK, "", CPC_NOW, k=1)
+    up = app.kw_variant("grow", ROWS, HEAD, POOL, MK, "", CPC_NOW, k=1, seeds=SEEDS)
 check("grow: no error", up["error"], None)
 check("grow: the biggest unused term comes in", [x["service"] for x in up["in"]],
       ["truck accident lawyer"])
@@ -88,6 +91,34 @@ check("grow: volume rises by its demand", up["volume_delta"], 900)
 with app.app.test_request_context("/"):
     none = app.kw_variant("lower", ROWS, HEAD, [], MK, "", CPC_NOW)
 check("no pool, says so", bool(none["error"]), True)
+
+# NOT A WORD THE CLIENT NEVER USED. Valero's first swap was "trust attorney";
+# Alamo Biscuit's was "la popular bakery", a competitor.
+VOL.update({"trust attorney": 100, "la popular bakery": 900, "best car accident lawyer": 300})
+CPC.update({"trust attorney": 20.0, "la popular bakery": 1.0, "best car accident lawyer": 90.0})
+POOL2 = [{"keyword": "trust attorney"}, {"keyword": "la popular bakery"},
+         {"keyword": "best car accident lawyer"}]
+with app.app.test_request_context("/"):
+    g = app.kw_variant("lower", ROWS, HEAD, POOL2, MK, "", CPC_NOW, k=1, seeds=SEEDS,
+                       levers={"adder": True, "volume": False})
+check("an ungrounded term is never swapped in",
+      [x["service"] for x in g["in"]], ["best car accident lawyer"])
+
+# PRICED ON VOLUME: the biggest-volume head goes, whatever its click price.
+R2 = [{"kw": "restaurant san antonio tx", "vol": 246000, "city": "san antonio", "tier": "ultra"},
+      {"kw": "breakfast san antonio tx", "vol": 18100, "city": "san antonio", "tier": "ultra"},
+      {"kw": "biscuits san antonio tx", "vol": 1000, "city": "san antonio", "tier": "long_tail"}]
+VOL.update({"biscuit restaurant": 900, "breakfast tacos": 5000})
+CPC.update({"biscuit restaurant": 2.0, "breakfast tacos": 1.5})
+with app.app.test_request_context("/"):
+    v = app.kw_variant("lower", R2, [r["kw"] for r in R2[:2]],
+                       [{"keyword": "biscuit restaurant"}, {"keyword": "breakfast tacos"}],
+                       ["San Antonio, TX"], "", {"restaurant": 0.8, "breakfast": 2.5}, k=1,
+                       seeds=["restaurant", "breakfast", "biscuits", "tacos"],
+                       levers={"adder": False, "volume": True})
+check("volume lever: the biggest-volume head goes",
+      [x["service"] for x in v["out"]], ["restaurant"])
+check("volume lever: volume falls a lot", v["volume_delta"] < -200000, True)
 
 print(f"PASS={ok} FAIL={fail}")
 sys.exit(1 if fail else 0)
