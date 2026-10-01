@@ -14438,6 +14438,149 @@ def api_import_report():
     })
 
 
+def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
+               national=False, industry="", k=None):
+    """A cheaper or a bigger version of a quote's keyword list.
+
+    The price follows the list: the competition adder is the median click price
+    of the head terms, and the volume add is the list's demand. Partners trim a
+    list to a budget all the time -- pick less competitive or lower-volume terms
+    -- or grow it when the client wants more traffic. Nobody drops a whole tier
+    to do it. (2026-10-01, Kiri)
+
+      lower: the head services with the highest click price are swapped for
+             candidates from the build's own pool with a lower click price and
+             lower volume, crossed with the same markets.
+      grow:  the highest-volume candidates the list did not use are added,
+             crossed with the same markets.
+
+    Candidates are the bare terms from the build's pool, measured here for
+    volume (in the grid's markets) and click price -- the only new calls.
+    Returns the new rows, what went out and what came in, and the new adder and
+    volume delta, so the page can price it on the run's own measurements."""
+    rows = [dict(r) for r in (rows or []) if r.get("kw")]
+    # "x near me" is the same service as "x lawyer seattle": a swap moves both.
+    svc_of = lambda kw: re.sub(r"\s+near me$", "",
+                               clean_kw(_strip_markets(kw, markets, state)).lower())
+    by_svc = {}
+    for r in rows:
+        by_svc.setdefault(svc_of(r["kw"]), []).append(r)
+    head_svcs = list(dict.fromkeys(svc_of(h) for h in (head or [])))
+    used = set(by_svc)
+    cands = []
+    for x in (pool or []):
+        b = svc_of(str(x.get("keyword") or x.get("kw") or ""))
+        if b and b not in used and b not in cands and len(b.split()) <= 6:
+            cands.append(b)
+    cands = cands[:int(CFG.get("variant_candidates", 30))]
+    out = {"direction": direction, "out": [], "in": [], "rows": rows,
+           "adder": None, "volume_delta": 0, "error": None}
+    if not cands:
+        out["error"] = "no unused terms in this build's pool"
+        return out
+    cities = list(dict.fromkeys(r.get("city") for r in rows if r.get("city")))
+    shown = [m for m in markets if _bare_city(m, state) in set(cities)] or markets
+    vols, _pc, _vn = fetch_local_volume(cands, [] if national else shown, state,
+                                        national=national)
+    if not vols:
+        out["error"] = _vn or "no volume for the candidate terms"
+        return out
+    cand_vol = {c: int(vols.get(c, 0) or 0) for c in cands}
+    cands = [c for c in cands if cand_vol[c] > 0]
+    svc_vol = {s_: sum(int(r.get("vol") or 0) for r in rs) for s_, rs in by_svc.items()}
+    n_head = len(head_svcs)
+    k = int(k or max(1, round(n_head * float(CFG.get("variant_share", 0.3)))))
+
+    def template_rows(svc_old, svc_new):
+        """The old service's rows with the new service's text, market by market."""
+        made = []
+        for r in by_svc.get(svc_old, []):
+            kw = r["kw"].lower().replace(svc_old, svc_new, 1)
+            if kw == r["kw"].lower():
+                continue
+            made.append({"kw": kw, "vol": 0, "city": r.get("city", ""),
+                         "tier": r.get("tier"), "src": "variant",
+                         "origin": "added"})
+        return made
+
+    if direction == "lower":
+        m_c = stage3_metrics([{"keyword": c} for c in cands], markets, state,
+                             national=national, industry=industry)
+        cand_cpc = {c: float((m_c.get("cpc") or {}).get(c) or 0) for c in cands}
+        now = {s_: float((cpc_now or {}).get(s_) or (cpc_now or {}).get(s_ + " near me")
+                         or 0) for s_ in head_svcs}
+        priciest = sorted([s_ for s_ in head_svcs if s_ in by_svc and now[s_] > 0],
+                          key=lambda s_: (-now[s_], -svc_vol.get(s_, 0)))[:k]
+        taken = set()
+        for old in priciest:
+            fits = [c for c in cands if c not in taken and 0 < cand_cpc[c] < now[old]
+                    and cand_vol[c] * max(len(by_svc[old]), 1) < svc_vol.get(old, 0)]
+            if not fits:
+                continue
+            new = max(fits, key=lambda c: cand_vol[c])
+            taken.add(new)
+            add = template_rows(old, new)
+            if not add:
+                continue
+            per = round(cand_vol[new] / max(len(add), 1))
+            for a in add:
+                a["vol"] = per
+            out["out"].append({"service": old, "cpc": now[old], "volume": svc_vol.get(old, 0)})
+            out["in"].append({"service": new, "cpc": cand_cpc[new], "volume": cand_vol[new]})
+            rows = [r for r in rows if svc_of(r["kw"]) != old] + add
+        new_head = [s_ for s_ in head_svcs if s_ not in {x["service"] for x in out["out"]}]
+        new_head += [x["service"] for x in out["in"]]
+    else:
+        tpl = max(by_svc, key=lambda s_: len(by_svc[s_])) if by_svc else None
+        for new in sorted(cands, key=lambda c: -cand_vol[c])[:k]:
+            add = template_rows(tpl, new) if tpl else []
+            if not add:
+                continue
+            per = round(cand_vol[new] / max(len(add), 1))
+            for a in add:
+                a["vol"] = per
+                a["tier"] = "competitive"
+            out["in"].append({"service": new, "cpc": None, "volume": cand_vol[new]})
+            rows = rows + add
+        new_head = head_svcs + [x["service"] for x in out["in"]]
+    if not out["in"]:
+        out["error"] = ("no cheaper term in the pool for the priciest head terms"
+                        if direction == "lower" else "no unused terms with volume")
+        return out
+    out["rows"] = rows
+    out["volume_delta"] = (sum(x["volume"] for x in out["in"])
+                           - sum(x["volume"] for x in out["out"]))
+    m_new = stage3_metrics([{"keyword": s_} for s_ in new_head], markets, state,
+                           national=national, industry=industry)
+    out["adder"] = m_new.get("adder")
+    out["cpc_used"] = m_new.get("cpc_used")
+    return out
+
+
+@app.route("/api/kw_variant", methods=["POST"])
+@_json_error_guard
+@_per_quote_cfg
+def api_kw_variant():
+    d = request.get_json(force=True)
+    markets = usable_markets(d.get("geo_values") or [])
+    state = derive_state(markets, (d.get("state") or "").strip())
+    nat, _r = resolve_national_demand(
+        industry=(d.get("industry") or ""),
+        band=d.get("geo_scope", d.get("band", "")),
+        manual=bool(d.get("national_demand")), markets=markets,
+        goal=(d.get("goal") or ""))
+    try:
+        out = kw_variant(d.get("direction") or "lower", d.get("rows") or [],
+                         d.get("head") or [], d.get("pool") or [], markets, state,
+                         d.get("cpc") or {}, national=nat,
+                         industry=(d.get("industry") or ""))
+    except requests.HTTPError as e:
+        return jsonify({"error": f"DataForSEO error: {e}."}), 502
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+    return jsonify(out)
+
+
 @app.route("/api/metrics", methods=["POST"])
 @_json_error_guard
 @_per_quote_cfg

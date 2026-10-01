@@ -679,6 +679,8 @@ nav.rail a.legacy{margin-top:auto;color:#9FB3CC}
 .btn2:disabled{color:var(--muted);cursor:default}
 .qacts .btn{background:var(--navy)}
 .qacts .hint{color:var(--muted)}
+.qvariant{background:var(--tile, #f1f2f4);border-radius:10px;padding:12px 14px;margin:0 0 14px;font-size:13px;line-height:1.6}
+.qvariant .btn2{margin-left:8px}
 .sharein{
   font-family:inherit;font-size:12px;background:var(--card);border:1px solid var(--line);
   border-radius:8px;padding:6px 9px;min-width:330px;color:var(--text);

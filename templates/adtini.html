@@ -1929,9 +1929,14 @@ function resultsHtml(r, full){
         <button class="btn" type="button" data-prop="${r.i}">Download proposal</button>
         <button class="btn2" type="button" data-slides="${r.i}">Download slides</button>`
       + `
-        <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>
+        <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>`
+      + (r.kind === 'seo' && (r.result.metrics || r.result.priceReq) ? `
+        <button class="btn2" type="button" data-variant="lower" data-row="${r.i}">Lower budget</button>
+        <button class="btn2" type="button" data-variant="grow" data-row="${r.i}">Higher budget</button>` : '')
+      + `
         <span class="hint" data-propmsg="${r.i}"></span>
       </div>
+      <div class="qvariant" data-variantbox="${r.i}" hidden></div>
       ${tileRow(true)}
       ${plannerView(r)}
 
@@ -5995,6 +6000,91 @@ $('prods').addEventListener('click', e => {
 // stays 16:9 and the capture slides under it, so the exhibit can be the local
 // pack or the organic results without recapturing anything. Saved with the
 // quote, because where the window sits IS the exhibit.
+// A CHEAPER OR BIGGER LIST, PRICED BESIDE THIS ONE. Partners trim a quote to
+// a budget by picking less competitive or lower-volume terms, and grow it by
+// adding higher-volume ones -- never by dropping a tier. The swap is priced on
+// this run's own measurements; the new terms are rank-checked when the list is
+// used and the quote regenerated. (2026-10-01, Kiri)
+async function kwVariant(i, direction){
+  const r = ROWS[i];
+  if (!r || !r.result) return;
+  const at = r.openRun == null ? 0 : r.openRun;
+  const run = (r.history || [])[at] || null;
+  const work = run ? runView(r, run, at) : r;
+  const res = (run && run.quote) || r.result;
+  const kw = work.kw || {};
+  const box = document.querySelector(`[data-variantbox="${i}"]`);
+  const say = t => { const m = document.querySelector(`[data-propmsg="${i}"]`);
+                     if (m) m.textContent = t; };
+  const tierRows = ['ultra', 'competitive', 'long_tail'].flatMap(t =>
+    (kw[t] || []).map(x => Object.assign({}, x, {tier: t})));
+  if (!tierRows.length) { say('No keyword list on this run.'); return; }
+  const d = r.data || {};
+  const band = r.band || bandOf(d);
+  say(direction === 'lower' ? 'Finding cheaper terms\u2026' : 'Finding bigger terms\u2026');
+  try {
+    const v = await postWait('/api/kw_variant', {
+      direction, rows: tierRows,
+      head: (kw.head || kw.ultra || []).map(x => x.kw),
+      // The client's own seeds that did not fit the grid first, then the
+      // market vocabulary the build measured, then everything it saw.
+      pool: (((r.kw || {}).seed_ranking || {}).order || [])
+              .map(([t, v]) => ({keyword: t, volume: v}))
+              .concat((r.kw || {}).market_pool || [], (r.kw || {}).pool || kw.pool || []),
+      cpc: (res.metrics || {}).cpc || {},
+      geo_values: geoOf(d), state: stateOf(d), geo_scope: band,
+      industry: (d.industry || []).join(', '),
+      national_demand: band === 'nationwide', cfg: r.over || {}}, null, say);
+    if (v.error) { say(v.error + '.'); return; }
+    const base = res.priceReq || {};
+    const req = Object.assign({}, base, {
+      adder: v.adder != null ? v.adder : base.adder,
+      total_volume: Math.max(0, (Number(base.total_volume) || 0) + (v.volume_delta || 0))});
+    const price = await post('/api/price', req);
+    const pk = (price.handoff || {}).package || {};
+    const was = ((res.pricing || {}).handoff || {}).package || {};
+    const tiers = ['base', 'intermediate', 'advanced'];
+    const names = xs => xs.map(x => esc(x.service)).join(', ');
+    r.variant = {direction, rows: v.rows, volume_delta: v.volume_delta, kw};
+    box.innerHTML = `<b>${direction === 'lower' ? 'Lower budget' : 'Higher budget'}</b> `
+      + tiers.map(t => money(pk[t])).join(' / ')
+      + ` <span class="hint">(now ${tiers.map(t => money(was[t])).join(' / ')})</span>`
+      + (v.out.length ? `<br>Out: ${names(v.out)}` : '')
+      + `<br>In: ${names(v.in)}`
+      + ` <button class="btn2" type="button" data-usevariant="${i}">Use this list</button>`;
+    box.hidden = false;
+    say('');
+  } catch (e) { say(e.message); }
+}
+// The variant becomes the row's list; the next press is a full Regenerate, so
+// the new terms are rank-checked before anything is sent.
+function useVariant(i){
+  const r = ROWS[i];
+  const v = r && r.variant;
+  if (!v) return;
+  const kw = Object.assign({}, r.kw || {}, v.kw);
+  ['ultra', 'competitive', 'long_tail'].forEach(t => {
+    kw[t] = v.rows.filter(x => x.tier === t).map(x => {
+      const y = Object.assign({}, x); delete y.tier; return y; });
+  });
+  kw.all = kw.ultra.concat(kw.competitive, kw.long_tail);
+  kw.head = kw.ultra.concat(kw.competitive);
+  if (kw.total_volume != null)
+    kw.total_volume = Math.max(0, Number(kw.total_volume) + (v.volume_delta || 0));
+  kw.pool = (r.kw || {}).pool || kw.pool;
+  kw.builtAt = Date.now();
+  r.kw = kw;
+  r.variant = null;
+  open(i, 'form');
+  $('saved').textContent = `${kw.all.length} terms on this quote \u00b7 regenerate to rank-check the new ones.`;
+}
+$('prods').addEventListener('click', e => {
+  const vb = e.target.closest('[data-variant]');
+  if (vb) { e.preventDefault(); e.stopPropagation();
+            kwVariant(+vb.dataset.row, vb.dataset.variant); return; }
+  const ub = e.target.closest('[data-usevariant]');
+  if (ub) { e.preventDefault(); e.stopPropagation(); useVariant(+ub.dataset.usevariant); }
+});
 $('prods').addEventListener('click', e => {
   const btn = e.target.closest('[data-pan]');
   if (!btn) return;
