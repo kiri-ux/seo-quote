@@ -2962,7 +2962,8 @@ async function resolveBand(r){
   if (r._bandKey === key) return r.band || bandOf(d);
   try {
     const got = await post('/api/geo_scope',
-      {markets: g, state: stateOf(d), national_demand: bandOf(d) === 'nationwide'});
+      {markets: g, state: stateOf(d), national_demand: bandOf(d) === 'nationwide',
+       states: d.g_state ? asList(d.state) : []});
     r._bandKey = key;
     r.band = got.band || bandOf(d);
     r.bandWhy = got.reason || '';
