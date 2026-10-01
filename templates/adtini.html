@@ -6034,7 +6034,13 @@ async function kwVariant(i, direction){
       cpc: (res.metrics || {}).cpc || {},
       geo_values: geoOf(d), state: stateOf(d), geo_scope: band,
       industry: (d.industry || []).join(', '),
-      national_demand: band === 'nationwide', cfg: r.over || {}}, null, say);
+      national_demand: band === 'nationwide', cfg: r.over || {},
+      // The client's own words: a swapped-in term has to be made of them.
+      seeds: d.focus || [], business_desc: d.business_desc || '', brand: d.brand || '',
+      // Which parts of this price the list can move.
+      levers: {volume: (Number((res.pricing || {}).volume_add) || 0) > 0,
+               adder: (Number((res.pricing || {}).competitive_adder) || 0) > 0}},
+      null, say);
     if (v.error) { say(v.error + '.'); return; }
     const base = res.priceReq || {};
     const req = Object.assign({}, base, {
@@ -6046,9 +6052,15 @@ async function kwVariant(i, direction){
     const tiers = ['base', 'intermediate', 'advanced'];
     const names = xs => xs.map(x => esc(x.service)).join(', ');
     r.variant = {direction, rows: v.rows, volume_delta: v.volume_delta, kw};
+    const p0 = res.pricing || {};
+    const fmt = n => Number(n || 0).toLocaleString();
     box.innerHTML = `<b>${direction === 'lower' ? 'Lower budget' : 'Higher budget'}</b> `
       + tiers.map(t => money(pk[t])).join(' / ')
       + ` <span class="hint">(now ${tiers.map(t => money(was[t])).join(' / ')})</span>`
+      + `<br>Volume ${fmt(base.total_volume)} \u2192 ${fmt(req.total_volume)}/mo`
+      + ` \u00b7 volume add ${money(p0.volume_add || 0)} \u2192 ${money(price.volume_add || 0)}`
+      + ` \u00b7 competitive adder ${money(p0.competitive_adder || 0)} \u2192 `
+      + money(price.competitive_adder || 0)
       + (v.out.length ? `<br>Out: ${names(v.out)}` : '')
       + `<br>In: ${names(v.in)}`
       + ` <button class="btn2" type="button" data-usevariant="${i}">Use this list</button>`;
