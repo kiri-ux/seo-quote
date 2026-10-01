@@ -3015,6 +3015,18 @@ def loc_string(markets, state):
         if city and not (any(c.isupper() for c in city)
                          and any(c.islower() for c in city)):
             city = city.title()
+        # A STATE ENTERED AS A MARKET IS THE STATE. "Washington" from the State
+        # field built "Washington,Washington,United States" -- no such place --
+        # so every lookup failed once and fell back. A bare state name that is
+        # not also a city in that state (New York, NY is) targets the state.
+        # (2026-10-01, Kiri)
+        if (city and "," not in str(m)
+                and str(city).strip().lower() in
+                    (set(STATE_ABBREV) | set(_abbrev_to_state()))
+                and not city_coords(m, state)):
+            full = _abbrev_to_state().get(str(city).strip().lower(),
+                                          str(city).strip().lower())
+            return f"{full.title()},United States"
         if city and st:
             return f"{city},{st},United States"
         if city:                      # city without state — still localizes
@@ -16471,6 +16483,15 @@ def api_geo_scope():
         return jsonify({"band": "nationwide", "confidence": "high", "markets": 0,
                         "reason": "No geographic areas, so demand is national."
                                   if not nat else "Priced on national demand."})
+    # STATES ARE STATEWIDE. The page says which markets came from the State
+    # field; every one of them read "Single city" and "Not on the map" because
+    # the map holds cities. (2026-10-01, Kiri)
+    states = [str(x).strip() for x in (d.get("states") or []) if str(x).strip()]
+    if states:
+        return jsonify({"unplaced": [], "band": "statewide", "confidence": "high",
+                        "reason": ("One state." if len(states) == 1
+                                   else f"{len(states)} states."),
+                        "markets": len(mk)})
     out = suggest_geo_scope(mk, state, nat, "")
     # A MARKET THE MAP CANNOT PLACE IS STILL BEING PRICED. "Cleaveland, MS" and
     # "Indianaola, MS" are misspellings; every keyword naming them borrowed its
