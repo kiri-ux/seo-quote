@@ -12362,11 +12362,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
 
     # --- volume-based add: fixed $ for volume above the normalized baseline ---
     vol_add = 0
+    vol_add_capped = False
     if total_volume is not None:
         vol_add = _volume_dollar_add(total_volume, CFG.get("vol_free_below", 10000),
                                      CFG.get("volume_brackets", []))
         cap = CFG.get("volume_add_cap")
         if cap:
+            vol_add_capped = vol_add > cap
             vol_add = min(vol_add, cap)
 
     # Base before % uplift = anchor + competitive adder + volume $ add.
@@ -12962,6 +12964,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                               and total_volume
                               < int(CFG.get("price_no_demand_below", 500))),
             "zero_ranking_uplift_pct": zr_uplift, "volume_add": vol_add,
+            # What the budget flags read: whether the list's volume is past the
+            # point where more of it costs more, the click-price cap, and where
+            # volume starts adding money at all. (2026-10-01, Kiri)
+            "volume_add_capped": bool(vol_add_capped),
+            "competitive_adder_cap": int(CFG.get("cpc_adder_cap") or 0),
+            "vol_free_below": int(CFG.get("vol_free_below", 10000) or 0),
             "site_debt_uplift_pct": sd_uplift, "site_debt": site_debt,
             "pct_not_ranking": pct_not_ranking, "total_volume": total_volume,
             "hard_tiers": hard, "client_tiers": client,
@@ -16286,6 +16294,9 @@ def api_price():
                     "base_pre_uplift": p["base_pre_uplift"], "manual_base": p["manual_base"],
                     "zero_ranking_uplift_pct": p["zero_ranking_uplift_pct"],
                     "volume_add": p["volume_add"],
+                    "volume_add_capped": p.get("volume_add_capped", False),
+                    "competitive_adder_cap": p.get("competitive_adder_cap"),
+                    "vol_free_below": p.get("vol_free_below"),
                     "pct_not_ranking": p["pct_not_ranking"], "total_volume": p["total_volume"],
                     "base": p["base"], "step": p["step"],
                     # THE CHART IS A CLIENT-FACING BREAKDOWN AND IT WAS SHORT.

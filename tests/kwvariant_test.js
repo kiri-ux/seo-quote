@@ -40,7 +40,8 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     r.kw = {ultra: [{kw: 'car accident attorney seattle', vol: 210, city: 'seattle'}],
             competitive: [{kw: 'dog bite lawyer seattle', vol: 90, city: 'seattle'}],
             long_tail: [], total_volume: 10250,
-            pool: [{keyword: 'slip and fall lawyer', volume: 70}]};
+            pool: [{keyword: 'slip and fall lawyer', volume: 70}],
+            service_volume: {'car accident attorney': 8000, 'dog bite lawyer': 2000}};
     r.kw.all = r.kw.ultra.concat(r.kw.competitive);
     r.kw.head = r.kw.all.slice();
     r.result = {pricing: {handoff: {package: {base: 13050, intermediate: 15350,
@@ -54,6 +55,30 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     draw();
   });
   await p.waitForSelector('[data-variant="lower"][data-row="0"]', {timeout: 5000});
+  // WHEN TO LOOK. One service holding most of the demand flags Lower.
+  const flag = await p.textContent('[data-variant="lower"][data-row="0"]');
+  say('lower is flagged when one term holds the demand',
+      /80% of demand is .car accident attorney./.test(flag), flag);
+  const growFlag = await p.evaluate(() => {
+    const r = ROWS[0];
+    r.result.pricing.total_volume = 4200; r.result.pricing.vol_free_below = 10000;
+    return budgetFlags(r).grow;
+  });
+  say('higher is flagged under the free volume', /4,200\/mo, under 10,000\/mo/.test(growFlag),
+      growFlag);
+  const none = await p.evaluate(() => {
+    const r = ROWS[0];
+    r.kw.service_volume = {a: 5000, b: 5000, c: 5000};
+    r.result.pricing = {total_volume: 15000, vol_free_below: 10000,
+                        competitive_adder: 1300, competitive_adder_cap: 1300};
+    const f = budgetFlags(r);
+    r.kw.service_volume = {'car accident attorney': 8000, 'dog bite lawyer': 2000};
+    r.result.pricing = {handoff: {package: {base: 13050, intermediate: 15350,
+                                            advanced: 17600}}};
+    return f;
+  });
+  say('no flag when the list is not what moves the price',
+      none.lower === '' && none.grow === '', none);
   await p.click('[data-variant="lower"][data-row="0"]');
   await p.waitForSelector('[data-variantbox="0"]:not([hidden])', {timeout: 5000});
   const box = await p.textContent('[data-variantbox="0"]');
