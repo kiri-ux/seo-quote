@@ -1557,8 +1557,11 @@ function plannerView(r){
     if (h.addon_markets)
       add('Add-on markets', `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
         + (h.addon_market_discount_pct ? ` · ${pct(h.addon_market_discount_pct)} off` : '')
+        // The count and the price. The reasoning sentence crowded the tile;
+        // the market tally is the fact it rests on. (2026-10-01, Kiri)
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
-           : (sug.basis ? ` · ${sug.basis}` : '')));
+           : (sug.measured ? ` · ranking in ${sug.covered || 0} of ${sug.measured} markets` : '')
+             + (/contiguous region/.test(sug.basis || '') ? ' · contiguous region' : '')));
     const rk = (r.result || {}).ranks || {};
     const nTerms = (kw.all || []).length;
     const checked = Object.keys(rk).length;
