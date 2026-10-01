@@ -1489,6 +1489,9 @@ CFG = {
     # Markets whose demand counts toward total_volume, whether or not the grid
     # crosses them. See off_grid_volume.
     "volume_max_markets": 12,
+    # Head services rank-checked in each off-grid market so the add-on count
+    # has evidence there. Not shown in the table or the not-ranking share.
+    "addon_probe_terms": 2,
     # When a city needs no ", ST" in the keyword. Brendan writes "adhd treatment
     # san diego" but "auto insurance alexandria va" — the test is whether the
     # name is unmistakable on its own. It used to be "is this city in the
@@ -11181,6 +11184,26 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         off_grid = ({"markets": [], "volume": 0, "error": None}
                     if national_demand
                     else off_grid_volume(svc_names, cities, markets, state))
+        # RANK PROBES FOR THE MARKETS THE TABLE LEAVES OUT. The add-on count is
+        # read off the rank check, and a market with no row was never measured,
+        # so five markets with two in the grid came back "only 2 of 5 measured"
+        # and suggested no add-ons. The top services, crossed with each hidden
+        # market the way the grid would phrase them, give step 3 something to
+        # check there. (2026-10-01, Kiri)
+        off_grid_probes = []
+        _pn = int(CFG.get("addon_probe_terms", 2) or 0)
+        if off_grid["markets"] and _pn > 0:
+            _head = [x for x in services if x.get("tier") == "ultra"] or list(services)
+            _head = [{"service": x["service"], "tier": "ultra"} for x in _head[:_pn]]
+            try:
+                _pg = build_grid(_head, off_grid["markets"], state, prepicked=True)
+                for _m in off_grid["markets"]:
+                    _c = _bare_city(_m, state)
+                    for _r in _pg["ultra"]:
+                        if _r.get("city") == _c:
+                            off_grid_probes.append({"kw": _r["keyword"], "market": _m})
+            except Exception:
+                off_grid_probes = []
 
         return {
             "ultra": g["ultra"], "competitive": g["competitive"],
@@ -11308,6 +11331,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             "off_grid_markets": off_grid["markets"],
             "off_grid_volume": off_grid["volume"],
             "off_grid_error": off_grid["error"],
+            "off_grid_probes": off_grid_probes,
             # Topic coverage: what the operator's terms are ABOUT, how many
             # services each topic got, and any swap made to keep a topic alive.
             "topic_source": topic_source,

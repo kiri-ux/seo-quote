@@ -56,6 +56,11 @@ const PRICE = {anchor: 6100, base: 6100, step: 50, min_term_months: 6,
   say('a new keyword needs the whole run', await label() === 'Regenerate Quote', await label());
   await p.evaluate(() => { ROWS[0].kw.all.pop(); genLabel(); });
 
+  // A rebuild that returns the same terms with new volume is still a rebuild.
+  await p.evaluate(() => { ROWS[0].kw.total_volume = 1500; genLabel(); });
+  say('a rebuilt list needs the whole run', await label() === 'Regenerate Quote', await label());
+  await p.evaluate(() => { ROWS[0].kw.total_volume = 900; genLabel(); });
+
   // So does a new market.
   await p.evaluate(() => {
     chipbox(document.querySelector('#fseo [data-chips="city"]'),

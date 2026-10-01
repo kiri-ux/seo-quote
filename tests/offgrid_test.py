@@ -64,5 +64,21 @@ with app.app.test_request_context("/"):
 check("a failed lookup adds nothing", bad["volume"], 0)
 check("and says so", bool(bad["error"]), True)
 
+# THE PROBES MEASURE THEIR MARKETS. Phrased the way the grid phrases a city,
+# so recommend_addons matches each one back to its market and five markets
+# read as five measured, not two.
+HIDDEN = ["Palm Springs, CA", "Reno, NV", "Salinas, CA"]
+with app.app.test_request_context("/"):
+    pg = app.build_grid([{"service": "injury lawyer", "tier": "ultra"}],
+                        HIDDEN, "", prepicked=True)
+probe_rows = [{"kw": x["keyword"], "pos": None} for x in pg["ultra"]]
+table = [{"kw": "injury lawyer seattle wa", "pos": None},
+         {"kw": "injury lawyer las vegas nv", "pos": None}]
+with app.app.test_request_context("/"):
+    before = app.recommend_addons(ALL, "", table)
+    after = app.recommend_addons(ALL, "", table + probe_rows)
+check("without probes, two markets measured", before["measured"], 2)
+check("with probes, all five", after["measured"], 5)
+
 print(f"PASS={ok} FAIL={fail}")
 sys.exit(1 if fail else 0)
