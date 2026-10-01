@@ -3583,8 +3583,14 @@ function kbDraw(r){
     : (marketsIn.length > 2
         ? `${marketsIn.length} markets`
         : (marketsIn.join(', ') || countryOf(r.data)));
+  // MARKETS PRICED BUT NOT IN THE TABLE. Their demand is in the total; the
+  // note names them so the figure is not read as the table's own sum.
+  const offN = Number(kw.off_grid_volume) || 0;
+  const offM = kw.off_grid_markets || [];
   $('kbNote').textContent = `${total.toLocaleString()}/mo measured \u00b7 ${where}`
-    + (wideN ? ` \u00b7 ${wideN} answered from a wider area` : '');
+    + (wideN ? ` \u00b7 ${wideN} answered from a wider area` : '')
+    + (offM.length ? ` \u00b7 includes ${offN.toLocaleString()}/mo from `
+                     + `${offM.join(', ')} (not in the table)` : '');
   // WHY THE LIST IS THE SIZE IT IS. A ten-term list off nine markets looks
   // broken until you know the build MEASURED those markets and spent the budget
   // on services instead -- which it reports, and nothing on screen showed.
