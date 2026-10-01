@@ -16465,6 +16465,48 @@ REP_STRATEGY_OPTIONS = ["Review Removals", "Site/Article Removals",
                         "Reactive", "Proactive"]
 
 
+# Which states share a border. Used to tell a block of neighbouring states
+# (statewide) from states that never touch (non-contiguous). (2026-10-01, Kiri)
+_STATE_BORDERS = {
+    "al": "fl ga ms tn", "az": "ca co nm nv ut", "ar": "la mo ms ok tn tx",
+    "ca": "az nv or", "co": "az ks ne nm ok ut wy", "ct": "ma ny ri",
+    "de": "md nj pa", "dc": "md va", "fl": "al ga", "ga": "al fl nc sc tn",
+    "id": "mt nv or ut wa wy", "il": "ia in ky mo wi", "in": "il ky mi oh",
+    "ia": "il mn mo ne sd wi", "ks": "co mo ne ok", "ky": "il in mo oh tn va wv",
+    "la": "ar ms tx", "me": "nh", "md": "dc de pa va wv", "ma": "ct nh ny ri vt",
+    "mi": "in oh wi", "mn": "ia nd sd wi", "ms": "al ar la tn",
+    "mo": "ar ia il ks ky ne ok tn", "mt": "id nd sd wy", "ne": "co ia ks mo sd wy",
+    "nv": "az ca id or ut", "nh": "ma me vt", "nj": "de ny pa",
+    "nm": "az co ok tx ut", "ny": "ct ma nj pa vt", "nc": "ga sc tn va",
+    "nd": "mn mt sd", "oh": "in ky mi pa wv", "ok": "ar co ks mo nm tx",
+    "or": "ca id nv wa", "pa": "de md nj ny oh wv", "ri": "ct ma",
+    "sc": "ga nc", "sd": "ia mn mt nd ne wy", "tn": "al ar ga ky mo ms nc va",
+    "tx": "ar la nm ok", "ut": "az co id nm nv wy", "vt": "ma nh ny",
+    "va": "dc ky md nc tn wv", "wa": "id or", "wv": "ky md oh pa va",
+    "wi": "ia il mi mn", "wy": "co id mt ne sd ut", "ak": "", "hi": "",
+}
+
+
+def states_contiguous(states):
+    """True when the states form one block of shared borders."""
+    codes = []
+    for x in states or []:
+        k = str(x).strip().lower()
+        ab = k if k in _STATE_BORDERS else STATE_ABBREV.get(k, "")
+        if ab and ab not in codes:
+            codes.append(ab)
+    if len(codes) <= 1:
+        return True
+    seen, todo = {codes[0]}, [codes[0]]
+    while todo:
+        cur = todo.pop()
+        for nb in _STATE_BORDERS.get(cur, "").split():
+            if nb in codes and nb not in seen:
+                seen.add(nb)
+                todo.append(nb)
+    return len(seen) == len(codes)
+
+
 @app.route("/api/geo_scope", methods=["POST"])
 @_json_error_guard
 def api_geo_scope():
@@ -16488,9 +16530,15 @@ def api_geo_scope():
     # the map holds cities. (2026-10-01, Kiri)
     states = [str(x).strip() for x in (d.get("states") or []) if str(x).strip()]
     if states:
-        return jsonify({"unplaced": [], "band": "statewide", "confidence": "high",
+        # Neighbouring states are one footprint; states that never touch are
+        # separate territories.
+        joined = states_contiguous(states)
+        return jsonify({"unplaced": [],
+                        "band": "statewide" if joined else "non_contiguous_region",
+                        "confidence": "high",
                         "reason": ("One state." if len(states) == 1
-                                   else f"{len(states)} states."),
+                                   else f"{len(states)} adjacent states." if joined
+                                   else f"{len(states)} states, not adjacent."),
                         "markets": len(mk)})
     out = suggest_geo_scope(mk, state, nat, "")
     # A MARKET THE MAP CANNOT PLACE IS STILL BEING PRICED. "Cleaveland, MS" and
@@ -17070,7 +17118,13 @@ def api_serp_fetch():
                     tt = ((tg or {}).get("tasks") or [{}])[0] or {}
                     code = str(tt.get("status_code") or "")
                     state_msg = str(tt.get("status_message") or "")
-                    if code and not code.startswith("2"):
+                    # 40601 Task Handed and 40602 Task In Queue are a task
+                    # still running, and 40401 here is a task not there yet --
+                    # the caller requeues that once it has waited long enough.
+                    # Calling them dead left the page polling a live task for
+                    # three minutes and never asking again. (2026-10-01, Kiri)
+                    if (code and not code.startswith("2")
+                            and code not in ("40601", "40602", "40401", "40400")):
                         dead = True
                 except Exception:
                     pass

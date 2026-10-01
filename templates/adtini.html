@@ -5056,6 +5056,8 @@ async function autoSerp(r, d, ranks, say){
       if (f.ready && f.data_url)
         return {kw, basis, img: f.data_url, area: q.loc_scope ? q.loc_used : ''};
       if (f.error && !f.gone && !f.notfound) return {error: f.error, kw};
+      // A task the provider failed is asked for again, once, like a lost one.
+      if (f.taskerr) f.gone = true;
       // A TASK THAT IS NOT THERE YET IS NOT A LOST TASK. /serp/screenshot
       // renders from a COMPLETED organic task, so until Google answers the id
       // genuinely is not found -- the same 40401 an expired task gives. Calling
@@ -5370,8 +5372,21 @@ async function generate(){
       ? (async () => {
           note(`Rechecking ${errored} unmeasured term${errored === 1 ? '' : 's'}…`
                + (rankError ? ` (${rankError})` : ''));
-          try { await recheckRanks(ROWS.indexOf(r)); }
-          catch (e) { /* the quote stands either way */ }
+          // UNTIL IT IS DONE, NOT ONCE. Terms still failing after a recheck
+          // waited for someone to press Check ranks again, sometimes several
+          // times. Three more rounds, thirty seconds apart, on their own.
+          // (2026-10-01, Kiri)
+          for (let round = 0; round < 4; round++) {
+            let left = 0;
+            try { left = await recheckRanks(ROWS.indexOf(r)); }
+            catch (e) { left = 1; }
+            if (!left) break;
+            if (round < 3) {
+              note(`${left} term${left === 1 ? '' : 's'} still unmeasured \u2014 `
+                   + `retrying in 30s (${round + 1} of 3)…`);
+              await new Promise(z => setTimeout(z, RECHECK_WAIT_MS));
+            }
+          }
         })()
       : Promise.resolve();
     rerun.then(() => autoSerp(r, d, ranks, note)).then(async shot => {
@@ -5820,6 +5835,7 @@ document.addEventListener('click', e => {
 // only way to ask again was to regenerate the whole quote, which rebuilds the
 // list and reprices from scratch. A failed SERP call is a failed call: retrying
 // it is the right response, and it moves the price honestly when it succeeds.
+let RECHECK_WAIT_MS = 30000;
 async function recheckRanks(i){
   const r = ROWS[i];
   if (!r || !r.result) return;
@@ -5990,7 +6006,7 @@ async function recheckRanks(i){
     draw();
     const m = document.querySelector(`[data-rkmsg="${i}"]`);
     if (m) m.textContent = stillBad ? ` \u00b7 ${stillBad} still failing` : '';
-    return;
+    return stillBad + pleft.length;
   } catch (e) {
     say(e.message);
   }
