@@ -3771,6 +3771,16 @@ def off_grid_volume(services, shown, markets, state):
         tot = lambda v: sum(int(v.get(x.lower(), 0) or 0) for x in services)
         out["volume"] = max(0, tot(allv) - tot(shownv))
         out["markets"] = rest[:max(0, cap - len(shown or []))]
+        # A MARKET WHOSE LOOKUP FAILED READS AS ZERO DEMAND. fetch_local_volume
+        # succeeds when any city answers, so a rate-limited Reno came back as
+        # nothing and the total quietly stayed the grid's. Name the markets
+        # with no figure of their own so the screen says it.
+        answered = {k[0] for k in (_apc or {}) if isinstance(k, tuple) and len(k) == 2}
+        fb = set((_apc or {}).get("__fallback_cities__") or [])
+        missing = [m for m in out["markets"]
+                   if _bare_city(m, state) not in answered or _bare_city(m, state) in fb]
+        if missing:
+            out["error"] = "no volume for " + ", ".join(missing)
     except Exception as e:
         out["error"] = str(e)
     return out
@@ -13878,6 +13888,13 @@ def api_refine():
         "services": s1.get("services", []),
         "service_volume": s1.get("service_volume", {}),
         "total_volume": s1.get("total_volume", None),
+        # Client markets the grid does not cross: their demand (already in
+        # total_volume) and the probe terms step 3 rank-checks for the add-on
+        # count. Not forwarding these is why both fixes did nothing live.
+        "off_grid_markets": s1.get("off_grid_markets") or [],
+        "off_grid_volume": s1.get("off_grid_volume") or 0,
+        "off_grid_error": s1.get("off_grid_error"),
+        "off_grid_probes": s1.get("off_grid_probes") or [],
         "volume_error": s1.get("volume_error"),
         "demand_frame": s1.get("demand_frame") or {},
         "grid_axis": s1.get("grid_axis") or {},

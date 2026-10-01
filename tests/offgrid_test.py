@@ -64,6 +64,28 @@ with app.app.test_request_context("/"):
 check("a failed lookup adds nothing", bad["volume"], 0)
 check("and says so", bool(bad["error"]), True)
 
+# A HIDDEN MARKET WHOSE LOOKUP FAILS IS NAMED, not read as zero demand.
+def reno_down(path, payload, **kw):
+    loc = (payload or [{}])[0].get("location_name", "")
+    if loc.startswith("Reno") or loc.startswith("Nevada"):
+        raise RuntimeError("40202 rate limit")
+    return fake_post(path, payload, **kw)
+app.dfs_post = reno_down
+with app.app.test_request_context("/"):
+    app.ads_volume_cache_clear()
+    part = app.off_grid_volume(SVC, SHOWN, ALL, "")
+check("a failed market is named", "Reno, NV" in (part["error"] or ""), True)
+check("the others still count", part["volume"], (300 + 200) + (30 + 20))
+app.dfs_post = fake_post
+
+# THE REFINE ENDPOINT FORWARDS THEM. It names the keys it returns, and leaving
+# these off is why the first two fixes did nothing live.
+src = open(os.path.join(os.path.dirname(app.__file__), "app.py")).read()
+api = src[src.index("def api_refine"):]
+api = api[:api.index("\n@app.route")]
+for k in ("off_grid_markets", "off_grid_volume", "off_grid_error", "off_grid_probes"):
+    check(f"api_refine forwards {k}", f'"{k}": s1.get("{k}")' in api, True)
+
 # THE PROBES MEASURE THEIR MARKETS. Phrased the way the grid phrases a city,
 # so recommend_addons matches each one back to its market and five markets
 # read as five measured, not two.
