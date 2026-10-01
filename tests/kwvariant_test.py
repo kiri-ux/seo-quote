@@ -120,5 +120,34 @@ check("volume lever: the biggest-volume head goes",
       [x["service"] for x in v["out"]], ["restaurant"])
 check("volume lever: volume falls a lot", v["volume_delta"] < -200000, True)
 
+# A PLACE NAME INSIDE A CANDIDATE IS NOT A NEW SERVICE. "san antonio bakery"
+# and "bakery san antonio texas" are "bakery", already quoted.
+VOL.update({"bakery": 22000, "pan dulce": 1600})
+with app.app.test_request_context("/"):
+    gg = app.kw_variant("lower", R2 + [{"kw": "bakery san antonio tx", "vol": 22200,
+                                        "city": "san antonio", "tier": "ultra"}],
+                        [r["kw"] for r in R2[:2]],
+                        [{"keyword": "san antonio bakery"},
+                         {"keyword": "bakery san antonio texas"},
+                         {"keyword": "pan dulce san antonio"}],
+                        ["San Antonio, TX"], "", {"restaurant": 0.8, "breakfast": 2.5},
+                        k=1, seeds=["restaurant", "breakfast", "bakery", "pan dulce"],
+                        levers={"adder": False, "volume": True})
+check("a quoted service with a place name is not swapped in",
+      [x["service"] for x in gg["in"]], ["pan dulce"])
+check("no keyword carries the place twice",
+      [r["kw"] for r in gg["rows"] if r["kw"].count("san antonio") > 1], [])
+
+# THE BUILD'S PER-SERVICE DEMAND is what the volume delta is measured in, not
+# row sums: rows for a service can carry figures the total never held.
+with app.app.test_request_context("/"):
+    sv = app.kw_variant("lower", R2, [r["kw"] for r in R2[:2]],
+                        [{"keyword": "biscuit restaurant"}], ["San Antonio, TX"], "",
+                        {"restaurant": 0.8}, k=1,
+                        seeds=["restaurant", "breakfast", "biscuits"],
+                        levers={"adder": False, "volume": True},
+                        service_volume={"restaurant": 100000, "breakfast": 18100})
+check("volume delta off the build's service volume", sv["volume_delta"], 900 - 100000)
+
 print(f"PASS={ok} FAIL={fail}")
 sys.exit(1 if fail else 0)

@@ -6037,6 +6037,7 @@ async function kwVariant(i, direction){
       national_demand: band === 'nationwide', cfg: r.over || {},
       // The client's own words: a swapped-in term has to be made of them.
       seeds: d.focus || [], business_desc: d.business_desc || '', brand: d.brand || '',
+      service_volume: kw.service_volume || (r.kw || {}).service_volume || null,
       // Which parts of this price the list can move.
       levers: {volume: (Number((res.pricing || {}).volume_add) || 0) > 0,
                adder: (Number((res.pricing || {}).competitive_adder) || 0) > 0}},

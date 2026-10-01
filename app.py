@@ -14446,7 +14446,7 @@ great top-rated reviews review low cost free emergency 24 hour hours same day
 
 def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
                national=False, industry="", k=None, seeds=None,
-               business_desc="", brand="", levers=None):
+               business_desc="", brand="", levers=None, service_volume=None):
     """A cheaper or a bigger version of a quote's keyword list.
 
     The price follows the list: the competition adder is the median click price
@@ -14505,9 +14505,34 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
                 return False
         return True
 
+    # A PLACE NAME ANYWHERE IS NOT PART OF THE SERVICE. Stripping only a
+    # trailing market let "san antonio bakery" and "bakery san antonio texas"
+    # through as new services -- both are "bakery", already quoted -- and
+    # crossing them again made "san antonio bakery san antonio tx".
+    geo_phrases = set()
+    for m in list(markets or []):
+        c_ = _bare_city(m, state)
+        if c_:
+            geo_phrases.add(c_)
+        st_ = (market_state(m, state) or "").strip().lower()
+        if st_:
+            geo_phrases.add(st_)
+            if STATE_ABBREV.get(st_):
+                geo_phrases.add(STATE_ABBREV[st_])
+    if state:
+        geo_phrases.add(state.strip().lower())
+        if STATE_ABBREV.get(state.strip().lower()):
+            geo_phrases.add(STATE_ABBREV[state.strip().lower()])
+
+    def no_geo(t):
+        t = " " + (t or "").lower() + " "
+        for g in sorted(geo_phrases, key=len, reverse=True):
+            t = t.replace(" " + g + " ", " ")
+        return re.sub(r"\s+", " ", t).strip()
+
     cands = []
     for x in (pool or []):
-        b = svc_of(str(x.get("keyword") or x.get("kw") or ""))
+        b = no_geo(svc_of(str(x.get("keyword") or x.get("kw") or "")))
         if (b and b not in used and b not in cands and len(b.split()) <= 6
                 and grounded(b)):
             cands.append(b)
@@ -14526,7 +14551,13 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
         return out
     cand_vol = {c: int(vols.get(c, 0) or 0) for c in cands}
     cands = [c for c in cands if cand_vol[c] > 0]
-    svc_vol = {s_: sum(int(r.get("vol") or 0) for r in rs) for s_, rs in by_svc.items()}
+    # THE BUILD'S OWN PER-SERVICE DEMAND, which is what total_volume is the sum
+    # of. Summing rows instead counted near-me rows and wider-area figures the
+    # total never held, and took Alamo Biscuit's 397,130/mo to zero.
+    sv = {str(k_).lower(): int(v_ or 0) for k_, v_ in (service_volume or {}).items()}
+    svc_vol = {s_: ((sv[s_] + sv.get(s_ + " near me", 0)) if s_ in sv
+                    else sum(int(r.get("vol") or 0) for r in rs))
+               for s_, rs in by_svc.items()}
     n_head = len(head_svcs)
     k = int(k or max(1, round(n_head * float(CFG.get("variant_share", 0.4)))))
     # WHICH LEVER MOVES THIS PRICE. Swapping by click price did nothing on a
@@ -14634,7 +14665,8 @@ def api_kw_variant():
                          seeds=d.get("seeds") or [],
                          business_desc=(d.get("business_desc") or ""),
                          brand=(d.get("brand") or ""),
-                         levers=d.get("levers") or None)
+                         levers=d.get("levers") or None,
+                         service_volume=d.get("service_volume") or None)
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO error: {e}."}), 502
     except Exception as e:
