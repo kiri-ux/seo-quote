@@ -2839,7 +2839,13 @@ function formNeedsRun(r, d){
   const norm = v => JSON.stringify(asList(v)
     .map(x => String(x).trim().toLowerCase()).sort());
   if (MEASURE_FIELDS.some(k => norm(d[k]) !== norm(was[k]))) return true;
-  const kws = k => norm(((k || {}).all || []).map(x => x.kw));
+  // A REBUILT LIST IS A NEW LIST even when its terms come back the same: the
+  // volumes, the total and the off-grid markets it measured are what the run
+  // prices on. (2026-10-01, Kiri)
+  const kws = k => JSON.stringify([
+    norm(((k || {}).all || []).map(x => `${x.kw}|${Number(x.vol) || 0}`)),
+    Number((k || {}).total_volume) || 0,
+    norm(((k || {}).off_grid_probes || []).map(x => x.kw))]);
   return kws(r.kw) !== kws(ranKw);
 }
 function formReprices(r){
@@ -5034,6 +5040,8 @@ async function autoSerp(r, d, ranks, say){
 }
 
 // ---------------------------------------------------------------- steps 2-4
+const askedKw = (rows, kw) => rows.some(x =>
+  String(x.kw).toLowerCase() === String(kw).toLowerCase());
 async function generate(){
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
@@ -5096,6 +5104,20 @@ async function generate(){
       doneN += batch.length;
       say(`Step 3 — checking rankings… ${Math.min(doneN, live.length)}/${live.length}`);
     };
+    // THE MARKETS THE TABLE LEAVES OUT ARE STILL CHECKED. Their rows feed the
+    // add-on count only -- not the table, not the not-ranking share -- so a
+    // market the client named but the grid did not cross is measured rather
+    // than skipped. Run alongside the table's batches; a failure costs only
+    // the add-on evidence. (2026-10-01, Kiri)
+    const probes = band === 'nationwide' ? []
+      : (r.kw.off_grid_probes || []).filter(x => x && x.kw)
+          .filter(x => !askedKw(live, x.kw));
+    const probeRun = probes.length
+      ? postWait('/api/rankings', Object.assign({}, common,
+          {batch: probes.map(x => ({kw: x.kw}))}), null, () => {})
+          .then(rk => (rk.results || []).filter(x => !x.error))
+          .catch(() => [])
+      : Promise.resolve([]);
     const settled = await Promise.all(batches.map(batch =>
       postWait('/api/rankings', Object.assign({}, common, {batch}), null, say)
         .then(rk => { tick(batch); return rk; })
@@ -5123,6 +5145,7 @@ async function generate(){
     // A FAILED SERP CALL IS NOT A KEYWORD THAT DOESN'T RANK. Errored rows leave
     // the denominator, and a run where every call failed prices with no ranking
     // adjustment at all rather than the maximum uplift.
+    const offGrid = await probeRun;
     const checkedOk = Math.max(live.length - errored, 0);
     const unmeasured = live.length > 0 && checkedOk === 0;
     const pct_not_ranking = checkedOk
@@ -5134,10 +5157,10 @@ async function generate(){
     // and Config overrides it.
     let addon = {suggested: 0, basis: ''};
     const measured = Object.keys(ranks).filter(k => ranks[k] !== '—').length;
-    if (geo.length > 1 && measured) {
+    if (geo.length > 1 && (measured || offGrid.length)) {
       try {
         addon = await post('/api/addon_suggestion',
-          {geo_values: geo, state: st, table, cfg: r.over});
+          {geo_values: geo, state: st, table: table.concat(offGrid), cfg: r.over});
       } catch (e) { addon = {suggested: 0, basis: ''}; }
     } else if (geo.length > 1) {
       // AN UNMEASURED RANK CHECK IS NOT A CLIENT WITH NO PRESENCE. "Ranking in
@@ -5222,7 +5245,7 @@ async function generate(){
       ...msReq(d)};
     const price = await post('/api/price', priceReq);
 
-    r.result = {pricing: price, ranks, table, metrics: met, addon, priceReq,
+    r.result = {pricing: price, ranks, table, offGrid, metrics: met, addon, priceReq,
       signals, health, agg, rivals,
       rankReq: {common, geo, st, band},
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {}};
