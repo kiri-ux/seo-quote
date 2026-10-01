@@ -1088,7 +1088,13 @@ CFG = {
     # Parallel SERP calls. DataForSEO allows 30 live requests at once; these wait
     # on Google rather than on this CPU, so the number that matters is how many
     # keywords clear one request budget.
-    "rank_check_workers": 12,
+    # TEN, with the page sending at most three batches at once: thirty calls
+    # in flight, DataForSEO's live ceiling, and every term in a batch starts
+    # in the first wave instead of waiting for a worker. (2026-10-01, Kiri)
+    "rank_check_workers": 10,
+    # Per-call ceiling for a live SERP read. Depth 100 is ten page fetches since
+    # Google dropped num=100, and fourteen seconds cut most of them off.
+    "serp_live_timeout_s": 50,
     # Long-tail sourcing
     # HOW MANY SEEDS keyword_suggestions is asked about. It is one request each,
     # so this is a real cost — but it was ALREADY capped, by a hardcoded
@@ -11901,7 +11907,12 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
         remaining = (deadline - time.time()) if deadline else 20
         if remaining < 4:
             raise last_err or TimeoutError("rank-check batch budget exhausted")
-        tmo = min(14 if attempt == 0 else remaining - 1, remaining, 20)
+        # ONE LONG ASK, NOT TWO SHORT ONES. A depth-100 read is ten Google
+        # pages since num=100 went away, so it routinely outlasts fourteen
+        # seconds -- and a retry starts the ten pages over. The first attempt
+        # gets the batch's time; the retry is for a call that failed fast.
+        # (2026-10-01, Kiri)
+        tmo = max(4, min(remaining - 2, float(CFG.get("serp_live_timeout_s", 50))))
         try:
             # /regular, not /advanced: organic-only, ~10x smaller JSON. Depth-100
             # advanced responses are megabyte-scale and parsing 20 of them
@@ -11913,6 +11924,8 @@ def _serp_one(kw, domain_dom, markets, state, brand, top_n, deadline=None,
         except Exception as e:
             last_err = e
             if attempt == 0:
+                if (deadline - time.time() if deadline else 20) < 10:
+                    raise
                 time.sleep(1)
     else:
         raise last_err

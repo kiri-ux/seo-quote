@@ -5045,6 +5045,16 @@ async function autoSerp(r, d, ranks, say){
 }
 
 // ---------------------------------------------------------------- steps 2-4
+// At most `n` of `items` in flight at once; results in the items' order.
+async function inPool(items, n, fn){
+  const out = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  };
+  await Promise.all(Array.from({length: Math.min(n, items.length)}, run));
+  return out;
+}
 const askedKw = (rows, kw) => rows.some(x =>
   String(x.kw).toLowerCase() === String(kw).toLowerCase());
 async function generate(){
@@ -5083,7 +5093,10 @@ async function generate(){
     // TWENTY, NOT TEN. Ten meant four round trips for a 39-term build, and the
     // server fans each batch out across rank_check_workers (12) internally, so
     // ten never used the fan-out it was given. (2026-09-17)
-    const RANK_BATCH = 20;
+    // TEN A BATCH, THREE AT A TIME (2026-10-01): each request fans out to ten
+    // workers, so three in flight is DataForSEO's thirty-call live ceiling,
+    // and every term starts at once instead of queueing for a worker.
+    const RANK_BATCH = 10, RANK_PARALLEL = 3;
     // ALL THE BATCHES AT ONCE. Awaiting them one after another made the batch
     // size the number of sequential round trips, and Step 3 the slowest part of
     // a build. Throughput was never the limit: SERP sits in the 300/min family
@@ -5123,17 +5136,20 @@ async function generate(){
           .then(rk => (rk.results || []).filter(x => !x.error))
           .catch(() => [])
       : Promise.resolve([]);
-    const settled = await Promise.all(batches.map(batch =>
+    const reasons = [];
+    const settled = await inPool(batches, RANK_PARALLEL, batch =>
       postWait('/api/rankings', Object.assign({}, common, {batch}), null, say)
+        .then(rk => { if (rk.error_reason) reasons.push(rk.error_reason); return rk; })
         .then(rk => { tick(batch); return rk; })
         // ONE BATCH FAILING IS NOT THE WHOLE CHECK FAILING. Sequentially a
         // throw aborted the loop and lost every batch after it; here the other
         // batches have already run, so their rows are kept and only this one's
         // terms go to the unmeasured rerun.
-        .catch(() => {
+        .catch(e => {
           tick(batch);
+          reasons.push(String((e && e.message) || e));
           return {results: batch.map(x => ({kw: x.kw, pos: '\u2014', error: true}))};
-        })));
+        }));
     let agg = null, rivals = null;
     settled.forEach(rk => { agg = addAgg(agg, rk.aggregators);
                             rivals = addRivals(rivals, rk.rivals); });
@@ -5253,7 +5269,13 @@ async function generate(){
       ...msReq(d)};
     const price = await post('/api/price', priceReq);
 
-    r.result = {pricing: price, ranks, table, offGrid, metrics: met, addon, priceReq,
+    // WHY LOOKUPS FAILED, the most common reason. "—" rows said a check
+    // failed and nothing said whether it was a timeout or a bad location.
+    const rankError = reasons.length
+      ? reasons.slice().sort((a, b) => reasons.filter(x => x === b).length
+                                     - reasons.filter(x => x === a).length)[0]
+      : '';
+    r.result = {pricing: price, ranks, table, offGrid, rankError, metrics: met, addon, priceReq,
       signals, health, agg, rivals,
       rankReq: {common, geo, st, band},
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {}};
@@ -5305,7 +5327,8 @@ async function generate(){
     // rank by then.
     const rerun = errored
       ? (async () => {
-          note(`Rechecking ${errored} unmeasured term${errored === 1 ? '' : 's'}…`);
+          note(`Rechecking ${errored} unmeasured term${errored === 1 ? '' : 's'}…`
+               + (rankError ? ` (${rankError})` : ''));
           try { await recheckRanks(ROWS.indexOf(r)); }
           catch (e) { /* the quote stands either way */ }
         })()
