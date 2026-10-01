@@ -5165,7 +5165,10 @@ async function generate(){
     if (geo.length > 1 && (measured || offGrid.length)) {
       try {
         addon = await post('/api/addon_suggestion',
-          {geo_values: geo, state: st, table: table.concat(offGrid), cfg: r.over});
+          // A failed lookup measured nothing, so it does not count as a
+          // market where the client is absent.
+          {geo_values: geo, state: st,
+           table: table.filter(x => !x.error).concat(offGrid), cfg: r.over});
       } catch (e) { addon = {suggested: 0, basis: ''}; }
     } else if (geo.length > 1) {
       // AN UNMEASURED RANK CHECK IS NOT A CLIENT WITH NO PRESENCE. "Ranking in
@@ -5778,7 +5781,12 @@ async function recheckRanks(i){
     const v = ranks[String(k).toLowerCase()];
     return v === '\u2014' || v == null;
   });
-  if (!todo.length) { say('every term already has a rank'); return; }
+  // Probes for the markets the table leaves out, still without a reading.
+  const offDone = new Set((res.offGrid || []).map(x => String(x.kw).toLowerCase()));
+  const probeTodo = band === 'nationwide' ? []
+    : ((work.kw || {}).off_grid_probes || []).map(x => x && x.kw)
+        .filter(k => k && !offDone.has(String(k).toLowerCase()));
+  if (!todo.length && !probeTodo.length) { say('every term already has a rank'); return; }
   if (!geoOf(d).length && band !== 'nationwide') {
     say('no markets on this quote');
     return;
@@ -5830,6 +5838,25 @@ async function recheckRanks(i){
       if (left.length >= before) break;
     }
     stillBad = left.length;
+    // THE HIDDEN MARKETS GET THEIR RETRY TOO. Their rows go to the add-on
+    // count only, as in the build.
+    let pleft = probeTodo.slice();
+    for (let pass = 0; pass < 3 && pleft.length; pass++) {
+      const before = pleft.length, failed = [];
+      for (let n = 0; n < pleft.length; n += BATCH) {
+        say(`hidden markets \u00b7 ${probeTodo.length - pleft.length}/${probeTodo.length}`);
+        const batch = pleft.slice(n, n + BATCH).map(kw => ({kw}));
+        const rk = await postWait('/api/rankings', Object.assign({}, common, {batch}),
+                                  null, say).catch(() => ({results: batch.map(x =>
+                                    ({kw: x.kw, error: true}))}));
+        (rk.results || []).forEach(x => {
+          if (x.error) { failed.push(x.kw); return; }
+          (res.offGrid = res.offGrid || []).push(x);
+        });
+      }
+      pleft = failed;
+      if (pleft.length >= before) break;
+    }
     // The denominator moved, so the price moves with it.
     // Rows for terms that are no longer checked leave the tally with them.
     const keep = new Set(all.map(x => String(x.kw).toLowerCase()));
@@ -5855,7 +5882,23 @@ async function recheckRanks(i){
       base_override: (r.cfg || {}).ov_core || '',
       geo_override: (r.cfg || {}).ov_ai || '',
       addon_override: (r.cfg || {}).ov_addon || '', pageone_rank: null};
+    // THE ADD-ON COUNT IS READ AGAIN. It was taken once, off a rank check
+    // that had mostly failed, and the recheck that filled the ranks in never
+    // asked again -- so a run that measured nothing stayed at no add-ons.
+    // A count typed in Config still wins. (2026-10-01, Kiri)
+    const geoNow = geoOf(d);
+    const meas = tbl.filter(x => !x.error).concat(res.offGrid || []);
+    if (band !== 'nationwide' && geoNow.length > 1 && meas.length) {
+      try {
+        res.addon = await post('/api/addon_suggestion',
+          {geo_values: geoNow, state: stateOf(d), table: meas, cfg: r.over || {}});
+      } catch (e) { /* the earlier count stands */ }
+    }
+    const addonOv = String((r.cfg || {}).addon_markets || '').trim();
+    const addonN = addonOv === '' ? (+((res.addon || {}).suggested) || 0)
+                                  : (+addonOv || 0);
     const req = Object.assign({}, base, {
+      addon_markets: addonN,
       pct_not_ranking: pct,
       // The page one this pass just read, on top of what the build read.
       pageone_agg_share: res.agg ? res.agg.share : (base.pageone_agg_share ?? null),
