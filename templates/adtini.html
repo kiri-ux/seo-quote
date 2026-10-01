@@ -1869,6 +1869,33 @@ function runSettings(r){
     </tbody></table>`;
 }
 
+// WHEN A BUDGET OPTION IS WORTH A LOOK. One fact on the button, only when the
+// run's own numbers say the list is pushing the price up or leaving room.
+// (2026-10-01, Kiri)
+function budgetFlags(r){
+  const res = r.result || {};
+  const p = res.pricing || {};
+  const kw = r.kw || {};
+  const out = {lower: '', grow: ''};
+  const sv = kw.service_volume || {};
+  const vols = Object.keys(sv).map(k => [k, Number(sv[k]) || 0]);
+  const total = vols.reduce((a, x) => a + x[1], 0);
+  const top = vols.sort((a, b) => b[1] - a[1])[0];
+  const cap = Number(p.competitive_adder_cap) || 0;
+  const adder = Number(p.competitive_adder) || 0;
+  if (top && total && top[1] / total >= 0.5)
+    out.lower = `${Math.round(top[1] / total * 100)}% of demand is \u201c${top[0]}\u201d`;
+  else if (p.volume_add_capped)
+    out.lower = 'volume add at its cap';
+  else if (adder > 0 && cap && adder < cap)
+    out.lower = `competitive adder ${money(adder)}`;
+  const free = Number(p.vol_free_below) || 0;
+  const vol = Number(p.total_volume) || 0;
+  if (free && vol && vol < free)
+    out.grow = `${vol.toLocaleString()}/mo, under ${free.toLocaleString()}/mo`;
+  return out;
+}
+
 function resultsHtml(r, full){
   if (!r.result) return '';
   const p = r.result.pricing || {};
@@ -1930,9 +1957,14 @@ function resultsHtml(r, full){
         <button class="btn2" type="button" data-slides="${r.i}">Download slides</button>`
       + `
         <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>`
-      + (r.kind === 'seo' && (r.result.metrics || r.result.priceReq) ? `
-        <button class="btn2" type="button" data-variant="lower" data-row="${r.i}">Lower budget</button>
-        <button class="btn2" type="button" data-variant="grow" data-row="${r.i}">Higher budget</button>` : '')
+      + (r.kind === 'seo' && (r.result.metrics || r.result.priceReq) ? (() => {
+        const bf = budgetFlags(r);
+        const lbl = (t, f) => t + (f ? ` <span class="vflag">\u00b7 ${esc(f)}</span>` : '');
+        return `
+        <button class="btn2${bf.lower ? ' flagged' : ''}" type="button" data-variant="lower"
+          data-row="${r.i}">${lbl('Lower budget', bf.lower)}</button>
+        <button class="btn2${bf.grow ? ' flagged' : ''}" type="button" data-variant="grow"
+          data-row="${r.i}">${lbl('Higher budget', bf.grow)}</button>`; })() : '')
       + `
         <span class="hint" data-propmsg="${r.i}"></span>
       </div>
