@@ -14494,8 +14494,15 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
         if ab:
             geo.add(ab)
 
+    # A PIECE OF THEIR OWN NAME IS NOT A SERVICE. is_brand_term ignores shape
+    # words on purpose, so "biscuit company" passed for Alamo Biscuit Company &
+    # Panaderia. Two or more words in a row from the name are the name.
+    bname = " " + " ".join(words(brand)) + " "
+
     def grounded(t):
         if brand and is_brand_term(t, brand):
+            return False
+        if len(words(t)) >= 2 and (" " + " ".join(words(t)) + " ") in bname:
             return False
         for w in words(t):
             if (w in _VARIANT_MODIFIERS or w in _SEED_SHAPE or w in _FORM_SKIP
@@ -14528,7 +14535,14 @@ def kw_variant(direction, rows, head, pool, markets, state, cpc_now,
         t = " " + (t or "").lower() + " "
         for g in sorted(geo_phrases, key=len, reverse=True):
             t = t.replace(" " + g + " ", " ")
-        return re.sub(r"\s+", " ", t).strip()
+        # What a place leaves behind: "bakery near san antonio" is "bakery".
+        ws = re.sub(r"\s+", " ", t).strip().split()
+        dangling = _PREPOSITIONS | {"me"}
+        while ws and ws[-1] in dangling:
+            ws.pop()
+        while ws and ws[0] in dangling:
+            ws.pop(0)
+        return " ".join(ws)
 
     cands = []
     for x in (pool or []):

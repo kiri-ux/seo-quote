@@ -138,6 +138,21 @@ check("a quoted service with a place name is not swapped in",
 check("no keyword carries the place twice",
       [r["kw"] for r in gg["rows"] if r["kw"].count("san antonio") > 1], [])
 
+# NOT THEIR OWN NAME, AND NOT A QUOTED SERVICE WITH A PREPOSITION LEFT ON IT.
+VOL.update({"biscuit company": 500, "bakery near": 400, "best panaderia": 300})
+with app.app.test_request_context("/"):
+    bn = app.kw_variant("lower", R2 + [{"kw": "bakery san antonio tx", "vol": 22200,
+                                        "city": "san antonio", "tier": "ultra"}],
+                        [r["kw"] for r in R2[:2]],
+                        [{"keyword": "biscuit company"}, {"keyword": "bakery near san antonio"},
+                         {"keyword": "best panaderia"}],
+                        ["San Antonio, TX"], "", {"restaurant": 0.8}, k=1,
+                        seeds=["restaurant", "breakfast", "bakery", "biscuits", "panaderia"],
+                        brand="Alamo Biscuit Company & Panaderia",
+                        levers={"adder": False, "volume": True})
+check("their own name and a dangling preposition are not swapped in",
+      [x["service"] for x in bn["in"]], ["best panaderia"])
+
 # THE BUILD'S PER-SERVICE DEMAND is what the volume delta is measured in, not
 # row sums: rows for a service can carry figures the total never held.
 with app.app.test_request_context("/"):
