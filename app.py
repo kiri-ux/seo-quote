@@ -10694,6 +10694,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 return added
             _nfloor = int(CFG.get("near_me_min_volume", 30))
             _tier_of = {x["service"]: x["tier"] for x in services}
+            _tier_min = {}
+            for x in services:
+                _sv = int((vols or {}).get(str(x["service"]).lower(), 0) or 0)
+                if _sv > 0:
+                    _tier_min[x["tier"]] = min(_tier_min.get(x["tier"], _sv), _sv)
             # Highest measured demand wins the slots, not list order.
             _ranked = sorted(
                 ((clean_kw(f"{nm} near me"), nm) for nm in svc_names),
@@ -10724,7 +10729,14 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 v = int((vols or {}).get(f, 0) or 0)
                 if v < _nfloor:
                     continue
+                # BY ITS OWN DEMAND, NOT ITS SERVICE'S. Inheriting put four
+                # 10/mo near-me rows in Ultra Competitive on King and Prince.
+                # It takes the highest tier whose weakest service it matches.
+                # (2026-10-02, Kiri)
                 t = _tier_of.get(nm, "competitive")
+                if _tier_min:
+                    t = next((tt for tt in ("ultra", "competitive")
+                              if tt in _tier_min and v >= _tier_min[tt]), "long_tail")
                 if any(r["keyword"] == f for r in g[t]):
                     continue
                 row = {"keyword": f, "volume": v, "src": "grid",
@@ -11092,6 +11104,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             _order = ["ultra", "competitive", "long_tail"]
             _counts = {t: sum(1 for x in services if x.get("tier") == t)
                        for t in _order}
+            # A PROPOSAL'S SHAPE: FEW ULTRA, MORE COMPETITIVE, MOST LONG TAIL.
+            # The counts were whatever the build started with, so King and
+            # Prince read 10 Ultra / 2 / 2 with 10/mo terms called "ultra
+            # competitive". Ultra and Competitive are capped at a share of the
+            # list; overflow moves down a tier. A list that already has the
+            # shape is left alone. (2026-10-02, Kiri)
+            _n = sum(_counts.values())
+            if _n >= 3:
+                _ucap = max(1, round(_n * float(CFG.get("tier_share_ultra", 0.2))))
+                _ccap = max(1, round(_n * float(CFG.get("tier_share_competitive", 0.3))))
+                _u = min(_counts["ultra"], _ucap)
+                _c = min(_counts["competitive"] + (_counts["ultra"] - _u), _ccap)
+                _counts = {"ultra": _u, "competitive": _c, "long_tail": _n - _u - _c}
             _measured = [x for x in services
                          if (service_volume.get(x["service"]) or 0) > 0]
             if len(_measured) >= 3 and sum(_counts.values()) == len(services):
