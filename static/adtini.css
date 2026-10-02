@@ -862,3 +862,5 @@ label.dl:hover{text-decoration:underline}
 .keepterm{font:inherit;font-size:12px;font-weight:600;color:var(--navy);background:#fff;border:1px solid var(--line, #d8dbe0);border-radius:999px;padding:2px 9px;margin:2px 2px 0 0;cursor:pointer}
 .keepterm i{font-style:normal;font-weight:500;color:var(--muted)}
 .keepterm:hover{border-color:var(--navy)}
+.pview.pvaddon{grid-template-columns:1fr 2fr 1fr}
+@media(max-width:900px){.pview.pvaddon{grid-template-columns:1fr}}

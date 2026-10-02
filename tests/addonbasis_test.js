@@ -86,7 +86,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     const out = await p.evaluate(() => {
       const cards = [...document.querySelectorAll('.prod[data-row="0"] .pv')]
         .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
-      return {addon: cards.find(c => /^Add-on markets/.test(c)),
+      return {addon: cards.find(c => /^Add-on pricing/.test(c)),
               demand: cards.find(c => /^Measured demand/.test(c)),
               ranking: cards.find(c => /^Ranking/.test(c)),
               priced: (JSON.parse(JSON.stringify(ROWS[0].result.pricing.handoff))).addon_markets};
