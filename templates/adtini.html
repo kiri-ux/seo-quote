@@ -286,6 +286,7 @@
 
     <!-- ---------------- per-quote config -------------------------------- -->
     <div id="paneCfg" hidden>
+      <div class="cfgsec" id="cfgBudget" hidden></div>
       <form id="fcfg">
         <div class="cfgsec">
           <h4>This quote only</h4>
@@ -2004,6 +2005,27 @@ function budgetFlags(r){
   return out;
 }
 
+// LOWER / HIGHER BUDGET LIVE ON THE CONFIG PANE, beside the constants they
+// sit with, not in the quote's action bar. (2026-10-02, Kiri)
+function cfgBudgetLoad(r){
+  const sec = $('cfgBudget');
+  const on = r.kind === 'seo' && !!r.result && !!(r.result.metrics || r.result.priceReq);
+  sec.hidden = !on;
+  if (!on) { sec.innerHTML = ''; return; }
+  const bf = budgetFlags(r);
+  const lbl = (t, f) => t + (f ? ` <span class="vflag">\u00b7 ${esc(f)}</span>` : '');
+  sec.innerHTML = `
+    <h4>Budget</h4>
+    <div class="qacts">
+      <button class="btn2${bf.lower ? ' flagged' : ''}" type="button" data-variant="lower"
+        data-row="${r.i}">${lbl('Lower budget', bf.lower)}</button>
+      <button class="btn2${bf.grow ? ' flagged' : ''}" type="button" data-variant="grow"
+        data-row="${r.i}">${lbl('Higher budget', bf.grow)}</button>
+      <span class="hint" data-varmsg="${r.i}"></span>
+    </div>
+    <div class="qvariant" data-variantbox="${r.i}" hidden></div>`;
+}
+
 function resultsHtml(r, full){
   if (!r.result) return '';
   const p = r.result.pricing || {};
@@ -2065,18 +2087,9 @@ function resultsHtml(r, full){
         <button class="btn2" type="button" data-slides="${r.i}">Download slides</button>`
       + `
         <button class="btn2" type="button" data-share="${r.i}">Copy review link</button>`
-      + (r.kind === 'seo' && (r.result.metrics || r.result.priceReq) ? (() => {
-        const bf = budgetFlags(r);
-        const lbl = (t, f) => t + (f ? ` <span class="vflag">\u00b7 ${esc(f)}</span>` : '');
-        return `
-        <button class="btn2${bf.lower ? ' flagged' : ''}" type="button" data-variant="lower"
-          data-row="${r.i}">${lbl('Lower budget', bf.lower)}</button>
-        <button class="btn2${bf.grow ? ' flagged' : ''}" type="button" data-variant="grow"
-          data-row="${r.i}">${lbl('Higher budget', bf.grow)}</button>`; })() : '')
       + `
         <span class="hint" data-propmsg="${r.i}"></span>
       </div>
-      <div class="qvariant" data-variantbox="${r.i}" hidden></div>
       ${tileRow(true)}
       ${plannerView(r)}
 
@@ -2411,7 +2424,7 @@ function open(i, view){
   $('fseo').hidden = r.kind !== 'seo';
   $('form').hidden = r.kind !== 'orm';
   load(formOf(r), r.data);
-  cfgLoad(r); cfgGlobalLoad();
+  cfgLoad(r); cfgBudgetLoad(r); cfgGlobalLoad();
   if (r.kind === 'orm') scanLoad(r); else kbLoad(r);
   $('saved').textContent = '';
   $('scrim').hidden = false;
@@ -6189,7 +6202,7 @@ async function kwVariant(i, direction){
   const res = (run && run.quote) || r.result;
   const kw = work.kw || {};
   const box = document.querySelector(`[data-variantbox="${i}"]`);
-  const say = t => { const m = document.querySelector(`[data-propmsg="${i}"]`);
+  const say = t => { const m = document.querySelector(`[data-varmsg="${i}"]`);
                      if (m) m.textContent = t; };
   const tierRows = ['ultra', 'competitive', 'long_tail'].flatMap(t =>
     (kw[t] || []).map(x => Object.assign({}, x, {tier: t})));
@@ -6266,7 +6279,7 @@ function useVariant(i){
   open(i, 'form');
   $('saved').textContent = `${kw.all.length} terms on this quote \u00b7 regenerate to rank-check the new ones.`;
 }
-$('prods').addEventListener('click', e => {
+$('cfgBudget').addEventListener('click', e => {
   const vb = e.target.closest('[data-variant]');
   if (vb) { e.preventDefault(); e.stopPropagation();
             kwVariant(+vb.dataset.row, vb.dataset.variant); return; }
