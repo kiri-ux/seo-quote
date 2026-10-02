@@ -5262,17 +5262,42 @@ def refill_dead_services(services, vols, typed, market_pool, market_vocab,
     if not terms:
         return services, [], {}, {}
     v2, pc2, _n = fetch_local_volume(terms, cities, state)
-    ok = [t for t in terms if int(v2.get(t, 0) or 0) >= floor][:len(dead)]
-    if not ok:
+    measured = [t for t in terms if int(v2.get(t, 0) or 0) >= floor]
+    if not measured:
         return services, [], {}, {}
-    # The weakest dead slots go first; any left over stay as they were.
+
+    # THE SAME KIND OF TERM AS THE SLOT IT FILLS. Grounded in the client's
+    # words was not enough: King and Prince Seafood, a B2B supplier, had its
+    # dead "…supplier" slots refilled with "seafood food", "seafood
+    # restaurants" and "seafood boil" -- diners' searches, made of words the
+    # client does use. A replacement shares the slot's head noun (its last
+    # word), or two of its content words; otherwise the slot keeps its term.
+    # (2026-10-02, Kiri)
+    def _content(t):
+        return [_seed_stem(w) for w in re.split(r"[^a-z0-9]+", str(t).lower())
+                if w and w not in _PREPOSITIONS and w not in _FORM_SKIP]
+
+    def _fits(slot, cand):
+        a, b = _content(slot), _content(cand)
+        if not a or not b:
+            return False
+        return a[-1] == b[-1] or len(set(a) & set(b)) >= 2
+
     dead.sort(key=lambda x: vol(x.get("service")))
-    out_ids = {id(x) for x in dead[:len(ok)]}
-    queue = list(ok)
+    taken, pick = set(), {}
+    for x in dead:
+        fits = [t for t in measured if t not in taken and _fits(x["service"], t)]
+        if fits:
+            best = max(fits, key=lambda t: int(v2.get(t, 0) or 0))
+            taken.add(best)
+            pick[id(x)] = best
+    if not pick:
+        return services, [], {}, {}
+    ok = list(taken)
     new_svcs, report = [], []
     for x in services:
-        if id(x) in out_ids and queue:
-            t = queue.pop(0)
+        t = pick.get(id(x))
+        if t:
             report.append({"out": x["service"], "out_volume": vol(x["service"]),
                            "in": t, "in_volume": int(v2.get(t, 0) or 0),
                            "kind": "refill", "tier": x.get("tier", "")})
