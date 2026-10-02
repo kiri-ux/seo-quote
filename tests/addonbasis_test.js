@@ -23,6 +23,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     const p = await b.newPage();
     p.on('pageerror', e => errs.push(e.message));
     const calls = [];
+    let sentBand;
     const json = (route, body) =>
       route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(body)});
     await p.route('**/api/**', route => {
@@ -35,9 +36,10 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
       if (url === '/api/rankings')
         return json(route, {results: (bd.batch || []).map(x => ({
           kw: x.kw, pos: rankPos, ranked_top: false, error: rankPos === '—'}))});
-      if (url === '/api/addon_suggestion')
+      if (url === '/api/addon_suggestion') {
+        sentBand = bd.band;
         return json(route, {suggested: 3, basis: 'ranking in only 0 of 4 markets, so the rest'
-          + ' are a campaign from scratch each', confident: true});
+          + ' are a campaign from scratch each', confident: true}); }
       if (url === '/api/price')
         return json(route, {anchor: 2950, min_term_months: 6,
           handoff: {package: {base: 2950}, margin_pct: 0.35,
@@ -91,6 +93,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     });
     await p.close();
     out.asked = calls.includes('/api/addon_suggestion');
+    out.sentBand = sentBand;
     out.widen = out0.widen; out.offersSeats = out0.offersSeats;
     return out;
   };
@@ -106,6 +109,8 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     'errored.noAddOnCard': [errored.addon, undefined],
     'errored.rankingIsUnmeasured': [/unmeasured/.test(errored.ranking || ''), true],
     'measured.recommendationAsked': [measured.asked, true],
+    // The server decides one campaign vs add-ons on the scope. (2026-10-02)
+    'measured.sendsTheScope': [measured.sentBand, 'contiguous_region'],
     'measured.pricedOnTheRecommendation': [measured.priced, 3],
     'measured.namesTheRegionCaveat': [/contiguous region/
       .test(measured.addon || ''), true],

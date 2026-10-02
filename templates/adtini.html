@@ -5389,7 +5389,7 @@ async function generate(){
         addon = await post('/api/addon_suggestion',
           // A failed lookup measured nothing, so it does not count as a
           // market where the client is absent.
-          {geo_values: geo, state: st,
+          {geo_values: geo, state: st, band,
            table: table.filter(x => !x.error).concat(offGrid), cfg: r.over});
       } catch (e) { addon = {suggested: 0, basis: ''}; }
     } else if (geo.length > 1) {
@@ -6145,7 +6145,7 @@ async function recheckRanks(i){
     if (band !== 'nationwide' && geoNow.length > 1 && meas.length) {
       try {
         res.addon = await post('/api/addon_suggestion',
-          {geo_values: geoNow, state: stateOf(d), table: meas, cfg: r.over || {}});
+          {geo_values: geoNow, state: stateOf(d), band, table: meas, cfg: r.over || {}});
       } catch (e) { /* the earlier count stands */ }
     }
     const addonOv = String((r.cfg || {}).addon_markets || '').trim();
