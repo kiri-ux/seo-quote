@@ -3654,9 +3654,13 @@ function kbDraw(r){
     const ev = (ax && ax.evidence) || {};
     axEl.textContent = !ax || !ax.axis ? ''
       : (ax.axis === 'services'
-          ? `Budget on services \u00b7 ${ev.cities_with_demand || 0} of `
-            + `${ev.cities_scored || 0} markets carry measurable demand, so the `
-            + `seeds are not repeated across the rest`
+          // No cities scored -- a state or a single market -- has no "rest" to
+          // repeat across; "0 of 0 markets" read as a failure. (2026-10-02, Kiri)
+          ? (ev.cities_scored
+             ? `Budget on services \u00b7 ${ev.cities_with_demand || 0} of `
+               + `${ev.cities_scored} markets carry measurable demand, so the `
+               + `seeds are not repeated across the rest`
+             : 'Budget on services')
           : `Budget on geography \u00b7 seeds repeated across `
             + `${ev.cities_scored || 0} markets`)
         + (ev.by_hand ? ' \u00b7 set by hand' : '');
