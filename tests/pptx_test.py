@@ -244,6 +244,19 @@ print("\nTHE LOGO IS A FILE, NOT A WORD")
 check("the deck never sets the name in type",
       any("adtini" in s for s in pair), False)
 
+print("\nTHE MAIN MARKET AND THE ADD-ONS ARE NAMED")
+named = quote("Core SEO, AI Search")
+named.update(main_market="Seattle, WA",
+             addon_market_names=["Las Vegas, NV", "Reno, NV"])
+price_slide = slides(deck(named))[-1]
+check("the main market is on the pricing slide",
+      "Main Market: Seattle, WA" in price_slide, True)
+check("and the add-ons with it",
+      "Add-on Markets: Las Vegas, NV, Reno, NV" in price_slide, True)
+check("a quote with no add-ons names no market",
+      "Main Market" in slides(deck(dict(quote("Core SEO", addon=0),
+                                        main_market="Seattle, WA")))[-1], False)
+
 print("\nAND IT COMES BACK AS A FILE")
 app.app.config["TESTING"] = True
 client = app.app.test_client()
