@@ -283,7 +283,10 @@ const CFG = {
     // the planner's view is what the row opens to
     R.planner = [...q.querySelectorAll('.pview .pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
-    R.serpLine = q.querySelector('.pvserp').textContent.trim();
+    // The panel itself; the progress line under it follows a live capture.
+    { const pv = q.querySelector('.pvserp').cloneNode(true);
+      pv.querySelectorAll('.serpmsg').forEach(x => x.remove());
+      R.serpLine = pv.textContent.trim(); }
     // and the two destination lists are closed until asked for
     R.closed = [...q.querySelectorAll('.qfold')].every(f => !f.open);
     const ordFold = foldBy(/^Order form/), proFold = foldBy(/^Proposal/);
