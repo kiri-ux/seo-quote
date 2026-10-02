@@ -864,3 +864,4 @@ label.dl:hover{text-decoration:underline}
 .keepterm:hover{border-color:var(--navy)}
 .pview.pvaddon{grid-template-columns:1fr 2fr 1fr}
 @media(max-width:900px){.pview.pvaddon{grid-template-columns:1fr}}
+.pv .pvsub{display:block;margin-top:2px;font-size:12.5px;line-height:1.45;color:var(--muted)}
