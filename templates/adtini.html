@@ -1662,9 +1662,7 @@ function plannerView(r){
         // The count and the price. The reasoning sentence crowded the tile;
         // the market tally is the fact it rests on. (2026-10-01, Kiri)
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
-           : (sug.measured ? ` · ranking in ${sug.covered || 0} of ${sug.measured} markets` : '')
-             + (/over \d+ miles/.test(sug.basis || '')
-                ? ` · over ${sug.basis.match(/over (\d+) miles/)[1]} mi from main` : '')));
+           : (sug.measured ? ` · ranking in ${sug.covered || 0} of ${sug.measured} markets` : '')));
     // WHICH MARKET IS MAIN, AND WHICH ARE THE ADD-ONS. The tiles and the
     // keyword list below are the main market's alone.
     if (h.addon_markets && mainMarket(r)) {
@@ -1675,7 +1673,11 @@ function plannerView(r){
       const out = new Set(names.map(marketKey).concat(main));
       const near = names.length ? geoOf(r.data || {}).filter(m => !out.has(marketKey(m)))
         .map(m => String(m).split(',')[0].trim()) : [];
-      addA('Main market', mainMarket(r) + (near.length ? ` + ${near.join(', ')}` : ''));
+      // The main market on its own line, the towns that ride with it under it,
+      // named by the reach that grouped them. (2026-10-02, Kiri)
+      const reach = (String(sug.basis || '').match(/over (\d+) miles/) || [])[1];
+      addA('Main market', {main: mainMarket(r), sub: near.length
+        ? `${reach ? `Within ${reach} mi` : 'With'}: ${near.join(', ')}` : ''});
       addA('Add-on markets', names.join(', '));
     }
     const rk = shownRanks(r);
@@ -1741,7 +1743,10 @@ function plannerView(r){
       </table></div>
       <div class="unrgap" data-unrgap="${r.i}"></div>
     </div>`;
-  const card = ([k, v]) => `<div class="pv"><small>${esc(k)}</small><b>${esc(v)}</b></div>`;
+  const card = ([k, v]) => `<div class="pv"><small>${esc(k)}</small>`
+    + (typeof v === 'object'
+       ? `<b>${esc(v.main)}</b>${v.sub ? `<span class="pvsub">${esc(v.sub)}</span>` : ''}`
+       : `<b>${esc(v)}</b>`) + `</div>`;
   const cards = (addonRows.length
       ? `<div class="pview pvaddon">${addonRows.map(card).join('')}</div>` : '')
     + `<div class="pview">${rows.map(card).join('')}</div>`;

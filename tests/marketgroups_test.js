@@ -19,6 +19,10 @@ const BASE = 'http://127.0.0.1:5203';
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent)
       .filter(c => /^(Main market|Add-on markets)/.test(c)).join(' | ');
   });
+  const sub = async () => p.evaluate(() => {
+    const el = document.querySelector('.prod[data-row="0"] .pvaddon .pvsub');
+    return el ? el.textContent : '';
+  });
   await p.evaluate(() => {
     const r = ROWS[0];
     r.kind = 'seo';
@@ -34,7 +38,12 @@ const BASE = 'http://127.0.0.1:5203';
   });
   const c = await card();
   say('main, its towns, then the add-ons',
-      c === 'Main market: Sherman, TX + Ardmore, Denison | Add-on markets: Antlers, OK, Paris, TX', c);
+      c === 'Main market: Sherman, TX | Add-on markets: Antlers, OK, Paris, TX', c);
+  say('the towns with it, under it', await sub() === 'With: Ardmore, Denison', await sub());
+  await p.evaluate(() => { ROWS[0].result.addon.basis =
+    'contiguous region — 2 over 60 miles from Sherman, TX: a, b.'; });
+  await card();
+  say('named by the reach', await sub() === 'Within 60 mi: Ardmore, Denison', await sub());
   say('no page errors', errs.length === 0, JSON.stringify(errs));
   await b.close();
   console.log(bad ? 'failed=' + bad : 'ok all');

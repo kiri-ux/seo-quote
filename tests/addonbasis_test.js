@@ -112,8 +112,8 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     // The server decides one campaign vs add-ons on the scope. (2026-10-02)
     'measured.sendsTheScope': [measured.sentBand, 'contiguous_region'],
     'measured.pricedOnTheRecommendation': [measured.priced, 3],
-    'measured.namesTheReach': [/over 60 mi from main/
-      .test(measured.addon || ''), true],
+    // The reach is named on the Main market card, not the pricing. (2026-10-02)
+    'measured.reachNotOnPricing': [/mi from main/.test(measured.addon || ''), false],
     // THE AREA IS NAMED. "a wider area" does not say whether the figure is
     // usable; the state or country that answered does.
     'both.widerAreaNamedOnDemand': [/answered from \S/.test(measured.demand || ''), true],
