@@ -7,7 +7,8 @@ let bad = 0;
 const say = (n, ok, extra='') => { if(!ok){bad++; console.log('FAIL', n, extra);} };
 
 const src = s.slice(s.indexOf('function expandWhy(note){'));
-const fn = new Function('return ' + src.slice(0, src.indexOf('\n}') + 2))();
+const esc = v => String(v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fn = new Function('esc', 'return ' + src.slice(0, src.indexOf('\n}') + 2))(esc);
 
 say('added', fn({added: ['a', 'b'], found: {}, fails: {}})
     === ' · 2 terms added by expansion.', fn({added: ['a','b'], found:{}, fails:{}}));
@@ -38,6 +39,15 @@ say('floor.countsDropped', /18 measured under the 20\/mo floor/.test(t), t);
 say('floor.namesTheMarket', /this market runs about 10\/mo/.test(t), t);
 say('floor.saysWhatToDo', /Config/.test(t), t);
 say('floor.notBlamingTheIndustryPass', !/the industry returned none/.test(t), t);
+
+// THE DROPPED TERMS BY NAME, each one keepable with a click. (2026-10-02)
+t = fn({added: [], found: {}, fails: {},
+        floorInfo: {proposed: 3, rejected: 2, floor: 20,
+                    dropped: [{term: 'dental implants', vol: 10}, {term: 'a"b', vol: 0}]}});
+say('dropped.named', /data-keepterm="dental implants"/.test(t) && /10\/mo/.test(t), t);
+say('dropped.floor', /Under the 20\/mo floor/.test(t), t);
+say('dropped.escaped', /a&quot;b/.test(t) && !/a"b/.test(t), t);
+say('keepHandler', /\$\('saved'\)\.addEventListener\('click'[\s\S]{0,120}data-keepterm/.test(s));
 
 // One proposal reads as one.
 t = fn({added: [], found: {}, fails: {},

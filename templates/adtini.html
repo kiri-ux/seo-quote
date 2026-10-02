@@ -3957,7 +3957,7 @@ async function expandPass(r, d, sources){
   // measures now, and the floor here is the same for all three.
   const floor = Number(ind.floor) || Number(site.floor) || 20;
   let under = 0;
-  const rows = [];
+  const rows = [], low = [];
   // AND CHECKED HERE TOO, because this is where all three sources merge and
   // only one of them is the gap-finder. Whole words, never fragments -- the
   // same rule the server uses, so negating "allergy" cannot take "allegory".
@@ -3973,7 +3973,7 @@ async function expandPass(r, d, sources){
     if (!term || have.has(term.toLowerCase()) || echoesADrop(term)
         || tripsNegative(term)) return;
     const vol = Number(x.volume) || 0;
-    if (vol < floor) { under++; return; }
+    if (vol < floor) { under++; low.push({term, vol}); return; }
     have.add(term.toLowerCase());
     rows.push({term, vol, ranked: !!x.ranked_top, src});
   });
@@ -3983,6 +3983,19 @@ async function expandPass(r, d, sources){
   floorInfo.proposed += (site.services || []).length + (rank.services || []).length;
   floorInfo.rejected += under;
   floorInfo.floor = floor;
+  // WHAT THE FLOOR DROPPED, BY NAME, so one can be kept with a click instead
+  // of lowering the floor for every term. (2026-10-02, Kiri)
+  (ind.rejected || []).forEach(x => {
+    const term = String(x.term || '').trim();
+    if (term && !have.has(term.toLowerCase()) && !echoesADrop(term)
+        && !tripsNegative(term)) low.push({term, vol: Number(x.volume) || 0});
+  });
+  const seenLow = new Set();
+  floorInfo.dropped = low.filter(x => {
+    const k = x.term.toLowerCase();
+    if (seenLow.has(k)) return false;
+    seenLow.add(k); return true;
+  }).sort((a, b) => b.vol - a.vol);
   // Best first, and stop at the slot count -- a list longer than the grid is
   // terms nobody will quote.
   rows.sort((a, b) => (b.ranked - a.ranked) || (b.vol - a.vol));
@@ -4023,7 +4036,10 @@ async function expandSeeds(r, d){
                      floor: b.floor || a.floor,
                      thin: b.thin || a.thin,
                      typical: b.typical || a.typical,
-                     missing: (b.missing || []).length ? b.missing : a.missing};
+                     missing: (b.missing || []).length ? b.missing : a.missing,
+                     dropped: (a.dropped || []).concat((b.dropped || []).filter(x =>
+                       !(a.dropped || []).some(y => y.term.toLowerCase()
+                                                    === x.term.toLowerCase())))};
     got.held += more.held || 0;
     got.dupes = got.dupes && more.dupes;
   }
@@ -4108,7 +4124,8 @@ $('kbExpandRun').onclick = async () => {
       $('saved').textContent = n
         ? `${n} term${n === 1 ? '' : 's'} proposed, marked \u2726. Remove any, `
           + 'then Build keyword list.'
-        : expandWhy(got).replace(/^ \u00b7 /, '');
+        : '';
+      if (!n) $('saved').innerHTML = expandWhy(got).replace(/^ \u00b7 /, '');
       timingDraw();
     }
   } catch (e) {
@@ -4118,6 +4135,26 @@ $('kbExpandRun').onclick = async () => {
   $('kbBuild').disabled = false;
   persist(r);
 };
+
+// KEEP ONE THE FLOOR DROPPED. It goes on the seed box like any proposal.
+$('saved').addEventListener('click', e => {
+  const b = e.target.closest('[data-keepterm]');
+  if (!b || ROW == null) return;
+  const r = ROWS[ROW], term = b.dataset.keepterm;
+  const box = document.querySelector('#paneKw [data-chips="seeds"]');
+  const now = [...box.querySelectorAll('.chip')].map(c => c.firstChild.textContent.trim());
+  if (!now.some(t => t.toLowerCase() === term.toLowerCase())) {
+    r.data.focus = now.concat(term);
+    chipbox(box, r.data.focus.slice());
+    SEED_SRC[term.toLowerCase()] = 'the industry';
+    r.seedSrc = Object.assign({}, r.seedSrc || {}, {[term.toLowerCase()]: 'the industry'});
+    r.suggested = (r.suggested || []).concat(term.toLowerCase());
+    const sh = document.querySelector('#paneKw .seedhint');
+    if (sh) sh.innerHTML = seedLegend(r);
+    persist(r);
+  }
+  b.remove();
+});
 
 $('kbBuild').onclick = async () => {
   const r = ROWS[ROW];
@@ -6326,6 +6363,11 @@ function expandWhy(note){
   // THE FLOOR IS THE USUAL ANSWER IN A SMALL MARKET, and it is a number the
   // planner can change in Config rather than a dead end.
   const fi = note.floorInfo || {};
+  if ((fi.dropped || []).length)
+    return ` \u00b7 Under the ${fi.floor}/mo floor: `
+         + fi.dropped.map(x => `<button class="keepterm" type="button" data-keepterm="${
+             esc(x.term)}">+ ${esc(x.term)} <i>${x.vol.toLocaleString()}/mo</i></button>`)
+             .join(' ');
   if (fi.rejected > 0)
     return ` \u00b7 Expansion proposed ${fi.proposed} service line`
          + `${fi.proposed === 1 ? '' : 's'}; ${fi.rejected} measured under the `
