@@ -2510,7 +2510,8 @@ def _dfs_post_inner(path, payload, timeout=None, method="POST", retries=1):
     raise last
 
 def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
-                     site_pages_found=None, metro_groups=None, city_volumes=None):
+                     site_pages_found=None, metro_groups=None, city_volumes=None,
+                     band=None):
     """Suggest how many markets should be priced as separate campaigns.
 
     The judgement, per the pricing authority: 2-3 related nearby markets run
@@ -2553,6 +2554,14 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
            "suggested": 0, "basis": "", "covered": 0,
            "measured": 0, "unmeasured": 0, "states": 0, "confident": False,
            "site_locations": 0}
+    # A CONTIGUOUS REGION IS ONE CAMPAIGN. Nearby towns sit inside the region
+    # anchor; counting each one the client doesn't rank in as a new market put
+    # fifteen add-ons on Texoma Dentures (sixteen towns around Sherman, TX,
+    # 930/mo). Config still overrides. (2026-10-02, Kiri)
+    if band == "contiguous_region" and n > 1:
+        out["basis"] = "contiguous region — one campaign."
+        out["confident"] = True
+        return out
     if n <= 1:
         # A single market is a CONFIDENT zero, not an absence of information.
         # Leaving confident False made the panel say "not enough data to
@@ -16348,7 +16357,8 @@ def api_addon_suggestion():
                            site_locations=d.get("site_locations") or [],
                            site_pages_found=d.get("site_pages_found"),
                            metro_groups=d.get("metro_groups") or [],
-                           city_volumes=d.get("city_volumes") or {})
+                           city_volumes=d.get("city_volumes") or {},
+                           band=d.get("band") or None)
     out["gbp_locations"] = d.get("gbp_locations")
     # Surface HOW the markets were counted. Four rounds of this were spent
     # guessing which branch ran because nothing on screen said (2026-08-03).
