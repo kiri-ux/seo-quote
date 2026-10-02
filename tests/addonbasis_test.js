@@ -38,8 +38,8 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
           kw: x.kw, pos: rankPos, ranked_top: false, error: rankPos === '—'}))});
       if (url === '/api/addon_suggestion') {
         sentBand = bd.band;
-        return json(route, {suggested: 3, basis: 'ranking in only 0 of 4 markets, so the rest'
-          + ' are a campaign from scratch each', confident: true}); }
+        return json(route, {suggested: 3, basis: 'contiguous region — 3 over 60 miles from'
+          + ' Knoxville, TN: a, b, c.', confident: true}); }
       if (url === '/api/price')
         return json(route, {anchor: 2950, min_term_months: 6,
           handoff: {package: {base: 2950}, margin_pct: 0.35,
@@ -112,7 +112,7 @@ const KW = {head: [{kw: 'vein treatment', vol: 40500}],
     // The server decides one campaign vs add-ons on the scope. (2026-10-02)
     'measured.sendsTheScope': [measured.sentBand, 'contiguous_region'],
     'measured.pricedOnTheRecommendation': [measured.priced, 3],
-    'measured.namesTheRegionCaveat': [/contiguous region/
+    'measured.namesTheReach': [/over 60 mi from main/
       .test(measured.addon || ''), true],
     // THE AREA IS NAMED. "a wider area" does not say whether the figure is
     // usable; the state or country that answered does.

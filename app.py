@@ -928,6 +928,7 @@ CFG = {
     # a state line can still be separate markets.
     "market_radius_miles": 25,
     "addon_free_markets": 3,        # at or below this, always one campaign
+    "addon_region_reach_miles": 60, # contiguous region: a town past this from the main market is an add-on
     # Need rank data on this share of the ENTERED markets before suggesting.
     # Note the interaction with grid_max_cities: at 5 crossed cities, a client
     # with 8+ markets can never clear 70% and will always be told there isn't
@@ -2511,7 +2512,7 @@ def _dfs_post_inner(path, payload, timeout=None, method="POST", retries=1):
 
 def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
                      site_pages_found=None, metro_groups=None, city_volumes=None,
-                     band=None):
+                     band=None, main=None):
     """Suggest how many markets should be priced as separate campaigns.
 
     The judgement, per the pricing authority: 2-3 related nearby markets run
@@ -2558,8 +2559,37 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
     # anchor; counting each one the client doesn't rank in as a new market put
     # fifteen add-ons on Texoma Dentures (sixteen towns around Sherman, TX,
     # 930/mo). Config still overrides. (2026-10-02, Kiri)
+    #
+    # UNLESS A TOWN IS FAR FROM THE MAIN MARKET. Past the reach (the same 60
+    # miles that joins towns into one region) a town is its own market, unless
+    # the client already ranks there or has a location page for it. Texoma from
+    # Sherman: Paris 62, Antlers 70. (2026-10-02, Kiri)
     if band == "contiguous_region" and n > 1:
-        out["basis"] = "contiguous region — one campaign."
+        reach = float(CFG.get("addon_region_reach_miles", 60) or 0)
+        hub = main if main in mk else mk[0]
+        far = []
+        hub_xy = city_coords(hub, state) if reach > 0 else None
+        if hub_xy:
+            top = int(top_n or CFG.get("zero_ranking_top_n", 100))
+            locs = [str(l).lower() for l in (site_locations or []) if l]
+            for m in mk:
+                if m == hub:
+                    continue
+                xy = city_coords(m, market_state(m, state) or state)
+                if not xy or miles_between(hub_xy, xy) <= reach:
+                    continue
+                town = (parse_market(m, state)[0] or m).strip().lower()
+                ranks_there = any(town in (r.get("kw") or "").lower()
+                                  and isinstance(r.get("pos"), (int, float))
+                                  and r.get("pos") <= top for r in (rows or []))
+                has_page = any(town in l or l in town for l in locs)
+                if not ranks_there and not has_page:
+                    far.append((m, round(miles_between(hub_xy, xy))))
+        out["suggested"] = len(far)
+        out["markets_absent"] = [m for m, _ in far]
+        out["basis"] = ("contiguous region — one campaign." if not far else
+                        f"contiguous region — {len(far)} over {int(reach)} miles from "
+                        f"{hub}: " + ", ".join(f"{m} ({d} mi)" for m, d in far) + ".")
         out["confident"] = True
         return out
     if n <= 1:
@@ -16358,7 +16388,8 @@ def api_addon_suggestion():
                            site_pages_found=d.get("site_pages_found"),
                            metro_groups=d.get("metro_groups") or [],
                            city_volumes=d.get("city_volumes") or {},
-                           band=d.get("band") or None)
+                           band=d.get("band") or None,
+                           main=(d.get("main") or "").strip() or None)
     out["gbp_locations"] = d.get("gbp_locations")
     # Surface HOW the markets were counted. Four rounds of this were spent
     # guessing which branch ran because nothing on screen said (2026-08-03).

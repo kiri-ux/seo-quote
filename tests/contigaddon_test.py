@@ -29,7 +29,7 @@ with app.app.test_request_context("/"):
     split = app.recommend_addons(TOWNS, "", ROWS, band="non_contiguous_region")
     check("nonContiguous.stillSplits", split["suggested"] > 0, True)
     one = app.recommend_addons(TOWNS, "", ROWS, band="contiguous_region")
-    check("contiguous.noAddons", one["suggested"], 0)
+    check("contiguous.nearbyNoAddons", one["suggested"], 0)
     check("contiguous.confident", one["confident"], True)
     check("contiguous.says", "contiguous region" in one["basis"], True)
     none = app.recommend_addons(TOWNS, "", ROWS)
@@ -38,6 +38,26 @@ with app.app.test_request_context("/"):
     r = c.post("/api/addon_suggestion", json={"geo_values": TOWNS, "table": ROWS,
                                                "band": "contiguous_region"})
     check("route.readsBand", (r.get_json() or {}).get("suggested"), 0)
+
+    # FAR TOWNS ARE ADD-ONS. Texoma from Sherman: Paris 62, Antlers 70.
+    TEX = ["Sherman, TX", "Denison, TX", "Durant, OK", "Ardmore, OK",
+           "Paris, TX", "Antlers, OK", "Brookston, TX"]
+    far = app.recommend_addons(TEX, "", [], band="contiguous_region")
+    check("far.counted", far["suggested"], 2)
+    check("far.named", sorted(far["markets_absent"]), ["Antlers, OK", "Paris, TX"])
+    check("far.basis", "over 60 miles from Sherman, TX" in far["basis"], True)
+    ranked = app.recommend_addons(TEX, "", [{"kw": "dentist paris tx", "pos": 4}],
+                                  band="contiguous_region")
+    check("far.rankingThereIsCovered", ranked["markets_absent"], ["Antlers, OK"])
+    paged = app.recommend_addons(TEX, "", [], band="contiguous_region",
+                                 site_locations=["antlers"])
+    check("far.locationPageIsCovered", paged["markets_absent"], ["Paris, TX"])
+    hub = app.recommend_addons(TEX, "", [], band="contiguous_region", main="Paris, TX")
+    check("far.measuredFromMain", "from Paris, TX" in hub["basis"], True)
+    r = c.post("/api/addon_suggestion", json={"geo_values": TEX, "table": [],
+                                               "band": "contiguous_region",
+                                               "main": "Sherman, TX"})
+    check("route.far", (r.get_json() or {}).get("suggested"), 2)
 
 print(f"ok={ok} failed={fail}")
 sys.exit(1 if fail else 0)

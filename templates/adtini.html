@@ -1659,7 +1659,8 @@ function plannerView(r){
         // the market tally is the fact it rests on. (2026-10-01, Kiri)
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
            : (sug.measured ? ` · ranking in ${sug.covered || 0} of ${sug.measured} markets` : '')
-             + (/contiguous region/.test(sug.basis || '') ? ' · contiguous region' : '')));
+             + (/over \d+ miles/.test(sug.basis || '')
+                ? ` · over ${sug.basis.match(/over (\d+) miles/)[1]} mi from main` : '')));
     // WHICH MARKET IS MAIN, AND WHICH ARE THE ADD-ONS. The tiles and the
     // keyword list below are the main market's alone.
     if (h.addon_markets && mainMarket(r)) {
@@ -5389,7 +5390,7 @@ async function generate(){
         addon = await post('/api/addon_suggestion',
           // A failed lookup measured nothing, so it does not count as a
           // market where the client is absent.
-          {geo_values: geo, state: st, band,
+          {geo_values: geo, state: st, band, main: mainMarket(r),
            table: table.filter(x => !x.error).concat(offGrid), cfg: r.over});
       } catch (e) { addon = {suggested: 0, basis: ''}; }
     } else if (geo.length > 1) {
@@ -5400,9 +5401,6 @@ async function generate(){
                basis: 'no market count — every rank check errored, so nothing '
                     + 'says whether these markets are new to them'};
     }
-    if (addon.suggested && band === 'contiguous_region')
-      addon.basis = (addon.basis ? addon.basis + ' · ' : '')
-        + 'contiguous region — adjacent markets are already in the anchor';
     const addonOv = String((r.cfg || {}).addon_markets || '').trim();
     const addonN = addonOv === '' ? (+addon.suggested || 0) : (+addonOv || 0);
 
@@ -6145,7 +6143,7 @@ async function recheckRanks(i){
     if (band !== 'nationwide' && geoNow.length > 1 && meas.length) {
       try {
         res.addon = await post('/api/addon_suggestion',
-          {geo_values: geoNow, state: stateOf(d), band, table: meas, cfg: r.over || {}});
+          {geo_values: geoNow, state: stateOf(d), band, main: mainMarket(r), table: meas, cfg: r.over || {}});
       } catch (e) { /* the earlier count stands */ }
     }
     const addonOv = String((r.cfg || {}).addon_markets || '').trim();
