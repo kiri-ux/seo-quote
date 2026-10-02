@@ -824,10 +824,104 @@ function worthChecking(all){
   return live.length ? live : (all || []).slice();
 }
 
+// WITH ADD-ONS, THE MAIN CAMPAIGN IS ONE MARKET. Each add-on market is charged
+// as a campaign of its own, so the main campaign's demand, ranking share and
+// keyword list are the main market's -- not the sum of every market the build
+// crossed, which charged the other markets twice. The build still crosses them
+// all: those rows are what the add-on count is measured from. The main market
+// is the one the build is on, grid_cities[0]. A row with no city names no
+// market and stays. (2026-10-02, Kiri)
+function marketKey(m){ return String(m || '').split(',')[0].trim().toLowerCase(); }
+function mainMarket(r){ return String((((r.kw || {}).grid_cities) || [])[0] || '').trim(); }
+function quotedAddons(r){
+  return +((((r.result || {}).priceReq) || {}).addon_markets) || 0;
+}
+function shownTerms(r, n){
+  const all = (r.kw || {}).all || [];
+  const main = mainMarket(r);
+  if (n == null) n = quotedAddons(r);
+  if (!(n > 0) || !main) return all;
+  const k = marketKey(main);
+  return all.filter(x => !x.city || marketKey(x.city) === k);
+}
+function shownRanks(r){
+  const rk = (r.result || {}).ranks || {};
+  const all = (r.kw || {}).all || [];
+  const terms = shownTerms(r);
+  if (terms.length === all.length) return rk;
+  const keep = new Set(terms.map(x => String(x.kw).toLowerCase()));
+  return Object.keys(rk).filter(k => keep.has(k))
+    .reduce((o, k) => (o[k] = rk[k], o), {});
+}
+// The price inputs for n add-on markets. allVolume is the build's own total,
+// used as is when nothing is left out.
+function mainPriceInputs(r, table, n, allVolume){
+  const all = (r.kw || {}).all || [];
+  const terms = shownTerms(r, n);
+  const scoped = terms.length < all.length;
+  const keep = new Set(terms.map(x => String(x.kw).toLowerCase()));
+  const tbl = (table || []).filter(x => keep.has(String(x.kw).toLowerCase()));
+  const errored = tbl.filter(x => x.error).length;
+  const ok = Math.max(tbl.length - errored, 0);
+  const ranked = tbl.filter(x => x.ranked_top).length;
+  // A figure from a wider area is not this market's demand.
+  const own = x => x.vol_scope === 'broader' || x.vol_scope === 'unknown'
+    ? 0 : (Number(x.vol) || 0);
+  return {
+    total_volume: scoped ? terms.reduce((s, x) => s + own(x), 0) : allVolume,
+    pct_not_ranking: ok ? Math.round((1 - ranked / ok) * 100) : null,
+    zero_ranking: ok ? (ranked / ok) < 0.10 : false,
+  };
+}
+// Points a price request at the main market when it has add-ons, and back at
+// the whole build when it has none. The whole-build figures ride along as
+// all_*, so a count changed on reprice can go either way. `all` is the
+// whole-build reading when this pass just took one; a quote priced before
+// this existed carries its whole-build figures as the plain ones.
+function scopeReq(r, req, table, all){
+  if (all)
+    Object.assign(req, {all_volume: all.total_volume,
+                        all_pct_not_ranking: all.pct_not_ranking,
+                        all_zero_ranking: all.zero_ranking});
+  else if (req.all_volume === undefined)
+    Object.assign(req, {all_volume: req.total_volume,
+                        all_pct_not_ranking: req.pct_not_ranking,
+                        all_zero_ranking: req.zero_ranking});
+  const n = +req.addon_markets || 0;
+  if (shownTerms(r, n).length < ((r.kw || {}).all || []).length)
+    return Object.assign(req, mainPriceInputs(r, table, n, req.all_volume));
+  return Object.assign(req, {total_volume: req.all_volume,
+                             pct_not_ranking: req.all_pct_not_ranking,
+                             zero_ranking: req.all_zero_ranking});
+}
+// The keyword list as the proposal shows it: every tier cut to the shown terms.
+function shownKw(r){
+  const kw = r.kw || {};
+  const terms = shownTerms(r);
+  if (terms.length === (kw.all || []).length) return kw;
+  const keep = new Set(terms.map(x => String(x.kw).toLowerCase()));
+  const cut = L => (L || []).filter(x => keep.has(String(x.kw).toLowerCase()));
+  return Object.assign({}, kw, {all: terms, head: cut(kw.head), ultra: cut(kw.ultra),
+    competitive: cut(kw.competitive), long_tail: cut(kw.long_tail),
+    total_volume: (((r.result || {}).priceReq) || {}).total_volume});
+}
+// The markets the proposal names. Add-ons are the entered markets other than
+// the main one, when that is the count being quoted; otherwise the ones the
+// add-on check found the client absent from. Neither matching, none are named.
+function addonMarketNames(r, n){
+  const main = marketKey(mainMarket(r));
+  if (!(n > 0) || !main) return [];
+  const others = geoOf(r.data || {}).filter(m => marketKey(m) !== main);
+  if (others.length === n) return others;
+  const absent = (((r.result || {}).addon || {}).markets_absent || [])
+    .map(m => String(m).replace(/\s\+\d+$/, ''))
+    .filter(m => marketKey(m) !== main);
+  return absent.length === n ? absent : [];
+}
+
 function rankingText(r){
   const p = (r.result || {}).pricing || {};
-  const rk = (r.result || {}).ranks || {};
-  const nTerms = ((r.kw || {}).all || []).length;
+  const rk = shownRanks(r);
   const checked = Object.keys(rk).length;
   const errored = Object.keys(rk).filter(k => rk[k] === '—').length;
   const ok = Math.max(checked - errored, 0);
@@ -859,7 +953,7 @@ function headlineOf(r){
   const order = ['base', 'intermediate', 'advanced'].filter(k => pkg[k] != null);
   const keys = order.length ? order : Object.keys(pkg);
   const tiers = keys.map(k => money(pkg[k])).join(' / ');
-  const n = ((r.kw || {}).all || []).length;
+  const n = shownTerms(r).length;
   return `${tiers}/mo · ${n} term${n === 1 ? '' : 's'}`
     + ` · ${(p.total_volume || 0).toLocaleString()}/mo · ${rankingText(r)}`;
 }
@@ -1565,14 +1659,22 @@ function plannerView(r){
         + ((r.cfg || {}).addon_markets ? ' · set in Config'
            : (sug.measured ? ` · ranking in ${sug.covered || 0} of ${sug.measured} markets` : '')
              + (/contiguous region/.test(sug.basis || '') ? ' · contiguous region' : '')));
-    const rk = (r.result || {}).ranks || {};
-    const nTerms = (kw.all || []).length;
+    // WHICH MARKET IS MAIN, AND WHICH ARE THE ADD-ONS. The tiles and the
+    // keyword list below are the main market's alone.
+    if (h.addon_markets && mainMarket(r)) {
+      const names = addonMarketNames(r, h.addon_markets);
+      add('Main market', mainMarket(r)
+        + (names.length ? ` · add-ons ${names.join(', ')}` : ''));
+    }
+    const rk = shownRanks(r);
+    const terms = shownTerms(r);
+    const nTerms = terms.length;
     const checked = Object.keys(rk).length;
     const errored = Object.keys(rk).filter(k => rk[k] === '—').length;
     const okChecks = Math.max(checked - errored, 0);
     // NAME THE WIDER AREA. Which area answered is what decides whether the
     // figure is usable at all, and vol_area already carries it.
-    const wideRows = ((r.kw || {}).all || []).filter(x => x.vol_scope === 'broader');
+    const wideRows = terms.filter(x => x.vol_scope === 'broader');
     const wide = wideRows.length;
     const areas = [...new Set(wideRows.map(x => String(x.vol_area || '').trim())
                                       .filter(Boolean))];
@@ -1588,7 +1690,7 @@ function plannerView(r){
     // A ROW THAT WAS NEVER GOING TO BE CHECKED IS NOT AN UNMEASURED ROW. The
     // zero-demand rows are skipped on purpose, and folding them into the
     // unmeasured count made a deliberate saving read as 26 failures.
-    const nLive = worthChecking((r.kw || {}).all || []).length;
+    const nLive = worthChecking(terms).length;
     const noDemand = Math.max(nTerms - nLive, 0);
     add('Ranking', p.pct_not_ranking == null
       ? (errored ? `unmeasured — ${errored} of ${checked} rank checks errored`
@@ -1598,7 +1700,7 @@ function plannerView(r){
         + (noDemand ? ` · ${noDemand} no demand` : ''));
   }
   const shot = (r.result || {}).shot;
-  const all = (r.kw || {}).all || [];
+  const all = shownTerms(r);
   const ranks = (r.result || {}).ranks || {};
   // THE SNAPSHOT SITS WHERE THE KEYWORD LIST DOES. It was folded away at the
   // foot of the quote, and the .pvsplit's left column was empty -- which is why
@@ -5320,6 +5422,8 @@ async function generate(){
       pageone_agg_share: agg ? agg.share : null,
       pageone_agg_terms: agg ? agg.terms : null,
       ...msReq(d)};
+    scopeReq(r, priceReq, table, {total_volume, pct_not_ranking,
+                                  zero_ranking: priceReq.zero_ranking});
     const price = await post('/api/price', priceReq);
 
     // WHY LOOKUPS FAILED, the most common reason. "—" rows said a check
@@ -5471,6 +5575,7 @@ async function reprice(){
     // the recommendation the run measured.
     const addonOv = String(r.cfg.addon_markets || '').trim();
     if (addonOv !== '') req.addon_markets = +addonOv || 0;
+    scopeReq(r, req, res.table);
     say('Repricing\u2026');
     const price = await post('/api/price', req);
     res.pricing = price;
@@ -5767,7 +5872,11 @@ async function downloadProposal(i, as){
     months: d.months || '',
     geo_values: geoOf(d), state: stateOf(d),
     strategy: asList(d.strategy).join(', '),
-    kw: r.kw || {},
+    kw: shownKw(r),
+    // Named on the proposal, so the client can see which market the campaign
+    // is priced on and which are the add-ons. (2026-10-02, Kiri)
+    main_market: quotedAddons(r) ? mainMarket(r) : '',
+    addon_market_names: addonMarketNames(r, quotedAddons(r)),
     // ALL OF THEM. The table is the keyword set being proposed; a set with
     // holes in it reads as a smaller engagement than the one being quoted.
     all_keywords: true,
@@ -5776,7 +5885,7 @@ async function downloadProposal(i, as){
       ((r.result || {}).table || []).forEach(x => {
         by[String(x.kw || '').trim().toLowerCase()] = x;
       });
-      return ((r.kw || {}).all || []).map(x => {
+      return shownTerms(r).map(x => {
         const k = String(x.kw || '').trim().toLowerCase();
         return by[k] || {kw: x.kw, pos: null, ranked_top: false, error: false};
       });
@@ -5999,6 +6108,9 @@ async function recheckRanks(i){
       pageone_agg_terms: res.agg ? res.agg.terms : (base.pageone_agg_terms ?? null),
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10},
       msReq(d));
+    scopeReq(work, req, tbl, {total_volume: base.all_volume !== undefined
+                                ? base.all_volume : base.total_volume,
+                              pct_not_ranking: pct, zero_ranking: req.zero_ranking});
     say('repricing\u2026');
     const price = await postWait('/api/price', req, null, say);
     res.pricing = price;

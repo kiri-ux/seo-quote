@@ -20879,6 +20879,14 @@ def _clean_desc(text):
     return t
 
 
+def _and_list(xs):
+    """'A', 'A and B', 'A, B and C'."""
+    xs = list(xs)
+    if len(xs) < 3:
+        return " and ".join(xs)
+    return ", ".join(xs[:-1]) + " and " + xs[-1]
+
+
 def build_proposal_docx(d, _notes=None):
     """One SSG-shaped proposal, built from the quote the tool already holds."""
     from docx import Document
@@ -21231,6 +21239,16 @@ def build_proposal_docx(d, _notes=None):
                            ("base", "intermediate", "advanced")):
         head(P["addon_heading"], size=12)
         body(P["addon_lead"])
+        # WHICH MARKET IS MAIN AND WHICH ARE THE ADD-ONS. Brendan's first ask
+        # on a five-market quote was which one the campaign is priced on.
+        # (2026-10-02, Kiri)
+        _main = str(d.get("main_market") or "").strip()
+        _names = [str(x).strip() for x in (d.get("addon_market_names") or [])
+                  if str(x).strip()]
+        if _main:
+            body(f"The campaigns above are priced on {_main} as the main market."
+                 + (f" The add-on market{'s are' if len(_names) > 1 else ' is'} "
+                    f"{_and_list(_names)}." if _names else ""))
         for key, label in (("base", "Base"), ("intermediate", "Intermediate"),
                            ("advanced", "Advanced")):
             if _addper.get(key):

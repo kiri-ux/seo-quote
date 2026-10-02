@@ -54,7 +54,7 @@ TAGLINE = ("Create fast, professional CCTV drain survey reports with Drainify. "
 TERMS = ["sewer inspection software", "pacp software", "sewer crawler"]
 
 
-def build(addons=1, client_rank=118):
+def build(addons=1, client_rank=118, **extra):
     payload = {
         "brand": "Drainify", "business_desc": TAGLINE, "geo_values": [],
         "kw": {"all": [{"kw": t, "vol": 10} for t in TERMS],
@@ -76,6 +76,7 @@ def build(addons=1, client_rank=118):
         "strategy": "Core SEO", "perf_on": False, "cpc": {}, "perf_extra": [],
         "perf_rows": [], "perf_override": {}, "practice_area": {},
         "state": "", "inputs": {"geo_values": []}, "serp": None}
+    payload.update(extra)
     r = app.app.test_client().post("/api/proposal.docx", json=payload)
     assert r.status_code == 200, r.data[:300]
     doc = docx.Document(io.BytesIO(r.data))
@@ -132,6 +133,18 @@ check("seven reads as plural", "total of 7 additional markets." in t7, True)
 t0 = "\n".join(build(addons=0))
 check("no add-ons, no section", "Optional Add-On Markets" in t0, False)
 check("the campaign options are still there", "Option 1: Base SEO Campaign" in t0, True)
+
+print("\nTHE MAIN MARKET AND THE ADD-ONS ARE NAMED")
+tn = build(addons=3, main_market="Seattle, WA",
+           addon_market_names=["Las Vegas, NV", "Reno, NV", "Salinas, CA"])
+check("main and add-ons in one line",
+      "The campaigns above are priced on Seattle, WA as the main market. The "
+      "add-on markets are Las Vegas, NV, Reno, NV and Salinas, CA." in tn, True)
+t1 = build(addons=1, main_market="Seattle, WA", addon_market_names=["Reno, NV"])
+check("one add-on reads as singular",
+      "The add-on market is Reno, NV." in "\n".join(t1), True)
+check("no main market, no line",
+      "as the main market" in "\n".join(build(addons=3)), False)
 
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:
