@@ -45,7 +45,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     r.kw.all = r.kw.ultra.concat(r.kw.competitive);
     r.kw.head = r.kw.all.slice();
     r.result = {pricing: {handoff: {package: {base: 13050, intermediate: 15350,
-                                              advanced: 17600}}},
+                                              advanced: 17600}}, volume_add: 400},
       metrics: {adder: 1300, cpc: {'car accident attorney': 180}},
       priceReq: {band: 'non_contiguous_region', adder: 1300, total_volume: 10250,
                  pct_not_ranking: 100, markup_pct: 35}, over: {}};
@@ -79,6 +79,16 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   });
   say('no flag when the list is not what moves the price',
       none.lower === '' && none.grow === '', none);
+  // King and Prince: 98% of 8,290/mo in one term, but volume adds nothing.
+  const kp = await p.evaluate(() => {
+    const r = ROWS[0];
+    const was = r.result.pricing;
+    r.result.pricing = {total_volume: 8290, vol_free_below: 10000, volume_add: 0};
+    const f = budgetFlags(r);
+    r.result.pricing = was;
+    return f;
+  });
+  say('no one-term flag when volume adds nothing', kp.lower === '', kp);
   await p.click('[data-variant="lower"][data-row="0"]');
   await p.waitForSelector('[data-variantbox="0"]:not([hidden])', {timeout: 5000});
   const box = await p.textContent('[data-variantbox="0"]');

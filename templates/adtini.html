@@ -795,6 +795,9 @@ async function persist(r){
 // This task is not yet completed" is the screenshot service saying the page has
 // not been crawled yet, which is the normal middle of a capture -- and it reads
 // like a failure in a field the planner cannot act on.
+// What the line under the capture says: a capture in progress or one that
+// failed. A finished one has its picture.
+const serpLine = t => (t && /SERP/.test(t) && !/^SERP captured/.test(t)) ? t : '';
 function captureSays(msg){
   const t = String(msg || '').trim();
   if (!t) return '';
@@ -1644,7 +1647,7 @@ function plannerView(r){
         ${((r.result || {}).serp || {}).kw
           ? `<p class="hint" style="margin:6px 0 0">“${esc(r.result.serp.kw)}”</p>` : ''}
         <p class="hint serpmsg" data-serpmsg="${r.i}" style="margin:6px 0 0">${
-          esc(r.note && /SERP/.test(r.note) ? r.note : '')}</p>
+          esc(serpLine(r.note))}</p>
       </div>
     </div>`;
 }
@@ -1883,7 +1886,10 @@ function budgetFlags(r){
   const top = vols.sort((a, b) => b[1] - a[1])[0];
   const cap = Number(p.competitive_adder_cap) || 0;
   const adder = Number(p.competitive_adder) || 0;
-  if (top && total && top[1] / total >= 0.5)
+  // Only when volume is adding to the price: under the free threshold a term
+  // holding 98% of the demand costs nothing to keep. (2026-10-02, Kiri)
+  const volLive = (Number(p.volume_add) || 0) > 0;
+  if (volLive && top && total && top[1] / total >= 0.5)
     out.lower = `${Math.round(top[1] / total * 100)}% of demand is \u201c${top[0]}\u201d`;
   else if (p.volume_add_capped)
     out.lower = 'volume add at its cap';
@@ -5363,6 +5369,10 @@ async function generate(){
       if (n) n.textContent = line;
       document.querySelectorAll(`.qnote[data-row="${i}"]`)
         .forEach(el => { el.textContent = line; el.hidden = !line; });
+      // The line under the capture follows too, so a finished capture does
+      // not keep reading "still rendering". (2026-10-02, Kiri)
+      document.querySelectorAll(`[data-serpmsg="${i}"]`)
+        .forEach(el => { el.textContent = serpLine(t); });
     };
     // THE UNMEASURED RERUN THEMSELVES. A failed lookup is a timeout, not a
     // verdict, and the answer was always "press Recheck" -- so the run presses
