@@ -44,17 +44,38 @@ with app.app.test_request_context("/"):
         ["Seattle, WA"], "WA", "King and Prince Seafood", ["Seattle, WA"])
 names = [x["service"] for x in svcs]
 check("the client's own zero term stays", "b2b battered fish and veggies" in names, True)
-check("measured market terms come in", {"seafood supplier", "wholesale seafood"} <= set(names), True)
+check("a measured term of the same kind comes in", "seafood supplier" in names, True)
+check("one of a different kind does not", "wholesale seafood" in names, False)
 check("a candidate with no local volume does not", "seafood wholesale" in names, False)
-check("two dead slots refilled, the third kept", len(rep), 2)
+check("one dead slot refilled, the others kept", len(rep), 1)
 check("list size holds", len(svcs), len(SERVICES))
 check("tiers inherited", {x["tier"] for x in svcs if x["service"] in nv}, {"long_tail"})
-check("their volume comes back", nv, {"seafood supplier": 400, "wholesale seafood": 300})
+check("its volume comes back", nv, {"seafood supplier": 400})
 check("and their per-city figures", ("seattle", "seafood supplier") in npc, True)
 with app.app.test_request_context("/"):
     same, rep2, _, _ = app.refill_dead_services(
         SERVICES, VOLS, [], [], [], ["Seattle, WA"], "WA", "", ["Seattle, WA"])
 check("no pool, nothing changes", (same, rep2), (SERVICES, []))
+# THE SAME KIND OF TERM. A supplier slot is not refilled with a diner's search.
+LOCAL.update({"seafood restaurants": 8100, "seafood boil": 210,
+              "frozen seafood supplier": 90})
+POOL2 = [{"keyword": "seafood restaurants", "volume": 9000},
+         {"keyword": "seafood boil", "volume": 8000},
+         {"keyword": "frozen seafood supplier", "volume": 7000},
+         {"keyword": "fish market", "volume": 50}, {"keyword": "fish fry", "volume": 40},
+         {"keyword": "fish sticks", "volume": 30}]
+with app.app.test_request_context("/"):
+    svcs2, rep2b, _, _ = app.refill_dead_services(
+        SERVICES, VOLS, ["seafood distributor", "b2b battered fish and veggies"],
+        POOL2, {app._seed_stem(w) for w in ["seafood", "supplier", "restaurants",
+                                            "boil", "frozen", "battered", "shrimp"]},
+        ["Seattle, WA"], "WA", "King and Prince Seafood", ["Seattle, WA"])
+names2 = [x["service"] for x in svcs2]
+check("a diner's search never fills a supplier slot",
+      any(n in names2 for n in ("seafood restaurants", "seafood boil")), False)
+check("a supplier term does", "frozen seafood supplier" in names2, True)
+check("one slot refilled, the rest keep their terms", len(rep2b), 1)
+
 # THE CLIENT'S TABLE leaves out zero-volume terms, down to a floor.
 import seo_pptx
 rows = [{"kw": f"t{i}", "vol": (100 if i < 10 else 0)} for i in range(21)]
