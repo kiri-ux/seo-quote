@@ -746,6 +746,19 @@ def _slide_pricing(prs, d):
     tb = _text_box(slide, Inches(1.26), Inches(0.44), Inches(10.4), Inches(0.8))
     _txt(tb, size=27, bold=True, color=NAVY)
     tb.text_frame.paragraphs[0].text = COPY["product_title"]
+    # WHICH MARKET IS MAIN AND WHICH ARE THE ADD-ONS, under the title.
+    # (2026-10-02, Kiri)
+    main = str(d.get("main_market") or "").strip()
+    names = [str(x).strip() for x in (d.get("addon_market_names") or [])
+             if str(x).strip()]
+    if main and n_addon:
+        mk = _text_box(slide, Inches(1.26), Inches(0.98), Inches(11.5), Inches(0.3))
+        p = _txt(mk, size=11, color=INK, space_after=0).paragraphs[0]
+        _run(p, "Main Market: ", size=11, bold=True)
+        _run(p, main, size=11)
+        if names:
+            _run(p, "    Add-on Markets: ", size=11, bold=True)
+            _run(p, ", ".join(names), size=11)
 
     # ---- the summary box. Each cell is printed only where the quote has one.
     # WHICH TIER THE BUDGET IS. The adtini slide takes it off the tier the
