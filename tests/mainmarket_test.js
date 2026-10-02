@@ -83,6 +83,8 @@ const KW = {head: ALL.slice(0, 2), ultra: ALL.slice(0, 2), competitive: ALL.slic
       const cards = [...document.querySelectorAll('.prod[data-row="0"] .pv')]
         .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
       return {main: cards.find(c => /^Main market/.test(c)),
+              addons: cards.find(c => /^Add-on markets/.test(c)),
+              ownRow: [...document.querySelectorAll('.prod[data-row="0"] .pvaddon .pv small')].map(x => x.textContent),
               keywords: cards.find(c => /^Keywords/.test(c)),
               headline: ROWS[0].result.headline,
               listed: [...document.querySelectorAll('.prod[data-row="0"] .pvkw td:first-child')]
@@ -111,7 +113,10 @@ const KW = {head: ALL.slice(0, 2), ultra: ALL.slice(0, 2), competitive: ALL.slic
     'addons.pricedOnTheMainMarketsDemand': [four.req.total_volume, 6000],
     'addons.rankingShareIsTheMainMarkets': [four.req.pct_not_ranking, 0],
     'addons.wholeBuildKeptForReprice': [four.req.all_volume, 10250],
-    'addons.mainMarketCard': [four.main, 'Main market: Seattle, WA · add-ons Las Vegas, NV, Reno, NV'],
+    'addons.mainMarketCard': [four.main, 'Main market: Seattle, WA'],
+    'addons.addonMarketsCard': [four.addons, 'Add-on markets: Las Vegas, NV, Reno, NV'],
+    // ADD-ONS GET THEIR OWN ROW. (2026-10-02, Kiri)
+    'addons.ownRow': [(four.ownRow || []).join('|'), 'Add-on pricing|Main market|Add-on markets'],
     'addons.keywordCardCountsTheMainMarket': [four.keywords, 'Keywords: 2 terms'],
     'addons.headlineCountsTheMainMarket': [/· 2 terms ·/.test(four.headline || ''), true],
     'addons.listShowsTheMainMarket': [four.listed,

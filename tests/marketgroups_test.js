@@ -17,7 +17,7 @@ const BASE = 'http://127.0.0.1:5203';
     draw();
     return [...document.querySelectorAll('.prod[data-row="0"] .pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent)
-      .find(c => /^Main market/.test(c));
+      .filter(c => /^(Main market|Add-on markets)/.test(c)).join(' | ');
   });
   await p.evaluate(() => {
     const r = ROWS[0];
@@ -34,7 +34,7 @@ const BASE = 'http://127.0.0.1:5203';
   });
   const c = await card();
   say('main, its towns, then the add-ons',
-      c === 'Main market: Sherman, TX + Ardmore, Denison · add-ons Antlers, OK, Paris, TX', c);
+      c === 'Main market: Sherman, TX + Ardmore, Denison | Add-on markets: Antlers, OK, Paris, TX', c);
   say('no page errors', errs.length === 0, JSON.stringify(errs));
   await b.close();
   console.log(bad ? 'failed=' + bad : 'ok all');
