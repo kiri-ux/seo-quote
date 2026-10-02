@@ -306,6 +306,7 @@
       <span id="saved" style="color:var(--muted);font-size:12.5px;margin-right:auto;padding-left:22px"></span>
       <button class="btn2" type="button" id="back" hidden>Back</button>
       <button class="btn save" type="button" id="save">Save But Don't Generate</button>
+      <button class="btn2" type="button" id="regen" hidden>Regenerate</button>
       <span class="spark">&#10022;</span>
       <button class="btn go" type="button" id="gen">Generate Quote</button>
     </div>
@@ -2486,6 +2487,9 @@ function genLabel(){
   $('gen').textContent = VIEW === 'kw' ? 'Apply to the quote'
     : ((VIEW === 'cfg' && canReprice(r)) || formReprices(r)) ? 'Reprice'
     : ran ? 'Regenerate Quote' : 'Generate Quote';
+  // A FULL RUN IS ALWAYS ONE PRESS AWAY. With nothing measured changed the
+  // main button only reprices; this re-measures anyway. (2026-10-02, Kiri)
+  $('regen').hidden = $('gen').textContent !== 'Reprice';
 }
 $('paneCfg').addEventListener('input', genLabel);
 // Chips are added and removed without an input event, so the form is watched.
@@ -5620,9 +5624,21 @@ async function reprice(){
       // quote reprices it with the AI Search leg.
       ai_search: hasStrategy(r.data, 'ai search'),
       core_seo: hasStrategy(r.data, 'core seo')}, msReq(r.data));
-    // The count of add-on markets is the planner's to set; left blank it keeps
-    // the recommendation the run measured.
+    // The count of add-on markets is the planner's to set; left blank it is
+    // asked again off the ranks the run measured -- pure arithmetic, no lookups
+    // -- so a change to the add-on rules reaches a repriced quote.
+    // (2026-10-02, Kiri)
     const addonOv = String(r.cfg.addon_markets || '').trim();
+    const geoNow = geoOf(r.data);
+    const meas = (res.table || []).filter(x => !x.error).concat(res.offGrid || []);
+    if (addonOv === '' && band !== 'nationwide' && geoNow.length > 1 && meas.length) {
+      try {
+        res.addon = await post('/api/addon_suggestion',
+          {geo_values: geoNow, state: stateOf(r.data), band, main: mainMarket(r),
+           table: meas, cfg: r.over});
+        req.addon_markets = +((res.addon || {}).suggested) || 0;
+      } catch (e) { /* the run's count stands */ }
+    }
     if (addonOv !== '') req.addon_markets = +addonOv || 0;
     scopeReq(r, req, res.table);
     say('Repricing\u2026');
@@ -5701,6 +5717,8 @@ $('gen').onclick = () => {
   }
   generate();
 };
+
+$('regen').onclick = () => generate();
 
 $('kwBuilder').onclick = () => { show(VIEW === 'kw' ? 'form' : 'kw'); };
 $('revert').onclick = $('reset').onclick = () => {
