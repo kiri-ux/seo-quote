@@ -54,6 +54,10 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     r.openRun = 0; r.startTab = 'history';
     draw();
   });
+  // ON THE CONFIG PANE, NOT THE ACTION BAR. (2026-10-02, Kiri)
+  const inBar = await p.$('.qacts [data-variant]:not(#cfgBudget *)');
+  say('not in the quote action bar', !inBar, null);
+  await p.evaluate(() => open(0, 'cfg'));
   await p.waitForSelector('[data-variant="lower"][data-row="0"]', {timeout: 5000});
   // WHEN TO LOOK. One service holding most of the demand flags Lower.
   const flag = await p.textContent('[data-variant="lower"][data-row="0"]');
