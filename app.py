@@ -1048,6 +1048,9 @@ CFG = {
     # higher-volume term from the operator's own list in the same topic. Set to 0
     # to switch the check off.
     "service_min_volume": 30,
+    # The fewest rows a client-facing keyword table drops to when it leaves out
+    # zero-volume terms.
+    "proposal_min_rows": 15,
     "service_max_swaps": 3,
     # UPGRADE pass. A service that clears the floor is still replaced when an
     # unused term from the operator's own list, in the SAME topic, measures at
@@ -5228,6 +5231,57 @@ def ungrounded_qualifiers(service, core, vocab):
             continue
         bad.append(w)
     return bad
+
+
+def refill_dead_services(services, vols, typed, market_pool, market_vocab,
+                         markets, state, brand, cities, floor=None):
+    """Refill service slots nobody searches from the market the build measured.
+
+    swap_low_volume_services draws only on the client's own list, three swaps
+    at most, so King and Prince Seafood -- eight seeds -- kept eleven of
+    twenty-one terms at zero searches: phrasings the build proposed that nobody
+    types. A slot below the floor that the client did not type is refilled
+    from the market vocabulary by the same grounded backfill the qualifier
+    filter uses, and kept only if it measures in the client's own markets. The
+    client's typed seeds always stay. (2026-10-02, Kiri)
+
+    Returns (services, report, new_vols, new_per_city)."""
+    floor = int(CFG.get("service_min_volume", 30) if floor is None else floor)
+    if floor <= 0 or not market_pool:
+        return services, [], {}, {}
+    vol = lambda n: int(vols.get(str(n).lower(), 0) or 0)
+    typed_l = {str(x).strip().lower() for x in (typed or [])}
+    dead = [x for x in services if vol(x.get("service")) < floor
+            and str(x.get("service", "")).lower() not in typed_l]
+    if not dead:
+        return services, [], {}, {}
+    keep = [x for x in services if x not in dead]
+    _, added = backfill_services(keep, market_pool, len(dead) * 2, markets, state,
+                                 brand, vocab=set(market_vocab or []))
+    terms = [a[0] for a in added]
+    if not terms:
+        return services, [], {}, {}
+    v2, pc2, _n = fetch_local_volume(terms, cities, state)
+    ok = [t for t in terms if int(v2.get(t, 0) or 0) >= floor][:len(dead)]
+    if not ok:
+        return services, [], {}, {}
+    # The weakest dead slots go first; any left over stay as they were.
+    dead.sort(key=lambda x: vol(x.get("service")))
+    out_ids = {id(x) for x in dead[:len(ok)]}
+    queue = list(ok)
+    new_svcs, report = [], []
+    for x in services:
+        if id(x) in out_ids and queue:
+            t = queue.pop(0)
+            report.append({"out": x["service"], "out_volume": vol(x["service"]),
+                           "in": t, "in_volume": int(v2.get(t, 0) or 0),
+                           "kind": "refill", "tier": x.get("tier", "")})
+            new_svcs.append({"service": t, "tier": x.get("tier", "long_tail")})
+        else:
+            new_svcs.append(x)
+    new_pc = {k: v for k, v in (pc2 or {}).items()
+              if isinstance(k, tuple) and len(k) == 2 and k[1] in ok}
+    return new_svcs, report, {t: int(v2.get(t, 0) or 0) for t in ok}, new_pc
 
 
 def backfill_services(services, candidates, want, markets=None, state="",
@@ -10992,6 +11046,34 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             except Exception:
                 app.logger.exception("swap_low_volume_services failed")
                 service_swaps = []
+
+        # DEAD SLOTS REFILLED FROM THE MARKET (2026-10-02, Kiri). The swap above
+        # only draws on the client's own list, and three swaps at most, so King
+        # and Prince Seafood -- eight seeds -- kept eleven of twenty-one terms
+        # at zero searches: phrasings the build proposed that nobody types. A
+        # slot below the floor that the client did not type is refilled from
+        # the market vocabulary the build measured, by the same grounded
+        # backfill the qualifier filter uses, and kept only if it measures in
+        # the client's own markets. The client's typed seeds always stay.
+        if not national_demand and market_pool and CFG.get("dead_slot_refill", True):
+            try:
+                services, _refill, _rv, _rpc = refill_dead_services(
+                    services, vols, seeds_typed, market_pool, market_vocab,
+                    markets, state, brand, cities)
+                if _refill:
+                    service_swaps = list(service_swaps or []) + _refill
+                    vols.update(_rv)
+                    for k_, v_ in _rpc.items():
+                        per_city[k_] = v_
+                    svc_names = list(dict.fromkeys([x["service"] for x in services]))
+                    g = build_grid(services, grid_cities, state, prepicked=True,
+                                   geo_forms=geo_forms)
+                    full = g["ultra"] + g["competitive"] + g["long_tail"]
+                    _apply_volumes(full)
+                    service_volume = {x: vols.get(x.lower(), 0) for x in svc_names}
+                    near_added = _attach_near_me()
+            except Exception:
+                app.logger.exception("dead slot refill failed")
 
         # TIERS RECONCILED AGAINST MEASURED DEMAND (2026-08-05).
         # Tiers are assigned by the model on judgement, BEFORE any volume is
@@ -20468,7 +20550,7 @@ def _p_money(v):
         return "—"
 
 
-def _proposal_rows(d):
+def _proposal_rows(d, client=False):
     """The keyword table, in Brendan's column order plus the volume we measure.
 
     His table is Keyword / Google Current Rank / Keyword Type. The volume column
@@ -20538,6 +20620,7 @@ def _proposal_rows(d):
                          else ("\u2014" if pos == "UNCHECKED" else "Not Found")),
                 "tier": tier_label[tier],
                 "vol": int(r.get("vol") or 0),
+                "vol_measured": r.get("vol") is not None,
             })
     # Ranked first and best-ranked at the top, exactly as his tables read: the
     # document opens on the terms the client can verify in one search.
@@ -20547,6 +20630,13 @@ def _proposal_rows(d):
         except (TypeError, ValueError):
             return (1, -x["vol"])
     rows.sort(key=_key)
+    # THE CLIENT'S COPY LEAVES OUT TERMS NOBODY SEARCHES, down to a floor so a
+    # thin market still reads as the engagement being quoted.
+    if client:
+        import seo_pptx
+        rows = seo_pptx.drop_zero_volume(
+            rows, vol=lambda x: x["vol"] if x.get("vol_measured") else None,
+            min_rows=int(CFG.get("proposal_min_rows", 15) or 0))
     return rows
 
 
@@ -20587,7 +20677,7 @@ def handoff_meta(d):
         # "Not Found" is a MEASURED miss. An unmeasured term is not in the list —
         # a failed or still-queued lookup is not a ranking claim.
         "keywords": [{"term": r["kw"], "google_rank": r["rank"],
-                      "competitiveness": r["tier"]} for r in _proposal_rows(d)],
+                      "competitiveness": r["tier"]} for r in _proposal_rows(d, client=True)],
         # ---- the SERP -----------------------------------------------------
         "serp_screenshot_keyword": serp.get("kw") or "",
         "serp_screenshot_captured": bool(serp.get("img")),
@@ -20966,7 +21056,7 @@ def build_proposal_docx(d, _notes=None):
     # campaign, and Brendan's table does not carry one either. The demand total
     # stays in the prose, where it describes the opportunity rather than
     # itemising its weakest rows. (2026-08-18)
-    rows = _proposal_rows(d)
+    rows = _proposal_rows(d, client=True)
     if rows:
         tbl = doc.add_table(rows=1, cols=3)
         tbl.style = "Light Grid Accent 1"

@@ -475,11 +475,28 @@ def _rank_of(term, ranks):
     return str(v)
 
 
+def drop_zero_volume(rows, vol=lambda x: x.get("vol"), min_rows=15):
+    """The client-facing list without terms nobody searches -- unless that
+    would leave fewer than `min_rows`, in which case zero-volume terms fill the
+    gap in their original order. A term measured at zero searches is a target
+    nobody types, and its "Not Found" was never checked. (2026-10-02, Kiri)"""
+    rows = list(rows or [])
+    # Only a MEASURED zero goes; a term with no figure was never measured.
+    kept = [x for x in rows if vol(x) is None or (vol(x) or 0) > 0]
+    if len(kept) == len(rows):
+        return rows
+    need = max(0, int(min_rows) - len(kept))
+    keep_ids = {id(x) for x in kept}
+    keep_ids |= {id(x) for x in [x for x in rows if id(x) not in keep_ids][:need]}
+    return [x for x in rows if id(x) in keep_ids]
+
+
 def _slide_keywords(prs, d, kw, per_slide=12):
     """The list and its split. Paginated, because the list is the engagement:
     a table cut to fit one slide quotes a smaller campaign than the one sold.
     """
     terms = [x for x in (kw.get("all") or []) if (x or {}).get("kw")]
+    terms = drop_zero_volume(terms, min_rows=int(d.get("proposal_min_rows") or 15))
     if not terms:
         return []
     ranks = {}
