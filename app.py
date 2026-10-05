@@ -454,6 +454,14 @@ CFG = {
     "cpc_adder_mult_high": 12.3,               # partner $/CPC above the knee (insurance-carrier tier)
     "cpc_adder_cap": 1300,                     # max adder (partner $) so a freak CPC can't explode price
     "cpc_adder_free_below": 5.0,               # CPC at/below this adds nothing (normal-value clicks)
+    # A CLICK PRICE NEEDS CLICKS. The CPC adder prices what a click is worth,
+    # and a list nobody searches has almost none to win. Enerbase (Minot ND,
+    # single city, 120/mo, $42.88 median bid on 3 bids) took a $100 adder to
+    # $3,100; Brendan sent it at the $2,950 floor "based on low search volume
+    # ... and it not being very competitive". Under this measured monthly
+    # demand a CPC-derived adder is not applied. Same line as
+    # price_no_demand_below. A KD or flat adder is untouched. (2026-10-05)
+    "cpc_adder_min_demand": 500,
     "zero_ranking_bonus": 400,                # (legacy flat; superseded by tiers below)
     # Now a MARGIN OF GROSS (agency share of retail), matching rep_pricing and
     # the SSG/Vici grid: retail = hard / (1 - margin). Was a markup-on-cost
@@ -1668,6 +1676,7 @@ def _cfg_apply(d, target):
                         ("competitive_bucket_size", int), ("longtail_target", int),
                         ("cpc_adder_mult", float), ("cpc_adder_cap", int),
                         ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
+                        ("cpc_adder_min_demand", int),
                         ("cpc_adder_mult_high", float), ("tier_step_pct_of_base", float),
                         ("ecom_anchor_add", int),
                         ("pin_head_terms", int),
@@ -12489,7 +12498,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  national_demand=False, geo_override=None, addon_override=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  pageone_agg_share=None, pageone_agg_terms=None,
-                 multisite_items=0, _formula_pass=False):
+                 multisite_items=0, adder_basis=None, _formula_pass=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
@@ -12576,6 +12585,14 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # cities describe where they ship, not where the demand is measured.
     anchor_band = "nationwide" if nat_demand else band
     anchor = CFG["geo_anchor"][anchor_band]                # hard cost
+
+    # See cpc_adder_min_demand. Only a CPC-derived adder, and only on measured
+    # demand: an unmeasured list is not a thin one.
+    adder_thin_demand = 0
+    _min_dem = int(CFG.get("cpc_adder_min_demand") or 0)
+    if (adder and adder_basis == "cpc" and total_volume is not None
+            and total_volume < _min_dem):
+        adder_thin_demand, adder = int(adder), 0
 
     # --- volume-based add: fixed $ for volume above the normalized baseline ---
     vol_add = 0
@@ -13096,7 +13113,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                pageone_agg_share=pageone_agg_share,
                                pageone_agg_terms=pageone_agg_terms,
                                multisite_items=multisite_items,
-                               _formula_pass=True)
+                               adder_basis=adder_basis, _formula_pass=True)
             _formula = {"client_tiers": _fp["client_tiers"],
                         "ai_search": ({"client_add": _fp["ai_search"]["client_add"],
                                        "client_total": _fp["ai_search"]["client_total"]}
@@ -13136,6 +13153,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             # show one chart instead of six panels. The adder was the only one
             # that lived solely as an input and never came back out.
             "competitive_adder": int(adder or 0),
+            # The CPC adder this quote measured and did not apply, because the
+            # list's demand is under cpc_adder_min_demand. 0 when applied.
+            "competitive_adder_waived": adder_thin_demand,
+            "competitive_adder_min_demand": _min_dem,
             "industry_anchor_add": int(rule.get("anchor_add", 0)) if rule else 0,
             "pageone_anchor_add": pageone_add,
             "pageone_band": pageone_band,
@@ -13763,6 +13784,7 @@ def quote():
         r3 = stage3_rankcheck(s1["all"], domain, markets, state, brand)
         _agg = r3.get("aggregators") or {}
         p  = stage4_price(band, m3["adder"], r3["zero_ranking"], addon,
+                          adder_basis=m3.get("adder_basis"),
                           pageone_agg_share=_agg.get("share"),
                           pageone_agg_terms=_agg.get("terms"),
                           ecommerce=bool(d.get("ecommerce")),
@@ -16497,7 +16519,8 @@ def api_price():
                      goal=(d.get("goal") or ""),
                      site_rebuild=(d.get("site_rebuild") or ""),
                      multisite_items=(int(d.get("multisite_items") or 0)
-                                      if d.get("multisite") else 0))
+                                      if d.get("multisite") else 0),
+                     adder_basis=(d.get("adder_basis") or None))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "site_rebuild": p.get("site_rebuild", ""),
                     "rebuild_applied": p.get("rebuild_applied", False),
@@ -16525,6 +16548,8 @@ def api_price():
                     # was breaking down. The rows did not add up to the total and
                     # nothing said so. (2026-08-22)
                     "competitive_adder": p.get("competitive_adder", 0),
+                    "competitive_adder_waived": p.get("competitive_adder_waived", 0),
+                    "competitive_adder_min_demand": p.get("competitive_adder_min_demand", 0),
                     "pageone_anchor_add": p.get("pageone_anchor_add", 0),
                     "pageone_band": p.get("pageone_band"),
                     "pageone_measured": p.get("pageone_measured", False),

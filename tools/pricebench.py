@@ -52,7 +52,7 @@ BENCH = [
          actual=(3950, 5450, 6950),
          why="geo_anchor note: 'MPG (adder 0, vol 25k+, 100% not ranking)'"),
     dict(name="Rockingham Insurance", band="contiguous_region", cpc=121.0,
-         vol=0, nr=39, industry="Insurance - Carrier",
+         vol=None, nr=39, industry="Insurance - Carrier",
          actual=(5450, 6750, 7950),
          why="insurance card note: 'lands 5,450/6,750/8,050 vs his 5,450/6,750/7,950'"),
     dict(name="Media Venue", band="contiguous_region", adder=0, vol=0, nr=0,
@@ -116,6 +116,14 @@ BENCH = [
          agg=0.90, agg_terms=19, actual=(4250, 5450, 6750),
          why="Brendan 2026-09-21 on quote Q-100244, verbatim above. Page-one "
              "share read off the run's own SERP panel"),
+    # A HIGH CLICK PRICE ON A LIST NOBODY SEARCHES. Minot ND fuel and propane:
+    # $42.88 median bid on 3 bids bought a $100 adder, at 120/mo. Brendan:
+    # "lower this one down to the 2950 min based on low search volume in that
+    # market and it not being very competitive". (2026-10-05)
+    dict(name="Enerbase", band="single_city", cpc=42.88, vol=120, nr=58,
+         agg=0.26, agg_terms=19, actual=(2950, None, None),
+         why="Brendan 2026-10-05 on Q-100244. Inputs read off the run's "
+             "Settings panel: single city, 3 bids, 8 of 19 ranking"),
     # AND THE ONE THAT PROVES VOLUME IS NOT DEMAND. The largest raw volume in
     # the whole set, priced UNDER the statewide anchor because he already ranks.
     dict(name="Susquehanna River Valley VB", band="statewide", adder=0,
@@ -160,7 +168,9 @@ def quote(d):
     p = app.stage4_price(band=d["band"], adder=int(adder or 0), zero_ranking=False,
                          addon_markets=0, markup_pct=35,
                          pct_not_ranking=d.get("nr"),
-                         total_volume=d.get("vol") or 0,
+                         # None is "not recorded", which is not thin demand.
+                         total_volume=d.get("vol"),
+                         adder_basis="cpc" if d.get("adder") is None and d.get("cpc") else None,
                          # Who holds page one. Absent on every client the
                          # back-measure has not read a SERP for, which prices as
                          # not measured rather than as no aggregators.
