@@ -1897,10 +1897,15 @@ function priceRows(r){
   // contradiction, and it is what every quote priced before this panel stored.
   const adder = money(p.competitive_adder || 0)
     + (basis ? ' \u00b7 ' + basis : (p.competitive_adder ? '' : ' \u00b7 not measured'));
+  // Measured, then not applied: the list's demand is under the line where a
+  // click price means anything. See cpc_adder_min_demand.
+  const waived = p.competitive_adder_waived
+    ? ` \u00b7 ${money(p.competitive_adder_waived)} not applied, under `
+      + `${Number(p.competitive_adder_min_demand || 0).toLocaleString()}/mo` : '';
   const rows = [
     ['Geo anchor', money(p.anchor)
       + (r.band ? ' \u00b7 ' + String(BANDS[r.band] || r.band).toLowerCase() : ''), 'anchor'],
-    ['Competitive adder', adder, 'adder'],
+    ['Competitive adder', adder + waived, 'adder'],
     ['Zero-ranking uplift', p.zero_ranking_uplift_pct == null ? ''
       : (p.zero_ranking_uplift_pct > 0 ? '+' : '') + p.zero_ranking_uplift_pct + '%'
         + (p.pct_not_ranking != null
@@ -5464,6 +5469,7 @@ async function generate(){
       : all.reduce((s, x) => s + (Number(x.vol) || 0), 0);
     const priceReq = {
       band, adder: met.adder || 0,
+      adder_basis: met.adder_basis,
       zero_ranking: unmeasured ? false : (ranked / (checkedOk || 1)) < 0.10,
       addon_markets: addonN,
       // MARKUP IS A PERCENTAGE HERE. /api/price divides by 100 itself, so
@@ -5632,6 +5638,7 @@ async function reprice(){
     // rebuilt from what the quote itself recorded, the way a recheck does it.
     const base = res.priceReq || {
       band, adder: ((res.metrics || {}).adder) || 0,
+      adder_basis: (res.metrics || {}).adder_basis,
       // The flag the run was priced on is not stored; it is what the measured
       // share of terms not ranking says.
       zero_ranking: ((res.pricing || {}).pct_not_ranking || 0) >= 90,
@@ -5644,6 +5651,9 @@ async function reprice(){
       core_seo: hasStrategy(r.data, 'core seo'),
       national_demand: band === 'nationwide', pageone_rank: null};
     const req = Object.assign({}, base, {
+      // A quote saved before the request carried it still reads the basis
+      // off its own metrics. See cpc_adder_min_demand.
+      adder_basis: base.adder_basis || (res.metrics || {}).adder_basis,
       markup_pct: parseFloat(String(r.cfg.markup || r.data.markup || 35)),
       cfg: priceCfg(r),
       base_override: r.cfg.ov_core || '',
@@ -6172,6 +6182,7 @@ async function recheckRanks(i){
       // A quote saved before priceReq existed still has to reprice, so the
       // request is rebuilt from what the quote itself records.
       band, adder: ((res.metrics || {}).adder) || 0,
+      adder_basis: (res.metrics || {}).adder_basis,
       addon_markets: ((res.addon || {}).suggested) || 0,
       markup_pct: parseFloat(String((r.cfg || {}).markup || d.markup || 35)),
       total_volume: (res.pricing || {}).total_volume
@@ -6197,6 +6208,7 @@ async function recheckRanks(i){
     const addonN = addonOv === '' ? (+((res.addon || {}).suggested) || 0)
                                   : (+addonOv || 0);
     const req = Object.assign({}, base, {
+      adder_basis: base.adder_basis || (res.metrics || {}).adder_basis,
       addon_markets: addonN,
       pct_not_ranking: pct,
       // The page one this pass just read, on top of what the build read.
@@ -6317,6 +6329,7 @@ async function kwVariant(i, direction){
     const base = res.priceReq || {};
     const req = Object.assign({}, base, {
       adder: v.adder != null ? v.adder : base.adder,
+      adder_basis: base.adder_basis || (res.metrics || {}).adder_basis,
       total_volume: Math.max(0, (Number(base.total_volume) || 0) + (v.volume_delta || 0))});
     const price = await post('/api/price', req);
     const pk = (price.handoff || {}).package || {};
