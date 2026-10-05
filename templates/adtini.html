@@ -3805,8 +3805,11 @@ function kbDraw(r){
           // repeat across; "0 of 0 markets" read as a failure. (2026-10-02, Kiri)
           ? (ev.cities_scored
              ? `Budget on services \u00b7 ${ev.cities_with_demand || 0} of `
-               + `${ev.cities_scored} markets carry measurable demand, so the `
-               + `seeds are not repeated across the rest`
+               + `${ev.cities_scored} markets carry measurable demand`
+               // A short services list is topped up with towns. (2026-10-05)
+               + ((ev.filled_cities || []).length
+                  ? ` \u00b7 topped up with ${ev.filled_cities.join(', ')}`
+                  : ', so the seeds are not repeated across the rest')
              : 'Budget on services')
           : `Budget on geography \u00b7 seeds repeated across `
             + `${ev.cities_scored || 0} markets`)
