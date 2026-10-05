@@ -6068,6 +6068,27 @@ def choose_grid_axis(city_scores, n_seeds, forced=""):
             "so crossing them is buying real reach", ev)
 
 
+def fill_short_services(grid_cities, n_services, axis_ev):
+    """Top a short services-axis grid back up with the towns the axis dropped.
+
+    The services axis keeps one market and buys breadth, but when the services
+    run out well under the target the budget is left unspent: Texoma went from
+    32 terms over four towns to 15 in Sherman alone once a ninth seed flipped
+    the axis. The dropped towns come back, biggest first, until services x
+    towns nears the target. Records what it added on axis_ev. (2026-10-05, Kiri)
+    """
+    target = int(CFG.get("grid_target_keywords", 32) or 32)
+    if not grid_cities or not n_services or n_services * len(grid_cities) >= target * 0.75:
+        return grid_cities
+    spare = [c for c in (axis_ev.get("dropped_cities") or []) if c not in grid_cities]
+    want = max(1, round(target / n_services))
+    add = spare[:max(0, want - len(grid_cities))]
+    if not add:
+        return grid_cities
+    axis_ev["filled_cities"] = add
+    return grid_cities[:1] + add + grid_cities[1:]
+
+
 def services_needed(n_cities):
     """How many services to generate so services x cities lands near the target
     keyword count. Few cities -> many services (a one-metro client needs service
@@ -10614,6 +10635,19 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         # service: "alpine ski shop nyc" is unmeasurable in every spelling, so a
         # narrow probe makes every candidate tie at zero (2026-08-07).
         probe_terms = list(seeds) + [x.get("service") for x in services if x.get("service")]
+        # A SHORT SERVICES LIST IS TOPPED UP WITH TOWNS. The services axis keeps
+        # one market and buys breadth -- but when the services run out well
+        # under the target, the budget is left unspent and adding seeds made the
+        # list SMALLER: Texoma went from 32 terms over four towns to 15 in
+        # Sherman alone once a ninth seed flipped the axis. The towns the axis
+        # dropped come back, biggest first, until the grid nears the target.
+        # (2026-10-05, Kiri)
+        if city_pick.get("axis_trimmed") and not national_demand:
+            grid_cities = fill_short_services(grid_cities, len(services), axis_ev)
+            # The added towns are measured and counted like any grid market,
+            # and so are no longer off the grid.
+            cities = cities + [c for c in (axis_ev.get("filled_cities") or [])
+                               if c not in cities]
         geo_forms, geo_form_report = ({}, [])
         if grid_cities and not national_demand:
             try:
