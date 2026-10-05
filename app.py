@@ -20734,7 +20734,8 @@ def _proposal_rows(d, client=False):
 def handoff_meta(d):
     """THE NON-PRICING HALF OF WHAT THE IO PULLS — AND IT IS SHORT ON PURPOSE.
 
-    Two fields. Everything else adtini already has or does not render.
+    The terms, the SERP, and the main and add-on market names. Everything
+    else adtini already has or does not render.
 
     The first cut of this block sent brand, website, industry, market names,
     page-one incumbents, authority scores and site condition. Kiri struck all of
@@ -20772,6 +20773,13 @@ def handoff_meta(d):
         # ---- the SERP -----------------------------------------------------
         "serp_screenshot_keyword": serp.get("kw") or "",
         "serp_screenshot_captured": bool(serp.get("img")),
+        # ---- the markets --------------------------------------------------
+        # MAIN AND ADD-ON MARKET NAMES (2026-10-05, Kiri). The proposal names
+        # the market the campaign is priced on and the add-ons, the same two
+        # the .docx and slides print. Empty when the quote has no add-ons.
+        "main_market": str(d.get("main_market") or "").strip(),
+        "addon_market_names": [str(x).strip() for x in
+                               (d.get("addon_market_names") or []) if str(x).strip()],
     }
 
 

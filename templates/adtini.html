@@ -733,6 +733,12 @@ function savePayload(r){
              brand: r.data.brand, geo_values: geoOf(r.data),
              state: stateOf(r.data), geo_scope: bandOf(r.data)},
   };
+  if (r.kind !== 'orm') {
+    // THE MARKET NAMES THE PROPOSAL PRINTS, so adtini reads the same main and
+    // add-on markets the .docx and slides name. (2026-10-05, Kiri)
+    p.main_market = quotedAddons(r) ? mainMarket(r) : '';
+    p.addon_market_names = addonMarketNames(r, quotedAddons(r));
+  }
   if (r.kind === 'orm') {
     const t = ((r.result || {}).quote || {}).totals || {};
     p.rep_totals = {one_time: t.removals_max || 0, monthly: t.monthly || 0};
@@ -1434,6 +1440,10 @@ const SEND_SEO = [
     ['serp', 'SERP — screenshot', 'prop', r => (r.result || {}).shot],
     ['serp_keyword', 'SERP — keyword it was captured on', 'prop',
      r => ((r.result || {}).serp || {}).kw],
+    ['main_market', 'Main market', 'prop',
+     r => quotedAddons(r) ? (mainMarket(r) || undefined) : SKIP],
+    ['addon_market_names', 'Add-on market names', 'prop',
+     r => quotedAddons(r) ? addonMarketNames(r, quotedAddons(r)) : SKIP],
   ]],
 ];
 
