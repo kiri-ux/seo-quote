@@ -8777,6 +8777,16 @@ def geo_form_candidates(market, state):
     return forms
 
 
+def geo_form_owns_name(market, state, form):
+    """False when `form` drops the state from a name most places share with
+    other states: "richmond" for Richmond CA is mostly Richmond VA."""
+    _c, _st = parse_market(market, state)
+    ab = _state_abbr(_st or state).lower()
+    if not ab or (form or "").endswith(" " + ab):
+        return True
+    return name_share(market, state) >= float(CFG.get("metro_no_suffix_share", 0.6))
+
+
 def pick_geo_forms(markets, state, service_terms):
     """Choose each market's grid form by MEASURED search volume.
 
@@ -8809,6 +8819,13 @@ def pick_geo_forms(markets, state, service_terms):
         return {}, []
 
     cand = {m: geo_form_candidates(m, state) for m in mk}
+    # A BARE NAME IS ONLY THIS MARKET IF THIS MARKET OWNS THE NAME. The probe is
+    # national, so "home staging richmond" counts Richmond VA's searchers and
+    # beats "richmond ca" for an Alameda client in California (2026-10-05).
+    # Where most places by this name are in other states, every form keeps the
+    # state.
+    for m, flist in cand.items():
+        cand[m] = [f for f in flist if geo_form_owns_name(m, state, f)] or flist
     probes = []
     for m, forms in cand.items():
         for f in forms:
@@ -10671,7 +10688,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
             # rather than the typed one.
             _mf = (city_pick or {}).get("market_forms") or {}
             for _m in grid_cities:
-                if _m not in geo_forms and _mf.get(_m):
+                if (_m not in geo_forms and _mf.get(_m)
+                        and geo_form_owns_name(_m, state, _mf[_m])):
                     geo_forms[_m] = _mf[_m]
                     geo_form_report.append(
                         {"market": _m, "status": "from city ranking",
