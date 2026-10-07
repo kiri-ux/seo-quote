@@ -1890,6 +1890,14 @@ function priceRows(r){
   const rows = [
     ['Geo anchor', money(p.anchor)
       + (r.band ? ' \u00b7 ' + String(BANDS[r.band] || r.band).toLowerCase() : ''), 'anchor'],
+    // THE INDUSTRY CARD AND PAGE-ONE STRENGTH ADD TO THE ANCHOR. Left out, the
+    // rows above Base did not add up to it. (2026-10-07, Kiri)
+    ['Industry add', p.industry_anchor_add
+      ? money(p.industry_anchor_add) + (p.industry_rule ? ' \u00b7 ' + p.industry_rule : '') : '',
+      'industry'],
+    ['Page-one strength', p.pageone_anchor_add
+      ? money(p.pageone_anchor_add) + (p.pageone_band ? ' \u00b7 ' + p.pageone_band : '') : '',
+      'strength'],
     ['Competitive adder', adder + waived, 'adder'],
     ['Zero-ranking uplift', p.zero_ranking_uplift_pct == null ? ''
       : (p.zero_ranking_uplift_pct > 0 ? '+' : '') + p.zero_ranking_uplift_pct + '%'
@@ -1943,11 +1951,36 @@ function priceRows(r){
       const v = p.base != null ? p.base : t2(r);
       return v == null || v === '' ? '' : money(v);
     })(), 'base'],
+    // FROM THE BASE TO THE THREE PRICES ON THE TILES: the tier step builds the
+    // hard-cost ladder, the margin turns it into client prices. (2026-10-07, Kiri)
+    ...ladderRows(p),
   ].filter(x => x[1] !== '');
   return `<table class="send"><thead><tr><th>Component</th><th>This quote</th></tr>
     </thead><tbody>${rows.map(([label, v, k]) =>
       `<tr><td>${label}<span>${k}</span></td><td>${esc(v)}</td></tr>`).join('')}
     </tbody></table>`;
+}
+function ladderRows(p){
+  const K = ['base', 'intermediate', 'advanced'];
+  const three = o => K.every(k => (o || {})[k] != null) ? K.map(k => money(o[k])).join(' / ') : '';
+  const hard = p.hard_true_tiers || p.hard_tiers || {};
+  const step = p.step != null ? p.step
+    : (hard.intermediate != null && hard.base != null ? hard.intermediate - hard.base : null);
+  const out = [];
+  if (step != null && three(hard))
+    out.push(['Tier step', `+${money(step)} per tier \u00b7 ${three(hard)} hard cost`, 'step']);
+  if (three(p.client_tiers)) {
+    const ai = p.ai_search || null;
+    out.push([ai ? 'Core SEO price' : 'Client price',
+      (p.margin_pct_of_gross != null ? `${Math.round(p.margin_pct_of_gross)}% margin \u00b7 ` : '')
+      + three(p.client_tiers)
+      + (p.floored && p.client_floor ? ` \u00b7 raised to the ${money(p.client_floor)} floor` : ''),
+      'client']);
+    if (ai && three(ai.client_add))
+      out.push(['AI Search', `+${three(ai.client_add)}`
+        + (ai.geo_pct != null ? ` \u00b7 ${ai.geo_pct}% of Core SEO` : ''), 'ai']);
+  }
+  return out;
 }
 // The base off the tier row, for quotes whose stored pricing predates p.base.
 function t2(r){
