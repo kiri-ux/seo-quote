@@ -714,6 +714,9 @@ function savePayload(r){
              band: r.band || null,
              cfg: r.cfg || {}, over: r.over || {}, kw: r.kw || null,
              scan: r.scan || null, result: r.result || null,
+             // THE UNTICKED LISTINGS. Lived only in memory, so a reload put
+             // every listing back on the quote. (2026-10-07, Kiri)
+             scanOff: r.scanOff || {},
              // WHICH SEEDS THE CLIENT NAMED AND WHICH THE TOOL PROPOSED. The
              // expansion terms were merged into the seed list and the mark that
              // told them apart lived only in memory, so reopening a quote showed
@@ -1118,6 +1121,7 @@ async function loadClient(){
         qid: a.qid || newQid(), built: a.built || (q2.updated_at || '').slice(0, 10),
         data: a.data || {}, cfg: a.cfg || {}, over: a.over || {},
         kw: a.kw || null, scan: a.scan || null, result: a.result || null,
+        scanOff: a.scanOff || {},
         history: a.history || [],
         // WHICH SEEDS WERE PROPOSED, AND WHICH WERE REFUSED. Saved with the
         // quote, and dropped here on the way back in -- so every chip opened
@@ -1253,6 +1257,8 @@ function runView(r, x, j){
           reconstructed: true};
   }
   return Object.assign({}, r, {result: q, kw: kw || r.kw,
+                               // The listings ticked when this run was priced.
+                               scanOff: (q && q.scanOff) || r.scanOff || {},
                                seedSrc: (x && x.seedSrc) || r.seedSrc || {}});
 }
 
@@ -4830,7 +4836,9 @@ function snapshotParts(r, live){
     // with two settings, one of which nobody picks: a 2-star review is a
     // negative review. scanCounts still reads r.negTh so a quote saved on the
     // 1-star setting keeps its own count.
-    + `<table><tr>${live ? '<th></th>' : ''}<th>Location</th><th class="n">Profile</th>`
+    + `<table><tr>${live
+        ? `<th><input type="checkbox" id="sclAll" title="Select or deselect all"`
+          + `${locs.every(l => scOn(r, l.place_id)) ? ' checked' : ''}></th>` : ''}<th>Location</th><th class="n">Profile</th>`
     + `<th class="n">1★</th><th class="n">2★</th><th class="n">3★</th></tr>`
     + shown.map(l => {
         const n = byPid[l.place_id] || {};
@@ -4874,6 +4882,20 @@ function scanDraw(r){
     load(formOf(r), r.data);
     scanDraw(r);
   };
+  // SELECT OR DESELECT EVERY LISTING AT ONCE. (2026-10-07, Kiri)
+  const all = $('sclAll');
+  if (all) {
+    const some = (((sc.locations || {}).locations) || []).some(l => scOn(r, l.place_id));
+    all.indeterminate = some && !all.checked;
+    all.onchange = () => {
+      r.scanOff = {};
+      if (!all.checked)
+        ((sc.locations || {}).locations || []).forEach(l => {
+          if (l.place_id) r.scanOff[l.place_id] = true;
+        });
+      scanApply(r);
+    };
+  }
   [...document.querySelectorAll('#scLocs .sclx')].forEach(cb => {
     cb.onchange = () => {
       r.scanOff = r.scanOff || {};
@@ -5168,6 +5190,7 @@ async function generateOrm(){
     const tot = q.totals || {};
     r.result = {quote: q,
       settings: JSON.parse(JSON.stringify(d)), cfg: r.cfg || {}, over: r.over || {},
+      scanOff: Object.assign({}, r.scanOff || {}),
       headline: `${money(tot.monthly || 0)}/mo · ${(q.lines || []).length} lines`
         + ` · ${strat.length} workstream${strat.length === 1 ? '' : 's'}`};
     r.history = [{when: new Date().toLocaleString(),

@@ -131,6 +131,35 @@ const DONE = FIVE.map((l, i) => ({
       sent.length === 4 && !sent.includes('Vein Guys Crossville'),
       JSON.stringify(sent));
 
+  // IT IS SAVED, SO A RELOAD DOES NOT PUT IT BACK. (2026-10-07, Kiri)
+  const saved = await p.evaluate(() => savePayload(ROWS[ROW]).adtini.scanOff || {});
+  say('theUntickIsSaved', saved.p5 === true, JSON.stringify(saved));
+
+  // A RUN KEEPS THE LISTINGS IT WAS PRICED ON, even if they change later.
+  const run = await p.evaluate(() => {
+    const r = ROWS[ROW];
+    const text = h => String(h || '').replace(/<[^>]*>/g, ' ');
+    const x = {quote: {quote: {}, scanOff: {p5: true}}};
+    const live = Object.assign({}, r, {scanOff: {}});
+    return text(snapshotParts(runView(live, x.quote ? {quote: x.quote} : x, 0), false).locs);
+  });
+  say('aRunKeepsItsOwnUnticks', !/Vein Guys/.test(run), run.slice(0, 300));
+
+  // SELECT / DESELECT ALL. With some unticked the box reads partial, and a
+  // click ticks them all; a second click unticks them all.
+  const part = await p.evaluate(() => document.getElementById('sclAll').indeterminate);
+  say('aPartialSelectionReadsPartial', part === true, String(part));
+  await p.check('#sclAll');
+  const every = await p.evaluate(() => ({
+    ticked: [...document.querySelectorAll('#scLocs .sclx')].filter(x => x.checked).length,
+    locs: document.querySelector('#form [data-k="locations"]').value}));
+  say('selectAllTicksEvery', every.ticked === 5 && every.locs === '5', JSON.stringify(every));
+  await p.uncheck('#sclAll');
+  const none = await p.evaluate(() => ({
+    ticked: [...document.querySelectorAll('#scLocs .sclx')].filter(x => x.checked).length,
+    all: document.getElementById('sclAll').checked}));
+  say('deselectAllUnticksEvery', none.ticked === 0 && !none.all, JSON.stringify(none));
+
   await b.close();
   console.log(bad ? `FAILED ${bad}` : 'all ok');
   process.exit(bad ? 1 : 0);
