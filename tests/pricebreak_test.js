@@ -106,6 +106,23 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
                        pct_not_ranking: 6.2, volume_add: 0, total_volume: 180},
                       {adder_basis: 'cpc', cpc_used: 2.1},
                       {error: 'the page returned nothing to check'}),
+      // 1ST CHOICE HEALTHCARE (2026-10-07). The rows stopped at a $2,550 base
+      // that the rows above it did not add up to, and nothing said how it got
+      // to $3,950 / $5,400 / $6,850.
+      ladder: view({anchor: 1850, industry_anchor_add: 700, industry_rule: 'hospital',
+                    competitive_adder: 0, zero_ranking_uplift_pct: 0, pct_not_ranking: 64,
+                    volume_add: 0, total_volume: 60, base: 2550, step: 950,
+                    hard_tiers: {base: 2550, intermediate: 3500, advanced: 4450},
+                    client_tiers: {base: 3950, intermediate: 5400, advanced: 6850},
+                    margin_pct_of_gross: 35},
+                   {adder_basis: 'cpc', cpc_used: 5.52, cpc_n_bids: 10}),
+      ladderAi: view({anchor: 1850, competitive_adder: 0, zero_ranking_uplift_pct: 0,
+                      volume_add: 0, total_volume: 60, base: 2150, step: 950,
+                      hard_tiers: {base: 2150, intermediate: 3100, advanced: 4050},
+                      client_tiers: {base: 3350, intermediate: 4400, advanced: 5500},
+                      margin_pct_of_gross: 35,
+                      ai_search: {geo_pct: 66, client_add: {base: 2250, intermediate: 2950,
+                                                            advanced: 3650}}}, {}),
       // The tile row must NOT carry them any more -- that is the whole change.
       tiles: (() => {
         const r = {kind: 'seo', band: 'contiguous_region', data: {strategy: ['Core SEO']},
@@ -203,6 +220,19 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
       has(out.ormBuild, 'Reactive \u00b7 Search Protection')
       && has(out.ormBuild, '$5,400/mo') && has(out.ormBuild, '$9,900'),
       out.ormBuild.slice(0, 600));
+  say('the industry add is its own row',
+      has(out.ladder, 'Industry add industry $700 · hospital'), out.ladder);
+  say('the tier step builds the hard-cost ladder',
+      has(out.ladder, 'Tier step step +$950 per tier · $2,550 / $3,500 / $4,450 hard cost'),
+      out.ladder);
+  say('the margin reaches the client prices',
+      has(out.ladder, 'Client price client 35% margin · $3,950 / $5,400 / $6,850'), out.ladder);
+  say('no industry row when there is no industry add',
+      !has(out.oxford, 'Industry add'), out.oxford.slice(0, 400));
+  say('with AI Search the client row is Core SEO and AI Search follows',
+      has(out.ladderAi, 'Core SEO price client 35% margin · $3,350 / $4,400 / $5,500')
+      && has(out.ladderAi, 'AI Search ai +$2,250 / $2,950 / $3,650 · 66% of Core SEO'),
+      out.ladderAi);
   say('no page errors', errs.length === 0, errs);
 
   console.log(bad ? 'failed=' + bad : 'ok all');
