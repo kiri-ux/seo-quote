@@ -20,7 +20,7 @@ say('noAiPlaceholder', !body.includes("'not on this quote'"), 'AI Search still p
 // Core SEO and AI Search live in the tier tiles now, not their own cards.
 say('noCoreCard', !/add\('Core SEO'/.test(body), 'Core SEO card still present');
 say('noAiCard', !/add\('AI Search'/.test(body), 'AI Search card still present');
-say('splitInTiles', /splitOf = t =>/.test(s) && /\(cost \? splitOf\(t\) : ''\)/.test(s));
+say('splitInTiles', /splitOf = t =>/.test(s) && /\$\{cost \? splitOf\(t\) : ''\}/.test(s));
 say('splitGated', /h\.core_seo_sold === false \|\| !h\.ai_search_pct/.test(s));
 say('addonGated', /if \(h\.addon_markets\)/.test(body));
 
