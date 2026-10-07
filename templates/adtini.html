@@ -1645,26 +1645,11 @@ function plannerView(r){
     add('Margin', `${pct(rh.margin_pct)} · ` + money(rh.monthly_budget != null && rh.partner_monthly_cost != null
       ? rh.monthly_budget - rh.partner_monthly_cost : null) + '/mo');
   } else {
-    // THREE FIGURES IN TIER ORDER. The tile above is already labelled base /
-    // intermediate / advanced, so repeating the package name on every number
-    // spent the width that the numbers needed.
-    const inTier = o => ['base', 'intermediate', 'advanced'].filter(k => (o || {})[k] != null)
-      .map(k => money(o[k])).join(' / ');
     // THE STRATEGIES THIS QUOTE IS FOR, as chosen on the form.
     const strat = asList((r.data || {}).strategy);
     add('Strategy', strat.join(' · '));
-    // Core SEO is the whole quote when it is the only strategy -- the tiles
-    // above already carry those three numbers.
-    const coreOnly = strat.length === 1 && /^core seo$/i.test(strat[0]);
-    // AI Search sold on its own is the whole quote and prices at the Core SEO
-    // rate -- the percentage is the bundle discount, and there is no bundle. So
-    // there is no Core SEO line to show and no percentage worth printing.
-    const aiOnly = h.core_seo_sold === false;
-    if (!coreOnly && !aiOnly) add('Core SEO', inTier(h.core_seo_price));
-    // A workstream this quote did not buy has nothing to report.
-    if (h.ai_search_pct)
-      add('AI Search', inTier(h.ai_search_price)
-          + (aiOnly ? '' : ` · ${pct(h.ai_search_pct)} of Core SEO`));
+    // (The Core SEO and AI Search split moved into the three tier tiles, small
+    // under each price. 2026-10-07, Kiri)
     const sug = (r.result || {}).addon || {};
     if (h.addon_markets)
       addA('Add-on pricing', `${h.addon_markets} × ${money((h.addon_market_price || {}).base)}`
@@ -2092,9 +2077,20 @@ function resultsHtml(r, full){
   // client is quoted; the partner figure belongs with the working, one screen
   // in. Named in full, because "cost" alone sat under a client price and read
   // like a discount. (2026-09-17)
+  // CORE SEO VS AI SEARCH, SMALL UNDER EACH TIER PRICE. Only when the quote
+  // carries both -- either alone is the whole price. (2026-10-07, Kiri)
+  const splitOf = t => {
+    const k = TIER_KEY[t], core = (h.core_seo_price || {})[k], ai = (h.ai_search_price || {})[k];
+    if (r.kind === 'orm' || h.core_seo_sold === false || !h.ai_search_pct
+        || core == null || ai == null) return '';
+    const p = core ? Math.round(ai / core * 100) : null;
+    return `<u>${money(core)} Core SEO · ${money(ai)} AI Search`
+      + (p != null ? ` (${p}%)` : '') + `</u>`;
+  };
   const tileRow = cost => `<div class="qtiles">${Object.keys(tiers).map(t =>
     `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b>`
     + (cost && hardOf(t) != null ? `<u>${money(hardOf(t))} hard cost</u>` : '')
+    + (cost ? splitOf(t) : '')
     + `</div>`).join('')}</div>`;
   // DETAILS IS THE OVERVIEW. The whole quote -- its keyword list, its capture,
   // its settings and both payloads -- belongs to the run that made it, and runs

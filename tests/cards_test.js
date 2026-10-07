@@ -17,17 +17,15 @@ for (const gone of ['month term', "add('Margin'", "add('Partner cost'"])
 
 // Nothing is added unconditionally for a workstream that is off.
 say('noAiPlaceholder', !body.includes("'not on this quote'"), 'AI Search still placeholds');
-say('aiGated', /if \(h\.ai_search_pct\)/.test(body));
+// Core SEO and AI Search live in the tier tiles now, not their own cards.
+say('noCoreCard', !/add\('Core SEO'/.test(body), 'Core SEO card still present');
+say('noAiCard', !/add\('AI Search'/.test(body), 'AI Search card still present');
+say('splitInTiles', /splitOf = t =>/.test(s) && /\(cost \? splitOf\(t\) : ''\)/.test(s));
+say('splitGated', /h\.core_seo_sold === false \|\| !h\.ai_search_pct/.test(s));
 say('addonGated', /if \(h\.addon_markets\)/.test(body));
 
-// Strategy is its own widget, and Core SEO drops out when it is the only one.
+// Strategy is its own widget.
 say('strategyCard', /add\('Strategy'/.test(body));
-say('coreOnlyGuard', /coreOnly/.test(body)
-    && /if \(!coreOnly && !aiOnly\) add\('Core SEO'/.test(body));
-// AI Search sold on its own IS the quote, at the Core SEO rate. No Core SEO
-// line, and no percentage -- the percentage is the bundle discount.
-say('aiOnlyDropsTheCoreLine', /aiOnly = h\.core_seo_sold === false/.test(body)
-    && /aiOnly \? '' : ` · \$\{pct\(h\.ai_search_pct\)\} of Core SEO`/.test(body));
 
 // The ranking denominator is the measured count, not the list length.
 say('ranking.usesOkChecks', /okChecks/.test(body));
