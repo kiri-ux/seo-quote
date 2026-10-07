@@ -414,6 +414,12 @@ form input:focus,form textarea:focus,form select:focus{outline:2px solid var(--b
   text-decoration:none;color:var(--muted);letter-spacing:.01em}
 .qtile b{font-size:22px;font-weight:600;color:var(--navy);line-height:1.25;
   letter-spacing:-.01em}
+/* Core SEO vs AI Search, on the price line to its right: bigger than the hard
+   cost, smaller than the tier price. (2026-10-07, Kiri) */
+.qprice{display:flex;align-items:baseline;justify-content:space-between;
+  flex-wrap:wrap;gap:2px 12px}
+.qsplit{font-style:normal;font-size:14px;font-weight:600;color:var(--navy);
+  letter-spacing:.01em}
 .qfold{background:var(--fill);border-radius:12px;margin-bottom:10px;overflow:hidden}
 .qfold > summary{list-style:none;cursor:pointer;padding:11px 14px;font-size:12.5px;font-weight:600}
 .qfold > summary::-webkit-details-marker{display:none}

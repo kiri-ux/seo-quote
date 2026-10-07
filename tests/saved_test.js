@@ -154,7 +154,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     R.planner = [...row0().querySelectorAll('[data-pane="history"] .pview .pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
     // Core SEO vs AI Search sits small under each tier price on the open run.
-    R.split = [...row0().querySelectorAll('[data-pane="history"] .qtile u')]
+    R.split = [...row0().querySelectorAll('[data-pane="history"] .qtile .qsplit')]
       .map(u => u.textContent).filter(t => /AI Search/.test(t));
     R.serp = !!row0().querySelector('[data-pane="history"] .pvserp img');
     row0().querySelector('.ptabs button[data-tab="details"]').click();

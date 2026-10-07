@@ -2084,13 +2084,14 @@ function resultsHtml(r, full){
     if (r.kind === 'orm' || h.core_seo_sold === false || !h.ai_search_pct
         || core == null || ai == null) return '';
     const p = core ? Math.round(ai / core * 100) : null;
-    return `<u>${money(core)} Core SEO · ${money(ai)} AI Search`
-      + (p != null ? ` (${p}%)` : '') + `</u>`;
+    return `<em class="qsplit">${money(core)} Core SEO · ${money(ai)} AI Search`
+      + (p != null ? ` (${p}%)` : '') + `</em>`;
   };
   const tileRow = cost => `<div class="qtiles">${Object.keys(tiers).map(t =>
-    `<div class="qtile"><small>${esc(t)}</small><b>${money(tiers[t])}</b>`
+    `<div class="qtile"><small>${esc(t)}</small>`
+    // The split rides on the price line, to its right. (2026-10-07, Kiri)
+    + `<span class="qprice"><b>${money(tiers[t])}</b>${cost ? splitOf(t) : ''}</span>`
     + (cost && hardOf(t) != null ? `<u>${money(hardOf(t))} hard cost</u>` : '')
-    + (cost ? splitOf(t) : '')
     + `</div>`).join('')}</div>`;
   // DETAILS IS THE OVERVIEW. The whole quote -- its keyword list, its capture,
   // its settings and both payloads -- belongs to the run that made it, and runs
