@@ -153,6 +153,9 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
     R.runs = row0().querySelectorAll('.hist tr.histrow').length;
     R.planner = [...row0().querySelectorAll('[data-pane="history"] .pview .pv')]
       .map(x => x.querySelector('small').textContent + ': ' + x.querySelector('b').textContent);
+    // Core SEO vs AI Search sits small under each tier price on the open run.
+    R.split = [...row0().querySelectorAll('[data-pane="history"] .qtile u')]
+      .map(u => u.textContent).filter(t => /AI Search/.test(t));
     R.serp = !!row0().querySelector('[data-pane="history"] .pvserp img');
     row0().querySelector('.ptabs button[data-tab="details"]').click();
     // the form carries what the quote was built on
@@ -241,7 +244,7 @@ const LEGACY_REP = {id: 21, name: 'Ski Barn - 8/5/2026 - reactive + proactive',
       'Quote results$3,800 / $5,250 / $6,700/mo · 2 terms · 2,680/mo · ranking for 1 of 2 termsCore SEOAI Search'],
     'seo.tiersFromTheSavedQuote': [seo.tiles.join(' / '),
       'Base $3,800 / Intermediate $5,250 / Advanced $6,700'],
-    'seo.aiSearchRead': [seo.planner.some(x => /AI Search: \$2,166 · 57% of Core SEO/.test(x)), true],
+    'seo.aiSearchRead': [seo.split[0], '$3,800 Core SEO · $2,166 AI Search (57%)'],
     'seo.addOnMarketsRead': [seo.planner.some(x => /Add-on pricing: 3 × \$900/.test(x)), true],
     'seo.serpCarried': [seo.serp, true],
     'seo.formBrand': [seo.brand, 'Drainify'],
