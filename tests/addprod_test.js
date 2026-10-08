@@ -14,6 +14,8 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
     kind: 'orm', qid: 'Q-100244', built: '2026-09-17',
     data: {brand: 'City Heating and Air', site: 'cityheatandair.com',
            order_no: '44973', partner: 'Lockwood Digital', markup: '40',
+           start_date: '2026-11-01', end_date: '2027-10-31', months: '12',
+           multisite: true, multisite_items: '12',
            business_desc: 'HVAC service in Knoxville', industry: ['Home Services'],
            strategy: ['Reactive'], volume: 500, locations: 1,
            g_city: true, city: ['Knoxville, TN'], county: [], state: [], countries: []},
@@ -61,6 +63,20 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   say('orderNumber', got.d.order_no === '44973', got.d.order_no);
   say('partner', got.d.partner === 'Lockwood Digital', got.d.partner);
   say('markup', got.d.markup === '40', got.d.markup);
+  // The order form rides over too: the flight and the multi-site count.
+  // (2026-10-08, Kiri)
+  say('startDate', got.d.start_date === '2026-11-01', got.d.start_date);
+  say('endDate', got.d.end_date === '2027-10-31', got.d.end_date);
+  say('months', got.d.months === '12', got.d.months);
+  say('multisite', got.d.multisite === true, String(got.d.multisite));
+  say('multisiteItems', got.d.multisite_items === '12', got.d.multisite_items);
+  const shown = await p.evaluate(() => {
+    const f = document.getElementById('fseo');
+    const v = k => (f.querySelector(`[data-k="${k}"]`) || {}).value;
+    return {s: v('start_date'), e: v('end_date'), m: v('months')};
+  });
+  say('datesShowOnTheForm', shown.s === '2026-11-01' && shown.e === '2027-10-31'
+      && shown.m === '12', JSON.stringify(shown));
   say('markets', (got.d.city || []).join(',') === 'Knoxville, TN', JSON.stringify(got.d.city));
   say('marketCheckbox', got.d.g_city === true, String(got.d.g_city));
   say('industry', (got.d.industry || []).join(',') === 'Home Services',

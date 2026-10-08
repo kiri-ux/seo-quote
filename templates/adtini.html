@@ -628,6 +628,11 @@ function addProductRow(kind){
   const shared = {
     brand: d.brand || CLIENT || '', site: d.site || '',
     order_no: d.order_no || '', partner: d.partner || '',
+    // The flight and the multi-site count come with the ORDER, not the
+    // product, so the second quote starts on the same dates. (2026-10-08, Kiri)
+    start_date: d.start_date || '', end_date: d.end_date || '',
+    months: d.months || '',
+    multisite: !!d.multisite, multisite_items: d.multisite_items || '',
     markup: d.markup || '35',
     g_city: !!d.g_city, g_county: !!d.g_county,
     g_state: !!d.g_state, g_country: !!d.g_country,
