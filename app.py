@@ -9923,7 +9923,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                    national_demand=False, goal="", band="",
                    national_reason="", grid_axis="", industry="",
                    product_demand=False, suggested=None, negatives=None,
-                   ranked=None, market_vocab=None, market_pool=None):
+                   ranked=None, market_vocab=None, market_pool=None,
+                   national_off=False):
     """Second half of Step 1, run as its own request: reads the sitemap, runs the
     Claude refinement pass, and re-pulls exact-match volume. Takes the raw buckets
     from stage1_keyword_list. Kept separate so a heavy Claude call can't time out
@@ -9954,7 +9955,11 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
     ecom_suppressed = ""
     national_demand_reason = ""
     if ecom_found and not national_demand:
-        if markets and (band or "") != "nationwide":
+        if national_off:
+            ecom_suppressed = (
+                f"Storefront detected ({ecom_reason}) — but Price on national "
+                "demand is set to No, so demand is pulled on the client's geo.")
+        elif markets and (band or "") != "nationwide":
             ecom_suppressed = (
                 f"Storefront detected ({ecom_reason}) — but this client has "
                 f"{len(markets)} market{'' if len(markets) == 1 else 's'} entered"
@@ -11351,7 +11356,7 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
         scope_kind = "warn"
         goals_all = goal_list(goal)
         _gs = goal_scope(goal)
-        _gforce = goal_forces_national(goal)
+        _gforce = "" if national_off else goal_forces_national(goal)
         if _gforce and (markets or gbp_count or site_locations):
             # Goal-driven national is intentional, so this is not a warning that
             # something is wrong — it's a statement of what the goal did, and of
@@ -11389,7 +11394,8 @@ def stage1b_refine(seeds, markets, state, brand, domain, business_desc,
                 "and ranking here describes a national campaign. Set Geo scope "
                 "to the client's region and enter their markets, or change the "
                 "goal if this really is a nationwide play.")
-        elif goal and _gs == "national" and not national_demand:
+        elif goal and _gs == "national" and not national_demand \
+                and not national_off:
             scope_warning = (
                 f"Goal is \u201c{goal}\u201d, which usually sells everywhere \u2014 but "
                 "this quote is priced on LOCAL demand, so the volumes are "
@@ -12367,7 +12373,7 @@ def rank_location_note(markets, state, national=False):
 
 
 def resolve_national_demand(industry="", band="", manual=False, markets=None,
-                            goal=""):
+                            goal="", off=False):
     """Should this client be priced on GEO-LESS (national) search volume?
 
     Three sources, any of which is sufficient:
@@ -12401,6 +12407,11 @@ def resolve_national_demand(industry="", band="", manual=False, markets=None,
         return True, "manual override"
     if band == "nationwide":
         return True, "nationwide geo scope"
+    # THE PLANNER SAID NO. The goal and the industry only set the starting
+    # value; a planner who turned the switch off wants the client's own geo,
+    # and every rebuild flipped it back on. (2026-10-13, Kiri)
+    if off:
+        return False, "manual: off"
     # The goal is the client's own statement of what they are buying, taken off
     # the adtini order form — so it outranks the market list, which describes
     # where they trade. "Online Sales" with four stores entered is a client
@@ -12516,7 +12527,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  national_demand=False, geo_override=None, addon_override=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  pageone_agg_share=None, pageone_agg_terms=None,
-                 multisite_items=0, adder_basis=None, _formula_pass=False):
+                 multisite_items=0, adder_basis=None, _formula_pass=False,
+                 national_off=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
@@ -12596,7 +12608,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # /api/metrics and the rank endpoints all resolve it WITH markets, and the
     # resulting flag arrives here as `national_demand`.
     nat_demand, nat_reason = resolve_national_demand(
-        industry, band, bool(ecommerce) or bool(national_demand), goal=goal)
+        industry, band, bool(ecommerce) or bool(national_demand), goal=goal,
+        off=national_off)
 
     # A product brand priced on national demand sits on the NATIONAL anchor
     # even when the operator picked a local/statewide scope — the client's
@@ -13131,7 +13144,8 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                pageone_agg_share=pageone_agg_share,
                                pageone_agg_terms=pageone_agg_terms,
                                multisite_items=multisite_items,
-                               adder_basis=adder_basis, _formula_pass=True)
+                               adder_basis=adder_basis, _formula_pass=True,
+                               national_off=national_off)
             _formula = {"client_tiers": _fp["client_tiers"],
                         "ai_search": ({"client_add": _fp["ai_search"]["client_add"],
                                        "client_total": _fp["ai_search"]["client_total"]}
@@ -13811,7 +13825,8 @@ def quote():
                           national_demand=bool(d.get("national_demand")),
                           geo_override=d.get("geo_override"),
                           addon_override=d.get("addon_override"),
-                          goal=(d.get("goal") or ""))
+                          goal=(d.get("goal") or ""),
+                          national_off=bool(d.get("national_off")))
     except requests.HTTPError as e:
         return jsonify({"error": f"DataForSEO request failed: {e}. Check DFS_LOGIN / DFS_PASSWORD, or set DEMO_MODE=1 to run on sample data."}), 502
     except Exception as e:
@@ -14053,7 +14068,8 @@ def api_refine():
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
         manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
-        markets=markets, goal=(d.get("goal") or ""))
+        markets=markets, goal=(d.get("goal") or ""),
+        off=bool(d.get("national_off")))
     # rebuild bucket rows from what the frontend sends back (kw + vol + src)
     def rows(key):
         # THE SOURCE TAG SURVIVES THE ROUND TRIP. Stamping every rebuilt row
@@ -14079,6 +14095,7 @@ def api_refine():
                             negatives=[x.strip() for x in (d.get("negatives") or [])
                                        if str(x).strip()],
                             ranked=d.get("ranked") or [],
+                            national_off=bool(d.get("national_off")),
                             band=d.get("geo_scope", d.get("band", "")))
     except Exception as e:
         # graceful: hand back the unrefined list so the pipeline still works
@@ -14935,7 +14952,8 @@ def api_kw_variant():
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
         manual=bool(d.get("national_demand")), markets=markets,
-        goal=(d.get("goal") or ""))
+        goal=(d.get("goal") or ""),
+        off=bool(d.get("national_off")))
     try:
         out = kw_variant(d.get("direction") or "lower", d.get("rows") or [],
                          d.get("head") or [], d.get("pool") or [], markets, state,
@@ -14976,7 +14994,8 @@ def api_metrics():
         industry=(d.get("industry") or ""),
         band=d.get("geo_scope", d.get("band", "")),
         manual=bool(d.get("national_demand")) or bool(d.get("ecommerce")),
-        markets=markets, goal=(d.get("goal") or ""))
+        markets=markets, goal=(d.get("goal") or ""),
+        off=bool(d.get("national_off")))
     try:
         m3 = stage3_metrics(head, markets, state, national=nat,
                             industry=(d.get("industry") or ""))
@@ -15056,7 +15075,8 @@ def api_rankings_submit():
                                       d.get("geo_scope") or d.get("band") or "",
                                       bool(d.get("national_demand")),
                                       markets=markets,
-                                      goal=(d.get("goal") or ""))
+                                      goal=(d.get("goal") or ""),
+                                      off=bool(d.get("national_off")))
     loc     = rank_location(markets, state, nat)
     # Same per-market rule as the live path: a row naming Morristown is measured
     # in Morristown. Task mode is what the retry button uses, so leaving it on a
@@ -15516,7 +15536,8 @@ def api_rank_location():
                                           d.get("geo_scope") or d.get("band") or "",
                                           bool(d.get("national_demand")),
                                           markets=markets,
-                                          goal=(d.get("goal") or ""))
+                                          goal=(d.get("goal") or ""),
+                                          off=bool(d.get("national_off")))
     out = rank_location_note(markets, state, nat)
     out["national_demand"] = nat
     out["national_demand_reason"] = reason
@@ -16034,7 +16055,8 @@ def api_acronym_serp():
                                       d.get("geo_scope") or "",
                                       bool(d.get("national_demand")),
                                       markets=markets,
-                                      goal=(d.get("goal") or ""))
+                                      goal=(d.get("goal") or ""),
+                                      off=bool(d.get("national_off")))
     # An acronym's ownership is a national question — "who does Google think this
     # word belongs to" — so it is asked nationally even on a local quote.
     loc = country_name()
@@ -16096,7 +16118,8 @@ def api_rankings():
                                       d.get("geo_scope") or d.get("band") or "",
                                       bool(d.get("national_demand")),
                                       markets=markets,
-                                      goal=(d.get("goal") or ""))
+                                      goal=(d.get("goal") or ""),
+                                      off=bool(d.get("national_off")))
     loc = rank_location(markets, state, nat)
     # MEASURE EACH KEYWORD IN THE MARKET IT NAMES.
     #
@@ -16359,7 +16382,8 @@ def api_markets():
         d.get("geo_scope") or d.get("band") or "",
         bool(d.get("national_demand")),
         markets=[m for m in entered if not is_non_place_geo(m)],
-        goal=(d.get("goal") or ""))
+        goal=(d.get("goal") or ""),
+        off=bool(d.get("national_off")))
     if not entered:
         # An empty geo list is exactly when the band recommendation matters most:
         # nothing is left to describe, yet the dropdown may still read
@@ -16535,6 +16559,7 @@ def api_price():
                      geo_override=d.get("geo_override"),
                      addon_override=d.get("addon_override"),
                      goal=(d.get("goal") or ""),
+                     national_off=bool(d.get("national_off")),
                      site_rebuild=(d.get("site_rebuild") or ""),
                      multisite_items=(int(d.get("multisite_items") or 0)
                                       if d.get("multisite") else 0),

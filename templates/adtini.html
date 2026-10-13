@@ -2585,7 +2585,8 @@ document.addEventListener('click', e => {
     const kbk = {kbNat: 'national', kbRefresh: 'refresh'}[b.parentNode.id];
     if (kbk && ROW != null) {
       ROWS[ROW].data[kbk] = b.dataset.v === '1' ? 1 : 0;
-      if (kbk === 'national') kbScopeNote(ROWS[ROW]);
+      // A PICK IS A STANDING DECISION. The goal only sets the starting value.
+      if (kbk === 'national') { ROWS[ROW].data.nat_pick = 1; kbScopeNote(ROWS[ROW]); }
     }
   }
   const x = e.target.closest('.chip b');
@@ -3121,6 +3122,10 @@ function bandOf(d){
   // not assert the cheapest anchor on a multi-market quote.
   return geoOf(d).length > 1 ? 'contiguous_region' : 'single_city';
 }
+// THE PLANNER TURNED NATIONAL DEMAND OFF. "Online Sales" as a goal priced
+// on national demand, and every build flipped the switch back to Yes, so a
+// planner who wanted the client's own geo could not get it. (2026-10-13, Kiri)
+const natOff = d => !!(d.nat_pick && !d.national);
 function stateOf(d){
   const st = asList(d.state)[0] || '';
   if (/^[A-Za-z]{2}$/.test(st.trim())) return st.trim().toUpperCase();
@@ -4259,6 +4264,7 @@ $('kbBuild').onclick = async () => {
                 goal: (d.goals || [])[0] || '',
                 phrase_geos: r.phrase_geos || [],
                 national_demand: (r.band || bandOf(d)) === 'nationwide', cfg: r.over || {},
+                national_off: natOff(d),
                 // WHICH AXIS GETS THE TERM BUDGET. Blank lets the build decide on
                 // measured demand; the planner can overrule it.
                 grid_axis: d.axis || "",
@@ -4313,7 +4319,7 @@ $('kbBuild').onclick = async () => {
     r.axis = (ref && ref.grid_axis) || kw.grid_axis || null;
     // THE BUILD CAN DISCOVER NATIONAL DEMAND. The refine pass says so, and the
     // toggle has to agree with it or the next build sends the local scope back.
-    if (r.kw.national_demand && !d.national) {
+    if (r.kw.national_demand && !d.national && !d.nat_pick) {
       d.national = 1;
       r.natReason = r.kw.national_demand_reason || 'detected during the build';
       $('kbNat').querySelectorAll('button').forEach(b =>
@@ -5378,7 +5384,7 @@ async function generate(){
   const industry = (d.industry || []).join(', ');
   const common = {geo_values: geo, state: st, industry, geo_scope: band,
                   national_demand: band === 'nationwide', brand: d.brand, domain: d.site,
-                  cfg: r.over};
+                  national_off: natOff(d), cfg: r.over};
   $('gen').disabled = true;
   const say = t => { $('saved').textContent = t; };
   try {
