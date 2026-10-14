@@ -2015,7 +2015,10 @@ function runSettings(r){
     addon_markets: cfg.addon_markets
       ? `${cfg.addon_markets} — set in Config`
       : (((r.result || {}).addon || {}).suggested != null
-         ? `${r.result.addon.suggested} — recommended` : ''),
+         // A route that abstained still sends 0; that 0 is not a recommendation.
+         ? `${r.result.addon.suggested} — `
+           + (r.result.addon.confident === false ? 'no recommendation' : 'recommended')
+         : ''),
     overrides: [cfg.ov_core && `Core SEO ${money(cfg.ov_core)}`,
                 cfg.ov_ai && `AI Search ${money(cfg.ov_ai)}`,
                 cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,

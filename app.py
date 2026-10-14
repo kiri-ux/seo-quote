@@ -2601,6 +2601,47 @@ def recommend_addons(markets, state, rows, top_n=None, site_locations=None,
                         f"{hub}: " + ", ".join(f"{m} ({d} mi)" for m, d in far) + ".")
         out["confident"] = True
         return out
+    # A NON-CONTIGUOUS REGION IS ONE CAMPAIGN PER REGION. The towns are read
+    # as the same touching regions the band was, the region holding the main
+    # market is the campaign, and every other region is an add-on unless the
+    # client already ranks there or has a location page for one of its towns.
+    # High Desert Harley-Davidson: 75 towns in six states, seven regions, rank
+    # data in two towns, so the market-by-market path abstained and the quote
+    # went out with 0 add-ons. (2026-10-14, Kiri)
+    if band == "non_contiguous_region" and n > 1:
+        chains, _pts, _un = region_chains(mk, state)
+        if len(chains) > 1:
+            hub = main if main in mk else mk[0]
+            home = next((c for c in chains if hub in c),
+                        max(chains, key=len))
+            top = int(top_n or CFG.get("zero_ranking_top_n", 100))
+            locs = [str(l).lower() for l in (site_locations or []) if l]
+            def _present(town_m):
+                town = (parse_market(town_m, state)[0] or town_m).strip().lower()
+                if not town:
+                    return False
+                if any(town in l or l in town for l in locs):
+                    return True
+                return any(town in (r.get("kw") or "").lower()
+                           and isinstance(r.get("pos"), (int, float))
+                           and r.get("pos") <= top for r in (rows or []))
+            new = []
+            for c in chains:
+                if c is home or any(_present(m) for m in c):
+                    continue
+                new.append((market_anchor(c, state) or c[0], len(c)))
+            out["suggested"] = len(new)
+            out["markets_absent"] = [a for a, _ in new]
+            out["regions"] = len(chains)
+            out["basis"] = (
+                f"non-contiguous region — {len(chains)} separate regions, main "
+                f"{market_anchor(home, state) or hub}. "
+                + ("Client is in all of them." if not new else
+                   f"{len(new)} new: " + ", ".join(
+                       a + (f" +{k - 1}" if k > 1 else "") for a, k in new)
+                   + "."))
+            out["confident"] = True
+            return out
     if n <= 1:
         # A single market is a CONFIDENT zero, not an absence of information.
         # Leaving confident False made the panel say "not enough data to
@@ -7753,6 +7794,62 @@ def group_by_distance(markets, state="", radius=None):
     return groups, list(pts), unlocated
 
 
+def region_chains(markets, state=""):
+    """Split markets into regions that touch: a single-link chain at the scope
+    join radius, with a county reaching further from its seat. The same reading
+    suggest_geo_scope makes to call a footprint contiguous or not, so the
+    add-on count and the band can't disagree about how many regions there are.
+
+    Returns (chains, located points, unlocated markets).
+    """
+    mk = [m for m in (markets or []) if str(m).strip()]
+    pts, unlocated = {}, []
+    for m in mk:
+        c = city_coords(m, state)
+        # A COUNTY HAS NO COORDINATES, so every county market landed in
+        # `unlocated` and two counties read as "could not place these on the
+        # map" -- no band at all. Its principal city is where it is, and the
+        # seats are already indexed for the keyword build. (2026-09-17)
+        if not c:
+            for seat in county_cities(m, state, limit=1):
+                c = city_coords(seat, market_state(m, state) or state)
+                if c:
+                    break
+        (pts.__setitem__(m, c) if c else unlocated.append(m))
+
+    join_r = float(CFG.get("scope_join_radius_miles", 60))
+    # A COUNTY IS PLACED AT ITS SEAT, WHICH IS ITS MIDDLE, NOT ITS EDGE. Two
+    # counties that share a border have seats 60-100 miles apart -- San Diego to
+    # Santa Ana is 86 -- so the city-sized join radius called two touching
+    # counties "non-contiguous", which is a MORE expensive anchor than the one
+    # they earn. Each county end of a comparison gets its own reach.
+    _bonus = float(CFG.get("scope_county_reach_miles", 40))
+    _is_county = {m: bool(county_key(m, state)
+                          or _COUNTY_SUFFIX.search(
+                              str(parse_market(m, state)[0] or "").strip().lower()))
+                  for m in pts}
+    def _reach(a, b):
+        return join_r + _bonus * (int(_is_county.get(a, False))
+                                  + int(_is_county.get(b, False)))
+
+    # Single-link chain at the join radius: which clusters actually touch.
+    names = list(pts)
+    chains = []
+    for m in names:
+        joined = [c for c in chains
+                  if any(miles_between(pts[m], pts[o]) <= _reach(m, o) for o in c)]
+        if not joined:
+            chains.append([m])
+        else:
+            merged = [m]
+            for c in joined:
+                merged += c
+                chains.remove(c)
+            chains.append(merged)
+
+    return chains, pts, unlocated
+
+
 def suggest_geo_scope(markets, state="", national_demand=False,
                      national_reason=""):
     """Read the geo scope OFF the entered markets instead of asking for it.
@@ -7794,19 +7891,8 @@ def suggest_geo_scope(markets, state="", national_demand=False,
     if not mk:
         return out
 
-    pts, unlocated = {}, []
-    for m in mk:
-        c = city_coords(m, state)
-        # A COUNTY HAS NO COORDINATES, so every county market landed in
-        # `unlocated` and two counties read as "could not place these on the
-        # map" -- no band at all. Its principal city is where it is, and the
-        # seats are already indexed for the keyword build. (2026-09-17)
-        if not c:
-            for seat in county_cities(m, state, limit=1):
-                c = city_coords(seat, market_state(m, state) or state)
-                if c:
-                    break
-        (pts.__setitem__(m, c) if c else unlocated.append(m))
+    chains, pts, unlocated = region_chains(mk, state)
+    names = list(pts)
 
     states = sorted({market_state(m, state) for m in mk if market_state(m, state)})
     join_r = float(CFG.get("scope_join_radius_miles", 60))
@@ -7841,35 +7927,6 @@ def suggest_geo_scope(markets, state="", national_demand=False,
                               "areas on the map, so the scope can't be read "
                               "from them.")
         return out
-
-    # A COUNTY IS PLACED AT ITS SEAT, WHICH IS ITS MIDDLE, NOT ITS EDGE. Two
-    # counties that share a border have seats 60-100 miles apart -- San Diego to
-    # Santa Ana is 86 -- so the city-sized join radius called two touching
-    # counties "non-contiguous", which is a MORE expensive anchor than the one
-    # they earn. Each county end of a comparison gets its own reach.
-    _bonus = float(CFG.get("scope_county_reach_miles", 40))
-    _is_county = {m: bool(county_key(m, state)
-                          or _COUNTY_SUFFIX.search(
-                              str(parse_market(m, state)[0] or "").strip().lower()))
-                  for m in pts}
-    def _reach(a, b):
-        return join_r + _bonus * (int(_is_county.get(a, False))
-                                  + int(_is_county.get(b, False)))
-
-    # Single-link chain at the join radius: which clusters actually touch.
-    names = list(pts)
-    chains = []
-    for m in names:
-        joined = [c for c in chains
-                  if any(miles_between(pts[m], pts[o]) <= _reach(m, o) for o in c)]
-        if not joined:
-            chains.append([m])
-        else:
-            merged = [m]
-            for c in joined:
-                merged += c
-                chains.remove(c)
-            chains.append(merged)
 
     span = max((miles_between(pts[a], pts[b])
                 for i, a in enumerate(names) for b in names[i + 1:]), default=0.0)
