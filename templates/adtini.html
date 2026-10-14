@@ -4001,7 +4001,15 @@ async function expandPass(r, d, sources){
   const [site, ind, rank] = await Promise.all([
     want.has('site') ? tryPost('/api/site_services', 'site') : none,
     want.has('industry') ? tryPost('/api/expand_services', 'industry') : none,
-    want.has('ranks') ? tryPost('/api/rank_seeds', 'ranks') : none,
+    // THEIR RANKINGS ARE /api/ranked_keywords. This asked /api/rank_seeds,
+    // which folds and orders the seed list and has no `services` field, so the
+    // source came back empty on every quote. (2026-10-14)
+    want.has('ranks') && d.site
+      ? tryPost('/api/ranked_keywords', 'ranks').then(g => ({
+          services: (g.keywords || []).map(k => ({
+            term: k.bare, volume: k.volume,
+            ranked_top: !!k.position && k.position <= 20}))}))
+      : none,
   ]);
   const found = {site: (site.services || []).length,
                  industry: (ind.services || []).length,
