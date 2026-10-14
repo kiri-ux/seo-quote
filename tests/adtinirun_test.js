@@ -97,8 +97,8 @@ const CFG = {
     if (url === '/api/expand_services')
       return json(route, {services: [{term: 'invisalign', volume: 2400},
                                      {term: 'denture repair', volume: 90}]});
-    if (url === '/api/rank_seeds')
-      return json(route, {services: [{term: 'root canal', volume: 480, ranked_top: true}]});
+    if (url === '/api/ranked_keywords')
+      return json(route, {keywords: [{bare: 'root canal', volume: 480, position: 3}]});
     if (url === '/api/suggest_regions')
       return json(route, {regions: [{name: 'Palm Beach County'}]});
     return json(route, {});
@@ -367,7 +367,7 @@ const CFG = {
     // it is the only one that is told the list. The band is resolved when the
     // builder opens and cached, so it does not reappear in the build sequence.
     'kb.expandsFirst': [seq.slice(0, 4).sort().join(','),
-      '/api/expand_services,/api/expand_services,/api/rank_seeds,/api/site_services'],
+      '/api/expand_services,/api/expand_services,/api/ranked_keywords,/api/site_services'],
     'kb.thenTheRegions': [seq[4], '/api/suggest_regions'],
     'kb.thenBuildsAndRefines': [seq.slice(5, 7).join(','), '/api/keywords,/api/refine'],
     // a term they already rank for leads, then by volume

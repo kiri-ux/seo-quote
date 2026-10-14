@@ -79,7 +79,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   // THE BUTTON RUNS IT, and nothing is built.
   hits.length = 0;
   await expand();
-  say('expandCallsTheSources', ['site_services', 'expand_services', 'rank_seeds']
+  say('expandCallsTheSources', ['site_services', 'expand_services', 'ranked_keywords']
       .every(k => hits.some(u => u.endsWith('/' + k))), hits.join('|'));
   say('expandDoesNotBuild', !hits.some(u => /\/api\/keywords$|\/api\/refine$/.test(u)),
       hits.join('|'));
@@ -97,7 +97,7 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   hits.length = 0;
   await build();
   say('buildDoesNotExpand',
-      !hits.some(u => /site_services|expand_services|rank_seeds/.test(u)), hits.join('|'));
+      !hits.some(u => /site_services|expand_services|ranked_keywords/.test(u)), hits.join('|'));
   say('buildLineSaysNothingOfExpansion', !/xpansion/.test(await p.textContent('#saved')));
 
   // REFRESH OFF: a second press ADDS to the list, it does not replace it.

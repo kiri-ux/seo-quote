@@ -23,8 +23,8 @@ const {chromium} = require('/root/work/node_modules/playwright-core');
   });
   await p.route('**/api/expand_services', route =>
     route.fulfill({status:200, contentType:'application/json', body:'{"services":[],"floor":20}'}));
-  await p.route('**/api/rank_seeds', route =>
-    route.fulfill({status:200, contentType:'application/json', body:'{"services":[]}'}));
+  await p.route('**/api/ranked_keywords', route =>
+    route.fulfill({status:200, contentType:'application/json', body:'{"keywords":[]}'}));
   await p.route('**/api/suggest_regions', route =>
     route.fulfill({status:200, contentType:'application/json', body:'{"regions":[]}'}));
   await p.route('**/api/keywords', route => {
