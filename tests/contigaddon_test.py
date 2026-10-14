@@ -59,5 +59,24 @@ with app.app.test_request_context("/"):
                                                "main": "Sherman, TX"})
     check("route.far", (r.get_json() or {}).get("suggested"), 2)
 
+    # A NON-CONTIGUOUS REGION IS ONE CAMPAIGN PER REGION. High Desert
+    # Harley-Davidson: Boise plus Salt Lake, Yakima and Billings, ranking only
+    # in Boise, went out with 0 add-ons. (2026-10-14, Kiri)
+    HD = ["Boise, ID", "Meridian, ID", "Nampa, ID", "Salt Lake City, UT",
+          "Murray, UT", "Yakima, WA", "Selah, WA", "Billings, MT"]
+    hd = app.recommend_addons(HD, "", [{"kw": "motorcycle dealer boise", "pos": 13}],
+                              band="non_contiguous_region", main="Boise, ID")
+    check("regions.counted", hd["suggested"], 3)
+    check("regions.confident", hd["confident"], True)
+    check("regions.named", sorted(hd["markets_absent"]),
+          ["Billings, MT", "Salt Lake City, UT", "Yakima, WA"])
+    hd2 = app.recommend_addons(HD, "", [{"kw": "motorcycle dealer boise", "pos": 13},
+                                        {"kw": "motorcycle dealer selah wa", "pos": 8}],
+                               band="non_contiguous_region", main="Boise, ID")
+    check("regions.rankingThereIsCovered", hd2["suggested"], 2)
+    hd3 = app.recommend_addons(HD, "", [], band="non_contiguous_region",
+                               main="Boise, ID", site_locations=["billings"])
+    check("regions.locationPageIsCovered", hd3["suggested"], 2)
+
 print(f"ok={ok} failed={fail}")
 sys.exit(1 if fail else 0)
