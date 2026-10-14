@@ -12600,7 +12600,11 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # priced as a hospital, not as a shop.
     _matches = [(k, r) for k, r in CFG.get("industry_pricing", {}).items() if k in ind]
     if _matches:
-        rule_key, rule = max(_matches, key=lambda kr: int(kr[1].get("anchor_add", 0)))
+        # ON A TIE THE SIZE-PRICED CARD WINS. Legal and hospital are both +$700,
+        # and max() keeps whichever comes first in the dict -- legal -- which
+        # silently dropped the hospital card's extras-off rule. (2026-10-14)
+        rule_key, rule = max(_matches, key=lambda kr: (int(kr[1].get("anchor_add", 0)),
+                                                       bool(kr[1].get("extras_off"))))
     # The legacy ecommerce checkbox no longer maps to a pricing rule (it has
     # no anchor_add as of 2026-07-25) — it is a national-demand signal only.
     # No markets= here: stage4_price never receives the market list, so passing
@@ -12846,7 +12850,10 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                   "geo_pct": geo_pct,
                   "geo_pct_basis": geo_basis,
                   "min_term_months": min_term,
-                  "hard_add":   {k: r50(v * p_list)   for k, v in hard.items()},
+                  # From the partner cost AS STATED -- on a floored quote that
+                  # is restated from the floored retail, so the AI line moves
+                  # with the Core line it is a share of. (2026-10-14)
+                  "hard_add":   {k: r50(v * p_list)   for k, v in hard_cost.items()},
                   "client_add": {k: r50up(v * p_list) for k, v in client.items()}}
         # GEO can be overridden independently of SEO. The percentage model is
         # a good default and a bad straitjacket: a client may have agreed a GEO
@@ -12912,7 +12919,13 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # add-on markets and AI Search, so there was nothing to measure against.
     # Confirmed: the Add-On Market % is a discount off the TOTAL package price,
     # so an extra market carries the AI Search line too.
-    _pkg_for_addon = {k: client[k] + ((ai or {}).get("client_add") or {}).get(k, 0)
+    # AI SEARCH SOLD ALONE IS PRICED ON THE CORE LADDER (see _ai_only below),
+    # so its package is `client` and nothing rides on top. Adding the bundled
+    # AI share here charged each add-on market more than the main campaign.
+    # (2026-10-14)
+    _solo_ai = bool(ai_search) and not core_seo
+    _pkg_for_addon = {k: client[k] + (0 if _solo_ai else
+                                      ((ai or {}).get("client_add") or {}).get(k, 0))
                       for k in client}
     client_addon_list = dict(_pkg_for_addon)
     # The LIST partner cost is derived from the LIST client price by the same
@@ -13141,6 +13154,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                national_demand=national_demand,
                                geo_override=None, addon_override=None, goal=goal,
                                pageone_rank=pageone_rank, site_rebuild=site_rebuild,
+                               site_debt=site_debt,
                                pageone_agg_share=pageone_agg_share,
                                pageone_agg_terms=pageone_agg_terms,
                                multisite_items=multisite_items,
@@ -15025,6 +15039,20 @@ def api_metrics():
                     "kd_vs_cpc": m3.get("kd_vs_cpc"),
                     "bid_stats": m3.get("bid_stats"), "breaks": m3.get("breaks")})
 
+def _is_client_domain(item_dom, client_dom):
+    """The SERP item is the client's site: the exact domain or a subdomain of
+    it, ignoring case and www. A substring test counted "smithlaw.com" as the
+    client for "mithlaw.com" and any domain that merely contains theirs.
+    (2026-10-14)"""
+    a = (item_dom or "").strip().lower()
+    b = (client_dom or "").strip().lower().split("/")[0]
+    if a.startswith("www."):
+        a = a[4:]
+    if b.startswith("www."):
+        b = b[4:]
+    return bool(a and b) and (a == b or a.endswith("." + b))
+
+
 def _serp_parse_items(items, domain_dom, brand, top_n=None):
     """Shared SERP parsing for live + task modes: first organic position for
     the client domain, People-Also-Ask questions (brand-mention filtered), and
@@ -15043,9 +15071,12 @@ def _serp_parse_items(items, domain_dom, brand, top_n=None):
     for it in items or []:
         if it.get("type") == "organic":
             d = (it.get("domain") or "").lower().replace("www.", "")
-            if domain_dom and domain_dom in (it.get("domain") or ""):
+            if _is_client_domain(it.get("domain"), domain_dom):
+                # ORGANIC POSITION, not absolute: rank_absolute counts every ad,
+                # map pack and box above it, which no rank report a client
+                # reads does. (2026-10-14)
                 if pos is None:
-                    pos = it.get("rank_absolute")
+                    pos = it.get("rank_group") or it.get("rank_absolute")
             elif d and d not in doms and len(doms) < top_n:
                 doms.append(d)
         if it.get("type") == "people_also_ask":
@@ -15271,7 +15302,11 @@ def api_market_signals():
     if not rival_ranks:
         rival_ranks = [ranks[r] for r in rivals if r in ranks]
     rival_ranks.sort()
-    median_rival = (rival_ranks[len(rival_ranks) // 2] if rival_ranks else None)
+    # A TRUE MEDIAN: an even count averages the two middle scores rather than
+    # taking the upper one. Rounded, because the score is an integer everywhere
+    # it is shown. (2026-10-14)
+    _mr = _median(rival_ranks)
+    median_rival = int(round(_mr)) if _mr is not None else None
     top_rival = (rival_ranks[-1] if rival_ranks else None)
     # THE GAP DECLINES TO BE COMPUTED OFF AN UNMEASURED CLIENT. A client rank of
     # 0 means bulk_ranks had no backlink data for them, which is indistinguishable
@@ -15456,7 +15491,8 @@ def api_backmeasure_one():
     top = [x for x, _ in order][:int(CFG.get("serp_rival_cap", 12))]
     ranks, rank_err = fetch_domain_authority(([dom] if dom else []) + top)
     rr = sorted(ranks[r] for r in top if r in ranks)
-    median_rival = rr[len(rr) // 2] if rr else None
+    _mr = _median(rr)                    # true median, see above
+    median_rival = int(round(_mr)) if _mr is not None else None
     client_rank = ranks.get(dom)
     client_measured = bool(client_rank)
     # KEPT ON THE QUOTE, so the Calibration panel can test "who is on page one"
@@ -15944,8 +15980,8 @@ def serp_top_domains(kw, loc, client_dom="", top_n=5, deadline=None):
         if it.get("type") != "organic":
             continue
         d = (it.get("domain") or "").lower().replace("www.", "")
-        if client_dom and client_dom in d and client_pos is None:
-            client_pos = it.get("rank_absolute")
+        if _is_client_domain(d, client_dom) and client_pos is None:
+            client_pos = it.get("rank_group") or it.get("rank_absolute")
         if d and d not in doms and len(doms) < top_n:
             doms.append(d)
     return doms, client_pos
