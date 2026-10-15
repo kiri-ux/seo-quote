@@ -216,7 +216,9 @@ REP_CFG = {
         # \u26a0 FLOOR IS AN ASSUMPTION TOO. One keyword and no threats costs
         # $52/mo to run, which prices at $250 -- below anything in the market
         # comparison table on that page (small-business ORM starts at $500).
-        "floor": 1500,                    # CLIENT $/mo
+        # $1,500 read low (Wheeler Digital, 2026-10-15, Kiri); the floor is now
+        # the sheet's worked example, the only Proactive figure we have.
+        "floor": 2200,                    # CLIENT $/mo
     },
     "shield": {
         # Retained for reference: the placeholder card the formula replaced.
