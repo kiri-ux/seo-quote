@@ -112,7 +112,7 @@ r2 = R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                         "shield": {"locations": 4}})["handoff"]
 check("no search money", r2["search_protection_monthly"], 0)
 # No footprint given: one keyword, no threats, so it prices at the minimum.
-check("shield money stands", r2["brand_shield_monthly"], 1500)
+check("shield money stands", r2["brand_shield_monthly"], 2200)
 check("volume is zero, not absent", r2["search_volume"], 0)
 
 print("\nA REMOVALS-ONLY QUOTE HAS NO MONTHLY AT ALL")
