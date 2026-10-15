@@ -5155,6 +5155,17 @@ function negPhrases(r){
   return out;
 }
 
+// Config pane -> the partner hard-cost keys build_rep_quote reads. Blank or
+// zero means the formula stands.
+function ormOverrides(cfg){
+  const c = cfg || {}, n = k => parseFloat(String(c[k] || '').replace(/[$,\s]/g, '')) || 0;
+  const out = {};
+  if (n('ov_review') > 0) out.review_hard = n('ov_review');
+  if (n('ov_std') > 0) out.art_std_hard = n('ov_std');
+  if (n('ov_monthly') > 0) out.monthly_hard = n('ov_monthly');
+  return out;
+}
+
 async function generateOrm(){
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
@@ -5202,7 +5213,11 @@ async function generateOrm(){
              // The brand itself, plus every negative variant being watched.
              keywords: 1 + negPhrases(r).length,
              threats: pages.length},
-    overrides: {},
+    // THE CONFIG BOXES, SENT. This was a literal {}, so the three ORM
+    // overrides were saved and shown on the run but never priced: a monthly
+    // set to $1,788 partner still came back at the $2,200 floor.
+    // (2026-10-15, Kiri)
+    overrides: ormOverrides(r.cfg),
     ...msReq(d),
   };
   $('gen').disabled = true;
