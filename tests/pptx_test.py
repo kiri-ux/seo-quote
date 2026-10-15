@@ -110,10 +110,35 @@ check("the keyword slide stays, because SEO was sold",
       any("Keyword Details" in s for s in core), True)
 
 audit = slides(deck(quote("Website Audit", ai=False, addon=0)))
-check("an audit-only quote has no keyword slide",
-      any("Keyword Details" in s for s in audit), False)
-check("but keeps the audit slide",
+# AN AUDIT QUOTE CARRIES THE FULL CAMPAIGN TOO, for if they buy it after.
+# (2026-10-15, Kiri)
+check("an audit quote keeps the keyword slide",
+      any("Keyword Details" in s for s in audit), True)
+check("and the audit slide",
       any("Audit Details" in s for s in audit), True)
+check("the pricing slide shows the one-time fee",
+      "One-Time Fee: $2,950" in audit[-1], True)
+check("with the credit note",
+      "credited back on your first month" in audit[-1], True)
+check("and the campaign tiers under it",
+      "Intermediate Campaign" in audit[-1], True)
+check("no fee on a quote that did not sell the audit",
+      "One-Time Fee" in slides(deck(quote("Core SEO", ai=False)))[-1], False)
+check("an AI Search quote with the audit puts the fee in the footer",
+      "Website Audit: $2,950 one-time"
+      in slides(deck(quote("Core SEO, AI Search, Website Audit")))[-1], True)
+
+print("\nTHE AUDIT FEE")
+_a = app.stage4_price("single_city", 0, False, website_audit=True)
+check("$2,950 at 35%", _a["website_audit"]["fee"], 2950)
+check("sent to the IO when sold", _a["handoff"]["website_audit_fee"], 2950)
+check("partner cost sent", _a["handoff"]["partner_website_audit_cost"], 1917.5)
+check("not in Package $", _a["handoff"]["package"], _a["client_tiers"])
+check("zero on the IO when not sold",
+      app.stage4_price("single_city", 0, False)["handoff"]["website_audit_fee"], 0)
+check("moves with the margin",
+      app.stage4_price("single_city", 0, False, markup_pct=20)
+      ["website_audit"]["fee"], 2400)
 
 print("\nTHE AI SEARCH PRICE ONLY WHEN IT IS IN THE QUOTE")
 _q = quote("Core SEO, AI Search")
@@ -266,6 +291,21 @@ check("with a deck", r.data[:2], b"PK")
 check("named for the client",
       "Escaya_44973.pptx" in r.headers.get("Content-Disposition", ""), True)
 check("and it opens", len(Presentation(io.BytesIO(r.data)).slides) > 0, True)
+
+print("\nTHE PROPOSAL DOCUMENT")
+from docx import Document      # noqa: E402
+def _doc_text(q):
+    _d = Document(app.build_proposal_docx(q))
+    return "\n".join([x.text for x in _d.paragraphs]
+                     + [c.text for t in _d.tables for r in t.rows
+                        for c in r.cells])
+_ad = _doc_text(quote("Website Audit", ai=False, addon=0))
+check("an audit quote prints the one-time fee",
+      "One-time fee: $2,950 (sites under 1,000 total pages)" in _ad, True)
+check("and the campaign options", "Option 2: Intermediate SEO Campaign" in _ad,
+      True)
+check("no audit section on a Core SEO quote",
+      "One-time fee" in _doc_text(quote("Core SEO", ai=False)), False)
 
 print("\n%d checks, %d failed" % (len(CHECKS), len(FAIL)))
 if FAIL:

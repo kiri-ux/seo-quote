@@ -4740,6 +4740,7 @@ function renderStep4(p){
     ${p.site_rebuild==='same'?`<div class="calc" style="background:#eef4fb;border-color:#c9dcf0">\u2139 <b>Site being rebuilt on the same domain</b> — the price is unchanged. Redirects carry the rankings and the domain authority, so the measurements still describe the campaign; only the on-page score (measured on the outgoing build) is stale. Pay-for-performance is off either way.${tipOf('A new DOMAIN is the case that moves the price — pick that option instead if the client is changing address.')}</div>`:''}
     ${ST.rankUnmeasured?`<div class="calc" style="background:#fdf1d8;border-color:#e8c98a">\u26a0 <b>No ranking adjustment in this price</b> — every rank lookup is still in Google's queue or failed, so nothing has been measured. The zero-ranking component is <b>0%</b> rather than a guess in either direction: an empty table reads as "0% ranked" (largest uplift) or "0% not ranking" (well-ranked discount) depending on which way you square it, and neither is a fact. <b>Re-price once the rows land.</b></div>`:''}
     ${(ST.inputs&&ST.inputs.strategy)?`<div class="nf" style="font-size:12px;margin:-2px 0 6px">Strategy: <b>${ST.inputs.strategy}</b>${(ai&&ai.min_term_months)?` <span class="nf">(${ai.min_term_months}-month minimum term)</span>`:''}</div>`:''}
+    ${auditCallout(p)}
     <div class="why">Internal cost first: partner hard-cost anchor + adder (Step 2) + zero-ranking (Step 3) sets the partner hard cost, then the tier step builds the ladder (flat $ locally, proportional at nationwide). The client price is partner hard cost ÷ (1 − margin) — the markup is the agency's share of gross, not a mark-on. Adjust it below to see the client price update.</div>
 
     <details class="demorail" style="border:2px dashed var(--demo-line);background:var(--demo-bg);border-radius:10px;padding:10px 13px;margin:10px 0">
@@ -4976,7 +4977,7 @@ function renderStep4(p){
   $('markup_live').addEventListener('change', async()=>{
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search', website_audit:(ST.inputs&&ST.inputs.strategy)==='Website Audit',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:ST.baseOverride||''});
@@ -4989,7 +4990,7 @@ function renderStep4(p){
     if(why!==undefined) ST.baseReason = why;
     const mk=parseFloat($('markup_live').value||'35');
     try{
-      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',band:ST.inputs.geo_scope, adder:ST.adder,
+      const np=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search', website_audit:(ST.inputs&&ST.inputs.strategy)==='Website Audit',band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:ST.zero, addon_markets:ST.inputs.addon_markets, markup_pct:mk,
         pct_not_ranking:ST.pctNotRanking, total_volume:ST.totalVol,
         base_override:val||''});
@@ -5226,7 +5227,7 @@ async function checkStoredPrice(){
       geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'',
       ecommerce:!!ST.inputs.ecommerce, national_demand:!!ST.inputs.national_demand,
       goal:ST.inputs.goal||'', industry:ST.inputs.industry||'',
-      ai_search:(ST.inputs.strategy==='Core SEO + AI Search'),
+      ai_search:(ST.inputs.strategy==='Core SEO + AI Search'), website_audit:(ST.inputs.strategy==='Website Audit'),
       band:ST.inputs.geo_scope, adder:ST.adder,
       zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
@@ -5310,7 +5311,7 @@ async function runStep4(){
   ST.totalVol = totalVol; ST.pctNotRanking = pctNotRanking;
   ST.rankUnmeasured = ((ST.total||0) > 0 && checkedOk === 0);
   try{
-    const p=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+    const p=await postJSON('/api/price',{site_rebuild:(ST.inputs&&ST.inputs.site_rebuild)||'', pageone_rank:pageoneRank(), pageone_agg_share:aggShare(), pageone_agg_terms:aggTerms(), geo_override:ST.geoOverride||'', addon_override:ST.addonOverride||'', ecommerce:!!(ST.inputs&&ST.inputs.ecommerce), national_demand:!!(ST.inputs&&ST.inputs.national_demand), goal:(ST.inputs&&ST.inputs.goal)||'', industry:(ST.inputs&&ST.inputs.industry)||'', ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search', website_audit:(ST.inputs&&ST.inputs.strategy)==='Website Audit',
       band:ST.inputs.geo_scope, adder:ST.adder,
       zero_ranking:(ST.rankUnmeasured?false:ST.zero),
       addon_markets:ST.inputs.addon_markets, markup_pct:ST.inputs.markup_pct,
@@ -5506,6 +5507,16 @@ function gapVerdict(g, brand){
   return {label:last[1], line:last[2]};
 }
 
+// WEBSITE AUDIT: one-time fee on top, the full SEO+ tiers under it for if
+// they buy the campaign after. (2026-10-15, Kiri)
+function auditCallout(p){
+  const a=(p&&p.website_audit)||{};
+  if(!(ST.inputs&&ST.inputs.strategy==='Website Audit') || !a.fee) return '';
+  return `<div class="calc" style="background:#eef4fb;border-color:#c9dcf0"><b>Website Audit one-time fee: ${money(a.fee)}</b>`
+    + (a.max_pages?` <span class="nf">(sites under ${Number(a.max_pages).toLocaleString()} total pages)</span>`:'')
+    + `<br>Credited back on the first month of a full SEO+ campaign. Campaign tiers below.</div>`;
+}
+
 function pricingChart(){
   const p=ST.pricing||{}; if(!p.client_tiers) return '';
   const anchor=p.anchor||0, adder=p.competitive_adder||0, vol=p.volume_add||0;
@@ -5626,6 +5637,8 @@ function handoffChart(){
              note:'Core + AI \u2014 what Billing charges the partner. Not the figure the IO prices from'})}
       ${tri({label:'Partner Core SEO Cost', v:h.partner_core_seo_cost}, true)}
       ${tri({label:'Partner AI Search Cost', v:h.partner_ai_search_cost}, true)}
+      ${h.website_audit_sold?one('Website Audit Fee', m(h.website_audit_fee), 'one-time'):''}
+      ${h.website_audit_sold?one('Partner Website Audit Cost', m(h.partner_website_audit_cost), 'one-time'):''}
     </table></div>
     <div class="nf" style="font-size:11.5px;margin-top:5px">Partner Hard Cost is what Billing
       charges the partner. It is <b>not</b> what the IO prices from — a $50 cost run back
@@ -7356,7 +7369,7 @@ function repriceForAddons(){
         national_demand:!!(ST.inputs&&ST.inputs.national_demand),
         goal:(ST.inputs&&ST.inputs.goal)||'',
         industry:(ST.inputs&&ST.inputs.industry)||'',
-        ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search',
+        ai_search:(ST.inputs&&ST.inputs.strategy)==='Core SEO + AI Search', website_audit:(ST.inputs&&ST.inputs.strategy)==='Website Audit',
         band:ST.inputs.geo_scope, adder:ST.adder,
         zero_ranking:(ST.rankUnmeasured?false:ST.zero),
         base_override:ST.baseOverride||'',

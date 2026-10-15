@@ -185,6 +185,12 @@ COPY = {
          "ai_counts": [("3-4", " premium placements per month within AI "
                                "search results")]},
     ],
+    "audit_fee": "One-Time Fee: ",
+    "audit_credit": "The Website Audit one-time fee is credited back on your "
+                    "first month of a full SEO+ campaign. See package quotes "
+                    "below.",
+    "audit_foot": "Website Audit: {fee} one-time, credited back on month one "
+                  "of a full SEO+ campaign.",
     "term": "Each tier requires a {n}-month term which then becomes a "
             "month-to-month commitment.",
     "no_serp": "No SERP captured for this quote.",
@@ -715,6 +721,16 @@ def _priced(d):
     return any(tiers.get(k) or ai.get(k) for k in TIER_ORDER)
 
 
+def _audit_fee(d):
+    """The one-time audit fee, on a quote that sold the audit; else 0."""
+    if "Website Audit" not in _strategies(d):
+        return 0
+    pricing = d.get("pricing") or {}
+    h = pricing.get("handoff") or {}
+    return (h.get("website_audit_fee")
+            or (pricing.get("website_audit") or {}).get("fee") or 0)
+
+
 def _slide_pricing(prs, d):
     pricing = d.get("pricing") or {}
     h = pricing.get("handoff") or {}
@@ -780,6 +796,7 @@ def _slide_pricing(prs, d):
     if n_addon and per_market.get("intermediate"):
         cells.append([("# of Add-on Markets: ", str(n_addon)),
                       ("Add-on Price: ", _money(per_market["intermediate"]))])
+    fee = _audit_fee(d)
     top = _box(slide, Inches(0.55), Inches(1.32), Inches(12.2), Inches(0.72))
     span = Inches(12.2) / len(cells)
     for i, lines in enumerate(cells):
@@ -801,6 +818,29 @@ def _slide_pricing(prs, d):
             rule.line.fill.background()
             rule.shadow.inherit = False
 
+    # ---- the audit row: one-time fee and the credit note, above the tiers
+    # that price the campaign they can buy after. (2026-10-15, Kiri)
+    # An AI Search card has no room to give up, so on that quote the fee and
+    # the credit go in the footer instead.
+    shift = Inches(0.74) if fee and not ai_on else 0
+    ct = Inches(2.12) + shift
+    if shift:
+        fbox = _box(slide, Inches(0.55), Inches(2.12), Inches(5.9),
+                    Inches(0.62), fill=NAVY, outline=None)
+        tf = _txt(fbox, size=17, color=WHITE, align=PP_ALIGN.CENTER,
+                  space_after=0)
+        fbox.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _run(tf.paragraphs[0], COPY["audit_fee"], size=17, bold=True,
+             color=WHITE)
+        _run(tf.paragraphs[0], _money(fee), size=17, color=WHITE)
+        nbox = _box(slide, Inches(6.65), Inches(2.12), Inches(6.1),
+                    Inches(0.62), fill=NAVY, outline=None)
+        tf = _txt(nbox, size=11, color=WHITE, space_after=0, line=1.05)
+        nbox.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        tf.margin_left = Inches(0.3)
+        _run(tf.paragraphs[0], "\u2605  ", size=12, bold=True, color=WHITE)
+        _run(tf.paragraphs[0], COPY["audit_credit"], size=11, color=WHITE)
+
     # ---- the three campaign cards
     card_w = Inches(3.95)
     gap = Inches(0.22)
@@ -812,9 +852,9 @@ def _slide_pricing(prs, d):
         x = left0 + (card_w + gap) * i
         dark = i > 0
         fill = None if i == 0 else (BLUE_MID if i == 1 else BLUE_LT)
-        card = _box(slide, x, Inches(2.12), card_w, Inches(4.55),
+        card = _box(slide, x, ct, card_w, Inches(4.55) - shift,
                     fill=fill, outline=(LINE if i == 0 else None))
-        name = _text_box(slide, x, Inches(2.22), card_w, Inches(0.42))
+        name = _text_box(slide, x, ct + Inches(0.1), card_w, Inches(0.42))
         _txt(name, size=15, bold=True,
              color=(INK if not dark else WHITE), align=PP_ALIGN.CENTER)
         name.text_frame.paragraphs[0].text = spec["name"]
@@ -837,7 +877,7 @@ def _slide_pricing(prs, d):
         # slide. The big number is the two together; the lines under it say
         # what each leg costs. (2026-09-19, Kiri)
         both = (core.get(key) or 0) + (ai.get(key) or 0)
-        price = _text_box(slide, x, Inches(2.66), card_w, Inches(0.42))
+        price = _text_box(slide, x, ct + Inches(0.54), card_w, Inches(0.42))
         tf = _txt(price, size=20, align=PP_ALIGN.CENTER, space_after=0)
         _run(tf.paragraphs[0], _money(both), size=20, bold=True,
              color=(BLUE if not dark else WHITE))
@@ -848,7 +888,7 @@ def _slide_pricing(prs, d):
             # ONE LINE, THE TWO LEGS SEPARATED BY A DOT. Stacked, the split
             # read as two more prices under the price rather than as what the
             # price is made of. (2026-09-19, Kiri)
-            sub = _text_box(slide, x, Inches(3.08), card_w, Inches(0.4))
+            sub = _text_box(slide, x, ct + Inches(0.96), card_w, Inches(0.4))
             tf = _txt(sub, size=8.5, align=PP_ALIGN.CENTER, space_after=0,
                       line=1.1)
             ink = INK if not dark else WHITE
@@ -862,7 +902,7 @@ def _slide_pricing(prs, d):
             head_h = Inches(1.38)
 
         rule = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x,
-                                      Inches(2.12) + head_h, card_w, Pt(1))
+                                      ct + head_h, card_w, Pt(1))
         rule.fill.solid()
         rule.fill.fore_color.rgb = LINE if not dark else WHITE
         rule.line.fill.background()
@@ -874,7 +914,7 @@ def _slide_pricing(prs, d):
         tint = TINT if dark else INK
         check = GREEN if not dark else WHITE
         ai_rows = set(spec["ai_ticks"]) if ai_on else set()
-        y = Inches(2.12) + head_h + Inches(0.13)
+        y = ct + head_h + Inches(0.13)
         for t in ticks:
             y = y + _tick(slide, x + Inches(0.1), y, Inches(2.15), t, tint=tint,
                           mark=("✦" if t in ai_rows else "✓"),
@@ -887,7 +927,7 @@ def _slide_pricing(prs, d):
         if ai_on:
             counts += spec["ai_counts"]
         ai_counts = set(spec["ai_counts"]) if ai_on else set()
-        cy = Inches(2.12) + head_h + Inches(0.13)
+        cy = ct + head_h + Inches(0.13)
         for row in counts:
             n, rest = row
             is_ai = row in ai_counts
@@ -921,7 +961,7 @@ def _slide_pricing(prs, d):
         # as a stub, and on a tier with more lines it stopped short of them.
         # Drawn last, between the top of the first row and the bottom of the
         # longer column. (2026-09-21, Kiri)
-        top = Inches(2.12) + head_h + Inches(0.08)
+        top = ct + head_h + Inches(0.08)
         mid = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x + Inches(2.25),
                                      top, Pt(1), max(y, cy) - top)
         mid.fill.solid()
@@ -929,9 +969,11 @@ def _slide_pricing(prs, d):
         mid.line.fill.background()
         mid.shadow.inherit = False
 
-    foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(9.4), Inches(0.32))
-    _txt(foot, size=11, bold=True, color=INK)
-    foot.text_frame.paragraphs[0].text = COPY["term"].format(n=term)
+    foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(12.2) if fee and ai_on else Inches(9.4), Inches(0.32))
+    _txt(foot, size=(10 if fee and ai_on else 11), bold=True, color=INK)
+    foot.text_frame.paragraphs[0].text = COPY["term"].format(n=term) + (
+        "  " + COPY["audit_foot"].format(fee=_money(fee))
+        if fee and ai_on else "")
     return slide
 
 
@@ -948,10 +990,10 @@ def build_proposal_pptx(d):
     _slide_product(prs, d)
     if strategies:
         _slide_strategy(prs, strategies)
-    # THE KEYWORD SLIDE BELONGS TO THE SEARCH STRATEGIES. An audit-only
-    # engagement buys a report, not a keyword set, and the tier split would be
-    # describing a campaign nobody bought.
-    if strategies & {"Core SEO", "AI Search"}:
+    # THE KEYWORD SLIDE BELONGS TO THE SEARCH STRATEGIES. An audit quote
+    # carries the full SEO+ campaign too, for if they buy it after the audit,
+    # so it gets the keyword set the tiers are priced on. (2026-10-15, Kiri)
+    if strategies & {"Core SEO", "AI Search", "Website Audit"}:
         _slide_keywords(prs, d, kw)
     if "Website Audit" in strategies:
         _slide_audit(prs)

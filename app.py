@@ -467,6 +467,12 @@ CFG = {
     # the SSG/Vici grid: retail = hard / (1 - margin). Was a markup-on-cost
     # (x1.35 = a 25.9% margin). Retail output at 35% is unchanged.
     "default_markup_pct": 35,
+    # WEBSITE AUDIT (2026-10-15, Kiri, from the adtini rate card). A flat
+    # one-time partner cost for sites under 1,000 total pages; retail runs
+    # through the same margin as the campaign ($2,950 at 35%). An audit quote
+    # also carries the full SEO+ tiers, for if they buy the campaign after.
+    "website_audit_cost": 1917.50,
+    "website_audit_max_pages": 1000,
     # top-N deepened 20 -> 100 (2026-07-20, Media Venue): a client with page-3-5
     # footholds (ranks 25/27/33/51 in Brendan's own table) was scoring "80% not
     # ranking" and drawing the +14% uplift, +18% over his base. "Not in top 20"
@@ -1673,6 +1679,8 @@ def _cfg_apply(d, target):
                         ("zero_ranking_frac", float), ("step_ratio", float),
                         ("client_floor", int), ("addon_market_ratio", float),
                         ("default_markup_pct", float), ("ultra_bucket_size", int),
+                        ("website_audit_cost", float),
+                        ("website_audit_max_pages", int),
                         ("competitive_bucket_size", int), ("longtail_target", int),
                         ("cpc_adder_mult", float), ("cpc_adder_cap", int),
                         ("cpc_adder_free_below", float), ("cpc_adder_knee", float),
@@ -12585,7 +12593,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  pageone_agg_share=None, pageone_agg_terms=None,
                  multisite_items=0, adder_basis=None, _formula_pass=False,
-                 national_off=False):
+                 national_off=False, website_audit=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
@@ -13126,6 +13134,11 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # do not apply, because there is nothing to discount against.
     _ai_only = bool(ai_search) and not core_seo
     _ai_solo = dict(client) if _ai_only else None
+    _audit_cost = float(CFG.get("website_audit_cost") or 0)
+    audit = {"sold": bool(website_audit),
+             "fee": retail_of(_audit_cost) if _audit_cost else 0,
+             "partner_cost": _audit_cost,
+             "max_pages": int(CFG.get("website_audit_max_pages") or 0)}
     handoff = {
         "package": (dict(_ai_solo) if _ai_only
                     else {k: client[k] + _ai_add.get(k, 0) for k in client}),
@@ -13183,6 +13196,12 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                                   else dict(hard_cost)),
         "partner_ai_search_cost": (dict(hard_cost) if _ai_only
                                    else {k: _ai_hard.get(k, 0) for k in hard_cost}),
+        # One-time, on an audit quote only. Not part of Package $: the tiers
+        # are what they pay monthly if they buy the campaign after.
+        "website_audit_sold": bool(website_audit),
+        "website_audit_fee": audit["fee"] if website_audit else 0,
+        "partner_website_audit_cost": (audit["partner_cost"] if website_audit
+                                       else 0),
         "multisite_discount": bool(ms_pct),
         "multisite_total_sites": int(multisite_items or 0) if ms_pct else 0,
         "multisite_discount_pct": ms_pct,
@@ -13329,6 +13348,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
             "markup_pct": markup_pct, "addon_markets": addon_markets,
             "multisite_discount_pct": ms_pct,
             "multisite_total_sites": int(multisite_items or 0) if ms_pct else 0,
+            "website_audit": audit,
             "tiers": client, "addon_per_market": client_addon}
 
 # ---------------------------------------------------------------------------
@@ -16656,7 +16676,10 @@ def api_price():
                      site_rebuild=(d.get("site_rebuild") or ""),
                      multisite_items=(int(d.get("multisite_items") or 0)
                                       if d.get("multisite") else 0),
-                     adder_basis=(d.get("adder_basis") or None))
+                     adder_basis=(d.get("adder_basis") or None),
+                     website_audit=bool(d.get("website_audit")
+                                        or "website audit"
+                                        in str(d.get("strategy") or "").lower()))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "site_rebuild": p.get("site_rebuild", ""),
                     "rebuild_applied": p.get("rebuild_applied", False),
@@ -16711,6 +16734,7 @@ def api_price():
                     "handoff": p.get("handoff", {}),
                     "multisite_discount_pct": p.get("multisite_discount_pct", 0),
                     "multisite_total_sites": p.get("multisite_total_sites", 0),
+                    "website_audit": p.get("website_audit"),
                     "markup_pct": p["markup_pct"], "addon_markets": addon, "band": band})
 
 def _perf_fill_bids(d, eligible=True):
@@ -21477,6 +21501,29 @@ def build_proposal_docx(d, _notes=None):
         for it in items:
             subbullet(it)
     body(P["campaign_close"])
+
+    # ---- Website Audit, when the quote carries it --------------------------
+    # The one-time fee comes first, then the full campaign options below for
+    # if they buy it after. Same copy as the deck's audit slide. (2026-10-15)
+    _pr0 = d.get("pricing") or {}
+    _fee = ((_pr0.get("handoff") or {}).get("website_audit_fee")
+            or (_pr0.get("website_audit") or {}).get("fee") or 0)
+    if "website audit" in str(d.get("strategy") or "").lower() and _fee:
+        import seo_pptx
+        _A = seo_pptx.COPY
+        doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+        head("Website Audit")
+        body(_A["audit_lead"])
+        for label, text in _A["audit"]:
+            p = doc.add_paragraph(style="List Bullet")
+            p.add_run(label + ": ").bold = True
+            p.add_run(text)
+        _pages = int((_pr0.get("website_audit") or {}).get("max_pages")
+                     or CFG.get("website_audit_max_pages") or 0)
+        body(f"One-time fee: {_p_money(_fee)}"
+             + (f" (sites under {_pages:,} total pages)" if _pages else ""),
+             True)
+        body(_A["audit_credit"])
 
     # ---- the options ------------------------------------------------------
     # THE THREE OPTIONS BELONG ON ONE PAGE. They are read against each other —
