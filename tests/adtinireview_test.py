@@ -76,8 +76,11 @@ check("its AI partner cost is a share of the restated Core cost",
 # ------------------------------------------------ 5. tie goes to the size card
 tie = price(industry="legal - personal injury | hospital")
 check("legal and hospital tie, hospital wins", tie["industry_rule"], "hospital")
-check("a legal-only quote is still legal",
-      price(industry="legal - personal injury")["industry_rule"], "legal -")
+check("a PI-only quote is still PI",
+      price(industry="legal - personal injury")["industry_rule"], "legal - personal injury")
+for area in ("legal - family law", "legal - estate planning", "legal - defense",
+             "legal - bankruptcy", "legal - workers comp"):
+    check(f"{area} carries no card", price(industry=area)["industry_rule"], None)
 
 # ------------------------------------------------ 6. AI-only add-on markets
 solo = price(ai_search=True, core_seo=False, addon_markets=2)["handoff"]
