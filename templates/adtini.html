@@ -6061,7 +6061,13 @@ async function downloadProposal(i, as){
                          scAlias(sc))
             .forEach(x => {
               const key = String(x).toLowerCase().trim();
-              if (!/\breview/.test(key)) return;
+              // THE WORD AFTER THE NAME IS "review". "wheeler digital fat
+              // wrench review" says review and is still the wrench. The query
+              // itself is the bar above the box, not a suggestion.
+              const b = String(d.brand || '').toLowerCase().trim();
+              const rest = b && key.startsWith(b) ? key.slice(b.length).trim() : key;
+              if (!/^(reviews?|ratings?)\b/.test(rest)) return;
+              if (key === String(S.query || '').toLowerCase().trim()) return;
               if (key && !seen.has(key)) { seen.add(key); out.push(x); }
             });
         });
