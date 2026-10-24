@@ -6045,6 +6045,20 @@ async function downloadProposal(i, as){
         });
         return out;
       })(),
+      // EVERY ON-BRAND SUGGESTION, for the slide to show when none of them is
+      // negative: a clean auto-suggest is a result. (2026-10-24, Kiri)
+      suggest_all: (() => {
+        const seen = new Set(), out = [];
+        Object.keys(sc.autocomplete || {}).forEach(k => {
+          leadsWithBrand((sc.autocomplete[k] || {}).suggestions || [], d.brand || '',
+                         scAlias(sc))
+            .forEach(x => {
+              const key = String(x).toLowerCase().trim();
+              if (key && !seen.has(key)) { seen.add(key); out.push(x); }
+            });
+        });
+        return out;
+      })(),
       related: [...new Set(leadsWithBrand(
         [...(S.negative_related || []), ...(S.negative_pasf || [])], d.brand || '',
         scAlias(sc))
@@ -6056,7 +6070,8 @@ async function downloadProposal(i, as){
           return {title: l.title || '', address: l.address || '',
                   profile_rating: l.rating || null,
                   profile_reviews: l.reviews || 0,
-                  neg_1: n.neg_1 || 0, neg_2: n.neg_2 || 0, weak_3: n.weak_3 || 0};
+                  neg_1: n.neg_1 || 0, neg_2: n.neg_2 || 0, weak_3: n.weak_3 || 0,
+                  pos_4: n.pos_4 || 0, pos_5: n.pos_5 || 0};
         }),
     },
   }) : JSON.stringify({
