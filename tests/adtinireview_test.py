@@ -73,6 +73,11 @@ check("its AI partner cost is a share of the restated Core cost",
       h["partner_ai_search_cost"]["base"],
       app.r50(h["partner_core_seo_cost"]["base"] * pct))
 
+# ------------------------------------------------ 4b. a hand-set base is not floored
+low = price(base_override=1720)
+check("a partner override under the floor is not floored", low["floored"], False)
+check("and quotes under the floor", low["client_tiers"]["base"] < app.CFG["client_floor"], True)
+
 # ------------------------------------------------ 5. tie goes to the size card
 tie = price(industry="legal - personal injury | hospital")
 check("legal and hospital tie, hospital wins", tie["industry_rule"], "hospital")

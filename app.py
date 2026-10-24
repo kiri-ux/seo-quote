@@ -12860,7 +12860,11 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     client_base = retail_of(hard_cost["base"])
     floor = CFG.get("client_floor", 0)
     floored = False
-    if floor and client_base < floor:
+    # A HAND-SET PARTNER BASE IS NOT FLOORED. The floor stops the FORMULA
+    # quoting a client too low; an operator who types a partner cost has
+    # already made that call. Ally Disability: $1,720 partner (retail $2,650)
+    # came back at $2,950 with the override showing as applied. (2026-10-24)
+    if floor and client_base < floor and not manual_base:
         client_base = floor
         floored = True
         cstep = (retail_of(cost_of(step)) if CFG.get("tier_step_flat")
