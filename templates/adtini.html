@@ -6026,6 +6026,9 @@ async function downloadProposal(i, as){
       query: S.query || ((d.brand || '') + ' reviews').trim().toLowerCase(),
       terms: (T.terms || []).filter(t => t && t['class'] && t['class'] !== 'neutral').slice(0, 10),
       organic: S.organic || [], forums: S.forums || [],
+      // DID THE PAGE-ONE SEARCH RUN. An empty page one from a search that ran
+      // is a finding; from one that did not, it is a gap. (2026-10-24, Kiri)
+      searched: !!S.query,
       // THE PROFILES, AS THE PANEL COUNTS THEM. This sent sc.locations, which
       // is the raw lookup -- an object, not a list -- so the document priced
       // the removals with no listing behind them. Only the ticked locations,
@@ -6045,8 +6048,12 @@ async function downloadProposal(i, as){
         });
         return out;
       })(),
-      // EVERY ON-BRAND SUGGESTION, for the slide to show when none of them is
-      // negative: a clean auto-suggest is a result. (2026-10-24, Kiri)
+      // THE CLEAN REVIEW SUGGESTIONS, for the slide to show when none of them
+      // is negative: a clean auto-suggest is a result. (2026-10-24, Kiri)
+      // REVIEW PHRASES ONLY. Every suggestion for the bare name is about
+      // whoever owns it: "wheeler digital" suggested a torque wrench brand's
+      // products, not the agency. A phrase that says "review" is about the
+      // reputation the slide is showing.
       suggest_all: (() => {
         const seen = new Set(), out = [];
         Object.keys(sc.autocomplete || {}).forEach(k => {
@@ -6054,6 +6061,7 @@ async function downloadProposal(i, as){
                          scAlias(sc))
             .forEach(x => {
               const key = String(x).toLowerCase().trim();
+              if (!/\breview/.test(key)) return;
               if (key && !seen.has(key)) { seen.add(key); out.push(x); }
             });
         });
