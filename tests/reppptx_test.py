@@ -362,7 +362,7 @@ check("no blank shape overlaps the heading", banded, [])
 # the slide printed three empty boxes. (2026-10-24, Kiri)
 CLEAN = {"query": "wheeler digital reviews", "suggest": [],
          "suggest_all": ["wheeler digital marketing", "wheeler digital reviews"],
-         "organic": [], "forums": [],
+         "organic": [], "forums": [], "searched": True,
          "locations": [{"title": "Wheeler Digital", "profile_rating": 5,
                         "profile_reviews": 7, "neg_1": 0, "neg_2": 0,
                         "weak_3": 0, "pos_4": 0, "pos_5": 7}]}
@@ -370,6 +370,8 @@ cp, cd = deck(FULL, snap=CLEAN, brand="Wheeler Digital")
 ct = all_text([s for s in cp.slides if "Reputation Snapshot" in all_text(s)][0])
 check("a clean auto-suggest says so", "No negative suggestions found." in ct, True)
 check("and shows what Google does suggest", "wheeler digital marketing" in ct, True)
+check("an empty page one from a search that ran says nothing names them",
+      "No page-one results name Wheeler Digital." in ct, True)
 check("the pie counts the five-star reviews", rep_pptx._stars(cd)["5"], 7)
 check("the rating tile prints", ("5.0\u2605" in ct, "7 Google reviews" in ct),
       (True, True))

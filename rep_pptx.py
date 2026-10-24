@@ -385,7 +385,7 @@ def _slide_snapshot(prs, d):
     brand = str(d.get("brand") or "")
     _suggest_block(slide, snap, brand)
     _profiles_block(slide, d)
-    _results_block(slide, snap)
+    _results_block(slide, snap, brand)
     _stars_block(slide, d)
     return slide
 
@@ -493,7 +493,7 @@ def _profiles_block(slide, d):
                   wrap=(c == 0))
 
 
-def _results_block(slide, snap):
+def _results_block(slide, snap, brand=""):
     """Page one, and what is to be done about each result.
 
     THE LEGEND GOES UNDER THE LONGEST TABLE THIS CAN DRAW, not under the
@@ -556,7 +556,11 @@ def _results_block(slide, snap):
     else:
         nb = _text_box(slide, x, top, w, Inches(0.3))
         _txt(nb, size=10.5, color=MUTED)
-        nb.text_frame.paragraphs[0].text = "No page one captured."
+        # NOTHING ON PAGE ONE NAMES THEM is what a small, clean brand looks
+        # like, and it is a different sentence from a search that never ran.
+        nb.text_frame.paragraphs[0].text = (
+            "No page-one results name %s." % (brand or "the client")
+            if snap.get("searched") else "No page one captured.")
     # UNDER THE TABLE, WHEREVER THE TABLE ENDS. A fixed foot is right only for
     # the longest table; a short one left an inch of gap. Sized off the rows
     # actually drawn, floored so it can never ride up into a table that grew.
