@@ -385,6 +385,37 @@ only_suggest = {"query": "x reviews", "suggest_all": ["x co"]}
 check("a scan with only clean suggestions still prints the snapshot",
       "Reputation Snapshot" in " ".join(titles(deck(FULL, snap=only_suggest)[0])), True)
 
+# ---------------------------------------------- the middle fills by strategy
+# A clean or short page one left half the slide empty. Reactive shows the
+# problem, Proactive the name being protected, a bundle both. (2026-10-24, Kiri)
+STATS = dict(SNAP, searched=True, brand_volume=51330, negative_volume=1240,
+             watch_volume=880, related=["sage dental lawsuit"],
+             ai_overview="Sage Dental has mixed reviews and billing complaints.",
+             ai_negative=["complaints"])
+def snap_text(q):
+    return all_text([s for s in deck(q, snap=STATS)[0].slides
+                     if "Reputation Snapshot" in all_text(s)][0])
+rt = snap_text(quote(campaign="reactive", search={"bundle": True, "volume": 5000,
+                                                    "suppression": True}))
+pt = snap_text(quote(campaign="proactive", shield={"enabled": True}))
+bt = snap_text(quote(campaign="bundle", search={"bundle": True, "volume": 5000,
+                                                "suppression": True},
+                     shield={"enabled": True}))
+check("reactive shows negative demand, not brand demand",
+      ("searches/mo on negative terms" in rt, "brand searches/mo" in rt), (True, False))
+check("proactive shows brand demand and owned share, not negatives",
+      ("brand searches/mo" in pt, "1 of 3" in pt,
+       "searches/mo on negative terms" in pt), (True, True, False))
+check("a bundle shows both", ("searches/mo on negative terms" in bt,
+                              "brand searches/mo" in bt), (True, True))
+check("the AI Overview prints with its flags",
+      ("AI Overview" in rt, "mentions complaints" in rt), (True, True))
+full = dict(STATS, organic=[{"pos": i, "domain": "site%d.com" % i,
+                             "tactic": "suppression"} for i in range(1, 10)])
+ft = all_text([s for s in deck(FULL, snap=full)[0].slides
+               if "Reputation Snapshot" in all_text(s)][0])
+check("a full page one leaves no room for the AI Overview", "AI Overview" in ft, False)
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

@@ -385,9 +385,94 @@ def _slide_snapshot(prs, d):
     brand = str(d.get("brand") or "")
     _suggest_block(slide, snap, brand)
     _profiles_block(slide, d)
-    _results_block(slide, snap, brand)
+    foot = _results_block(slide, snap, brand)
     _stars_block(slide, d)
+    _context_block(slide, d, snap, foot)
     return slide
+
+
+def _vol(n):
+    return f"{_int(n):,}"
+
+
+def _tiles_for(d, snap):
+    """The stat tiles, by what was sold. Reactive is the problem the campaign
+    fixes; Proactive is the name it protects; a bundle carries both."""
+    strat = _strategies(d)
+    page1 = [r for r in ((snap.get("organic") or [])
+                         + (snap.get("forums") or [])) if isinstance(r, dict)]
+    tac = [str(rep_scan.tactic_of(r)) for r in page1]
+    owned = sum(1 for r in page1 if r.get("owned"))
+    reactive = [
+        (_vol(snap.get("negative_volume")), "searches/mo on negative terms"),
+        (str(sum(1 for t in tac if t.startswith("site removal"))),
+         "page-one results to remove"),
+        (str(sum(1 for t in tac if t.startswith("suppression"))),
+         "page-one results to outrank"),
+        (str(len(snap.get("related") or [])), "negative related searches"),
+    ]
+    total, _avg = _profile_totals(d)
+    proactive = [
+        (_vol(snap.get("brand_volume")), "brand searches/mo"),
+        (("%d of %d" % (owned, len(page1))) if page1 else "0",
+         "page-one results they own"),
+        (_vol(snap.get("watch_volume")), "searches/mo on terms to watch"),
+        (str(len(_locs(d))), "Google profile%s monitored"
+         % ("" if len(_locs(d)) == 1 else "s")),
+    ]
+    has_r = bool(strat & {"Reactive", "Review Removals", "Site/Article Removals"})
+    has_p = "Proactive" in strat
+    if has_r and has_p:
+        return reactive[:2] + proactive[:2]
+    if has_p:
+        return proactive
+    return reactive
+
+
+def _context_block(slide, d, snap, top):
+    """WHAT FILLS THE MIDDLE. Under the page-one legend, as many rows of stat
+    tiles as fit, then what Google's AI Overview says if there is room left.
+    A full page one leaves no room and draws nothing. (2026-10-24, Kiri)"""
+    x, w = Inches(4.0), Inches(4.6)
+    floor = Inches(6.85)
+    tile_h, gap = Inches(0.62), Inches(0.12)
+    tw = (w - gap) / 2
+    y = top + Inches(0.18)
+    tiles = _tiles_for(d, snap)
+    for i in range(0, len(tiles), 2):
+        if y + tile_h > floor:
+            return
+        for j, (num, label) in enumerate(tiles[i:i + 2]):
+            tx = x + j * (tw + gap)
+            _box(slide, tx, y, tw, tile_h, fill=WHITE, radius=0.06)
+            nb = _text_box(slide, tx + Inches(0.06), y + Inches(0.08),
+                           Inches(0.9), tile_h - Inches(0.16))
+            _txt(nb, size=15, bold=True, color=NAVY, align=PP_ALIGN.CENTER,
+                 space_after=0)
+            nb.text_frame.paragraphs[0].text = num
+            nb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            lb = _text_box(slide, tx + Inches(0.98), y + Inches(0.08),
+                           tw - Inches(1.04), tile_h - Inches(0.16))
+            _txt(lb, size=9, bold=True, color=INK, space_after=0, line=1.05)
+            lb.text_frame.paragraphs[0].text = label
+            lb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        y += tile_h + gap
+    ai = str(snap.get("ai_overview") or "").strip()
+    if not ai or y + Inches(0.9) > floor:
+        return
+    h = min(floor - y, Inches(1.0))
+    box = _box(slide, x, y, w, h, fill=TINT, radius=0.04)
+    tf = _txt(box, size=8, space_after=0, line=1.1)
+    p = tf.paragraphs[0]
+    _run(p, "What Google's AI Overview says", size=8.5, bold=True, color=NAVY)
+    neg = [str(m) for m in (snap.get("ai_negative") or []) if str(m).strip()]
+    if neg:
+        _run(p, "  \u00b7 mentions " + ", ".join(neg), size=8, bold=True,
+             color=NAVY)
+    cut = 120 if h < Inches(0.85) else 240
+    q = ai if len(ai) <= cut else ai[:cut].rsplit(" ", 1)[0] + "\u2026"
+    p = _para(tf, size=8, space_before=3, space_after=0, line=1.1)
+    _run(p, "\u201c%s\u201d" % q, size=8, color=INK)
 
 
 def _cell(cell, text, size=8, bold=False, color=INK,
@@ -568,6 +653,7 @@ def _results_block(slide, snap, brand=""):
                Inches(3.0)) if page1 else Inches(2.2)
     legend = _box(slide, x, min(ltop, LEGEND_TOP), w, Inches(1.05), fill=WHITE,
                   radius=0.03)
+    foot = min(ltop, LEGEND_TOP) + Inches(1.05)
     tf = _txt(legend, size=7.5, space_after=0, line=1.1)
     for i, (name, text) in enumerate(COPY["tactics"]):
         p = tf.paragraphs[0] if i == 0 else _para(tf, size=7.5, space_before=2,
@@ -575,6 +661,7 @@ def _results_block(slide, snap, brand=""):
         _run(p, name, size=7.5, bold=True,
              color=(GREEN if name == "Owned" else BLUE))
         _run(p, " - " + text, size=7.5, color=MUTED)
+    return foot
 
 
 def _stars_block(slide, d):

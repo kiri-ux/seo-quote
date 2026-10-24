@@ -6029,6 +6029,13 @@ async function downloadProposal(i, as){
       // DID THE PAGE-ONE SEARCH RUN. An empty page one from a search that ran
       // is a finding; from one that did not, it is a gap. (2026-10-24, Kiri)
       searched: !!S.query,
+      // WHAT THE SCAN MEASURED BEYOND THE THREE TABLES, for the stat tiles
+      // the snapshot fills its empty space with, by strategy. (2026-10-24, Kiri)
+      brand_volume: T.total_volume || 0,
+      negative_volume: T.negative_volume || 0,
+      watch_volume: T.watch_volume || 0,
+      ai_overview: String(S.ai_overview || '').slice(0, 400),
+      ai_negative: S.ai_negative || [],
       // THE PROFILES, AS THE PANEL COUNTS THEM. This sent sc.locations, which
       // is the raw lookup -- an object, not a list -- so the document priced
       // the removals with no listing behind them. Only the ticked locations,
