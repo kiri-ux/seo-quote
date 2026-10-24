@@ -244,7 +244,7 @@ check("the tactic legend prints", "outrank it instead" in snap_txt, True)
 check("the removal tile counts 1 and 2 star", str(54 + 34 + 47 + 26) in snap_txt,
       True)
 check("and the pie carries all three buckets",
-      rep_pptx._stars(d), {"1": 101, "2": 60, "3": 33})
+      rep_pptx._stars(d), {"1": 101, "2": 60, "3": 33, "4": 0, "5": 0})
 
 # ---------------------------------------------- the modifier is what's bold
 # A legal suffix or an apostrophe must not decide whether anything is bold.
@@ -356,6 +356,32 @@ banded = [sh for sh in det.shapes
           and sh.width is not None and sh.width < rep_pptx.SLIDE_W
           and not (sh.has_text_frame and sh.text_frame.text.strip())]
 check("no blank shape overlaps the heading", banded, [])
+
+# ---------------------------------------------- a clean scan reads as clean
+# Wheeler Digital: nothing negative suggested, 7 reviews all at 5 stars, and
+# the slide printed three empty boxes. (2026-10-24, Kiri)
+CLEAN = {"query": "wheeler digital reviews", "suggest": [],
+         "suggest_all": ["wheeler digital marketing", "wheeler digital reviews"],
+         "organic": [], "forums": [],
+         "locations": [{"title": "Wheeler Digital", "profile_rating": 5,
+                        "profile_reviews": 7, "neg_1": 0, "neg_2": 0,
+                        "weak_3": 0, "pos_4": 0, "pos_5": 7}]}
+cp, cd = deck(FULL, snap=CLEAN, brand="Wheeler Digital")
+ct = all_text([s for s in cp.slides if "Reputation Snapshot" in all_text(s)][0])
+check("a clean auto-suggest says so", "No negative suggestions found." in ct, True)
+check("and shows what Google does suggest", "wheeler digital marketing" in ct, True)
+check("the pie counts the five-star reviews", rep_pptx._stars(cd)["5"], 7)
+check("the rating tile prints", ("5.0\u2605" in ct, "7 Google reviews" in ct),
+      (True, True))
+uncounted = dict(CLEAN, locations=[dict(CLEAN["locations"][0], pos_5=0)])
+ut = all_text([s for s in deck(FULL, snap=uncounted)[0].slides
+               if "Reputation Snapshot" in all_text(s)][0])
+check("uncounted reviews print the profile total, not 'none'",
+      ("7 Google reviews \u00b7 5.0\u2605 average" in ut, "No reviews counted." in ut),
+      (True, False))
+only_suggest = {"query": "x reviews", "suggest_all": ["x co"]}
+check("a scan with only clean suggestions still prints the snapshot",
+      "Reputation Snapshot" in " ".join(titles(deck(FULL, snap=only_suggest)[0])), True)
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))

@@ -110,7 +110,8 @@ COPY = {
     ],
 }
 
-STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID}
+STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID, "4": BLUE,
+               "5": RGBColor(0xC9, 0xDB, 0xF2)}
 
 # Page one, capped so the table cannot reach the legend under it: the table
 # starts at 1.7in and a row is 0.3in, so 9 rows of results plus the header end
@@ -140,17 +141,38 @@ def _locs(d):
 
 
 def _stars(d):
-    """The star split across the ticked profiles: {'1': n, '2': n, '3': n}.
+    """The star split across the ticked profiles: {'1': n, ... '5': n}.
 
     Read off the same per-location rows the flag count is, so the pie and the
     "reviews to remove" tile cannot disagree with the number on the form.
+
+    ALL FIVE BUCKETS. A clean profile has nothing at 1-3 stars, and a pie of
+    the bad reviews alone came out empty beside a table reading 5★/7.
+    (2026-10-24, Kiri)
     """
-    out = {"1": 0, "2": 0, "3": 0}
+    out = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
     for l in _locs(d):
         out["1"] += _int(l.get("neg_1"))
         out["2"] += _int(l.get("neg_2"))
         out["3"] += _int(l.get("weak_3"))
+        out["4"] += _int(l.get("pos_4"))
+        out["5"] += _int(l.get("pos_5"))
     return out
+
+
+def _profile_totals(d):
+    """(reviews on the ticked profiles, their review-weighted average rating)."""
+    n, w = 0, 0.0
+    for l in _locs(d):
+        c = _int(l.get("profile_reviews"))
+        try:
+            r = float(l.get("profile_rating") or 0)
+        except (TypeError, ValueError):
+            r = 0
+        if c and r:
+            n += c
+            w += c * r
+    return n, (round(w / n, 1) if n else None)
 
 
 def _brand_split(phrase, brand):
@@ -400,17 +422,28 @@ def _suggest_block(slide, snap, brand):
     x, w = Inches(0.3), Inches(3.5)
     _col_head(slide, "Auto-Suggest", x, Inches(1.32), w)
     rows = [str(s) for s in (snap.get("suggest") or []) if str(s).strip()][:5]
+    # NOTHING NEGATIVE IS A FINDING. Say so, then show what Google does
+    # suggest for the name, so the box reads as a clean result and not a
+    # broken one. (2026-10-24, Kiri)
+    clean = [str(s) for s in (snap.get("suggest_all") or [])
+             if str(s).strip()][:4] if not rows else []
     q = str(snap.get("query") or "").strip()
     bar = _box(slide, x, Inches(1.7), w, Inches(0.4), fill=TINT, radius=0.06)
     _txt(bar, size=10, bold=True, color=NAVY, space_after=0)
     bar.text_frame.paragraphs[0].text = ("“%s”" % q) if q else "Auto-suggest"
     bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-    h = Inches(0.3) * max(1, len(rows)) + Inches(0.2)
+    h = Inches(0.3) * max(1, len(rows) or 1 + len(clean)) + Inches(0.2)
     box = _box(slide, x, Inches(2.12), w, h, fill=WHITE, radius=0.03)
     tf = _txt(box, size=10.5, space_after=0, line=1.1)
     if not rows:
         tf.paragraphs[0].text = "No negative suggestions found."
-        _style(tf.paragraphs[0], 10.5, False, MUTED)
+        _style(tf.paragraphs[0], 10.5, True, GREEN if clean else MUTED)
+        for phrase in clean:
+            head, mod = _brand_split(phrase, brand)
+            p = _para(tf, size=10.5, space_before=4, space_after=0, line=1.1)
+            _run(p, head, size=10.5, color=MUTED)
+            if mod:
+                _run(p, mod, size=10.5, bold=True, color=MUTED)
         return
     for i, phrase in enumerate(rows):
         head, mod = _brand_split(phrase, brand)
@@ -544,7 +577,8 @@ def _stars_block(slide, d):
     x, w = Inches(8.85), Inches(4.15)
     _col_head(slide, "Star Reviews Breakdown", x, Inches(1.32), w)
     stars = _stars(d)
-    labels = [k for k in ("3", "2", "1") if stars.get(k)]
+    labels = [k for k in ("5", "4", "3", "2", "1") if stars.get(k)]
+    total, avg = _profile_totals(d)
     if labels:
         data = CategoryChartData()
         data.categories = ["%s ★ Reviews" % k for k in labels]
@@ -569,7 +603,12 @@ def _stars_block(slide, d):
     else:
         nb = _text_box(slide, x, Inches(1.68), w, Inches(0.3))
         _txt(nb, size=10.5, color=MUTED)
-        nb.text_frame.paragraphs[0].text = "No reviews counted."
+        # NOT COUNTED IS NOT NONE. The profile table still has the total and
+        # the rating Google shows, so the column states those.
+        nb.text_frame.paragraphs[0].text = (
+            "%s Google review%s \u00b7 %s\u2605 average"
+            % (f"{total:,}", "" if total == 1 else "s", avg)
+            if total else "No reviews counted.")
 
     # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile. It is the
     # one figure on this slide that is also a line on the quote.
@@ -585,6 +624,20 @@ def _stars_block(slide, d):
                    Inches(0.62))
     _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
     lb.text_frame.paragraphs[0].text = "1-2 ★ Reviews\nto Remove"
+    # THE OTHER HALF OF THE STORY. On a clean profile the tile above reads 0;
+    # the rating beside it says why. (2026-10-24, Kiri)
+    if total:
+        _box(slide, x, Inches(5.58), w, Inches(0.8), fill=WHITE, radius=0.06)
+        nb = _text_box(slide, x, Inches(5.66), Inches(1.35), Inches(0.6))
+        _txt(nb, size=22, bold=True, color=NAVY, align=PP_ALIGN.CENTER,
+             space_after=0)
+        nb.text_frame.paragraphs[0].text = "%s\u2605" % avg
+        lb = _text_box(slide, x + Inches(1.45), Inches(5.66), w - Inches(1.6),
+                       Inches(0.6))
+        _txt(lb, size=12.5, bold=True, color=NAVY, space_after=0, line=1.1)
+        lb.text_frame.paragraphs[0].text = ("Average across\n%s Google review%s"
+                                            % (f"{total:,}",
+                                               "" if total == 1 else "s"))
     return tile
 
 
@@ -833,7 +886,8 @@ def build_rep_proposal_pptx(d):
         _strategy_slides(prs, sections)
     # A SNAPSHOT WITH NOTHING IN IT IS A SLIDE TO DELETE BY HAND.
     snap = _snap(d)
-    if any(snap.get(k) for k in ("suggest", "organic", "forums", "locations")):
+    if any(snap.get(k) for k in ("suggest", "suggest_all", "organic", "forums",
+                                 "locations")):
         _slide_snapshot(prs, d)
     cards = _cards(d)
     if cards:
