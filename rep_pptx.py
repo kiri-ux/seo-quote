@@ -825,10 +825,11 @@ def _cards(d):
 
 
 def _lookalike_blurb(d, kind):
-    """BRENDAN'S COMPETING-NAME TEXT, ON THE CARD. Reactive does the work
-    (his second paragraph), Proactive watches it (his third); a deck with
-    only one of the two cards carries both on that card. Only when the scan
-    found a lookalike domain. (2026-10-25, Kiri)"""
+    """BRENDAN'S COMPETING-NAME TEXT, ON THE CARD. He wrote it for a
+    Proactive campaign, so both sentences sit on the Proactive card. Reactive
+    gets nothing beside it; alone, it gets only the push-lower part, which is
+    suppression. Only when the scan found a lookalike domain. (2026-10-25,
+    Kiri)"""
     looks = [x for x in (_snap(d).get("lookalikes") or [])
              if isinstance(x, dict) and x.get("domain")]
     if not looks:
@@ -847,11 +848,11 @@ def _lookalike_blurb(d, kind):
              "Throughout the campaign, we will monitor branded search "
              "rankings, track %s\u2019s visibility, and adjust our strategy "
              "as results develop." % names)
-    strat = _strategies(d)
-    both = "Reactive" in strat and "Proactive" in strat
     if kind == "reactive":
-        return work if both else work + " " + watch
-    return watch if both else work + " " + watch
+        if "Proactive" in _strategies(d):
+            return ""
+        return "We will work to push %s lower in search results." % names
+    return work + " " + watch
 
 
 def _slide_details(prs, d, cards):
