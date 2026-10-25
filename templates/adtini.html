@@ -4742,6 +4742,15 @@ function snapshotParts(r, live){
            + ` another company's`).join('')
        + `</div>`;
   }
+  // A COMPETING NAME. A lookalike domain on page one for the client's name
+  // is the campaign's job, not noise. (2026-10-25, Kiri)
+  if ((S.lookalikes || []).length) {
+    w += `<div class="scw bad">Competing name on page one for `
+       + `<b>${esc(S.brand_query || brand)}</b> · `
+       + S.lookalikes.map(x => `${esc(x.domain)} #${esc(String(x.pos || '?'))}`).join(' · ')
+       + (S.brand_own_rank ? ` · theirs #${esc(String(S.brand_own_rank))}` : ' · theirs not on page one')
+       + `</div>`;
+  }
   if (T.negative_volume) {
     w += `<div class="scw bad">${T.negative_volume.toLocaleString()}/mo on negative terms`
        + (T.watch_volume ? ` · ${T.watch_volume.toLocaleString()}/mo on watch terms` : '')
@@ -6009,6 +6018,8 @@ async function downloadProposal(i, as){
   const strat = asList(d.strategy);
   const body = r.kind === 'orm' ? JSON.stringify({
     brand: d.brand || '', order_no: d.order_no || '',
+    // The client's site, named in the competing-name paragraphs.
+    site: d.site || '',
     // The flight, as typed on the form. The slides print it; the document
     // does not read it.
     start_date: d.start_date || '', end_date: d.end_date || '',
@@ -6036,6 +6047,12 @@ async function downloadProposal(i, as){
       watch_volume: T.watch_volume || 0,
       ai_overview: String(S.ai_overview || '').slice(0, 400),
       ai_negative: S.ai_negative || [],
+      // A LOOKALIKE DOMAIN ON PAGE ONE FOR THE NAME, and where the client's
+      // own site ranks for it. The proposal writes Brendan's competing-name
+      // paragraphs from these. (2026-10-25, Kiri)
+      lookalikes: S.lookalikes || [],
+      brand_own_rank: S.brand_own_rank || null,
+      brand_query: S.brand_query || '',
       // THE PROFILES, AS THE PANEL COUNTS THEM. This sent sc.locations, which
       // is the raw lookup -- an object, not a list -- so the document priced
       // the removals with no listing behind them. Only the ticked locations,

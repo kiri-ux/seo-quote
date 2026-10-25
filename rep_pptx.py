@@ -73,6 +73,8 @@ COPY = {
         ("site removal", "3rd-party page taken down or de-indexed at the source"),
         ("suppression", "can't remove it, outrank it instead"),
     ],
+    "lookalike_tactic": ("Competing name", "a lookalike domain using their "
+                                           "name, outrank it"),
     "no_serp": "No page one captured for this quote.",
     "review_card": [
         "Pay on success - billed per removed review; the total is a maximum, "
@@ -385,7 +387,7 @@ def _slide_snapshot(prs, d):
     brand = str(d.get("brand") or "")
     _suggest_block(slide, snap, brand)
     _profiles_block(slide, d)
-    foot = _results_block(slide, snap, brand)
+    foot = _results_block(slide, snap, brand, d.get("site") or "")
     _stars_block(slide, d)
     _context_block(slide, d, snap, foot)
     return slide
@@ -401,6 +403,7 @@ def _tiles_for(d, snap):
     strat = _strategies(d)
     page1 = [r for r in ((snap.get("organic") or [])
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
+    page1 = page1 + _name_rows(snap, page1, d.get("site") or "")
     tac = [str(rep_scan.tactic_of(r)) for r in page1]
     owned = sum(1 for r in page1 if r.get("owned"))
     reactive = [
@@ -420,10 +423,17 @@ def _tiles_for(d, snap):
         (str(len(_locs(d))), "Google profile%s monitored"
          % ("" if len(_locs(d)) == 1 else "s")),
     ]
+    # A COMPETING NAME LEADS, whatever was sold: it is the campaign's job.
+    looks = len(snap.get("lookalikes") or [])
+    if looks:
+        tile = (str(looks), "competing domain%s" % ("" if looks == 1 else "s"))
+        reactive = [tile] + reactive[:3]
+        proactive = [tile] + proactive[:3]
     has_r = bool(strat & {"Reactive", "Review Removals", "Site/Article Removals"})
     has_p = "Proactive" in strat
     if has_r and has_p:
-        return reactive[:2] + proactive[:2]
+        return (reactive[:2] + proactive[1:3] if looks
+                else reactive[:2] + proactive[:2])
     if has_p:
         return proactive
     return reactive
@@ -578,7 +588,30 @@ def _profiles_block(slide, d):
                   wrap=(c == 0))
 
 
-def _results_block(slide, snap, brand=""):
+def _site_domain(site):
+    s = str(site or "").lower().replace("https://", "").replace("http://", "")
+    return s.replace("www.", "", 1).split("/")[0]
+
+
+def _name_rows(snap, page1, site=""):
+    """THE SEARCH FOR THE NAME, ADDED TO PAGE ONE. Every lookalike domain, and
+    the client's own site at its rank for the name, where the reviews page
+    did not already carry them. (2026-10-25, Kiri)"""
+    have = {str(r.get("domain") or "") for r in page1}
+    out = []
+    own = _site_domain(site)
+    rank = snap.get("brand_own_rank")
+    if own and rank and own not in have:
+        out.append({"pos": rank, "domain": own, "owned": True,
+                    "tactic": "owned \u2014 boost"})
+    for x in snap.get("lookalikes") or []:
+        if isinstance(x, dict) and x.get("domain") and x["domain"] not in have:
+            out.append({"pos": x.get("pos"), "domain": x["domain"],
+                        "lookalike": True, "tactic": "outrank"})
+    return out
+
+
+def _results_block(slide, snap, brand="", site=""):
     """Page one, and what is to be done about each result.
 
     THE LEGEND GOES UNDER THE LONGEST TABLE THIS CAN DRAW, not under the
@@ -591,6 +624,7 @@ def _results_block(slide, snap, brand=""):
     _col_head(slide, "Top Google Results", x, Inches(1.32), w)
     page1 = [r for r in ((snap.get("organic") or [])
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
+    page1 = page1 + _name_rows(snap, page1, site)
     page1 = sorted(page1, key=lambda r: _int(r.get("pos")) or 99)[:MAX_RESULTS]
     top, row_h = Inches(1.7), Inches(0.3)
     if page1:
@@ -631,7 +665,9 @@ def _results_block(slide, snap, brand=""):
                 tf.clear()
                 p = tf.paragraphs[0]
                 _run(p, str(res.get("domain") or ""), size=8, color=INK)
-                _run(p, "  " + ("Owned" if res.get("owned") else "3rd party"),
+                _run(p, "  " + ("Owned" if res.get("owned")
+                                else "Competing name" if res.get("lookalike")
+                                else "3rd party"),
                      size=7, bold=True,
                      color=(GREEN if res.get("owned") else MUTED))
                 tac = str(rep_scan.tactic_of(res))
@@ -651,11 +687,15 @@ def _results_block(slide, snap, brand=""):
     # actually drawn, floored so it can never ride up into a table that grew.
     ltop = max(top + row_h * (len(page1) + 1) + Inches(0.14),
                Inches(3.0)) if page1 else Inches(2.2)
-    legend = _box(slide, x, min(ltop, LEGEND_TOP), w, Inches(1.05), fill=WHITE,
+    tactics = list(COPY["tactics"])
+    if any(r.get("lookalike") for r in page1):
+        tactics.append(COPY["lookalike_tactic"])
+    lh = Inches(1.05) + Inches(0.17) * (len(tactics) - len(COPY["tactics"]))
+    legend = _box(slide, x, min(ltop, LEGEND_TOP), w, lh, fill=WHITE,
                   radius=0.03)
-    foot = min(ltop, LEGEND_TOP) + Inches(1.05)
+    foot = min(ltop, LEGEND_TOP) + lh
     tf = _txt(legend, size=7.5, space_after=0, line=1.1)
-    for i, (name, text) in enumerate(COPY["tactics"]):
+    for i, (name, text) in enumerate(tactics):
         p = tf.paragraphs[0] if i == 0 else _para(tf, size=7.5, space_before=2,
                                                   space_after=0, line=1.1)
         _run(p, name, size=7.5, bold=True,

@@ -43,6 +43,42 @@ COPY = {
                "their online reputation. All pricing within this proposal is "
                "listed in US dollars.",
 
+    # A LOOKALIKE DOMAIN ON PAGE ONE FOR THE NAME. Brendan's own three
+    # paragraphs, written for Wheeler Digital (2026-10-25); the scan fills the
+    # domains and ranks. The second and third are his word for word.
+    "lookalike_ranked": "{site} currently ranks #{rank} organically for "
+                        "branded searches, but the similarly named {others} "
+                        "{verb} creating confusion and diverting traffic from "
+                        "people searching for {brand}. Our online reputation "
+                        "management (ORM) campaign will focus on "
+                        "strengthening {brand}\u2019s presence in branded "
+                        "search results and reducing the competing "
+                        "{domain_word}\u2019 visibility.",
+    "lookalike_unranked": "The similarly named {others} {verb} organically "
+                          "for branded searches while {site} does not appear "
+                          "on page one, creating confusion and diverting "
+                          "traffic from people searching for {brand}. Our "
+                          "online reputation management (ORM) campaign will "
+                          "focus on strengthening {brand}\u2019s presence in "
+                          "branded search results and reducing the competing "
+                          "{domain_word}\u2019 visibility.",
+    "lookalike_plan": "We will optimize {brand}\u2019s existing web "
+                      "properties and build out additional branded profiles, "
+                      "pages, and content designed to rank for relevant "
+                      "branded searches. By strengthening these properties "
+                      "and their authority, we will work to move more {brand} "
+                      "assets above {first}, pushing the competing "
+                      "{site_word} lower in search results and helping "
+                      "prospective customers find the correct business.",
+    "lookalike_monitor": "Throughout the campaign, we will monitor branded "
+                         "search rankings, track the competing {domain_word}\u2019 "
+                         "visibility, and adjust our strategy as results "
+                         "develop. While specific rankings cannot be "
+                         "guaranteed, our objective is clear: give {brand} "
+                         "greater control over its branded search presence, "
+                         "reduce customer confusion, and capture more of the "
+                         "traffic already looking for the company.",
+
     # Visions Electronics lists the pages by URL under this heading, one bullet
     # each, before the rate card. The lead-in is his.
     "sites_found": "We have reviewed {brand}'s online reputation and have found "
@@ -808,6 +844,46 @@ def _bracket_rows(lines):
     return out
 
 
+def _and(items):
+    items = [str(x) for x in items if str(x)]
+    if len(items) <= 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
+def lookalike_paragraphs(snap, brand, site=""):
+    """BRENDAN'S COMPETING-NAME TEXT, FILLED FROM THE SCAN. Empty when no
+    lookalike domain is on page one. One domain reads exactly as he wrote it
+    for Wheeler Digital; two or more are listed with their ranks."""
+    looks = [x for x in (snap.get("lookalikes") or [])
+             if isinstance(x, dict) and x.get("domain")]
+    if not looks:
+        return []
+    site = (str(site or "").lower().replace("https://", "").replace("http://", "")
+            .replace("www.", "").split("/")[0]) or brand
+    rank = snap.get("brand_own_rank")
+    if len(looks) == 1:
+        others = looks[0]["domain"]
+        verb = "ranks #%s," % looks[0].get("pos") if rank else \
+            "ranks #%s" % looks[0].get("pos")
+        dw, sw = "domain", "site"
+    else:
+        others = _and("%s (#%s)" % (x["domain"], x.get("pos")) for x in looks)
+        verb = "also rank," if rank else "rank"
+        dw, sw = "domains", "sites"
+    fill = dict(brand=brand, site=site, rank=rank, others=others, verb=verb,
+                first=looks[0]["domain"], domain_word=dw, site_word=sw)
+    # "the competing domain's" / "the competing domains'" -- the template
+    # carries the apostrophe, so the singular gets its s here.
+    lead = COPY["lookalike_ranked" if rank else "lookalike_unranked"]
+    out = [lead.format(**fill), COPY["lookalike_plan"].format(**fill),
+           COPY["lookalike_monitor"].format(**fill)]
+    if dw == "domain":
+        out = [t.replace("competing domain\u2019 ", "competing domain\u2019s ")
+               for t in out]
+    return out
+
+
 def build_rep_proposal_docx(d):
     """Everything proposed, in the shape Brendan's own proposals take.
 
@@ -834,6 +910,9 @@ def build_rep_proposal_docx(d):
 
     _head(doc, "Summary")
     _body(doc, COPY["summary"].format(brand=brand))
+    for para in lookalike_paragraphs(d.get("snapshot") or {}, brand,
+                                     d.get("site") or ""):
+        _body(doc, para)
 
     # WHAT THE PRODUCT IS, BEFORE WHAT IT COSTS.
     _head(doc, COPY["orm_heading"])
