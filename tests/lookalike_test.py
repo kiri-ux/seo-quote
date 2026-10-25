@@ -133,14 +133,24 @@ check("and leads the tiles with the competing domain",
       "competing domain" in txt, True)
 check("their own name rank counts as owned", "1 of 2" in txt, True)
 
-check("the brand shield card carries a competing-name line",
-      rep_pptx._lookalike_blurb({"brand": "Wheeler Digital", "snapshot": SNAP},
-                                "proactive").startswith("Competing name: tracks "
-                                                        "wheeler-digital.com"), True)
-check("the search protection card says it pushes the lookalike down",
-      "pushes wheeler-digital.com (#2) below Wheeler Digital"
-      in rep_pptx._lookalike_blurb({"brand": "Wheeler Digital", "snapshot": SNAP},
-                                   "reactive"), True)
+BOTH = {"brand": "Wheeler Digital", "snapshot": SNAP,
+        "quote": {"handoff": {"strategy": ["Reactive", "Proactive"]}}}
+ONE = dict(BOTH, quote={"handoff": {"strategy": ["Proactive"]}})
+check("on a bundle, Reactive carries Brendan's work sentence",
+      rep_pptx._lookalike_blurb(BOTH, "reactive"),
+      "We will optimize Wheeler Digital\u2019s existing web properties and "
+      "build out additional branded profiles, pages, and content, working to "
+      "move more Wheeler Digital assets above wheeler-digital.com and push the "
+      "competing site lower in search results.")
+check("and Proactive his monitoring sentence",
+      rep_pptx._lookalike_blurb(BOTH, "proactive"),
+      "Throughout the campaign, we will monitor branded search rankings, track "
+      "wheeler-digital.com\u2019s visibility, and adjust our strategy as "
+      "results develop.")
+check("a deck with one card carries both on it",
+      ("We will optimize" in rep_pptx._lookalike_blurb(ONE, "proactive"),
+       "Throughout the campaign" in rep_pptx._lookalike_blurb(ONE, "proactive")),
+      (True, True))
 check("no lookalike, no line",
       rep_pptx._lookalike_blurb({"snapshot": dict(SNAP, lookalikes=[])},
                                 "reactive"), "")

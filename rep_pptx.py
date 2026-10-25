@@ -431,15 +431,23 @@ def _tiles_for(d, snap):
 
 
 def _context_block(slide, d, snap, top):
-    """WHAT FILLS THE MIDDLE. Under the page-one legend, as many rows of stat
-    tiles as fit, then what Google's AI Overview says if there is room left.
-    A full page one leaves no room and draws nothing. (2026-10-24, Kiri)"""
+    """WHAT FILLS THE MIDDLE, under the page-one legend.
+
+    A RULE THE SHEET CAN STATE, not whatever happens to fit (2026-10-25,
+    Kiri): counting the rows the page-one table draws, 7 or fewer gets all
+    four tiles, 8 or 9 gets the first two, and the AI Overview prints only
+    when the table has 3 rows or fewer. Sized so each case fits with the
+    competing-name legend line as well."""
     x, w = Inches(4.0), Inches(4.6)
     floor = Inches(6.85)
-    tile_h, gap = Inches(0.62), Inches(0.12)
+    tile_h, gap = Inches(0.55), Inches(0.1)
     tw = (w - gap) / 2
     y = top + Inches(0.18)
-    tiles = _tiles_for(d, snap)
+    page1 = [r for r in ((snap.get("organic") or [])
+                         + (snap.get("forums") or [])) if isinstance(r, dict)]
+    rows = min(MAX_RESULTS, len(page1 + _name_rows(snap, page1,
+                                                     d.get("site") or "")))
+    tiles = _tiles_for(d, snap)[:4 if rows <= 7 else 2]
     for i in range(0, len(tiles), 2):
         if y + tile_h > floor:
             return
@@ -459,7 +467,7 @@ def _context_block(slide, d, snap, top):
             lb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         y += tile_h + gap
     ai = str(snap.get("ai_overview") or "").strip()
-    if not ai or y + Inches(0.9) > floor:
+    if not ai or rows > 3 or y + Inches(0.9) > floor:
         return
     h = min(floor - y, Inches(1.0))
     box = _box(slide, x, y, w, h, fill=TINT, radius=0.04)
@@ -799,7 +807,7 @@ def _cards(d):
             "scales": "Scales with brand search volume: %s/mo measured"
                       % "{:,}".format(_int(h.get("search_volume"))),
             "bullets": COPY["search_card"],
-            "accent": _lookalike_blurb(d, "reactive"),
+            "note": _lookalike_blurb(d, "reactive"),
             "price": "Pricing: %s/month" % _money(h.get("search_protection_monthly")),
         })
     if h.get("brand_shield_monthly"):
@@ -810,27 +818,40 @@ def _cards(d):
             "scales": "Scales with number of Google locations: %s location%s "
                       "measured" % (n, "" if n == 1 else "s"),
             "bullets": COPY["shield_card"],
-            "accent": _lookalike_blurb(d, "proactive"),
+            "note": _lookalike_blurb(d, "proactive"),
             "price": "Pricing: %s/month" % _money(h.get("brand_shield_monthly")),
         })
     return out
 
 
 def _lookalike_blurb(d, kind):
-    """ONE LINE ON THE CARD FOR A COMPETING NAME. The proposal carries
-    Brendan's three paragraphs; the deck has the card, so it says in a line
-    what that strategy does about the lookalike. (2026-10-25, Kiri)"""
+    """BRENDAN'S COMPETING-NAME TEXT, ON THE CARD. Reactive does the work
+    (his second paragraph), Proactive watches it (his third); a deck with
+    only one of the two cards carries both on that card. Only when the scan
+    found a lookalike domain. (2026-10-25, Kiri)"""
     looks = [x for x in (_snap(d).get("lookalikes") or [])
              if isinstance(x, dict) and x.get("domain")]
     if not looks:
         return ""
     brand = str(d.get("brand") or "the client")
-    names = " and ".join("%s (#%s)" % (x["domain"], x.get("pos")) for x in looks[:2])
+    names = " and ".join(x["domain"] for x in looks[:2])
+    plural = len(looks[:2]) > 1
+    work = ("We will optimize %s\u2019s existing web properties and build out "
+            "additional branded profiles, pages, and content, working to move "
+            "more %s assets above %s and push the competing %s lower in "
+            "search results." % (brand, brand, names,
+                                 "sites" if plural else "site"))
+    watch = ("Throughout the campaign, we will monitor branded search "
+             "rankings, track %s\u2019 visibility, and adjust our strategy as "
+             "results develop." % names if plural else
+             "Throughout the campaign, we will monitor branded search "
+             "rankings, track %s\u2019s visibility, and adjust our strategy "
+             "as results develop." % names)
+    strat = _strategies(d)
+    both = "Reactive" in strat and "Proactive" in strat
     if kind == "reactive":
-        return ("Competing name: pushes %s below %s\u2019s own pages in "
-                "branded search." % (names, brand))
-    return ("Competing name: tracks %s and %s\u2019s branded rankings every "
-            "month." % (" and ".join(x["domain"] for x in looks[:2]), brand))
+        return work if both else work + " " + watch
+    return watch if both else work + " " + watch
 
 
 def _slide_details(prs, d, cards):
@@ -969,6 +990,10 @@ def _slide_details(prs, d, cards):
                       space_after=0)
             _run(p, spec["accent"], size=9, bold=True,
                  color=(TINT if dark else BLUE))
+        if spec.get("note"):
+            p = _para(tf, size=9, color=fg, line=1.15, space_before=6,
+                      space_after=0)
+            _run(p, spec["note"], size=9, color=fg)
 
         if spec.get("price"):
             pill_w = min(card_w - Inches(0.3), Inches(2.1))
