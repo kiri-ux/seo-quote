@@ -176,6 +176,43 @@ def _run_at(toks, key):
     return -1, 0
 
 
+def clean_ai_text(text):
+    """Google's AI Overview as a reader sees it: markdown, links and citation
+    markers taken out, nothing reworded."""
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text or "")
+    t = re.sub(r"https?://\S+", "", t)
+    t = re.sub(r"\[\d+(?:[,\s]*\d+)*\]", "", t)
+    t = re.sub(r"[*#_`>|]+", " ", t)
+    t = re.sub(r"\s+([.,;:!?])", r"\1", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def ai_names_client(text, brand, domain="", alias=""):
+    """IS THE AI OVERVIEW ABOUT THIS CLIENT? It prints in the proposal word
+    for word, so a same-name company's answer would read as theirs. It has to
+    name them: the core name, the alias, or their domain, as a run of words
+    ("Wheeler Digital", "wheeler-digital", "wheelerdigital.com"). No key to
+    test against means no proof, so it fails. (2026-10-25, Kiri)"""
+    words = _sig(re.findall(r"[a-z0-9]+",
+                            (text or "").lower().replace("&", " and ")))
+    keys = set()
+    for name in (brand, alias):
+        core = "".join(_sig(brand_core(name))) if name else ""
+        if len(core) > 3:
+            keys.add(core)
+    host = (domain or "").split("//")[-1].split("/")[0].replace("www.", "")
+    stem = _squash(host.rsplit(".", 1)[0] if "." in host else host)
+    if len(stem) > 3:
+        keys.add(stem)
+    for i in range(len(words)):
+        run = ""
+        for w in words[i:i + 6]:
+            run += w
+            if run in keys:
+                return True
+    return False
+
+
 def names_client(phrase, brand, domain="", alias=""):
     """Does this search phrase actually name THIS client?
 
@@ -636,7 +673,7 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
                         parts.append(el[k])
             if it.get("markdown"):
                 parts.append(it["markdown"])
-            ai_text = " ".join(parts)[:1200]
+            ai_text = clean_ai_text(" ".join(parts))[:1200]
         elif t == "related_searches":
             related = [x for x in (it.get("items") or []) if x][:10]
         elif t == "people_also_search":
@@ -711,11 +748,16 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
     neg_related = [x for x in related
                    if any(m in x.lower() for m in NEG_MODIFIERS)]
     neg_pasf = [x for x in pasf if any(m in x.lower() for m in NEG_MODIFIERS)]
-    ai_negative = [m for m in NEG_MODIFIERS if m in ai_text.lower()]
     owned_top10 = sum(1 for o in organic if o["owned"])
     # MOSTLY SOMEBODY ELSE'S: name the next term to try. The page asks again
     # with it, and passes every term already tried so none repeats.
     seen = len(organic) + len(forums) + len(off_brand_results)
+    # THE AI OVERVIEW ONLY WHEN IT IS THEIRS: it has to name them, and not off
+    # a page one that is mostly another company's. (2026-10-25, Kiri)
+    if (not ai_names_client(ai_text, brand, domain, alias)
+            or (seen and len(off_brand_results) * 2 >= seen)):
+        ai_text = ""
+    ai_negative = [m for m in NEG_MODIFIERS if m in ai_text.lower()]
     suggested = (suggest_query(brand, alias, location, tried=[q, *tried])
                  if seen and len(off_brand_results) * 2 >= seen else "")
     bare = " ".join(w for w in q.split() if not w.startswith("review")) or q
