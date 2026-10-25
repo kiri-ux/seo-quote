@@ -494,12 +494,20 @@ def _suggest_block(slide, snap, brand):
     _txt(bar, size=10, bold=True, color=NAVY, space_after=0)
     bar.text_frame.paragraphs[0].text = ("“%s”" % q) if q else "Auto-suggest"
     bar.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-    h = Inches(0.3) * max(1, len(rows) or 1 + len(clean)) + Inches(0.2)
+    extra = 1 if not rows and not clean and snap.get("searched") else 0
+    h = (Inches(0.3) * max(1, len(rows) or 1 + len(clean) + extra * 1.5)
+         + Inches(0.2))
     box = _box(slide, x, Inches(2.12), w, h, fill=WHITE, radius=0.03)
     tf = _txt(box, size=10.5, space_after=0, line=1.1)
     if not rows:
         tf.paragraphs[0].text = "No negative suggestions found."
         _style(tf.paragraphs[0], 10.5, True, GREEN if clean else MUTED)
+        # NOTHING ELSE SUGGESTED IS A FINDING TOO: the name has no
+        # reputation searches attached to it at all. (2026-10-25, Kiri)
+        if not clean and snap.get("searched"):
+            p = _para(tf, size=10.5, space_before=4, space_after=0, line=1.1)
+            _run(p, "Google suggests no other review searches for %s."
+                 % (brand or "this name"), size=10.5, color=MUTED)
         for phrase in clean:
             head, mod = _brand_split(phrase, brand)
             p = _para(tf, size=10.5, space_before=4, space_after=0, line=1.1)
@@ -677,7 +685,10 @@ def _stars_block(slide, d):
     stars = _stars(d)
     labels = [k for k in ("5", "4", "3", "2", "1") if stars.get(k)]
     total, avg = _profile_totals(d)
-    if labels:
+    flagged = stars["1"] + stars["2"]
+    # NO PIE WITHOUT A NEGATIVE: an all-5-star pie is one flat circle. The
+    # tiles move up into its place. (2026-10-25, Kiri)
+    if labels and flagged:
         data = CategoryChartData()
         data.categories = ["%s ★ Reviews" % k for k in labels]
         data.add_series("Reviews", tuple(stars[k] for k in labels))
@@ -698,35 +709,21 @@ def _stars_block(slide, d):
             pt.format.fill.solid()
             pt.format.fill.fore_color.rgb = STAR_SHADES[k]
             pt.format.line.color.rgb = WHITE
-    else:
-        nb = _text_box(slide, x, Inches(1.68), w, Inches(0.3))
-        _txt(nb, size=10.5, color=MUTED)
-        # NOT COUNTED IS NOT NONE. The profile table still has the total and
-        # the rating Google shows, so the column states those.
-        nb.text_frame.paragraphs[0].text = (
-            "%s Google review%s \u00b7 %s\u2605 average"
-            % (f"{total:,}", "" if total == 1 else "s", avg)
-            if total else "No reviews counted.")
 
-    # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile. It is the
-    # one figure on this slide that is also a line on the quote.
-    # NOTHING TO REMOVE, NO TILE: a big 0 reads as an empty box. The rating
-    # moves up into its place. (2026-10-25, Kiri)
-    flagged = stars["1"] + stars["2"]
-    tile, ry = None, Inches(4.42)
-    if flagged:
-        tile = _box(slide, x, ry, w, Inches(1.0), fill=BLUE_LT,
-                    outline=None, radius=0.06)
-        _navy_block(slide, x, ry, Inches(1.35), Inches(1.0), radius=0.06)
-        nb = _text_box(slide, x, ry + Inches(0.2), Inches(1.35), Inches(0.6))
-        _txt(nb, size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
-             space_after=0)
-        nb.text_frame.paragraphs[0].text = str(flagged)
-        lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.2),
-                       w - Inches(1.6), Inches(0.62))
-        _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
-        lb.text_frame.paragraphs[0].text = "1-2 ★ Reviews\nto Remove"
-        ry = Inches(5.58)
+    # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile, 0 included.
+    ry = Inches(4.42) if labels and flagged else Inches(1.68)
+    tile = _box(slide, x, ry, w, Inches(1.0), fill=BLUE_LT,
+                outline=None, radius=0.06)
+    _navy_block(slide, x, ry, Inches(1.35), Inches(1.0), radius=0.06)
+    nb = _text_box(slide, x, ry + Inches(0.2), Inches(1.35), Inches(0.6))
+    _txt(nb, size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+         space_after=0)
+    nb.text_frame.paragraphs[0].text = str(flagged)
+    lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.2),
+                   w - Inches(1.6), Inches(0.62))
+    _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
+    lb.text_frame.paragraphs[0].text = "1-2 \u2605 Reviews\nto Remove"
+    ry = ry + Inches(1.16)
     # THE OTHER HALF OF THE STORY: the rating says why the count is what it
     # is. (2026-10-24, Kiri)
     if total:

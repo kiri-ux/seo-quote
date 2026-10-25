@@ -379,7 +379,7 @@ uncounted = dict(CLEAN, locations=[dict(CLEAN["locations"][0], pos_5=0)])
 ut = all_text([s for s in deck(FULL, snap=uncounted)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
 check("uncounted reviews print the profile total, not 'none'",
-      ("7 Google reviews \u00b7 5.0\u2605 average" in ut, "No reviews counted." in ut),
+      ("Average across\x0b7 Google reviews" in ut, "No reviews counted." in ut),
       (True, False))
 only_suggest = {"query": "x reviews", "suggest_all": ["x co"]}
 check("a scan with only clean suggestions still prints the snapshot",
@@ -421,16 +421,25 @@ ft = all_text([s for s in deck(FULL, snap=full)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
 check("a full page one is capped at 7 rows and still shows the AI Overview", "AI Overview" in ft, True)
 
-check("no 1-2 star reviews, no removal tile",
-      "to Remove" in all_text([s for s in deck(FULL, snap=dict(
-          SNAP, locations=[{"title": "Sage Dental", "pos_5": 7,
-                            "profile_rating": 5, "profile_reviews": 7}]))[0].slides
-          if "Reputation Snapshot" in all_text(s)][0]), False)
+five = [s for s in deck(FULL, snap=dict(
+    SNAP, locations=[{"title": "Sage Dental", "pos_5": 7, "profile_rating": 5,
+                      "profile_reviews": 7}]))[0].slides
+    if "Reputation Snapshot" in all_text(s)][0]
+check("no 1-2 star reviews: no pie, the removal tile stays",
+      (any(getattr(sh, "has_chart", False) and sh.has_chart for sh in five.shapes),
+       "to Remove" in all_text(five)), (False, True))
 check("legend defines outrank when a competing name is on page one",
       "outrank - move their own pages above it in search" in all_text(
           [s for s in deck(FULL, snap=dict(SNAP, lookalikes=[
               {"domain": "sage-dental.com", "pos": 2}]))[0].slides
            if "Reputation Snapshot" in all_text(s)][0]).replace("\n", " "), True)
+
+check("a clean auto-suggest with nothing else says so",
+      "Google suggests no other review searches for Sage Dental." in all_text(
+          [s for s in deck(FULL, snap={"query": "sage dental reviews",
+                                       "searched": True, "organic": [
+              {"pos": 1, "domain": "sagedental.com", "owned": True}]})[0].slides
+           if "Reputation Snapshot" in all_text(s)][0]), True)
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
