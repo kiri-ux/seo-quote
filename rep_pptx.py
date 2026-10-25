@@ -1012,11 +1012,23 @@ def _card_callout_h(spec, w, pt=8.5):
     return int(h)
 
 
+def _mix(c, k):
+    """Colour c moved k of the way toward white."""
+    return RGBColor(*(int(v + (255 - v) * k) for v in (c[0], c[1], c[2])))
+
+
 def _card_callout(slide, spec, x, y, w, h, pt=8.5):
     """THE PART OF THE CARD ABOUT THIS CLIENT, set apart from the product
-    copy above it: white, numbers in bold navy, the text under them."""
-    box = _box(slide, x, y, w, h, fill=WHITE, outline=None, radius=0.06)
-    tf = _txt(box, size=8.5, color=INK, line=1.1, space_after=0)
+    copy above it. A shade lighter than the card, not white: white on the
+    navy read too stark (2026-10-25, Kiri). A white card keeps a pale tint."""
+    dark = spec.get("dark")
+    base = spec.get("fill") or WHITE
+    fill = _mix(base, 0.12) if dark else TINT
+    edge = _mix(base, 0.3) if dark else None
+    fg = WHITE if dark else INK
+    num_c = WHITE if dark else NAVY
+    box = _box(slide, x, y, w, h, fill=fill, outline=edge, radius=0.06)
+    tf = _txt(box, size=8.5, color=fg, line=1.1, space_after=0)
     tf.margin_left = tf.margin_right = Inches(0.1)
     tf.auto_size = MSO_AUTO_SIZE.NONE
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -1026,12 +1038,12 @@ def _card_callout(slide, spec, x, y, w, h, pt=8.5):
         p = tf.paragraphs[0] if first else _para(tf, size=8.5, line=1.1,
                                                  space_after=0)
         first = False
-        _run(p, num + "  ", size=9, bold=True, color=NAVY)
-        _run(p, label, size=8.5, color=INK)
+        _run(p, num + "  ", size=9, bold=True, color=num_c)
+        _run(p, label, size=8.5, color=fg)
     if spec.get("note"):
         p = tf.paragraphs[0] if first else _para(
             tf, size=pt, line=1.1, space_before=5, space_after=0)
-        _run(p, spec["note"], size=pt, bold=True, color=NAVY)
+        _run(p, spec["note"], size=pt, bold=True, color=num_c)
 
 
 # ------------------------------------------------------------------- build
