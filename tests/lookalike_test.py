@@ -133,6 +133,18 @@ check("and leads the tiles with the competing domain",
       "competing domain" in txt, True)
 check("their own name rank counts as owned", "1 of 2" in txt, True)
 
+check("the brand shield card carries a competing-name line",
+      rep_pptx._lookalike_blurb({"brand": "Wheeler Digital", "snapshot": SNAP},
+                                "proactive").startswith("Competing name: tracks "
+                                                        "wheeler-digital.com"), True)
+check("the search protection card says it pushes the lookalike down",
+      "pushes wheeler-digital.com (#2) below Wheeler Digital"
+      in rep_pptx._lookalike_blurb({"brand": "Wheeler Digital", "snapshot": SNAP},
+                                   "reactive"), True)
+check("no lookalike, no line",
+      rep_pptx._lookalike_blurb({"snapshot": dict(SNAP, lookalikes=[])},
+                                "reactive"), "")
+
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

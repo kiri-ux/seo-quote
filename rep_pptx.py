@@ -808,6 +808,7 @@ def _cards(d):
             "scales": "Scales with brand search volume: %s/mo measured"
                       % "{:,}".format(_int(h.get("search_volume"))),
             "bullets": COPY["search_card"],
+            "accent": _lookalike_blurb(d, "reactive"),
             "price": "Pricing: %s/month" % _money(h.get("search_protection_monthly")),
         })
     if h.get("brand_shield_monthly"):
@@ -818,10 +819,28 @@ def _cards(d):
             "scales": "Scales with number of Google locations: %s location%s "
                       "measured" % (n, "" if n == 1 else "s"),
             "bullets": COPY["shield_card"],
+            "accent": _lookalike_blurb(d, "proactive"),
             "onetime": COPY["shield_onetime"],
             "price": "Pricing: %s/month" % _money(h.get("brand_shield_monthly")),
         })
     return out
+
+
+def _lookalike_blurb(d, kind):
+    """ONE LINE ON THE CARD FOR A COMPETING NAME. The proposal carries
+    Brendan's three paragraphs; the deck has the card, so it says in a line
+    what that strategy does about the lookalike. (2026-10-25, Kiri)"""
+    looks = [x for x in (_snap(d).get("lookalikes") or [])
+             if isinstance(x, dict) and x.get("domain")]
+    if not looks:
+        return ""
+    brand = str(d.get("brand") or "the client")
+    names = " and ".join("%s (#%s)" % (x["domain"], x.get("pos")) for x in looks[:2])
+    if kind == "reactive":
+        return ("Competing name: pushes %s below %s\u2019s own pages in "
+                "branded search." % (names, brand))
+    return ("Competing name: tracks %s and %s\u2019s branded rankings every "
+            "month." % (" and ".join(x["domain"] for x in looks[:2]), brand))
 
 
 def _slide_details(prs, d, cards):
