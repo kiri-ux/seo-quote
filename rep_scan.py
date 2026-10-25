@@ -718,7 +718,13 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
     seen = len(organic) + len(forums) + len(off_brand_results)
     suggested = (suggest_query(brand, alias, location, tried=[q, *tried])
                  if seen and len(off_brand_results) * 2 >= seen else "")
+    bare = " ".join(w for w in q.split() if not w.startswith("review")) or q
+    brand_page = _brand_page_one(bare, location, own, core, organic + forums
+                                 + off_brand_results, kw)
     return {"query": kw, "organic": organic[:10], "forums": forums,
+            "brand_query": brand_page["query"],
+            "brand_own_rank": brand_page["own_rank"],
+            "lookalikes": brand_page["lookalikes"],
             "ai_overview": ai_text, "ai_negative": ai_negative,
             "related": related, "negative_related": neg_related,
             "pasf": pasf, "negative_pasf": neg_pasf,
@@ -727,6 +733,60 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
             "suggested_query": suggested,
             "searched_from": location or "United States",
             "owned_in_top10": owned_top10}
+
+
+def is_lookalike(domain, own, core):
+    """A site whose domain carries the client's name and is not theirs:
+    wheeler-digital.com beside wheelerdigital.com."""
+    dom = _domain(domain)
+    host = dom.rsplit(".", 1)[0]
+    return bool(own and dom and dom != own and len(core) > 3
+                and core in _squash(host))
+
+
+def _brand_page_one(q, location, own, core, seen, kw):
+    """PAGE ONE FOR THE BARE NAME. "{brand} reviews" is the reputation page;
+    the name on its own is what a prospect types, and it is where a lookalike
+    domain sits. Wheeler Digital ranked #1 for its name with wheeler-digital.com
+    at #2, and the reviews search showed neither. (2026-10-25, Kiri)
+
+    Returns the client's own rank for the name and every lookalike domain on
+    either page, each at its best rank. One extra live call; a failure here
+    returns empty and never fails the scan."""
+    out = {"query": q, "own_rank": None, "lookalikes": []}
+    found = {}
+    def _note(dom, pos, url, title, query):
+        dom = _domain(dom)
+        if not is_lookalike(dom, own, core):
+            return
+        prev = found.get(dom)
+        if prev is None or (pos or 99) < (prev["pos"] or 99):
+            found[dom] = {"domain": dom, "pos": pos, "url": url or "",
+                          "title": title or "", "query": query}
+    items = []
+    if q != kw:
+        try:
+            data = _post("/serp/google/organic/live/advanced",
+                         [dict({"keyword": q, "language_code": "en", "depth": 10},
+                               **_where(location))], timeout=45)
+            items = (data["tasks"][0]["result"] or [{}])[0].get("items") or []
+        except Exception:
+            items = []
+    for it in items:
+        if it.get("type") != "organic":
+            continue
+        dom = _domain(it.get("domain"))
+        pos = it.get("rank_group") or it.get("rank_absolute")
+        if own and dom == own and out["own_rank"] is None:
+            out["own_rank"] = pos
+        _note(dom, pos, it.get("url"), it.get("title"), q)
+    # The reviews page counts too, at its own ranks, only where the name
+    # search did not already place the domain.
+    for x in seen or []:
+        if _domain(x.get("domain")) not in found:
+            _note(x.get("domain"), x.get("pos"), x.get("url"), x.get("title"), kw)
+    out["lookalikes"] = sorted(found.values(), key=lambda r: r["pos"] or 99)
+    return out
 
 
 def scan_autocomplete(brand, location=None, query=""):

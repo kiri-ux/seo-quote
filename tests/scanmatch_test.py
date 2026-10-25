@@ -367,10 +367,13 @@ def q_post(path, payload, timeout=None):
 
 rep_scan.init(q_post)
 rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com", query="Seascape Inc")
-check("the SERP searches the typed term", asked[-1][1]["keyword"],
+# The reviews page first, then the bare name -- see lookalike_test.
+check("the SERP searches the typed term", asked[-2][1]["keyword"],
       "seascape inc reviews")
+check("and the name search is the typed term too", asked[-1][1]["keyword"],
+      "seascape inc")
 rep_scan.scan_serp("Seascape, Inc", "seascapeinc.com")
-check("blank searches the brand", asked[-1][1]["keyword"], "seascape reviews")
+check("blank searches the brand", asked[-2][1]["keyword"], "seascape reviews")
 out = rep_scan.scan_terms("Seascape, Inc", query="seascape inc")
 check("the term universe is seeded on it",
       [p["keywords"] for x, p in asked if "keywords_for_keywords" in x][-1],
