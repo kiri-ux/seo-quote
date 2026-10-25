@@ -75,6 +75,7 @@ COPY = {
     ],
     "lookalike_tactic": ("Competing name", "a lookalike domain using their "
                                            "name, outrank it"),
+    "outrank_tactic": ("outrank", "move their own pages above it in search"),
     "no_serp": "No page one captured for this quote.",
     "review_card": [
         "Pay on success - billed per removed review; the total is a maximum, "
@@ -109,8 +110,7 @@ STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID, "4": BLUE,
 # Page one, capped so the table cannot reach the legend under it: the table
 # starts at 1.7in and a row is 0.3in, so 9 rows of results plus the header end
 # at 4.7in and the legend has 5.15in onward to itself.
-MAX_RESULTS = 9
-AI_MAX_ROWS = 7
+MAX_RESULTS = 7
 LEGEND_TOP = Inches(5.15)
 
 
@@ -428,17 +428,14 @@ def _nonzero(stats):
 
 def _context_block(slide, d, snap, top):
     """WHAT FILLS THE MIDDLE, under the page-one legend: the AI Overview,
-    when the page-one table has 7 rows or fewer. The stat tiles that sat here
-    moved onto the product cards (2026-10-25, Kiri)."""
+    always when the scan kept one. Page one is capped at 7 rows on the slide
+    so there is always room (2026-10-25, Kiri); the adtini proposal scrolls
+    through all of them."""
     x, w = Inches(4.0), Inches(4.6)
     floor = Inches(6.85)
     y = top + Inches(0.18)
-    page1 = [r for r in ((snap.get("organic") or [])
-                         + (snap.get("forums") or [])) if isinstance(r, dict)]
-    rows = min(MAX_RESULTS, len(page1 + _name_rows(snap, page1,
-                                                     d.get("site") or "")))
     ai = str(snap.get("ai_overview") or "").strip()
-    if not ai or rows > AI_MAX_ROWS or y + Inches(0.9) > floor:
+    if not ai or y + Inches(0.6) > floor:
         return
     h = min(floor - y, Inches(1.3))
     box = _box(slide, x, y, w, h, fill=TINT, radius=0.04)
@@ -659,7 +656,7 @@ def _results_block(slide, snap, brand="", site=""):
                Inches(3.0)) if page1 else Inches(2.2)
     tactics = list(COPY["tactics"])
     if any(r.get("lookalike") for r in page1):
-        tactics.append(COPY["lookalike_tactic"])
+        tactics += [COPY["lookalike_tactic"], COPY["outrank_tactic"]]
     lh = Inches(1.05) + Inches(0.17) * (len(tactics) - len(COPY["tactics"]))
     legend = _box(slide, x, min(ltop, LEGEND_TOP), w, lh, fill=WHITE,
                   radius=0.03)
@@ -713,28 +710,33 @@ def _stars_block(slide, d):
 
     # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile. It is the
     # one figure on this slide that is also a line on the quote.
+    # NOTHING TO REMOVE, NO TILE: a big 0 reads as an empty box. The rating
+    # moves up into its place. (2026-10-25, Kiri)
     flagged = stars["1"] + stars["2"]
-    tile = _box(slide, x, Inches(4.42), w, Inches(1.0), fill=BLUE_LT,
-                outline=None, radius=0.06)
-    _navy_block(slide, x, Inches(4.42), Inches(1.35), Inches(1.0), radius=0.06)
-    nb = _text_box(slide, x, Inches(4.62), Inches(1.35), Inches(0.6))
-    _txt(nb, size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
-         space_after=0)
-    nb.text_frame.paragraphs[0].text = str(flagged)
-    lb = _text_box(slide, x + Inches(1.45), Inches(4.62), w - Inches(1.6),
-                   Inches(0.62))
-    _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
-    lb.text_frame.paragraphs[0].text = "1-2 ★ Reviews\nto Remove"
-    # THE OTHER HALF OF THE STORY. On a clean profile the tile above reads 0;
-    # the rating beside it says why. (2026-10-24, Kiri)
+    tile, ry = None, Inches(4.42)
+    if flagged:
+        tile = _box(slide, x, ry, w, Inches(1.0), fill=BLUE_LT,
+                    outline=None, radius=0.06)
+        _navy_block(slide, x, ry, Inches(1.35), Inches(1.0), radius=0.06)
+        nb = _text_box(slide, x, ry + Inches(0.2), Inches(1.35), Inches(0.6))
+        _txt(nb, size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+             space_after=0)
+        nb.text_frame.paragraphs[0].text = str(flagged)
+        lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.2),
+                       w - Inches(1.6), Inches(0.62))
+        _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
+        lb.text_frame.paragraphs[0].text = "1-2 ★ Reviews\nto Remove"
+        ry = Inches(5.58)
+    # THE OTHER HALF OF THE STORY: the rating says why the count is what it
+    # is. (2026-10-24, Kiri)
     if total:
-        _box(slide, x, Inches(5.58), w, Inches(0.8), fill=WHITE, radius=0.06)
-        nb = _text_box(slide, x, Inches(5.66), Inches(1.35), Inches(0.6))
+        _box(slide, x, ry, w, Inches(0.8), fill=WHITE, radius=0.06)
+        nb = _text_box(slide, x, ry + Inches(0.08), Inches(1.35), Inches(0.6))
         _txt(nb, size=22, bold=True, color=NAVY, align=PP_ALIGN.CENTER,
              space_after=0)
         nb.text_frame.paragraphs[0].text = "%s\u2605" % avg
-        lb = _text_box(slide, x + Inches(1.45), Inches(5.66), w - Inches(1.6),
-                       Inches(0.6))
+        lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.08),
+                       w - Inches(1.6), Inches(0.6))
         _txt(lb, size=12.5, bold=True, color=NAVY, space_after=0, line=1.1)
         lb.text_frame.paragraphs[0].text = ("Average across\n%s Google review%s"
                                             % (f"{total:,}",

@@ -419,7 +419,18 @@ full = dict(STATS, organic=[{"pos": i, "domain": "site%d.com" % i,
                              "tactic": "suppression"} for i in range(1, 10)])
 ft = all_text([s for s in deck(FULL, snap=full)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
-check("a full page one leaves no room for the AI Overview", "AI Overview" in ft, False)
+check("a full page one is capped at 7 rows and still shows the AI Overview", "AI Overview" in ft, True)
+
+check("no 1-2 star reviews, no removal tile",
+      "to Remove" in all_text([s for s in deck(FULL, snap=dict(
+          SNAP, locations=[{"title": "Sage Dental", "pos_5": 7,
+                            "profile_rating": 5, "profile_reviews": 7}]))[0].slides
+          if "Reputation Snapshot" in all_text(s)][0]), False)
+check("legend defines outrank when a competing name is on page one",
+      "outrank - move their own pages above it in search" in all_text(
+          [s for s in deck(FULL, snap=dict(SNAP, lookalikes=[
+              {"domain": "sage-dental.com", "pos": 2}]))[0].slides
+           if "Reputation Snapshot" in all_text(s)][0]).replace("\n", " "), True)
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
