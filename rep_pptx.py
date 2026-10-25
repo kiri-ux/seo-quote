@@ -101,15 +101,6 @@ COPY = {
         "Building, 24/7 Brand Monitoring & Threat Detection, In-Depth "
         "Monthly Report",
     ],
-    "shield_onetime_head": "One-Time Fee:",
-    "shield_onetime": [
-        "25+ page report, manual review + data platforms (not just an "
-        "automated scan)",
-        "Executive summary with prioritized findings, evidence, and screenshots",
-        "Implementation roadmap with next steps and ownership",
-        "Audit fee credited toward the first month if an SEO campaign is "
-        "purchased afterward",
-    ],
 }
 
 STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID, "4": BLUE,
@@ -820,7 +811,6 @@ def _cards(d):
                       "measured" % (n, "" if n == 1 else "s"),
             "bullets": COPY["shield_card"],
             "accent": _lookalike_blurb(d, "proactive"),
-            "onetime": COPY["shield_onetime"],
             "price": "Pricing: %s/month" % _money(h.get("brand_shield_monthly")),
         })
     return out
@@ -979,14 +969,6 @@ def _slide_details(prs, d, cards):
                       space_after=0)
             _run(p, spec["accent"], size=9, bold=True,
                  color=(TINT if dark else BLUE))
-        if spec.get("onetime"):
-            p = _para(tf, size=9, color=fg, line=1.15, space_before=8,
-                      space_after=0)
-            _run(p, COPY["shield_onetime_head"], size=9, bold=True, color=fg)
-            for text in spec["onetime"]:
-                p = _para(tf, size=8, color=fg, line=1.1, space_before=3,
-                          space_after=0)
-                _run(p, "•  " + text, size=8, color=fg)
 
         if spec.get("price"):
             pill_w = min(card_w - Inches(0.3), Inches(2.1))
