@@ -683,15 +683,17 @@ def _stars_block(slide, d):
     x, w = Inches(8.85), Inches(4.15)
     _col_head(slide, "Star Reviews Breakdown", x, Inches(1.32), w)
     stars = _stars(d)
-    labels = [k for k in ("5", "4", "3", "2", "1") if stars.get(k)]
+    counted = any(stars.get(k) for k in ("5", "4", "3", "2", "1"))
     total, avg = _profile_totals(d)
     flagged = stars["1"] + stars["2"]
-    # NO PIE WITHOUT A NEGATIVE: an all-5-star pie is one flat circle. The
-    # tiles move up into its place. (2026-10-25, Kiri)
-    if labels and flagged:
+    # EVERY STAR LEVEL, 1 THROUGH 5, whenever reviews were counted, each with
+    # its count in the legend; a level at 0 still lists. (2026-10-25, Kiri)
+    if counted:
+        levels = ("5", "4", "3", "2", "1")
         data = CategoryChartData()
-        data.categories = ["%s ★ Reviews" % k for k in labels]
-        data.add_series("Reviews", tuple(stars[k] for k in labels))
+        data.categories = ["%s \u2605 Reviews (%s)" % (k, f"{_int(stars.get(k)):,}")
+                           for k in levels]
+        data.add_series("Reviews", tuple(_int(stars.get(k)) for k in levels))
         gf = slide.shapes.add_chart(XL_CHART_TYPE.PIE, x, Inches(1.62),
                                     w, Inches(2.6), data)
         chart = gf.chart
@@ -701,17 +703,15 @@ def _stars_block(slide, d):
         chart.legend.include_in_layout = False
         chart.legend.font.size = Pt(10)
         plot = chart.plots[0]
-        # NO NUMBERS ON THE SLICES. The table beside it is the count; on the
-        # pie they read as a second, smaller list.
         plot.has_data_labels = False
-        for i, k in enumerate(labels):
+        for i, k in enumerate(levels):
             pt = plot.series[0].points[i]
             pt.format.fill.solid()
             pt.format.fill.fore_color.rgb = STAR_SHADES[k]
             pt.format.line.color.rgb = WHITE
 
     # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile, 0 included.
-    ry = Inches(4.42) if labels and flagged else Inches(1.68)
+    ry = Inches(4.42) if counted else Inches(1.68)
     tile = _box(slide, x, ry, w, Inches(1.0), fill=BLUE_LT,
                 outline=None, radius=0.06)
     _navy_block(slide, x, ry, Inches(1.35), Inches(1.0), radius=0.06)
