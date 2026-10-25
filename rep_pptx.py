@@ -101,15 +101,6 @@ COPY = {
         "Building, 24/7 Brand Monitoring & Threat Detection, In-Depth "
         "Monthly Report",
     ],
-    "shield_onetime_head": "One-Time Fee:",
-    "shield_onetime": [
-        "25+ page report, manual review + data platforms (not just an "
-        "automated scan)",
-        "Executive summary with prioritized findings, evidence, and screenshots",
-        "Implementation roadmap with next steps and ownership",
-        "Audit fee credited toward the first month if an SEO campaign is "
-        "purchased afterward",
-    ],
 }
 
 STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID, "4": BLUE,
@@ -808,6 +799,7 @@ def _cards(d):
             "scales": "Scales with brand search volume: %s/mo measured"
                       % "{:,}".format(_int(h.get("search_volume"))),
             "bullets": COPY["search_card"],
+            "accent": _lookalike_blurb(d, "reactive"),
             "price": "Pricing: %s/month" % _money(h.get("search_protection_monthly")),
         })
     if h.get("brand_shield_monthly"):
@@ -818,10 +810,27 @@ def _cards(d):
             "scales": "Scales with number of Google locations: %s location%s "
                       "measured" % (n, "" if n == 1 else "s"),
             "bullets": COPY["shield_card"],
-            "onetime": COPY["shield_onetime"],
+            "accent": _lookalike_blurb(d, "proactive"),
             "price": "Pricing: %s/month" % _money(h.get("brand_shield_monthly")),
         })
     return out
+
+
+def _lookalike_blurb(d, kind):
+    """ONE LINE ON THE CARD FOR A COMPETING NAME. The proposal carries
+    Brendan's three paragraphs; the deck has the card, so it says in a line
+    what that strategy does about the lookalike. (2026-10-25, Kiri)"""
+    looks = [x for x in (_snap(d).get("lookalikes") or [])
+             if isinstance(x, dict) and x.get("domain")]
+    if not looks:
+        return ""
+    brand = str(d.get("brand") or "the client")
+    names = " and ".join("%s (#%s)" % (x["domain"], x.get("pos")) for x in looks[:2])
+    if kind == "reactive":
+        return ("Competing name: pushes %s below %s\u2019s own pages in "
+                "branded search." % (names, brand))
+    return ("Competing name: tracks %s and %s\u2019s branded rankings every "
+            "month." % (" and ".join(x["domain"] for x in looks[:2]), brand))
 
 
 def _slide_details(prs, d, cards):
@@ -960,14 +969,6 @@ def _slide_details(prs, d, cards):
                       space_after=0)
             _run(p, spec["accent"], size=9, bold=True,
                  color=(TINT if dark else BLUE))
-        if spec.get("onetime"):
-            p = _para(tf, size=9, color=fg, line=1.15, space_before=8,
-                      space_after=0)
-            _run(p, COPY["shield_onetime_head"], size=9, bold=True, color=fg)
-            for text in spec["onetime"]:
-                p = _para(tf, size=8, color=fg, line=1.1, space_before=3,
-                          space_after=0)
-                _run(p, "•  " + text, size=8, color=fg)
 
         if spec.get("price"):
             pill_w = min(card_w - Inches(0.3), Inches(2.1))
