@@ -31,7 +31,7 @@ from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
 import rep_docx
@@ -110,6 +110,7 @@ STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID, "4": BLUE,
 # starts at 1.7in and a row is 0.3in, so 9 rows of results plus the header end
 # at 4.7in and the legend has 5.15in onward to itself.
 MAX_RESULTS = 9
+AI_MAX_ROWS = 7
 LEGEND_TOP = Inches(5.15)
 
 
@@ -388,88 +389,58 @@ def _vol(n):
     return f"{_int(n):,}"
 
 
-def _tiles_for(d, snap):
-    """The stat tiles, by what was sold. Reactive is the problem the campaign
-    fixes; Proactive is the name it protects; a bundle carries both."""
-    strat = _strategies(d)
+def _card_stats(d, kind):
+    """THE SCAN'S NUMBERS, ON THE CARD THEY PRICE. They sat as tiles on the
+    snapshot and dropped off whenever page one ran long; on the card they
+    always print, beside the work they justify (2026-10-25, Kiri). Reactive
+    carries the problem it fixes, Proactive the name it protects."""
+    snap = _snap(d)
     page1 = [r for r in ((snap.get("organic") or [])
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
+    if not (page1 or snap.get("searched") or snap.get("brand_volume")):
+        return []
     page1 = page1 + _name_rows(snap, page1, d.get("site") or "")
-    tac = [str(rep_scan.tactic_of(r)) for r in page1]
+    if kind == "reactive":
+        tac = [str(rep_scan.tactic_of(r)) for r in page1]
+        return _nonzero([
+            (_vol(snap.get("negative_volume")), "searches/mo on negative terms"),
+            (str(sum(1 for t in tac if t.startswith("site removal"))),
+             "page-one results to remove"),
+            (str(sum(1 for t in tac if t.startswith("suppression"))),
+             "page-one results to outrank"),
+            (str(len(snap.get("related") or [])), "negative related searches"),
+        ])
     owned = sum(1 for r in page1 if r.get("owned"))
-    reactive = [
-        (_vol(snap.get("negative_volume")), "searches/mo on negative terms"),
-        (str(sum(1 for t in tac if t.startswith("site removal"))),
-         "page-one results to remove"),
-        (str(sum(1 for t in tac if t.startswith("suppression"))),
-         "page-one results to outrank"),
-        (str(len(snap.get("related") or [])), "negative related searches"),
-    ]
-    total, _avg = _profile_totals(d)
-    proactive = [
+    n = len(_locs(d))
+    return _nonzero([
         (_vol(snap.get("brand_volume")), "brand searches/mo"),
         (("%d of %d" % (owned, len(page1))) if page1 else "0",
          "page-one results they own"),
         (_vol(snap.get("watch_volume")), "searches/mo on terms to watch"),
-        (str(len(_locs(d))), "Google profile%s monitored"
-         % ("" if len(_locs(d)) == 1 else "s")),
-    ]
-    # A COMPETING NAME LEADS, whatever was sold: it is the campaign's job.
-    looks = len(snap.get("lookalikes") or [])
-    if looks:
-        tile = (str(looks), "competing domain%s" % ("" if looks == 1 else "s"))
-        reactive = [tile] + reactive[:3]
-        proactive = [tile] + proactive[:3]
-    has_r = bool(strat & {"Reactive", "Review Removals", "Site/Article Removals"})
-    has_p = "Proactive" in strat
-    if has_r and has_p:
-        return (reactive[:2] + proactive[1:3] if looks
-                else reactive[:2] + proactive[:2])
-    if has_p:
-        return proactive
-    return reactive
+        (str(n), "Google profile%s monitored" % ("" if n == 1 else "s")),
+    ])
+
+
+def _nonzero(stats):
+    """A zero reads as an empty box, so it is left off."""
+    return [(v, k) for v, k in stats if not str(v).startswith("0")]
 
 
 def _context_block(slide, d, snap, top):
-    """WHAT FILLS THE MIDDLE, under the page-one legend.
-
-    A RULE THE SHEET CAN STATE, not whatever happens to fit (2026-10-25,
-    Kiri): counting the rows the page-one table draws, 7 or fewer gets all
-    four tiles, 8 or 9 gets the first two, and the AI Overview prints only
-    when the table has 3 rows or fewer. Sized so each case fits with the
-    competing-name legend line as well."""
+    """WHAT FILLS THE MIDDLE, under the page-one legend: the AI Overview,
+    when the page-one table has 7 rows or fewer. The stat tiles that sat here
+    moved onto the product cards (2026-10-25, Kiri)."""
     x, w = Inches(4.0), Inches(4.6)
     floor = Inches(6.85)
-    tile_h, gap = Inches(0.55), Inches(0.1)
-    tw = (w - gap) / 2
     y = top + Inches(0.18)
     page1 = [r for r in ((snap.get("organic") or [])
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
     rows = min(MAX_RESULTS, len(page1 + _name_rows(snap, page1,
                                                      d.get("site") or "")))
-    tiles = _tiles_for(d, snap)[:4 if rows <= 7 else 2]
-    for i in range(0, len(tiles), 2):
-        if y + tile_h > floor:
-            return
-        for j, (num, label) in enumerate(tiles[i:i + 2]):
-            tx = x + j * (tw + gap)
-            _box(slide, tx, y, tw, tile_h, fill=WHITE, radius=0.06)
-            nb = _text_box(slide, tx + Inches(0.06), y + Inches(0.08),
-                           Inches(0.9), tile_h - Inches(0.16))
-            _txt(nb, size=15, bold=True, color=NAVY, align=PP_ALIGN.CENTER,
-                 space_after=0)
-            nb.text_frame.paragraphs[0].text = num
-            nb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-            lb = _text_box(slide, tx + Inches(0.98), y + Inches(0.08),
-                           tw - Inches(1.04), tile_h - Inches(0.16))
-            _txt(lb, size=9, bold=True, color=INK, space_after=0, line=1.05)
-            lb.text_frame.paragraphs[0].text = label
-            lb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        y += tile_h + gap
     ai = str(snap.get("ai_overview") or "").strip()
-    if not ai or rows > 3 or y + Inches(0.9) > floor:
+    if not ai or rows > AI_MAX_ROWS or y + Inches(0.9) > floor:
         return
-    h = min(floor - y, Inches(1.0))
+    h = min(floor - y, Inches(1.3))
     box = _box(slide, x, y, w, h, fill=TINT, radius=0.04)
     tf = _txt(box, size=8, space_after=0, line=1.1)
     p = tf.paragraphs[0]
@@ -478,7 +449,7 @@ def _context_block(slide, d, snap, top):
     if neg:
         _run(p, "  \u00b7 mentions " + ", ".join(neg), size=8, bold=True,
              color=NAVY)
-    cut = 120 if h < Inches(0.85) else 240
+    cut = 120 if h < Inches(0.85) else 240 if h < Inches(1.2) else 400
     q = ai if len(ai) <= cut else ai[:cut].rsplit(" ", 1)[0] + "\u2026"
     p = _para(tf, size=8, space_before=3, space_after=0, line=1.1)
     _run(p, "\u201c%s\u201d" % q, size=8, color=INK)
@@ -807,6 +778,7 @@ def _cards(d):
             "scales": "Scales with brand search volume: %s/mo measured"
                       % "{:,}".format(_int(h.get("search_volume"))),
             "bullets": COPY["search_card"],
+            "stats": _card_stats(d, "reactive"),
             "note": _lookalike_blurb(d, "reactive"),
             "price": "Pricing: %s/month" % _money(h.get("search_protection_monthly")),
         })
@@ -818,6 +790,7 @@ def _cards(d):
             "scales": "Scales with number of Google locations: %s location%s "
                       "measured" % (n, "" if n == 1 else "s"),
             "bullets": COPY["shield_card"],
+            "stats": _card_stats(d, "proactive"),
             "note": _lookalike_blurb(d, "proactive"),
             "price": "Pricing: %s/month" % _money(h.get("brand_shield_monthly")),
         })
@@ -974,7 +947,27 @@ def _slide_details(prs, d, cards):
             sb.text_frame.paragraphs[0].text = spec["scales"]
             y = y + Inches(0.46)
 
-        bb = _text_box(slide, x, y, card_w, card_h - (y - top) - Inches(0.5))
+        # THE CALLOUT FITS UNDER THE CARD'S OWN COPY. On a narrow card the
+        # numbers give way one at a time, the last first, before Brendan's
+        # text does: that text is what the card is answering.
+        bottom = top + card_h - Inches(0.5)
+        cw = card_w - Inches(0.24)
+        pt = 8.5 if n <= 2 else 8
+        copy_h = Inches(0.17) * sum(
+            _lines(t, (card_w - Inches(0.2)) / Inches(1), 9) + 0.4
+            for t in (spec.get("bullets") or []) + [spec.get("accent") or ""]
+            if t)
+        spec = dict(spec)
+        while (spec.get("stats") and _card_callout_h(spec, cw, pt)
+               > bottom - y - copy_h - Inches(0.08)):
+            spec["stats"] = spec["stats"][:-1]
+        callout = min(_card_callout_h(spec, cw, pt),
+                      int(bottom - y - copy_h - Inches(0.08)))
+        if callout > 0:
+            _card_callout(slide, spec, x + Inches(0.12), bottom - callout,
+                          cw, callout, pt)
+            bottom = bottom - callout - Inches(0.08)
+        bb = _text_box(slide, x, y, card_w, bottom - y)
         tf = _txt(bb, size=9, color=fg, line=1.15, space_after=0)
         rows = list(spec.get("bullets") or [])
         for j, text in enumerate(rows):
@@ -991,10 +984,6 @@ def _slide_details(prs, d, cards):
                       space_after=0)
             _run(p, spec["accent"], size=9, bold=True,
                  color=(TINT if dark else BLUE))
-        if spec.get("note"):
-            p = _para(tf, size=9, color=fg, line=1.15, space_before=6,
-                      space_after=0)
-            _run(p, spec["note"], size=9, color=fg)
 
         if spec.get("price"):
             pill_w = min(card_w - Inches(0.3), Inches(2.1))
@@ -1007,6 +996,42 @@ def _slide_details(prs, d, cards):
             pill.text_frame.paragraphs[0].text = spec["price"]
             pill.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
     return slide
+
+
+def _card_callout_h(spec, w, pt=8.5):
+    """Height of the white panel at the foot of a card: the scan's numbers,
+    then Brendan's competing-name text. Zero when there is neither."""
+    stats, note = spec.get("stats") or [], spec.get("note") or ""
+    if not stats and not note:
+        return 0
+    inner = w - Inches(0.2)
+    h = Inches(0.18) + Inches(0.17) * len(stats)
+    if note:
+        h += Inches(0.165 * pt / 8.5) * _lines(note, inner / Inches(1), pt)
+        h += Inches(0.08) if stats else 0
+    return int(h)
+
+
+def _card_callout(slide, spec, x, y, w, h, pt=8.5):
+    """THE PART OF THE CARD ABOUT THIS CLIENT, set apart from the product
+    copy above it: white, numbers in bold navy, the text under them."""
+    box = _box(slide, x, y, w, h, fill=WHITE, outline=None, radius=0.06)
+    tf = _txt(box, size=8.5, color=INK, line=1.1, space_after=0)
+    tf.margin_left = tf.margin_right = Inches(0.1)
+    tf.auto_size = MSO_AUTO_SIZE.NONE
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_top = tf.margin_bottom = Inches(0.06)
+    first = True
+    for num, label in spec.get("stats") or []:
+        p = tf.paragraphs[0] if first else _para(tf, size=8.5, line=1.1,
+                                                 space_after=0)
+        first = False
+        _run(p, num + "  ", size=9, bold=True, color=NAVY)
+        _run(p, label, size=8.5, color=INK)
+    if spec.get("note"):
+        p = tf.paragraphs[0] if first else _para(
+            tf, size=pt, line=1.1, space_before=5, space_after=0)
+        _run(p, spec["note"], size=pt, bold=True, color=NAVY)
 
 
 # ------------------------------------------------------------------- build

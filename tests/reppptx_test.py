@@ -393,8 +393,9 @@ STATS = dict(SNAP, searched=True, brand_volume=51330, negative_volume=1240,
              ai_overview="Sage Dental has mixed reviews and billing complaints.",
              ai_negative=["complaints"])
 def snap_text(q):
+    """The scan's numbers ride on the cards now, not the snapshot (2026-10-25)."""
     return all_text([s for s in deck(q, snap=STATS)[0].slides
-                     if "Reputation Snapshot" in all_text(s)][0])
+                     if "Product Details" in all_text(s)][0])
 rt = snap_text(quote(campaign="reactive", search={"bundle": True, "volume": 5000,
                                                     "suppression": True}))
 pt = snap_text(quote(campaign="proactive", shield={"enabled": True}))
@@ -408,8 +409,12 @@ check("proactive shows brand demand and owned share, not negatives",
        "searches/mo on negative terms" in pt), (True, True, False))
 check("a bundle shows both", ("searches/mo on negative terms" in bt,
                               "brand searches/mo" in bt), (True, True))
+st = all_text([s for s in deck(quote(campaign="reactive", search={
+    "bundle": True, "volume": 5000, "suppression": True}), snap=STATS)[0].slides
+               if "Reputation Snapshot" in all_text(s)][0])
 check("the AI Overview prints with its flags",
-      ("AI Overview" in rt, "mentions complaints" in rt), (True, True))
+      ("AI Overview" in st, "mentions complaints" in st), (True, True))
+check("the snapshot carries no stat tiles", "searches/mo" in st, False)
 full = dict(STATS, organic=[{"pos": i, "domain": "site%d.com" % i,
                              "tactic": "suppression"} for i in range(1, 10)])
 ft = all_text([s for s in deck(FULL, snap=full)[0].slides
