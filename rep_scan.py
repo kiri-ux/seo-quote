@@ -607,7 +607,8 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
         location = f"{city},{_ABBR_STATE[st].title()},United States"
         try:
             data = _post("/serp/google/organic/live/advanced",
-                         [dict({"keyword": kw, "language_code": "en", "depth": 10},
+                         [dict({"keyword": kw, "language_code": "en", "depth": 10,
+                        "load_async_ai_overview": True},
                                **_where(location))], timeout=45)
             if (data.get("tasks") or [{}])[0].get("result") is None:
                 raise ValueError("location refused")
@@ -618,8 +619,13 @@ def scan_serp(brand, domain="", location=None, alias="", query="", tried=(),
         data = None
     if data is None:
         data = _post("/serp/google/organic/live/advanced",
-                     [dict({"keyword": kw, "language_code": "en", "depth": 10},
+                     [dict({"keyword": kw, "language_code": "en", "depth": 10,
+                        "load_async_ai_overview": True},
                            **_where(location))], timeout=45)
+    # THE AI OVERVIEW GOOGLE LOADS AFTER THE PAGE. Without
+    # load_async_ai_overview the provider returns only cached overviews, and
+    # most brand-review searches came back with none (2026-10-26, Kiri). It
+    # costs a fraction of a cent more, refunded when no overview loads.
     own = _domain(domain)
     organic, related, forums, pasf = [], [], [], []
     ai_text = ""
