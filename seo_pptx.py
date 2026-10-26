@@ -190,8 +190,6 @@ COPY = {
                     "first month of a full SEO+ campaign. See package quotes "
                     "below.",
     "audit_banner": "Three Tiers from Audit to SEO Campaign",
-    "audit_foot": "The Website Audit fee is credited back on month one of a "
-                  "full SEO+ campaign.",
     "term": "Each tier requires a {n}-month term which then becomes a "
             "month-to-month commitment.",
     "no_serp": "No SERP captured for this quote.",
@@ -834,9 +832,7 @@ def _slide_pricing(prs, d):
     # ---- the audit row: a banner and the credit note, above the tiers that
     # price the campaign they can buy after. The fee itself is on the Audit
     # Details slide. (2026-10-15, 2026-10-26, Kiri; Rady Shell deck)
-    # An AI Search card has no room to give up, so on that quote the credit
-    # goes in the footer instead.
-    shift = Inches(0.74) if fee and not ai_on else 0
+    shift = Inches(0.74) if fee else 0
     ct = Inches(2.12) + shift
     if shift:
         fbox = _box(slide, Inches(0.55), Inches(2.12), Inches(5.9),
@@ -982,11 +978,9 @@ def _slide_pricing(prs, d):
         mid.line.fill.background()
         mid.shadow.inherit = False
 
-    foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(12.2) if fee and ai_on else Inches(9.4), Inches(0.32))
-    _txt(foot, size=(10 if fee and ai_on else 11), bold=True, color=INK)
-    foot.text_frame.paragraphs[0].text = COPY["term"].format(n=term) + (
-        "  " + COPY["audit_foot"]
-        if fee and ai_on else "")
+    foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(9.4), Inches(0.32))
+    _txt(foot, size=11, bold=True, color=INK)
+    foot.text_frame.paragraphs[0].text = COPY["term"].format(n=term)
     return slide
 
 
@@ -1040,5 +1034,10 @@ def _strategies(d):
     raw = d.get("strategy")
     text = (raw if isinstance(raw, str)
             else ", ".join(str(x) for x in (raw or []))).lower()
-    return {name for name in ("Core SEO", "AI Search", "Website Audit")
-            if name.lower() in text}
+    found = {name for name in ("Core SEO", "AI Search", "Website Audit")
+             if name.lower() in text}
+    # WEBSITE AUDIT IS NEVER SOLD WITH AI SEARCH. A strategy that carries
+    # both is quoted as the campaign, without the audit. (2026-10-26, Kiri)
+    if "AI Search" in found:
+        found.discard("Website Audit")
+    return found
