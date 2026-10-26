@@ -2196,18 +2196,17 @@ function renderCfg(c){
   h += cfgRow('Each phrase beyond the included set — hard $/mo', cfgIn('c_xphr', c.bundle.per_extra_phrase_hard ?? 0));
   h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   const pr = c.proactive || {};
-  h += cfgHdr('Proactive · Brand Shield', 'costed off the brand\u2019s own footprint (ORM - Proactive Brand Monitoring, 16 Sep 2026) \u00b7 displacement ratio and floor are assumptions', 'warn');
-  h += cfgRow('Monitoring — fixed + per keyword /mo',
-              cfgIn('c_pmf', pr.monitor_fixed) + ' ' + cfgIn('c_pmk', pr.monitor_per_keyword));
-  h += cfgRow('Moat building — fixed + per backlink + per asset page',
-              cfgIn('c_pbf', pr.moat_fixed) + ' ' + cfgIn('c_pbl', pr.moat_per_backlink, 2)
-              + ' ' + cfgIn('c_pas', pr.moat_per_asset));
-  h += cfgRow('Per page-one threat — backlinks + asset pages <span style="font-weight:400;color:var(--warn)">(assumption)</span>',
+  h += cfgHdr('Proactive · Brand Shield', 'one Monthly Budget off keywords tracked and page-one threats \u00b7 provisional, not signed off by Brendan', 'warn');
+  h += cfgRow('Monitoring — fixed + per keyword, hard $/mo',
+              cfgIn('c_pmf', pr.monitor_fixed) + ' ' + cfgIn('c_pmk', pr.monitor_per_keyword, 1));
+  h += cfgRow('Moat building — fixed + per page-one threat, hard $/mo',
+              cfgIn('c_pbf', pr.moat_fixed) + ' ' + cfgIn('c_pmt', pr.moat_per_threat, 1));
+  h += cfgRow('Hard cost as % of partner price', cfgIn('c_ppct', Math.round((pr.hard_pct_of_partner||0.225)*1000)/10, 1));
+  h += cfgRow('Partner price floor — × hard cost', cfgIn('c_pminx', pr.min_partner_x_hard, 0.1));
+  h += cfgRow('Capacity per threat — backlinks + asset pages <span style="font-weight:400;color:var(--warn)">(staffing only, not priced)</span>',
               cfgIn('c_pblt', pr.backlinks_per_threat, 1) + ' ' + cfgIn('c_past', pr.assets_per_threat, 1));
   h += cfgRow('Monthly production ceiling — backlinks + asset pages',
               cfgIn('c_pblc', pr.backlinks_cap, 1) + ' ' + cfgIn('c_pasc', pr.assets_cap, 1));
-  h += cfgRow('Internal cost as % of retail', cfgIn('c_ppct', Math.round((pr.internal_pct_of_retail||0.225)*1000)/10, 1));
-  h += cfgRow('Minimum monthly — client $ <span style="font-weight:400;color:var(--warn)">(assumption)</span>', cfgIn('c_pfloor', pr.floor));
   h += cfgHdr('Reputational AI Search', 'Sage GEO card actuals — reputational use unconfirmed', 'warn');
   h += cfgRow('Setup /mo', cfgIn('c_geos', c.geo.setup));
   h += cfgRow('Scale /mo', cfgIn('c_geoc', c.geo.scale));
@@ -2233,12 +2232,11 @@ $('cfgApply').onclick = async ()=>{
              per_extra_phrase_hard: v('c_xphr'),
              floor: v('c_floor'), cap: v('c_cap')},
     proactive: {monitor_fixed: v('c_pmf'), monitor_per_keyword: v('c_pmk'),
-                moat_fixed: v('c_pbf'), moat_per_backlink: v('c_pbl'),
-                moat_per_asset: v('c_pas'),
+                moat_fixed: v('c_pbf'), moat_per_threat: v('c_pmt'),
+                hard_pct_of_partner: (v('c_ppct') || 22.5) / 100,
+                min_partner_x_hard: v('c_pminx'),
                 backlinks_per_threat: v('c_pblt'), assets_per_threat: v('c_past'),
-                backlinks_cap: v('c_pblc'), assets_cap: v('c_pasc'),
-                internal_pct_of_retail: (v('c_ppct') || 22.5) / 100,
-                floor: v('c_pfloor')},
+                backlinks_cap: v('c_pblc'), assets_cap: v('c_pasc')},
     geo: {setup: v('c_geos'), scale: v('c_geoc')},
     bundle_discount_pct: v('c_bdisc')/100,
     internal_cost_pct: v('c_intpct')/100,

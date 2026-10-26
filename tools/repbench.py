@@ -87,15 +87,6 @@ def alt_engine(engine, which):
 # Brendan quoted in words). `why` cites the comment in rep_pricing.py the row
 # comes from, so a wrong input here is findable rather than arguable.
 # --------------------------------------------------------------------------
-def _proactive_internal(keywords, backlinks, assets):
-    """What the proactive month costs to RUN, before any margin -- the figure
-    the sheet's retail is derived from."""
-    p = rep.REP_CFG["proactive"]
-    return int(p["monitor_fixed"] + p["monitor_per_keyword"] * keywords
-               + p["moat_fixed"] + p["moat_per_backlink"] * backlinks
-               + p["moat_per_asset"] * assets)
-
-
 BENCH = [
     # ---------------------------------------------------- review removals
     # The Vici chart IS the product -- six published gross rates that the
@@ -178,17 +169,16 @@ BENCH = [
          why="alt_engine_flat, same note"),
 
     # ---------------------------------------------------------- recurring
-    # PROACTIVE IS COSTED, NOT CARDED (2026-09-18). The sheet's own worked
-    # example is the only figure behind it: 5 keywords, 3 page-one threats ->
-    # $486/mo to run -> $2,150 retail there, $2,200 here because every client
-    # figure in both tools rounds UP rather than to the nearest $50.
-    dict(ch="monthly", name="Proactive, sheet worked example", want=2200,
-         f=lambda: rep.price_shield(1, keywords=5, threats=3)["total"],
-         why="ORM - Proactive Brand Monitoring (Confluence QG, 16 Sep 2026): "
-             "'$486/mo total hard cost -> $2,150/mo suggested retail'"),
-    dict(ch="monthly", name="Proactive, its internal cost", want=486,
-         f=lambda: _proactive_internal(5, 15, 3),
-         why="same page: 'Monitoring $100 + Moat Building $386 = $486/mo'"),
+    # PROACTIVE IS ONE MONTHLY BUDGET OFF THE SCAN (2026-10-26). The two
+    # Brendan-approved quotes under the new formula are the only figures
+    # behind it.
+    dict(ch="monthly", name="Proactive, RPM Presidential", want=2150,
+         f=lambda: rep.price_shield(1, keywords=5, threats=0)["total"],
+         why="ORM Quote Tool - Proactive Pricing Update: RPM, 5 kw, 0 threats, "
+             "$2,200 real / ~$2,150 formula"),
+    dict(ch="monthly", name="Proactive, Wheeler Digital", want=2750,
+         f=lambda: rep.price_shield(1, keywords=5, threats=1)["total"],
+         why="same spec: Wheeler, 5 kw, 1 threat, $2,750 real"),
     dict(ch="monthly", name="Sage GEO setup phase", want=4950,
          f=lambda: rep.price_geo("setup")["total"],
          why="GEO: 'Sage Digital Partner proposal actuals (Sept 2025): GEO "
@@ -236,6 +226,10 @@ SUPERSEDED = [
          why="$3,500 base + $700/extra location was the template's "
              "'$[Monthly Price]' placeholder, never an actual; proactive is "
              "costed off the brand's own footprint from 2026-09-18"),
+    dict(name="Proactive, sheet worked example", was=2200,
+         f=lambda: rep.price_shield(1, keywords=5, threats=3)["total"],
+         why="5 kw / 3 threats priced off backlinks and asset pages with a "
+             "$2,200 client floor; 2026-10-26 prices the moat per threat"),
     dict(name="Partner A review removal", was=450, f=lambda: rev_unit(10),
          why="Partner A ($450 flat) / Partner B ($650->$550) were client "
              "pricing in Brendan's Sage proposal; the Vici card replaced them "

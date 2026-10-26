@@ -18,8 +18,8 @@ Pricing sources (Rep Mgmt Proposal Template doc + Sage Dental sample, June 2026)
     in SEARCH_BUNDLE are partner hard cost (see block comment there);
     client = hard \u00f7 (1 \u2212 margin). Sage replay is now approximate
     ($7,550 vs $7,400 actual at 35%).
-  * Proactive Brand Shield — single monthly bundle. "$[Monthly Price]" in doc;
-    placeholder below.
+  * Proactive Brand Shield — one Monthly Budget off the brand scan's keyword
+    and page-one threat counts (REP_CFG["proactive"]). Provisional.
 """
 
 def r50(x):
@@ -187,38 +187,36 @@ REP_CFG = {
     # nearest $50 separately. At 35%: $3,500 base + $700/extra location.
     # PROACTIVE IS BUILT IN HOUSE, SO IT IS PRICED OFF WHAT IT COSTS TO RUN
     # (2026-09-18, Kiri). The flat $2,250 hard / $3,500 client below was the
-    # template's "$[Monthly Price]" placeholder -- never an actual, and it took
-    # the same shape as a partner's rate card for work Vici does itself. The
-    # formula is the one written up in ORM - Proactive Brand Monitoring
-    # (Confluence QG, 16 Sep 2026): monitoring and moat-building costed from
-    # the brand's own footprint, at the labour rates in that page.
+    # template's "$[Monthly Price]" placeholder -- never an actual.
+    #
+    # ONE MONTHLY BUDGET, OFF THE BRAND SCAN (2026-10-26, Kiri: ORM Quote Tool
+    # - Proactive Pricing Update, from Proactive ORM - Build Plan, Calibration):
     #
     #   monitoring   = $40 + $12 per keyword tracked
-    #   moat         = $20 + $10.40 per backlink/mo + $70 per asset page/mo
-    #   retail       = (monitoring + moat) / 0.225, rounded UP to $50
-    #   partner      = retail x (1 - margin)
+    #   moat         = $220 + $80 per page-one SERP threat
+    #   partner      = (monitoring + moat) / 0.225, NEAREST $50
+    #                  never under 2x that hard cost (50% margin floor)
+    #   retail       = partner / (1 - margin), NEAREST $50 (0.65 at 35%)
     #
-    # The sheet rounds retail to the NEAREST $50 and reads $2,150 on its worked
-    # example; every client figure in both tools rounds UP, which is the one
-    # rule that keeps a realised margin from landing under the stated one, so
-    # the same example prices $2,200 here.
+    # "Partner" here is the spec's "Partner price (what SSG is paid)" -- the
+    # same figure the rest of the tool calls partner hard cost -- and the 0.65
+    # is the Markup box. Fits both Brendan-approved quotes: RPM (5 kw, 0
+    # threats) $2,150 and Wheeler Digital (5 kw, 1 threat) $2,750. Nearest,
+    # not up, because up reads Wheeler at $2,800.
+    #
+    # \u26a0 PROVISIONAL, NOT SIGNED OFF BY BRENDAN. Both samples are 5 keywords,
+    # 1 location, 0-1 threats: the per-keyword rate, the per-threat rate past
+    # low severity and any per-location charge are untested. Every constant is
+    # on the Config panel for that reason.
     "proactive": {
         "monitor_fixed": 40, "monitor_per_keyword": 12,
-        "moat_fixed": 20, "moat_per_backlink": 10.40, "moat_per_asset": 70,
-        # \u26a0 THE DISPLACEMENT RATIO IS AN ASSUMPTION, not a measured
-        # constant -- the sheet says so in as many words. Five backlinks and
-        # one asset page per page-one threat, from its worked example.
+        "moat_fixed": 220, "moat_per_threat": 80,
+        "hard_pct_of_partner": 0.225,
+        "min_partner_x_hard": 2,
+        # CAPACITY ONLY, NOT PRICE. Backlinks and asset pages a month per
+        # page-one threat, for staffing. The ratio is an assumption.
         "backlinks_per_threat": 5, "assets_per_threat": 1,
-        # And a production ceiling, so a brand with fifteen threats does not
-        # generate a month nobody can deliver.
         "backlinks_cap": 40, "assets_cap": 8,
-        "internal_pct_of_retail": 0.225,
-        # \u26a0 FLOOR IS AN ASSUMPTION TOO. One keyword and no threats costs
-        # $52/mo to run, which prices at $250 -- below anything in the market
-        # comparison table on that page (small-business ORM starts at $500).
-        # $1,500 read low (Wheeler Digital, 2026-10-15, Kiri); the floor is now
-        # the sheet's worked example, the only Proactive figure we have.
-        "floor": 2200,                    # CLIENT $/mo
     },
     "shield": {
         # Retained for reference: the placeholder card the formula replaced.
@@ -856,12 +854,19 @@ def price_video(count=0, per_video=5600):
                       "Always custom-quoted by complexity."]}
 
 
-def proactive_units(keywords=1, threats=0):
-    """Backlinks and asset pages a month, off the brand's own footprint.
+def n50(x):
+    """Round to the NEAREST $50 -- the Proactive spec's rule, and the only
+    one that lands both Brendan-approved samples (Wheeler reads $2,800 up)."""
+    import math
+    return int(math.floor(round(x, 6) / 50.0 + 0.5) * 50)
 
-    Both derive from the page-one threat count at the sheet's displacement
-    ratio and stop at the production ceiling -- the cap is what keeps a brand
-    with fifteen threats from generating a month nobody can deliver.
+
+def proactive_units(keywords=1, threats=0):
+    """Backlinks and asset pages a month, for staffing. They do not move the
+    price: the threat count prices the moat directly.
+
+    Both derive from the page-one threat count at the displacement ratio and
+    stop at the production ceiling.
     """
     p = REP_CFG["proactive"]
     t = max(0, int(threats or 0))
@@ -871,14 +876,13 @@ def proactive_units(keywords=1, threats=0):
 
 def price_shield(locations=1, margin_pct=None, hard_override=None,
                  keywords=1, threats=0):
-    """Proactive ORM as one monthly number, off the brand scan's own counts.
+    """Proactive ORM as one Monthly Budget, off the brand scan's own counts.
 
-    keywords: what is being watched -- the brand, plus executives, products and
-    the negative autocomplete/related variants the scan flagged.
-    threats:  negative results sitting on page one across those keywords.
-    locations: recorded, and NOT priced -- the formula on the sheet does not
-    use it, and inventing a per-location rate here would be the placeholder
-    all over again.
+    keywords: the brand, plus executives, products and the negative
+    autocomplete/related variants the scan flagged.
+    threats:  non-owned results sitting on page one across those keywords.
+    locations: recorded, and NOT priced -- every sample so far is one
+    location, so there is nothing to fit a per-location rate to.
     """
     p = REP_CFG["proactive"]
     locations = max(1, int(locations or 1))
@@ -886,30 +890,26 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
     thr = max(0, int(threats or 0))
     links, assets = proactive_units(kw, thr)
     monitor = p["monitor_fixed"] + p["monitor_per_keyword"] * kw
-    moat = (p["moat_fixed"] + p["moat_per_backlink"] * links
-            + p["moat_per_asset"] * assets)
+    moat = p["moat_fixed"] + p["moat_per_threat"] * thr
     internal = monitor + moat
     m = 0.35 if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
+    pct = p["hard_pct_of_partner"] or 0.225
+    floored = False
     if hard_override:
         hard_total = float(hard_override)
         total = r50(hard_total / (1 - m))
     else:
-        total = max(p["floor"], r50(internal / p["internal_pct_of_retail"]))
-        hard_total = round(total * (1 - m), 2)
+        hard_total = n50(internal / pct)
+        if hard_total < p["min_partner_x_hard"] * internal:
+            hard_total = p["min_partner_x_hard"] * internal
+            floored = True
+        total = n50(hard_total / (1 - m))
     det = (f"{kw} keyword{'s' if kw != 1 else ''} tracked \u00b7 "
            f"{thr} page-one threat{'s' if thr != 1 else ''}"
-           + (f" \u00b7 {links} backlinks/mo, {assets} asset page"
-              f"{'s' if assets != 1 else ''}/mo" if links or assets else "")
            + (f" \u00b7 {locations} location{'s' if locations != 1 else ''}"
               if locations > 1 else ""))
     notes = (["\u2699 Manual hard-cost override active \u2014 formula bypassed for this quote."]
              if hard_override else []) + list(REP_CFG["shield"]["included"])
-    if not hard_override and total == p["floor"]:
-        notes.append("At the minimum monthly for the product \u2014 this "
-                     "brand's footprint prices below it.")
-    if links >= p["backlinks_cap"] or assets >= p["assets_cap"]:
-        notes.append("Capped at the monthly production ceiling; further "
-                     "threats roll into the following month.")
     return {
         "service": "Proactive \u00b7 Brand Shield",
         "detail": det, "kind": "monthly", "total": total,
@@ -923,30 +923,31 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
              "value": f"{_m(p['monitor_fixed'])} + {_m(p['monitor_per_keyword'])} "
                       f"\u00d7 {kw} keyword{'s' if kw != 1 else ''} = {_m(monitor)}"},
             {"label": "Moat building",
-             "value": f"{_m(p['moat_fixed'])} + {_m(p['moat_per_backlink'])} \u00d7 "
-                      f"{links} backlink{'s' if links != 1 else ''} + "
-                      f"{_m(p['moat_per_asset'])} \u00d7 {assets} asset page"
-                      f"{'s' if assets != 1 else ''} = {_m(moat)}"},
-            {"label": "What it costs to run",
+             "value": f"{_m(p['moat_fixed'])} + {_m(p['moat_per_threat'])} \u00d7 "
+                      f"{thr} threat{'s' if thr != 1 else ''} = {_m(moat)}"},
+            {"label": "Hard cost",
              "value": f"{_m(internal)}/mo"},
-            {"label": "Client price",
-             "value": f"{_m(internal)} \u00f7 {p['internal_pct_of_retail']:.3g} "
-                      f"\u2192 {_m(total)}/mo"
-                      + (f" \u2014 held at the {_m(p['floor'])} minimum"
-                         if total == p["floor"] else "")},
-            {"label": "Partner hard cost",
-             "value": f"{_m(total)} \u00d7 (1 \u2212 {m * 100:.0f}%) "
-                      f"= {_m(hard_total)}/mo"},
+            {"label": "Partner price",
+             "value": (f"{_m(internal)} \u00d7 {p['min_partner_x_hard']:g} "
+                       f"= {_m(hard_total)}/mo \u2014 held at the margin floor"
+                       if floored else
+                       f"{_m(internal)} \u00f7 {pct:.3g} \u2192 {_m(hard_total)}/mo")},
+            {"label": "Monthly Budget",
+             "value": f"{_m(hard_total)} \u00f7 (1 \u2212 {m * 100:.0f}%) "
+                      f"\u2192 {_m(total)}/mo"},
         ]),
         "internal": {"rows": [
-            {"label": "Partner hard cost", "value": f"${hard_total:,.0f}/mo"},
-            {"label": "Internal hard cost (measured)",
+            {"label": "Partner price", "value": f"${hard_total:,.0f}/mo"},
+            {"label": "Hard cost",
              "value": f"${internal:,.0f}/mo \u2014 monitoring ${monitor:,.0f}, "
                       f"moat building ${moat:,.0f}"},
-            {"label": "\u26a0 Displacement ratio",
-             "value": f"{p['backlinks_per_threat']} backlinks and "
-                      f"{p['assets_per_threat']} asset page per threat \u2014 "
-                      "a starting assumption, not a measured constant",
+            {"label": "Capacity",
+             "value": f"{links} backlink{'s' if links != 1 else ''}/mo, "
+                      f"{assets} asset page{'s' if assets != 1 else ''}/mo "
+                      "\u2014 staffing estimate, not priced"},
+            {"label": "\u26a0 Provisional",
+             "value": "Formula not signed off by Brendan; untested past 5 "
+                      "keywords, 1 location, 1 threat",
              "tbd": True},
         ]},
     }
@@ -1140,7 +1141,7 @@ def build_rep_quote(payload):
 
     # THE TWO RECURRING BUNDLES GO OVER SEPARATELY. They are different
     # products on different bases -- Search Protection scales with brand
-    # search volume, the Brand Shield with location count -- and collapsing
+    # search volume, the Brand Shield with keywords and threats -- and collapsing
     # them into one Monthly Budget meant the form could not tell which half
     # of the money was which, or reprice either one on its own.
     def _sum(pred):
@@ -1191,6 +1192,9 @@ def build_rep_quote(payload):
         # arrive at the same number.
         "search_volume": int((payload.get("search") or {}).get("volume") or 0),
         "locations": max(1, int((payload.get("shield") or {}).get("locations") or 1)),
+        # What Proactive is priced off (2026-10-26).
+        "proactive_keywords": max(1, int((payload.get("shield") or {}).get("keywords") or 1)),
+        "proactive_threats": max(0, int((payload.get("shield") or {}).get("threats") or 0)),
         "margin_pct": (payload.get("margin_pct") if payload.get("margin_pct")
                        is not None else ART_CAL_MARGIN),
         # What Billing charges the partner. Sent rather than derived: every

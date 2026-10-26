@@ -86,14 +86,30 @@ check("and nothing prints it",
 
 print("\nTHE TWO BUNDLES GO OVER SEPARATELY")
 check("reactive", h["search_protection_monthly"], 4650)
-# The sheet's own worked example: 5 keywords, 3 threats -> $486/mo to run ->
-# $2,200 retail. It reads $2,150 there because that page rounds retail to the
-# nearest $50 and every client figure in both tools rounds UP.
-check("proactive", h["brand_shield_monthly"], 2200)
+# 5 keywords, 3 threats: $100 monitoring + $460 moat = $560 hard -> $2,500
+# partner (nearest $50) -> $3,850 retail at 35%. (2026-10-26)
+check("proactive", h["brand_shield_monthly"], 3850)
 check("and still sum to the budget",
       h["search_protection_monthly"] + h["brand_shield_monthly"],
       h["monthly_budget"])
-check("which is the Ski Barn figure", h["monthly_budget"], 6850)
+check("which is the Ski Barn figure", h["monthly_budget"], 8500)
+
+print("\nPROACTIVE FITS BRENDAN'S TWO APPROVED QUOTES")
+_rpm = R.price_shield(1, 0.35, keywords=5, threats=0)
+check("RPM retail", _rpm["total"], 2150)
+check("RPM partner", _rpm["hard_total"], 1400)
+_wh = R.price_shield(1, 0.35, keywords=5, threats=1)
+check("Wheeler retail", _wh["total"], 2750)
+check("Wheeler partner", _wh["hard_total"], 1800)
+check("locations do not move it",
+      R.price_shield(3, 0.35, keywords=5, threats=1)["total"], 2750)
+_p = R.REP_CFG["proactive"]
+_was = _p["hard_pct_of_partner"]
+_p["hard_pct_of_partner"] = 0.6
+# $400 hard / 0.6 = $650 partner, under 2x hard: floored at $800.
+check("partner never under 2x hard", R.price_shield(1, 0.35, keywords=5,
+                                                     threats=1)["hard_total"], 800)
+_p["hard_pct_of_partner"] = _was
 
 print("\nWITH WHAT EACH IS PRICED OFF")
 check("brand search volume", h["search_volume"], 8000)
@@ -111,8 +127,8 @@ print("\nPROACTIVE ONLY IS THE MIRROR")
 r2 = R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                         "shield": {"locations": 4}})["handoff"]
 check("no search money", r2["search_protection_monthly"], 0)
-# No footprint given: one keyword, no threats, so it prices at the minimum.
-check("shield money stands", r2["brand_shield_monthly"], 2200)
+# No footprint given: one keyword, no threats -> $272 hard -> $1,200 -> $1,850.
+check("shield money stands", r2["brand_shield_monthly"], 1850)
 check("volume is zero, not absent", r2["search_volume"], 0)
 
 print("\nA REMOVALS-ONLY QUOTE HAS NO MONTHLY AT ALL")
@@ -130,8 +146,7 @@ check("proactive line", [l["service"] for l in q["lines"] if "Brand Shield" in l
       ["Proactive \u00b7 Brand Shield"])
 check("the shield detail is what it is priced off",
       [l["detail"] for l in q["lines"] if "Brand Shield" in l["service"]],
-      ["5 keywords tracked \u00b7 3 page-one threats \u00b7 15 backlinks/mo, "
-       "3 asset pages/mo \u00b7 4 locations"])
+      ["5 keywords tracked \u00b7 3 page-one threats \u00b7 4 locations"])
 check("one keyword reads singular",
       R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                          "shield": {"locations": 1}})["lines"][0]["detail"],
@@ -149,7 +164,7 @@ for c, pk in [("monthly_budget", "partner_monthly_cost"),
     check("%s has a partner figure" % c, bool(h.get(pk)) and h[pk] > 0, True)
     check("  and it is below the client one", h[pk] < h[c], True)
 check("reactive partner", h["partner_search_protection_monthly"], 3000)
-check("proactive partner", h["partner_brand_shield_monthly"], 1430)
+check("proactive partner", h["partner_brand_shield_monthly"], 2500)
 check("the two sum to the partner monthly",
       h["partner_search_protection_monthly"] + h["partner_brand_shield_monthly"],
       h["partner_monthly_cost"])

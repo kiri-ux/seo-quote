@@ -20537,7 +20537,8 @@ def api_rep_config_get():
         "shield_monthly": rc["shield"]["monthly_hard"],
         "shield_per_extra_location": rc["shield"]["per_extra_location_hard"],
         "geo": {p: rep_pricing.GEO[p]["monthly"] for p in ("setup", "scale")},
-        "bundle_discount_pct": rc["bundle"]["recurring_discount_pct"],
+        # REP_CFG["bundle"] is gone; reading it 500'd the whole panel.
+        "bundle_discount_pct": rc.get("bundle", {}).get("recurring_discount_pct", 0.0),
         "internal_cost_pct": rep_pricing.INTERNAL_COST_PCT["pct"],
         "review_pull_depth": rep_pricing.SCAN_SETTINGS["review_pull_depth"],
     })
@@ -20572,7 +20573,8 @@ def api_rep_config_set():
                         float(d["bundle"][k]) if k in _float_keys
                         else int(float(d["bundle"][k])))
         if "proactive" in d and isinstance(d["proactive"], dict):
-            _pf = ("moat_per_backlink", "internal_pct_of_retail")
+            _pf = ("monitor_per_keyword", "moat_per_threat",
+                   "hard_pct_of_partner", "min_partner_x_hard")
             for k in rc["proactive"]:
                 if k in d["proactive"]:
                     rc["proactive"][k] = (float(d["proactive"][k]) if k in _pf
@@ -20586,7 +20588,7 @@ def api_rep_config_set():
                 if p in d["geo"]:
                     rep_pricing.GEO[p]["monthly"] = int(float(d["geo"][p]))
         if "bundle_discount_pct" in d:
-            rc["bundle"]["recurring_discount_pct"] = min(0.9, max(0.0, float(d["bundle_discount_pct"])))
+            rc.setdefault("bundle", {})["recurring_discount_pct"] = min(0.9, max(0.0, float(d["bundle_discount_pct"])))
         if "internal_cost_pct" in d:
             rep_pricing.INTERNAL_COST_PCT["pct"] = min(1.0, max(0.0, float(d["internal_cost_pct"])))
         if "review_pull_depth" in d:

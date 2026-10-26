@@ -99,7 +99,8 @@ COPY = {
         "related searches",
     ],
     "shield_card": [
-        "Includes up to 5 keyword monitors, SEO Brand Shield & Asset "
+        "Includes keyword monitors for your brand, executives and products, "
+        "SEO Brand Shield & Asset "
         "Building, 24/7 Brand Monitoring & Threat Detection, In-Depth "
         "Monthly Report",
     ],
@@ -786,12 +787,14 @@ def _cards(d):
             "price": "Pricing: %s/month" % _money(h.get("search_protection_monthly")),
         })
     if h.get("brand_shield_monthly"):
-        n = _int(h.get("locations")) or 1
+        kw = _int(h.get("proactive_keywords")) or 1
+        th = _int(h.get("proactive_threats")) or 0
         out.append({
             "name": "Proactive: Brand Shield",
             "fill": NAVY, "dark": True,
-            "scales": "Scales with number of Google locations: %s location%s "
-                      "measured" % (n, "" if n == 1 else "s"),
+            "scales": "Scales with keywords tracked and page-one threats: "
+                      "%s keyword%s, %s threat%s measured"
+                      % (kw, "" if kw == 1 else "s", th, "" if th == 1 else "s"),
             "bullets": COPY["shield_card"],
             "stats": _card_stats(d, "proactive"),
             "note": _lookalike_blurb(d, "proactive"),

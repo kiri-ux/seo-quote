@@ -227,7 +227,10 @@ want_total = ((h["search_protection_monthly"] + h["brand_shield_monthly"]) * 3
 check("the total is the flight plus the removal maximums",
       "$%s" % "{:,}".format(want_total) in txt, True)
 check("each bundle says what it scales with",
-      ("5,000/mo measured" in txt, "3 locations measured" in txt), (True, True))
+      ("5,000/mo measured" in txt,
+       "%s keyword%s, %s threat" % (h["proactive_keywords"],
+                                    "" if h["proactive_keywords"] == 1 else "s",
+                                    h["proactive_threats"]) in txt), (True, True))
 
 # ---------------------------------------------- the snapshot is the scan
 # Found by its heading, not by its index: the slide count moves when the
