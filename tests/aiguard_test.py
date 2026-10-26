@@ -78,9 +78,6 @@ THEIRS = [org(i, "other%d.com" % i, "Sage Dental Studio Boise %d" % i)
 check("a page one that is mostly another company's drops it",
       scan("Sage Dental Studio has mixed reviews.", THEIRS), "")
 
-check("the reviews search asks for the overview Google loads late",
-      ASKED[0].get("load_async_ai_overview"), True)
-
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
 print("all ok" if not FAIL else "FAILED: " + ", ".join(FAIL))

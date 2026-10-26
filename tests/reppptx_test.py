@@ -413,14 +413,13 @@ check("a bundle shows both", (NEG in bt, BRAND in bt), (True, True))
 st = all_text([s for s in deck(quote(campaign="reactive", search={
     "bundle": True, "volume": 5000, "suppression": True}), snap=STATS)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
-check("the AI Overview prints with its flags",
-      ("AI Overview" in st, "mentions complaints" in st), (True, True))
+check("the AI Overview is not on the slide", "AI Overview" in st, False)
 check("the snapshot carries no stat tiles", "searches/mo" in st, False)
 full = dict(STATS, organic=[{"pos": i, "domain": "site%d.com" % i,
                              "tactic": "suppression"} for i in range(1, 10)])
 ft = all_text([s for s in deck(FULL, snap=full)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
-check("a full page one is capped at 7 rows and still shows the AI Overview", "AI Overview" in ft, True)
+check("a full page one is capped at 7 rows", "site8.com" in ft, False)
 
 five = [s for s in deck(FULL, snap=dict(
     SNAP, locations=[{"title": "Sage Dental", "pos_5": 7, "profile_rating": 5,
