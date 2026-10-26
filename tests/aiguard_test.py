@@ -50,7 +50,11 @@ AI = {"type": "ai_overview", "items": [{"text": ""}]}
 PAGE = []
 
 
+ASKED = []
+
+
 def fake_post(path, tasks, timeout=None):
+    ASKED.append(tasks[0])
     return {"tasks": [{"result": [{"items": PAGE}]}]}
 
 
@@ -73,6 +77,9 @@ THEIRS = [org(i, "other%d.com" % i, "Sage Dental Studio Boise %d" % i)
           for i in range(1, 6)]
 check("a page one that is mostly another company's drops it",
       scan("Sage Dental Studio has mixed reviews.", THEIRS), "")
+
+check("the reviews search asks for the overview Google loads late",
+      ASKED[0].get("load_async_ai_overview"), True)
 
 print()
 print("%d checks, %d failed" % (len(RUN), len(FAIL)))
