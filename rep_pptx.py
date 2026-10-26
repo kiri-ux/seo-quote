@@ -670,10 +670,10 @@ def _stars_block(slide, d):
     counted = any(stars.get(k) for k in ("5", "4", "3", "2", "1"))
     total, avg = _profile_totals(d)
     flagged = stars["1"] + stars["2"]
-    # EVERY STAR LEVEL, 1 THROUGH 5, whenever reviews were counted, each with
-    # its count in the legend; a level at 0 still lists. (2026-10-25, Kiri)
+    # EVERY STAR LEVEL THAT HAS REVIEWS, 5 down to 1, each with its count in
+    # the legend. A level at 0 is left out. (2026-10-26, Kiri)
     if counted:
-        levels = ("5", "4", "3", "2", "1")
+        levels = tuple(k for k in ("5", "4", "3", "2", "1") if _int(stars.get(k)))
         data = CategoryChartData()
         data.categories = ["%s \u2605 Reviews (%s)" % (k, f"{_int(stars.get(k)):,}")
                            for k in levels]
