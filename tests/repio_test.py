@@ -87,12 +87,13 @@ check("and nothing prints it",
 print("\nTHE TWO BUNDLES GO OVER SEPARATELY")
 check("reactive", h["search_protection_monthly"], 4650)
 # 5 keywords, 3 threats: $100 monitoring + $460 moat = $560 hard -> $2,500
-# partner (nearest $50) -> $3,850 retail at 35%. (2026-10-26)
-check("proactive", h["brand_shield_monthly"], 3850)
+# partner (nearest $50), + 3 extra locations x $450 = $3,850 partner ->
+# $5,900 retail at 35%. (2026-10-26)
+check("proactive", h["brand_shield_monthly"], 5900)
 check("and still sum to the budget",
       h["search_protection_monthly"] + h["brand_shield_monthly"],
       h["monthly_budget"])
-check("which is the Ski Barn figure", h["monthly_budget"], 8500)
+check("which is the Ski Barn figure", h["monthly_budget"], 10550)
 
 print("\nPROACTIVE FITS BRENDAN'S TWO APPROVED QUOTES")
 _rpm = R.price_shield(1, 0.35, keywords=5, threats=0)
@@ -101,8 +102,10 @@ check("RPM partner", _rpm["hard_total"], 1400)
 _wh = R.price_shield(1, 0.35, keywords=5, threats=1)
 check("Wheeler retail", _wh["total"], 2750)
 check("Wheeler partner", _wh["hard_total"], 1800)
-check("locations do not move it",
-      R.price_shield(3, 0.35, keywords=5, threats=1)["total"], 2750)
+# $1,800 + 2 x $450 = $2,700 partner; / 0.65 = $4,153.85 -> $4,150.
+_wh3 = R.price_shield(3, 0.35, keywords=5, threats=1)
+check("extra locations add $450 partner each", _wh3["hard_total"], 2700)
+check("3-location Wheeler retail", _wh3["total"], 4150)
 _p = R.REP_CFG["proactive"]
 _was = _p["hard_pct_of_partner"]
 _p["hard_pct_of_partner"] = 0.6
@@ -127,8 +130,9 @@ print("\nPROACTIVE ONLY IS THE MIRROR")
 r2 = R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                         "shield": {"locations": 4}})["handoff"]
 check("no search money", r2["search_protection_monthly"], 0)
-# No footprint given: one keyword, no threats -> $272 hard -> $1,200 -> $1,850.
-check("shield money stands", r2["brand_shield_monthly"], 1850)
+# No footprint given: one keyword, no threats -> $272 hard -> $1,200,
+# + 3 extra locations x $450 = $2,550 partner -> $3,900.
+check("shield money stands", r2["brand_shield_monthly"], 3900)
 check("volume is zero, not absent", r2["search_volume"], 0)
 
 print("\nA REMOVALS-ONLY QUOTE HAS NO MONTHLY AT ALL")
@@ -164,7 +168,7 @@ for c, pk in [("monthly_budget", "partner_monthly_cost"),
     check("%s has a partner figure" % c, bool(h.get(pk)) and h[pk] > 0, True)
     check("  and it is below the client one", h[pk] < h[c], True)
 check("reactive partner", h["partner_search_protection_monthly"], 3000)
-check("proactive partner", h["partner_brand_shield_monthly"], 2500)
+check("proactive partner", h["partner_brand_shield_monthly"], 3850)
 check("the two sum to the partner monthly",
       h["partner_search_protection_monthly"] + h["partner_brand_shield_monthly"],
       h["partner_monthly_cost"])
