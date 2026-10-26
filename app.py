@@ -20132,6 +20132,26 @@ def proposal_filename(client, order_no="", ext="docx", when=None, kind=""):
     return f"{name or 'Proposal'}.{ext}"
 
 
+def _list_price(tool, r):
+    """A WEBSITE AUDIT QUOTE IS QUOTED AT ITS ONE-TIME FEE. The list showed the
+    Intermediate SEO tier beside the Website Audit chip, which is the number
+    for if they buy after, not what the quote sells. Core SEO with an audit
+    still shows the SEO tier. Quotes saved before the fee was stored fall back
+    to the rate card at the default 35% margin. (2026-10-26, Kiri)"""
+    parts = {p.strip().lower() for p in str(r.get("strategy") or "").split("+") if p.strip()}
+    if tool == "seo" and parts == {"website audit"}:
+        try:
+            fee = float(r.get("audit_fee") or 0)
+        except (TypeError, ValueError):
+            fee = 0
+        if not fee:
+            cost = float(CFG.get("website_audit_cost") or 0)
+            fee = r50up(cost / 0.65) if cost else 0
+        if fee:
+            return fee
+    return r.get("intermediate")
+
+
 def group_by_client(seo_rows, rep_rows, meta=None):
     """ONE CLIENT IS ONE ROW, WHATEVER IT BOUGHT. The quote list is a client
     list: two products on one client merge, and a client with four saved SEO
@@ -20154,7 +20174,7 @@ def group_by_client(seo_rows, rep_rows, meta=None):
                             # Search COMBINED where both were sold (storage
                             # _tiers reads client_total) -- and on a rep quote
                             # the same column holds the monthly.
-                            "price": r.get("intermediate"),
+                            "price": _list_price(tool, r),
                             "strategy": r.get("strategy") or ""})
             for part in str(r.get("strategy") or "").split("+"):
                 part = part.strip()

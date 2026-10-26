@@ -81,6 +81,19 @@ check("an unpriced quote is not a zero", by["Renfroe"]["priceSeo"], None)
 check("newest client first", [r["client"] for r in rows],
       ["Drainify", "Sage Dental", "Ski Barn", "Renfroe"])
 
+# A WEBSITE AUDIT QUOTE SHOWS ITS ONE-TIME FEE, not the SEO tier (2026-10-26, Kiri)
+au = {r["client"]: r for r in app.group_by_client([
+    {"id": 20, "name": "Belmont audit", "client": "Belmont Park", "strategy": "Website Audit",
+     "updated_at": "2026-10-26T10:00:00", "base": 2950, "intermediate": 3650, "audit_fee": "2950"},
+    {"id": 21, "name": "Old audit", "client": "Old Audit", "strategy": "Website Audit",
+     "updated_at": "2026-10-26T09:00:00", "intermediate": 3650, "audit_fee": None},
+    {"id": 22, "name": "Rady", "client": "Rady", "strategy": "Core SEO + Website Audit",
+     "updated_at": "2026-10-26T08:00:00", "intermediate": 5700, "audit_fee": "2950"},
+], [])}
+check("audit only shows the fee", au["Belmont Park"]["priceSeo"], 2950.0)
+check("audit saved without a fee uses the rate card", au["Old Audit"]["priceSeo"], 2950)
+check("core seo with an audit keeps the seo tier", au["Rady"]["priceSeo"], 5700)
+
 # a quote saved without a client is still reachable
 check("no client is its own row",
       app.group_by_client([{"id": 4, "name": "One off", "client": "",
