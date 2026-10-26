@@ -798,7 +798,10 @@ def _slide_pricing(prs, d):
     monthly = (core.get(shown) or 0) + (ai.get(shown) or 0)
     first = [("", flight)] if flight else []
     first.append(("Months Running: ", str(months)))
-    cells = [first]
+    # AN AUDIT-ONLY QUOTE HAS NO FLIGHT TO SHOW: the dates and months cell
+    # goes and the budget takes the full bar. (2026-10-26, Kiri)
+    audit_only = _strategies(d) == {"Website Audit"}
+    cells = [] if audit_only else [first]
     if monthly:
         # WHICH TIER THE BUDGET IS, WHERE THE BUDGET IS. The card carries the
         # Selected mark, but the number is read up here. (2026-09-21, Kiri)
@@ -807,6 +810,8 @@ def _slide_pricing(prs, d):
     if n_addon and per_market.get("intermediate"):
         cells.append([("# of Add-on Markets: ", str(n_addon)),
                       ("Add-on Price: ", _money(per_market["intermediate"]))])
+    if not cells:
+        cells = [first]
     fee = _audit_fee(d)
     top = _box(slide, Inches(0.55), Inches(1.32), Inches(12.2), Inches(0.72))
     span = Inches(12.2) / len(cells)
@@ -835,14 +840,16 @@ def _slide_pricing(prs, d):
     shift = Inches(0.74) if fee else 0
     ct = Inches(2.12) + shift
     if shift:
-        fbox = _box(slide, Inches(0.55), Inches(2.12), Inches(5.9),
+        # TWO EQUAL HALVES, the gap centered on the summary bar's divider.
+        # (2026-10-26, Kiri)
+        fbox = _box(slide, Inches(0.55), Inches(2.12), Inches(6.0),
                     Inches(0.62), fill=NAVY, outline=None)
         tf = _txt(fbox, size=17, color=WHITE, align=PP_ALIGN.CENTER,
                   space_after=0)
         fbox.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         _run(tf.paragraphs[0], COPY["audit_banner"], size=17, bold=True,
              color=WHITE)
-        nbox = _box(slide, Inches(6.65), Inches(2.12), Inches(6.1),
+        nbox = _box(slide, Inches(6.75), Inches(2.12), Inches(6.0),
                     Inches(0.62), fill=NAVY, outline=None)
         tf = _txt(nbox, size=11, color=WHITE, space_after=0, line=1.05)
         nbox.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
