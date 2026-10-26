@@ -2203,6 +2203,7 @@ function renderCfg(c){
               cfgIn('c_pbf', pr.moat_fixed) + ' ' + cfgIn('c_pmt', pr.moat_per_threat, 1));
   h += cfgRow('Hard cost as % of partner price', cfgIn('c_ppct', Math.round((pr.hard_pct_of_partner||0.225)*1000)/10, 1));
   h += cfgRow('Partner price floor — × hard cost', cfgIn('c_pminx', pr.min_partner_x_hard, 0.1));
+  h += cfgRow('Each location past the first — partner $/mo', cfgIn('c_ploc', c.shield_per_extra_location));
   h += cfgRow('Capacity per threat — backlinks + asset pages <span style="font-weight:400;color:var(--warn)">(staffing only, not priced)</span>',
               cfgIn('c_pblt', pr.backlinks_per_threat, 1) + ' ' + cfgIn('c_past', pr.assets_per_threat, 1));
   h += cfgRow('Monthly production ceiling — backlinks + asset pages',
@@ -2237,6 +2238,7 @@ $('cfgApply').onclick = async ()=>{
                 min_partner_x_hard: v('c_pminx'),
                 backlinks_per_threat: v('c_pblt'), assets_per_threat: v('c_past'),
                 backlinks_cap: v('c_pblc'), assets_cap: v('c_pasc')},
+    shield_per_extra_location: v('c_ploc'),
     geo: {setup: v('c_geos'), scale: v('c_geoc')},
     bundle_discount_pct: v('c_bdisc')/100,
     internal_cost_pct: v('c_intpct')/100,

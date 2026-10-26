@@ -206,7 +206,9 @@ REP_CFG = {
     #
     # \u26a0 PROVISIONAL, NOT SIGNED OFF BY BRENDAN. Both samples are 5 keywords,
     # 1 location, 0-1 threats: the per-keyword rate, the per-threat rate past
-    # low severity and any per-location charge are untested. Every constant is
+    # low severity and the per-location charge are untested. Each location
+    # past the first adds REP_CFG["shield"]["per_extra_location_hard"] ($450)
+    # to the partner price (2026-10-26, Kiri: keep the old location charge). Every constant is
     # on the Config panel for that reason.
     "proactive": {
         "monitor_fixed": 40, "monitor_per_keyword": 12,
@@ -219,7 +221,8 @@ REP_CFG = {
         "backlinks_cap": 40, "assets_cap": 8,
     },
     "shield": {
-        # Retained for reference: the placeholder card the formula replaced.
+        # monthly_hard is retained for reference: the placeholder card the
+        # formula replaced. per_extra_location_hard still prices (Proactive).
         "monthly_hard": 2250,             # partner hard cost, base (1 location)
         # AUTOMATED REVIEW GENERATION & SENTIMENT ROUTING IS NOT OFFERED
         # (2026-08-28, Kiri). It was the third component of this bundle:
@@ -881,8 +884,9 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
     keywords: the brand, plus executives, products and the negative
     autocomplete/related variants the scan flagged.
     threats:  non-owned results sitting on page one across those keywords.
-    locations: recorded, and NOT priced -- every sample so far is one
-    location, so there is nothing to fit a per-location rate to.
+    locations: each one past the first adds the shield's per-extra-location
+    partner hard cost (REP_CFG["shield"], $450) on top of the formula's
+    partner price (2026-10-26, Kiri: the formula dropped it, put it back).
     """
     p = REP_CFG["proactive"]
     locations = max(1, int(locations or 1))
@@ -895,6 +899,8 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
     m = 0.35 if margin_pct is None else min(0.95, max(0.0, float(margin_pct)))
     pct = p["hard_pct_of_partner"] or 0.225
     floored = False
+    extra_locs = locations - 1
+    loc_hard = REP_CFG["shield"]["per_extra_location_hard"] * extra_locs
     if hard_override:
         hard_total = float(hard_override)
         total = r50(hard_total / (1 - m))
@@ -903,6 +909,8 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
         if hard_total < p["min_partner_x_hard"] * internal:
             hard_total = p["min_partner_x_hard"] * internal
             floored = True
+        base_partner = hard_total
+        hard_total += loc_hard
         total = n50(hard_total / (1 - m))
     det = (f"{kw} keyword{'s' if kw != 1 else ''} tracked \u00b7 "
            f"{thr} page-one threat{'s' if thr != 1 else ''}"
@@ -929,15 +937,23 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
              "value": f"{_m(internal)}/mo"},
             {"label": "Partner price",
              "value": (f"{_m(internal)} \u00d7 {p['min_partner_x_hard']:g} "
-                       f"= {_m(hard_total)}/mo \u2014 held at the margin floor"
+                       f"= {_m(base_partner)}/mo \u2014 held at the margin floor"
                        if floored else
-                       f"{_m(internal)} \u00f7 {pct:.3g} \u2192 {_m(hard_total)}/mo")},
+                       f"{_m(internal)} \u00f7 {pct:.3g} \u2192 {_m(base_partner)}/mo")},
+        ] + ([
+            {"label": "Extra locations",
+             "value": f"+{_m(REP_CFG['shield']['per_extra_location_hard'])} \u00d7 "
+                      f"{extra_locs} = {_m(loc_hard)}/mo \u2192 partner {_m(hard_total)}/mo"},
+        ] if extra_locs and not hard_override else []) + [
             {"label": "Monthly Budget",
              "value": f"{_m(hard_total)} \u00f7 (1 \u2212 {m * 100:.0f}%) "
                       f"\u2192 {_m(total)}/mo"},
         ]),
         "internal": {"rows": [
-            {"label": "Partner price", "value": f"${hard_total:,.0f}/mo"},
+            {"label": "Partner price", "value": f"${hard_total:,.0f}/mo"
+             + (f" \u2014 incl. ${loc_hard:,.0f} for {extra_locs} extra "
+                f"location{'s' if extra_locs != 1 else ''}"
+                if extra_locs and not hard_override else "")},
             {"label": "Hard cost",
              "value": f"${internal:,.0f}/mo \u2014 monitoring ${monitor:,.0f}, "
                       f"moat building ${moat:,.0f}"},
