@@ -85,7 +85,9 @@ def slides(prs):
 
 
 print("\nEVERYTHING SOLD, AND NOTHING ELSE")
-full = slides(deck(quote("Core SEO, AI Search, Website Audit")))
+# AI Search and Website Audit are never sold together (2026-10-26, Kiri), so
+# the widest quote is Core SEO with the audit.
+full = slides(deck(quote("Core SEO, Website Audit", ai=False)))
 check("five slides on the full quote", len(full), 5)
 check("the product and its SERP first",
       TITLE_LINE in full[0] and "Your SEO Campaign Will Include:" in full[0],
@@ -93,9 +95,8 @@ check("the product and its SERP first",
 check("a capture that was never taken says so",
       "No SERP captured" in full[0], True)
 check("strategy details second", "Strategy Details" in full[1], True)
-check("with all three strategies on it",
-      all(s + ":" in full[1] for s in
-          ("Core SEO", "AI Search", "Website Audit")), True)
+check("with both strategies on it",
+      all(s + ":" in full[1] for s in ("Core SEO", "Website Audit")), True)
 # AN AUDIT QUOTE LEADS WITH THE AUDIT, then the tiers, then the keywords.
 # (2026-10-26, Kiri)
 check("audit details third", "Audit Details" in full[2], True)
@@ -134,9 +135,14 @@ check("and the campaign tiers under it",
 check("no fee on a quote that did not sell the audit",
       any("One-Time Fee" in s or "Three Tiers from Audit" in s
           for s in slides(deck(quote("Core SEO", ai=False)))), False)
-check("an AI Search quote with the audit puts the credit in the footer",
-      "Website Audit fee is credited back on month one"
-      in next(s for s in full if "Product Details" in s), True)
+# WEBSITE AUDIT IS NEVER SOLD WITH AI SEARCH. (2026-10-26, Kiri)
+_aiaud = slides(deck(quote("Core SEO, AI Search, Website Audit")))
+check("an AI Search quote drops the audit",
+      any("Audit Details" in s or "Three Tiers from Audit" in s
+          or "Website Audit:" in s for s in _aiaud), False)
+check("and no audit fee is priced with AI Search",
+      app.stage4_price("single_city", 0, False, ai_search=True,
+                       website_audit=True)["handoff"]["website_audit_fee"], 0)
 
 print("\nTHE AUDIT FEE")
 _a = app.stage4_price("single_city", 0, False, website_audit=True)

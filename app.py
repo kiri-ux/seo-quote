@@ -13132,6 +13132,9 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # do not apply, because there is nothing to discount against.
     _ai_only = bool(ai_search) and not core_seo
     _ai_solo = dict(client) if _ai_only else None
+    # Website Audit is never sold with AI Search. (2026-10-26, Kiri)
+    if ai_search:
+        website_audit = False
     _audit_cost = float(CFG.get("website_audit_cost") or 0)
     audit = {"sold": bool(website_audit),
              "fee": retail_of(_audit_cost) if _audit_cost else 0,
@@ -16677,7 +16680,8 @@ def api_price():
                      adder_basis=(d.get("adder_basis") or None),
                      website_audit=bool(d.get("website_audit")
                                         or "website audit"
-                                        in str(d.get("strategy") or "").lower()))
+                                        in str(d.get("strategy") or "").lower())
+                     and not d.get("ai_search"))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "site_rebuild": p.get("site_rebuild", ""),
                     "rebuild_applied": p.get("rebuild_applied", False),
@@ -21508,8 +21512,8 @@ def build_proposal_docx(d, _notes=None):
     _pr0 = d.get("pricing") or {}
     _fee = ((_pr0.get("handoff") or {}).get("website_audit_fee")
             or (_pr0.get("website_audit") or {}).get("fee") or 0)
-    if "website audit" in str(d.get("strategy") or "").lower() and _fee:
-        import seo_pptx
+    import seo_pptx
+    if "Website Audit" in seo_pptx._strategies(d) and _fee:
         _A = seo_pptx.COPY
         doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         head("Website Audit")
