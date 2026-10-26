@@ -132,6 +132,11 @@ check("with the credit note",
       "credited back on your first month" in _apr, True)
 check("and the campaign tiers under it",
       "Intermediate Campaign" in _apr, True)
+check("an audit-only quote drops the months cell",
+      "Months Running" in _apr, False)
+check("but keeps the budget", "Monthly Budget (Intermediate)" in _apr, True)
+check("a Core SEO + audit quote keeps the months cell",
+      "Months Running" in full[3], True)
 check("no fee on a quote that did not sell the audit",
       any("One-Time Fee" in s or "Three Tiers from Audit" in s
           for s in slides(deck(quote("Core SEO", ai=False)))), False)
