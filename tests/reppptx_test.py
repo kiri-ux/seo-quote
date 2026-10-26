@@ -285,9 +285,11 @@ mid = [sh for sh in snapshot.shapes
 table = [sh for sh in mid if getattr(sh, "has_table", False) and sh.has_table]
 legend = [sh for sh in mid if sh.has_text_frame
           and "outrank it instead" in sh.text_frame.text]
-check("page one is capped so it cannot reach the legend",
-      len(table) == 1 and len(table[0].table.rows) <= rep_pptx.MAX_RESULTS + 1,
-      True)
+check("all of page one prints, no cap",
+      len(table) == 1 and len(table[0].table.rows) == 13, True)
+check("and the legend still ends on the slide",
+      len(legend) == 1
+      and legend[0].top + legend[0].height <= rep_pptx.RESULTS_FOOT, True)
 check("and the legend starts below the table's last row",
       len(legend) == 1
       and legend[0].top >= table[0].top + table[0].height, True)
@@ -419,7 +421,7 @@ full = dict(STATS, organic=[{"pos": i, "domain": "site%d.com" % i,
                              "tactic": "suppression"} for i in range(1, 10)])
 ft = all_text([s for s in deck(FULL, snap=full)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
-check("a full page one is capped at 7 rows", "site8.com" in ft, False)
+check("a full page one prints every row", "site9.com" in ft, True)
 
 five = [s for s in deck(FULL, snap=dict(
     SNAP, locations=[{"title": "Sage Dental", "pos_5": 7, "profile_rating": 5,

@@ -108,11 +108,10 @@ COPY = {
 STAR_SHADES = {"1": NAVY, "2": BLUE_LT, "3": BLUE_MID, "4": BLUE,
                "5": RGBColor(0xC9, 0xDB, 0xF2)}
 
-# Page one, capped so the table cannot reach the legend under it: the table
-# starts at 1.7in and a row is 0.3in, so 9 rows of results plus the header end
-# at 4.7in and the legend has 5.15in onward to itself.
-MAX_RESULTS = 7
-LEGEND_TOP = Inches(5.15)
+# ALL OF PAGE ONE, NO CAP (2026-10-26, Kiri). The cap made room for the AI
+# Overview box, which is gone. The table and its legend share the column down
+# to here; rows tighten only when page one runs past what 0.3in rows can fit.
+RESULTS_FOOT = Inches(7.25)
 
 
 # ------------------------------------------------------------------ reading
@@ -575,16 +574,23 @@ def _results_block(slide, snap, brand="", site=""):
     THE LEGEND GOES UNDER THE LONGEST TABLE THIS CAN DRAW, not under the
     height it was estimated at. PowerPoint grows a row to fit its text, so a
     legend placed at top + row_h * rows landed halfway up a table that had
-    grown past the estimate -- five results printed underneath it. The row
-    count is capped and the legend sits at a fixed foot, so they cannot meet.
+    grown past the estimate -- five results printed underneath it. Rows are sized
+    so table and legend fit above RESULTS_FOOT, and the legend follows the
+    table's last row.
     """
     x, w = Inches(4.0), Inches(4.6)
     _col_head(slide, "Top Google Results", x, Inches(1.32), w)
     page1 = [r for r in ((snap.get("organic") or [])
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
     page1 = page1 + _name_rows(snap, page1, site)
-    page1 = sorted(page1, key=lambda r: _int(r.get("pos")) or 99)[:MAX_RESULTS]
-    top, row_h = Inches(1.7), Inches(0.3)
+    page1 = sorted(page1, key=lambda r: _int(r.get("pos")) or 99)
+    tactics = list(COPY["tactics"])
+    if any(r.get("lookalike") for r in page1):
+        tactics += [COPY["lookalike_tactic"], COPY["outrank_tactic"]]
+    lh = Inches(1.05) + Inches(0.17) * (len(tactics) - len(COPY["tactics"]))
+    top = Inches(1.7)
+    room = RESULTS_FOOT - top - Inches(0.14) - lh
+    row_h = Emu(min(Inches(0.3), int(room / (len(page1) + 1))))
     if page1:
         rows = len(page1) + 1
         table = slide.shapes.add_table(rows, 3, x, top, w,
@@ -645,13 +651,8 @@ def _results_block(slide, snap, brand="", site=""):
     # actually drawn, floored so it can never ride up into a table that grew.
     ltop = max(top + row_h * (len(page1) + 1) + Inches(0.14),
                Inches(3.0)) if page1 else Inches(2.2)
-    tactics = list(COPY["tactics"])
-    if any(r.get("lookalike") for r in page1):
-        tactics += [COPY["lookalike_tactic"], COPY["outrank_tactic"]]
-    lh = Inches(1.05) + Inches(0.17) * (len(tactics) - len(COPY["tactics"]))
-    legend = _box(slide, x, min(ltop, LEGEND_TOP), w, lh, fill=WHITE,
-                  radius=0.03)
-    foot = min(ltop, LEGEND_TOP) + lh
+    legend = _box(slide, x, ltop, w, lh, fill=WHITE, radius=0.03)
+    foot = ltop + lh
     tf = _txt(legend, size=7.5, space_after=0, line=1.1)
     for i, (name, text) in enumerate(tactics):
         p = tf.paragraphs[0] if i == 0 else _para(tf, size=7.5, space_before=2,
