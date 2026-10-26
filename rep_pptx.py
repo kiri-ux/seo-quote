@@ -382,7 +382,6 @@ def _slide_snapshot(prs, d):
     _profiles_block(slide, d)
     foot = _results_block(slide, snap, brand, d.get("site") or "")
     _stars_block(slide, d)
-    _context_block(slide, d, snap, foot)
     return slide
 
 
@@ -434,32 +433,6 @@ def _card_stats(d, kind):
         n and "We will monitor %s Google profile%s for new reviews."
               % (n, "" if n == 1 else "s"),
     ) if t]
-
-
-def _context_block(slide, d, snap, top):
-    """WHAT FILLS THE MIDDLE, under the page-one legend: the AI Overview,
-    always when the scan kept one. Page one is capped at 7 rows on the slide
-    so there is always room (2026-10-25, Kiri); the adtini proposal scrolls
-    through all of them."""
-    x, w = Inches(4.0), Inches(4.6)
-    floor = Inches(6.85)
-    y = top + Inches(0.18)
-    ai = str(snap.get("ai_overview") or "").strip()
-    if not ai or y + Inches(0.6) > floor:
-        return
-    h = min(floor - y, Inches(1.3))
-    box = _box(slide, x, y, w, h, fill=TINT, radius=0.04)
-    tf = _txt(box, size=8, space_after=0, line=1.1)
-    p = tf.paragraphs[0]
-    _run(p, "What Google's AI Overview says", size=8.5, bold=True, color=NAVY)
-    neg = [str(m) for m in (snap.get("ai_negative") or []) if str(m).strip()]
-    if neg:
-        _run(p, "  \u00b7 mentions " + ", ".join(neg), size=8, bold=True,
-             color=NAVY)
-    cut = 120 if h < Inches(0.85) else 240 if h < Inches(1.2) else 400
-    q = ai if len(ai) <= cut else ai[:cut].rsplit(" ", 1)[0] + "\u2026"
-    p = _para(tf, size=8, space_before=3, space_after=0, line=1.1)
-    _run(p, "\u201c%s\u201d" % q, size=8, color=INK)
 
 
 def _cell(cell, text, size=8, bold=False, color=INK,
