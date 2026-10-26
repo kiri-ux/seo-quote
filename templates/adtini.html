@@ -2277,6 +2277,14 @@ function chipbox(box, list){
 // list is long, so closing on every choice is the expensive part.
 const chipsOf = box => [...box.querySelectorAll('.chip')]
   .map(c => c.firstChild.textContent.trim());
+// WEBSITE AUDIT IS NEVER SOLD WITH AI SEARCH: picking one takes the other off
+// the list. (2026-10-26, Kiri)
+const STRAT_CLASH = {'website audit': 'ai search', 'ai search': 'website audit'};
+function pickBlocked(pick, taken, v){
+  if (pick !== 'strategies') return false;
+  const other = STRAT_CLASH[String(v).toLowerCase()];
+  return !!other && taken.has(other);
+}
 
 function picksDraw(inp){
   const box = inp.closest('.box'), panel = box.querySelector('.picks');
@@ -2287,6 +2295,7 @@ function picksDraw(inp){
   // Starts-with before contains: typing "der" should reach Dermatology before
   // it reaches anything that merely has the letters somewhere.
   const hit = all.filter(v => !taken.has(String(v).toLowerCase()))
+                 .filter(v => !pickBlocked(inp.dataset.pick, taken, v))
                  .filter(v => !q || String(v).toLowerCase().includes(q))
                  .sort((a, b) => {
                    if (!q) return 0;
@@ -2316,7 +2325,9 @@ function picksClose(box){
 }
 function picksTake(inp, v){
   const box = inp.closest('.box');
-  if (!chipsOf(box).some(c => c.toLowerCase() === String(v).toLowerCase()))
+  const have = new Set(chipsOf(box).map(c => c.toLowerCase()));
+  if (!have.has(String(v).toLowerCase())
+      && !pickBlocked(inp.dataset.pick, have, v))
     inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
   inp.value = '';
   picksDraw(inp);          // stays open, minus what was just taken
@@ -2448,8 +2459,15 @@ function load(form, data){
     } else if (el.type === 'checkbox') { el.checked = !!v; }
     else { el.value = v == null ? '' : v; }
   });
-  form.querySelectorAll('[data-chips]').forEach(box =>
-    chipbox(box, (data[box.dataset.chips] || []).slice()));
+  form.querySelectorAll('[data-chips]').forEach(box => {
+    let list = (data[box.dataset.chips] || []).slice();
+    // A quote saved with both AI Search and Website Audit opens with the audit
+    // off, which is how it prices. (2026-10-26, Kiri)
+    if (form === $('fseo') && box.dataset.chips === 'strategy'
+        && list.some(v => String(v).toLowerCase() === 'ai search'))
+      list = list.filter(v => String(v).toLowerCase() !== 'website audit');
+    chipbox(box, list);
+  });
   pastFields();
   geoFields(form);
   if (form === $('fseo')) $('pastReportName').textContent = data.past_report || '';
@@ -2712,7 +2730,7 @@ document.addEventListener('paste', e => {
       const want = part.trim().replace(/[.,;]+$/, '').trim().toLowerCase();
       if (!want) return;
       const m = all.find(v => String(v).toLowerCase() === want);
-      if (!m || have.has(want)) return;
+      if (!m || have.has(want) || pickBlocked(inp.dataset.pick, have, m)) return;
       have.add(want);
       inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(m)} <b>&times;</b></span>`);
       hit++;
@@ -5615,6 +5633,7 @@ async function generate(){
       // is a percentage of. (2026-09-17)
       ai_search: hasStrategy(d, 'ai search'),
       core_seo: hasStrategy(d, 'core seo'),
+      website_audit: hasStrategy(d, 'website audit'),
       pct_not_ranking, total_volume, industry,
       national_demand: band === 'nationwide', cfg: priceCfg(r),
       // THREE OVERRIDE BOXES, ONE WIRE. Config offered Core SEO, AI Search and
@@ -5780,6 +5799,7 @@ async function reprice(){
       industry: (r.data.industry || []).join(', '),
       ai_search: hasStrategy(r.data, 'ai search'),
       core_seo: hasStrategy(r.data, 'core seo'),
+      website_audit: hasStrategy(r.data, 'website audit'),
       national_demand: band === 'nationwide', pageone_rank: null};
     const req = Object.assign({}, base, {
       // A quote saved before the request carried it still reads the basis
@@ -5793,7 +5813,8 @@ async function reprice(){
       // Strategy is read off the form as it stands, so adding AI Search to a
       // quote reprices it with the AI Search leg.
       ai_search: hasStrategy(r.data, 'ai search'),
-      core_seo: hasStrategy(r.data, 'core seo')}, msReq(r.data));
+      core_seo: hasStrategy(r.data, 'core seo'),
+      website_audit: hasStrategy(r.data, 'website audit')}, msReq(r.data));
     // The count of add-on markets is the planner's to set; left blank it is
     // asked again off the ranks the run measured -- pure arithmetic, no lookups
     // -- so a change to the add-on rules reaches a repriced quote.
