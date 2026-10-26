@@ -400,30 +400,39 @@ def _card_stats(d, kind):
     if not (page1 or snap.get("searched") or snap.get("brand_volume")):
         return []
     page1 = page1 + _name_rows(snap, page1, d.get("site") or "")
+    brand = str(d.get("brand") or "The client")
+    # SENTENCES, NOT A LIST: the card reads like Brendan's proposal text, and
+    # a number at 0 leaves its sentence out. (2026-10-26, Kiri)
     if kind == "reactive":
         tac = [str(rep_scan.tactic_of(r)) for r in page1]
-        return _nonzero([
-            (_vol(snap.get("negative_volume")), "searches/mo on negative terms"),
-            (str(sum(1 for t in tac if t.startswith("site removal"))),
-             "page-one results to remove"),
-            (str(sum(1 for t in tac if t.startswith("suppression"))),
-             "page-one results to outrank"),
-            (str(len(snap.get("related") or [])), "negative related searches"),
-        ])
+        neg = _int(snap.get("negative_volume"))
+        rem = sum(1 for t in tac if t.startswith("site removal"))
+        out_ = sum(1 for t in tac if t.startswith("suppression"))
+        rel = len(snap.get("related") or [])
+        return [t for t in (
+            neg and "Searches pairing %s with negative terms like scam or "
+                    "complaints run about %s a month." % (brand, _vol(neg)),
+            rem and "%s page-one result%s can be taken down at the source."
+                    % (rem, "" if rem == 1 else "s"),
+            out_ and "%s%s page-one result%s can't be removed, so we will "
+                     "outrank %s." % (out_, " more" if rem else "",
+                                      "" if out_ == 1 else "s",
+                                      "it" if out_ == 1 else "them"),
+            rel and "Google also shows %s negative related search%s under "
+                    "the name." % (rel, "" if rel == 1 else "es"),
+        ) if t]
     owned = sum(1 for r in page1 if r.get("owned"))
-    n = len(_locs(d))
-    return _nonzero([
-        (_vol(snap.get("brand_volume")), "brand searches/mo"),
-        (("%d of %d" % (owned, len(page1))) if page1 else "0",
-         "page-one results they own"),
-        (_vol(snap.get("watch_volume")), "searches/mo on terms to watch"),
-        (str(n), "Google profile%s monitored" % ("" if n == 1 else "s")),
-    ])
-
-
-def _nonzero(stats):
-    """A zero reads as an empty box, so it is left off."""
-    return [(v, k) for v, k in stats if not str(v).startswith("0")]
+    vol, watch, n = (_int(snap.get("brand_volume")),
+                     _int(snap.get("watch_volume")), len(_locs(d)))
+    return [t for t in (
+        vol and "%s is searched about %s times a month." % (brand, _vol(vol)),
+        owned and "Today they own %d of the %d page-one results for their "
+                  "name." % (owned, len(page1)),
+        watch and "Another %s searches a month use terms that could turn "
+                  "negative, and we will keep an eye on them." % _vol(watch),
+        n and "We will monitor %s Google profile%s for new reviews."
+              % (n, "" if n == 1 else "s"),
+    ) if t]
 
 
 def _context_block(slide, d, snap, top):
@@ -947,8 +956,8 @@ def _slide_details(prs, d, cards):
             y = y + Inches(0.46)
 
         # THE CALLOUT FITS UNDER THE CARD'S OWN COPY. On a narrow card the
-        # numbers give way one at a time, the last first, before Brendan's
-        # text does: that text is what the card is answering.
+        # scan's sentences give way one at a time, the last first, before
+        # Brendan's text does: that text is what the card is answering.
         bottom = top + card_h - Inches(0.5)
         cw = card_w - Inches(0.24)
         pt = 8.5 if n <= 2 else 8
@@ -962,10 +971,12 @@ def _slide_details(prs, d, cards):
             spec["stats"] = spec["stats"][:-1]
         callout = min(_card_callout_h(spec, cw, pt),
                       int(bottom - y - copy_h - Inches(0.08)))
+        # RIGHT UNDER THE CARD'S OWN COPY, not pinned to the price pill: a
+        # short card left a gap between the two. (2026-10-26, Kiri)
         if callout > 0:
-            _card_callout(slide, spec, x + Inches(0.12), bottom - callout,
-                          cw, callout, pt)
-            bottom = bottom - callout - Inches(0.08)
+            cy = min(y + copy_h + Inches(0.06), bottom - callout)
+            _card_callout(slide, spec, x + Inches(0.12), cy, cw, callout, pt)
+            bottom = cy - Inches(0.04)
         bb = _text_box(slide, x, y, card_w, bottom - y)
         tf = _txt(bb, size=9, color=fg, line=1.15, space_after=0)
         rows = list(spec.get("bullets") or [])
@@ -1004,7 +1015,10 @@ def _card_callout_h(spec, w, pt=8.5):
     if not stats and not note:
         return 0
     inner = w - Inches(0.2)
-    h = Inches(0.18) + Inches(0.17) * len(stats)
+    h = Inches(0.14)
+    if stats:
+        h += Inches(0.165 * pt / 8.5) * _lines(" ".join(stats),
+                                               inner / Inches(1), pt)
     if note:
         h += Inches(0.165 * pt / 8.5) * _lines(note, inner / Inches(1), pt)
         h += Inches(0.08) if stats else 0
@@ -1033,12 +1047,9 @@ def _card_callout(slide, spec, x, y, w, h, pt=8.5):
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     tf.margin_top = tf.margin_bottom = Inches(0.06)
     first = True
-    for num, label in spec.get("stats") or []:
-        p = tf.paragraphs[0] if first else _para(tf, size=8.5, line=1.1,
-                                                 space_after=0)
+    if spec.get("stats"):
         first = False
-        _run(p, num + "  ", size=9, bold=True, color=num_c)
-        _run(p, label, size=8.5, color=fg)
+        _run(tf.paragraphs[0], " ".join(spec["stats"]), size=pt, color=fg)
     if spec.get("note"):
         p = tf.paragraphs[0] if first else _para(
             tf, size=pt, line=1.1, space_before=5, space_after=0)

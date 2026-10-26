@@ -130,8 +130,9 @@ check("the deck lists their site and the lookalike on page one",
       ("wheelerdigital.com" in txt and "Owned" in txt,
        "Competing name" in txt), (True, True))
 check("their own name rank counts as owned on the Proactive card",
-      ("1 of 2", "page-one results they own") in rep_pptx._card_stats(
-          {"site": "wheelerdigital.com", "snapshot": SNAP}, "proactive"), True)
+      "Today they own 1 of the 2 page-one results for their name." in
+      rep_pptx._card_stats({"site": "wheelerdigital.com", "snapshot": SNAP},
+                           "proactive"), True)
 
 BOTH = {"brand": "Wheeler Digital", "snapshot": SNAP,
         "quote": {"handoff": {"strategy": ["Reactive", "Proactive"]}}}
