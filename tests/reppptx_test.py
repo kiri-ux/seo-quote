@@ -380,6 +380,11 @@ check("the rating tile prints", ("5.0\u2605" in ct, "7 Google reviews" in ct),
 uncounted = dict(CLEAN, locations=[dict(CLEAN["locations"][0], pos_5=0)])
 ut = all_text([s for s in deck(FULL, snap=uncounted)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
+nore = dict(CLEAN, locations=[dict(CLEAN["locations"][0], pos_5=0,
+                                     profile_reviews=0, profile_rating=0)])
+nt = all_text([s for s in deck(FULL, snap=nore)[0].slides
+               if "Reputation Snapshot" in all_text(s)][0])
+check("0 reviews gets a box under the header", "No Google reviews" in nt, True)
 check("uncounted reviews print the profile total, not 'none'",
       ("Average across\x0b7 Google reviews" in ut, "No reviews counted." in ut),
       (True, False))

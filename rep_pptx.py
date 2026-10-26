@@ -726,6 +726,22 @@ def _stars_block(slide, d):
         lb.text_frame.paragraphs[0].text = ("Average across\n%s Google review%s"
                                             % (f"{total:,}",
                                                "" if total == 1 else "s"))
+    # NO REVIEWS AT ALL still gets a box under the header, styled like the
+    # rating tile, so the column never sits empty. (2026-10-26, Kiri)
+    elif not counted:
+        n = len(_locs(d))
+        _box(slide, x, ry, w, Inches(0.8), fill=WHITE, radius=0.06)
+        nb = _text_box(slide, x, ry + Inches(0.08), Inches(1.35), Inches(0.6))
+        _txt(nb, size=22, bold=True, color=NAVY, align=PP_ALIGN.CENTER,
+             space_after=0)
+        nb.text_frame.paragraphs[0].text = "0"
+        lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.08),
+                       w - Inches(1.6), Inches(0.6))
+        _txt(lb, size=12.5, bold=True, color=NAVY, space_after=0, line=1.1)
+        lb.text_frame.paragraphs[0].text = (
+            "No Google reviews\non %s" % ("their profile" if n == 1
+                                          else "their %d profiles" % n)
+            if n else "No Google\nprofile found")
     return tile
 
 
