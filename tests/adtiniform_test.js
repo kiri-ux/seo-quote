@@ -135,6 +135,8 @@ const BASE = "http://127.0.0.1:5203";
     const R = {};
     R.opensSeo = !document.getElementById('fseo').hidden && document.getElementById('form').hidden;
     R.loaded = document.querySelector('#fseo [data-k="brand"]').value;
+    // This row opens on Config; the form fields are typed on the form.
+    show('form');
     document.querySelector('#fseo [data-k="brand"]').value = 'EDITED';
     document.querySelector('#fseo [data-k="markup"]').value = 12;
     const inp = document.querySelector('#fseo [data-chips="focus"] .chipin');

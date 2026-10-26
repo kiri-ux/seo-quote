@@ -2503,6 +2503,9 @@ function open(i, view){
   $('form').hidden = r.kind !== 'orm';
   load(formOf(r), r.data);
   cfgLoad(r); cfgBudgetLoad(r); cfgGlobalLoad();
+  // A NEW ROW HAS NO PANE TO LEAVE. The last row's view must not be read as
+  // this row's edits.
+  VIEW = null;
   if (r.kind === 'orm') scanLoad(r); else kbLoad(r);
   $('saved').textContent = '';
   $('scrim').hidden = false;
@@ -2512,6 +2515,18 @@ function open(i, view){
 const PANE_TITLE = {form:'Regenerate Forecast', kw:'Keyword Builder',
                     cfg:'Pricing Config'};
 function show(view){
+  // WHAT WAS TYPED ON THE PANE BEING LEFT IS KEPT. Config edits were read only
+  // when Generate was pressed on Config itself, so typing an override and
+  // stepping back to the form dropped it.
+  if (ROW != null && VIEW !== view && (VIEW === 'cfg' || VIEW === 'form')) {
+    const r = ROWS[ROW];
+    if (VIEW === 'form') r.data = Object.assign({}, r.data, collect(formOf(r)));
+    syncCfg(r);
+    if (VIEW === 'cfg') {
+      const mk = formOf(r).querySelector('[data-k="markup"]');
+      if (mk && r.data.markup !== undefined) mk.value = r.data.markup;
+    } else cfgLoad(r);
+  }
   // SEED TERMS ARE PRODUCT/VERTICAL FOCUS, WHICHEVER PANE THEY WERE TYPED ON.
   // They were copied from the form once, when the modal opened, so a focus
   // term added on the form after that never reached the seed box, and a seed
@@ -2782,6 +2797,19 @@ function cfgLoad(r){
     <div class="f${k === 'ov_reason' ? ' wide' : ''}"><label>${label}</label>
       <input type="${type}" data-c="${k}" placeholder="${ph}"
         value="${esc(r.cfg[k] === undefined ? (k === 'markup' ? (r.data.markup || '') : '') : r.cfg[k])}"></div>`).join('');
+}
+// ONE MARKUP, WHICHEVER BOX WAS TYPED IN LAST. The form and the Config pane
+// both have a Markup % box, and pricing read Config first -- so a form set to
+// 0% still priced at the 48% left in Config. The pane being worked on now
+// writes the other, and a pane being left is read before it goes.
+// (2026-10-26, Kiri)
+function syncCfg(r){
+  if (VIEW === 'cfg') {
+    r.cfg = cfgCollect(); r.over = cfgOverride();
+    if (String(r.cfg.markup || '').trim() !== '') r.data.markup = r.cfg.markup;
+  } else if (VIEW === 'form' && r.cfg && r.data.markup !== undefined) {
+    r.cfg.markup = r.data.markup;
+  }
 }
 const cfgCollect = () => {
   const out = {};
@@ -5178,7 +5206,7 @@ function ormOverrides(cfg){
 async function generateOrm(){
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
-  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  syncCfg(r);
   const d = r.data, strat = d.strategy || [];
   const sc = r.scan || {};
   // PAGE ONE, MINUS THE CLIENT'S OWN. This read (sc.serp||{}).rows, a key
@@ -5404,7 +5432,7 @@ const askedKw = (rows, kw) => rows.some(x =>
 async function generate(){
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
-  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  syncCfg(r);
   r.cfg = r.cfg || {};
   r.over = r.over || {};
   const d = r.data;
@@ -5723,7 +5751,7 @@ async function generate(){
 async function reprice(){
   const r = ROWS[ROW];
   r.data = Object.assign({}, r.data, collect(formOf(r)));
-  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  syncCfg(r);
   r.cfg = r.cfg || {};
   r.over = r.over || {};
   const res = r.result;
@@ -5816,7 +5844,7 @@ $('save').onclick = async () => {
   r.data = Object.assign({}, r.data, collect(formOf(r)));
   if (VIEW === 'kw') r.data.focus = [...document.querySelectorAll('#paneKw [data-chips="seeds"] .chip')]
     .map(c => c.firstChild.textContent.trim());
-  if (VIEW === 'cfg') { r.cfg = cfgCollect(); r.over = cfgOverride(); }
+  syncCfg(r);
   const n = Object.keys(r.over || {}).length;
   const cfgMsg = VIEW === 'cfg'
     ? (n ? ` ${n} constant${n === 1 ? '' : 's'} set on this quote.`
