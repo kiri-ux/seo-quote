@@ -75,7 +75,8 @@ COPY = {
     ],
     "lookalike_tactic": ("Competing name", "a lookalike domain using their "
                                            "name, outrank it"),
-    "outrank_tactic": ("outrank", "move their own pages above it in search"),
+    "outrank_tactic": ("outrank", "move their own pages above it in search, "
+                                  "used for competitors"),
     "no_serp": "No page one captured for this quote.",
     "review_card": [
         "Pay on success - billed per removed review; the total is a maximum, "
@@ -719,20 +720,24 @@ def _stars_block(slide, d):
             pt.format.fill.fore_color.rgb = STAR_SHADES[k]
             pt.format.line.color.rgb = WHITE
 
-    # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile, 0 included.
+    # THE NUMBER THE REMOVAL LINE IS PRICED OFF, as its own tile, only when
+    # there is something to remove: a big 0 reads as an empty box. The rating
+    # moves up into its place. (2026-10-26, Kiri)
     ry = Inches(4.42) if counted else Inches(1.68)
-    tile = _box(slide, x, ry, w, Inches(1.0), fill=BLUE_LT,
-                outline=None, radius=0.06)
-    _navy_block(slide, x, ry, Inches(1.35), Inches(1.0), radius=0.06)
-    nb = _text_box(slide, x, ry + Inches(0.2), Inches(1.35), Inches(0.6))
-    _txt(nb, size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
-         space_after=0)
-    nb.text_frame.paragraphs[0].text = str(flagged)
-    lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.2),
-                   w - Inches(1.6), Inches(0.62))
-    _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
-    lb.text_frame.paragraphs[0].text = "1-2 \u2605 Reviews\nto Remove"
-    ry = ry + Inches(1.16)
+    tile = None
+    if flagged:
+        tile = _box(slide, x, ry, w, Inches(1.0), fill=BLUE_LT,
+                    outline=None, radius=0.06)
+        _navy_block(slide, x, ry, Inches(1.35), Inches(1.0), radius=0.06)
+        nb = _text_box(slide, x, ry + Inches(0.2), Inches(1.35), Inches(0.6))
+        _txt(nb, size=26, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+             space_after=0)
+        nb.text_frame.paragraphs[0].text = str(flagged)
+        lb = _text_box(slide, x + Inches(1.45), ry + Inches(0.2),
+                       w - Inches(1.6), Inches(0.62))
+        _txt(lb, size=12.5, bold=True, color=WHITE, space_after=0, line=1.1)
+        lb.text_frame.paragraphs[0].text = "1-2 \u2605 Reviews\nto Remove"
+        ry = ry + Inches(1.16)
     # THE OTHER HALF OF THE STORY: the rating says why the count is what it
     # is. (2026-10-24, Kiri)
     if total:
@@ -974,7 +979,8 @@ def _slide_details(prs, d, cards):
         # RIGHT UNDER THE CARD'S OWN COPY, not pinned to the price pill: a
         # short card left a gap between the two. (2026-10-26, Kiri)
         if callout > 0:
-            cy = min(y + copy_h + Inches(0.06), bottom - callout)
+            # The same gap as between the "Scales with" line and the copy.
+            cy = min(y + copy_h + Inches(0.2), bottom - callout)
             _card_callout(slide, spec, x + Inches(0.12), cy, cw, callout, pt)
             bottom = cy - Inches(0.04)
         bb = _text_box(slide, x, y, card_w, bottom - y)

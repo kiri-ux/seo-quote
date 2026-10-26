@@ -428,14 +428,14 @@ five = [s for s in deck(FULL, snap=dict(
     if "Reputation Snapshot" in all_text(s)][0]
 check("an all-5-star profile still gets the pie, every level listed",
       (any(getattr(sh, "has_chart", False) and sh.has_chart for sh in five.shapes),
-       "to Remove" in all_text(five),
+       "to Remove" in all_text(five),  # 0 to remove: tile hidden
        [c for sh in five.shapes if getattr(sh, "has_chart", False) and sh.has_chart
         for c in sh.chart.plots[0].categories]),
-      (True, True, ["5 \u2605 Reviews (7)", "4 \u2605 Reviews (0)",
+      (True, False, ["5 \u2605 Reviews (7)", "4 \u2605 Reviews (0)",
                     "3 \u2605 Reviews (0)", "2 \u2605 Reviews (0)",
                     "1 \u2605 Reviews (0)"]))
 check("legend defines outrank when a competing name is on page one",
-      "outrank - move their own pages above it in search" in all_text(
+      "outrank - move their own pages above it in search, used for competitors" in all_text(
           [s for s in deck(FULL, snap=dict(SNAP, lookalikes=[
               {"domain": "sage-dental.com", "pos": 2}]))[0].slides
            if "Reputation Snapshot" in all_text(s)][0]).replace("\n", " "), True)
