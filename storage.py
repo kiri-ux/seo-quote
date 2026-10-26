@@ -332,12 +332,14 @@ def list_quotes(search="", tool="seo"):
         if search:
             like = f"%{search}%"
             cur.execute(
-                "SELECT id, name, client, base, intermediate, advanced, strategy, created_at, updated_at "
+                "SELECT id, name, client, base, intermediate, advanced, strategy, created_at, updated_at, "
+                "payload->'pricing'->'website_audit'->>'fee' AS audit_fee "
                 "FROM quotes WHERE tool=%s AND (name ILIKE %s OR client ILIKE %s) "
                 "ORDER BY updated_at DESC", (tool or "seo", like, like))
         else:
             cur.execute(
-                "SELECT id, name, client, base, intermediate, advanced, strategy, created_at, updated_at "
+                "SELECT id, name, client, base, intermediate, advanced, strategy, created_at, updated_at, "
+                "payload->'pricing'->'website_audit'->>'fee' AS audit_fee "
                 "FROM quotes WHERE tool=%s ORDER BY updated_at DESC", (tool or "seo",))
         out = []
         for r in cur.fetchall():
