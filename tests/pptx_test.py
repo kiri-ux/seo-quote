@@ -96,9 +96,11 @@ check("strategy details second", "Strategy Details" in full[1], True)
 check("with all three strategies on it",
       all(s + ":" in full[1] for s in
           ("Core SEO", "AI Search", "Website Audit")), True)
-check("keyword details third", "Keyword Details" in full[2], True)
-check("audit details fourth", "Audit Details" in full[3], True)
-check("and the product details last", "Product Details" in full[4], True)
+# AN AUDIT QUOTE LEADS WITH THE AUDIT, then the tiers, then the keywords.
+# (2026-10-26, Kiri)
+check("audit details third", "Audit Details" in full[2], True)
+check("product details fourth", "Product Details" in full[3], True)
+check("and the keyword details last", "Keyword Details" in full[4], True)
 
 print("\nA STRATEGY THAT WAS NOT SOLD IS NOT IN THE DECK")
 core = slides(deck(quote("Core SEO", ai=False, addon=0, term=6)))
@@ -108,6 +110,8 @@ check("and no audit line on the strategy slide",
 check("nor an AI Search line", "AI Search:" in core[1], False)
 check("the keyword slide stays, because SEO was sold",
       any("Keyword Details" in s for s in core), True)
+check("and comes before pricing on a non-audit quote",
+      "Keyword Details" in core[2] and "Product Details" in core[-1], True)
 
 audit = slides(deck(quote("Website Audit", ai=False, addon=0)))
 # AN AUDIT QUOTE CARRIES THE FULL CAMPAIGN TOO, for if they buy it after.
@@ -116,17 +120,23 @@ check("an audit quote keeps the keyword slide",
       any("Keyword Details" in s for s in audit), True)
 check("and the audit slide",
       any("Audit Details" in s for s in audit), True)
-check("the pricing slide shows the one-time fee",
-      "One-Time Fee: $2,950" in audit[-1], True)
+_aud = next(s for s in audit if "Audit Details" in s)
+_apr = next(s for s in audit if "Product Details" in s)
+check("the audit slide shows the one-time fee",
+      "One-Time Fee: $2,950" in _aud, True)
+check("the pricing slide carries the banner instead",
+      "Three Tiers from Audit to SEO Campaign" in _apr
+      and "One-Time Fee" not in _apr, True)
 check("with the credit note",
-      "credited back on your first month" in audit[-1], True)
+      "credited back on your first month" in _apr, True)
 check("and the campaign tiers under it",
-      "Intermediate Campaign" in audit[-1], True)
+      "Intermediate Campaign" in _apr, True)
 check("no fee on a quote that did not sell the audit",
-      "One-Time Fee" in slides(deck(quote("Core SEO", ai=False)))[-1], False)
-check("an AI Search quote with the audit puts the fee in the footer",
-      "Website Audit: $2,950 one-time"
-      in slides(deck(quote("Core SEO, AI Search, Website Audit")))[-1], True)
+      any("One-Time Fee" in s or "Three Tiers from Audit" in s
+          for s in slides(deck(quote("Core SEO", ai=False)))), False)
+check("an AI Search quote with the audit puts the credit in the footer",
+      "Website Audit fee is credited back on month one"
+      in next(s for s in full if "Product Details" in s), True)
 
 print("\nTHE AUDIT FEE")
 _a = app.stage4_price("single_city", 0, False, website_audit=True)

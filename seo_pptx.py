@@ -189,8 +189,9 @@ COPY = {
     "audit_credit": "The Website Audit one-time fee is credited back on your "
                     "first month of a full SEO+ campaign. See package quotes "
                     "below.",
-    "audit_foot": "Website Audit: {fee} one-time, credited back on month one "
-                  "of a full SEO+ campaign.",
+    "audit_banner": "Three Tiers from Audit to SEO Campaign",
+    "audit_foot": "The Website Audit fee is credited back on month one of a "
+                  "full SEO+ campaign.",
     "term": "Each tier requires a {n}-month term which then becomes a "
             "month-to-month commitment.",
     "no_serp": "No SERP captured for this quote.",
@@ -601,9 +602,21 @@ def _distribution(slide, counts):
 
 
 # ---------------------------------------------------------------- slide 4
-def _slide_audit(prs):
+def _slide_audit(prs, d=None):
     slide = _blank(prs)
     _heading(slide, TITLE + " - Audit Details")
+    # THE FEE SITS BESIDE THE TITLE, on the slide that says what it buys.
+    # (2026-10-26, Kiri; Rady Shell deck)
+    fee = _audit_fee(d or {})
+    if fee:
+        fbox = _box(slide, Inches(9.0), Inches(0.42), Inches(3.75),
+                    Inches(0.6), fill=NAVY, outline=None)
+        tf = _txt(fbox, size=17, color=WHITE, align=PP_ALIGN.CENTER,
+                  space_after=0)
+        fbox.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        _run(tf.paragraphs[0], COPY["audit_fee"], size=17, bold=True,
+             color=WHITE)
+        _run(tf.paragraphs[0], _money(fee), size=17, color=WHITE)
     lead = _text_box(slide, Inches(0.55), Inches(1.22), Inches(12.2),
                      Inches(0.6))
     _txt(lead, size=11.5, color=INK)
@@ -818,10 +831,11 @@ def _slide_pricing(prs, d):
             rule.line.fill.background()
             rule.shadow.inherit = False
 
-    # ---- the audit row: one-time fee and the credit note, above the tiers
-    # that price the campaign they can buy after. (2026-10-15, Kiri)
-    # An AI Search card has no room to give up, so on that quote the fee and
-    # the credit go in the footer instead.
+    # ---- the audit row: a banner and the credit note, above the tiers that
+    # price the campaign they can buy after. The fee itself is on the Audit
+    # Details slide. (2026-10-15, 2026-10-26, Kiri; Rady Shell deck)
+    # An AI Search card has no room to give up, so on that quote the credit
+    # goes in the footer instead.
     shift = Inches(0.74) if fee and not ai_on else 0
     ct = Inches(2.12) + shift
     if shift:
@@ -830,9 +844,8 @@ def _slide_pricing(prs, d):
         tf = _txt(fbox, size=17, color=WHITE, align=PP_ALIGN.CENTER,
                   space_after=0)
         fbox.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        _run(tf.paragraphs[0], COPY["audit_fee"], size=17, bold=True,
+        _run(tf.paragraphs[0], COPY["audit_banner"], size=17, bold=True,
              color=WHITE)
-        _run(tf.paragraphs[0], _money(fee), size=17, color=WHITE)
         nbox = _box(slide, Inches(6.65), Inches(2.12), Inches(6.1),
                     Inches(0.62), fill=NAVY, outline=None)
         tf = _txt(nbox, size=11, color=WHITE, space_after=0, line=1.05)
@@ -972,7 +985,7 @@ def _slide_pricing(prs, d):
     foot = _text_box(slide, Inches(0.55), Inches(6.74), Inches(12.2) if fee and ai_on else Inches(9.4), Inches(0.32))
     _txt(foot, size=(10 if fee and ai_on else 11), bold=True, color=INK)
     foot.text_frame.paragraphs[0].text = COPY["term"].format(n=term) + (
-        "  " + COPY["audit_foot"].format(fee=_money(fee))
+        "  " + COPY["audit_foot"]
         if fee and ai_on else "")
     return slide
 
@@ -993,13 +1006,20 @@ def build_proposal_pptx(d):
     # THE KEYWORD SLIDE BELONGS TO THE SEARCH STRATEGIES. An audit quote
     # carries the full SEO+ campaign too, for if they buy it after the audit,
     # so it gets the keyword set the tiers are priced on. (2026-10-15, Kiri)
-    if strategies & {"Core SEO", "AI Search", "Website Audit"}:
-        _slide_keywords(prs, d, kw)
+    # AN AUDIT QUOTE LEADS WITH THE AUDIT: audit, then the tiers, then the
+    # keywords. Every other strategy keeps keywords before pricing.
+    # (2026-10-26, Kiri; Rady Shell deck)
     if "Website Audit" in strategies:
-        _slide_audit(prs)
-    # A PRICING SLIDE WITH NO PRICE ON IT IS A SLIDE TO DELETE BY HAND.
-    if _priced(d):
-        _slide_pricing(prs, d)
+        _slide_audit(prs, d)
+        # A PRICING SLIDE WITH NO PRICE ON IT IS A SLIDE TO DELETE BY HAND.
+        if _priced(d):
+            _slide_pricing(prs, d)
+        _slide_keywords(prs, d, kw)
+    else:
+        if strategies & {"Core SEO", "AI Search"}:
+            _slide_keywords(prs, d, kw)
+        if _priced(d):
+            _slide_pricing(prs, d)
 
     buf = io.BytesIO()
     prs.save(buf)
