@@ -402,13 +402,14 @@ pt = snap_text(quote(campaign="proactive", shield={"enabled": True}))
 bt = snap_text(quote(campaign="bundle", search={"bundle": True, "volume": 5000,
                                                 "suppression": True},
                      shield={"enabled": True}))
+NEG = "with negative terms like scam or complaints run about 1,240 a month"
+BRAND = "Sage Dental is searched about 51,330 times a month."
 check("reactive shows negative demand, not brand demand",
-      ("searches/mo on negative terms" in rt, "brand searches/mo" in rt), (True, False))
+      (NEG in rt, BRAND in rt), (True, False))
 check("proactive shows brand demand and owned share, not negatives",
-      ("brand searches/mo" in pt, "1 of 3" in pt,
-       "searches/mo on negative terms" in pt), (True, True, False))
-check("a bundle shows both", ("searches/mo on negative terms" in bt,
-                              "brand searches/mo" in bt), (True, True))
+      (BRAND in pt, "own 1 of the 3 page-one results" in pt, NEG in pt),
+      (True, True, False))
+check("a bundle shows both", (NEG in bt, BRAND in bt), (True, True))
 st = all_text([s for s in deck(quote(campaign="reactive", search={
     "bundle": True, "volume": 5000, "suppression": True}), snap=STATS)[0].slides
                if "Reputation Snapshot" in all_text(s)][0])
