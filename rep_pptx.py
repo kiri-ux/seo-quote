@@ -99,8 +99,7 @@ COPY = {
         "related searches",
     ],
     "shield_card": [
-        "Includes keyword monitors for your brand, executives and products, "
-        "SEO Brand Shield & Asset "
+        "Includes up to 5 keyword monitors, SEO Brand Shield & Asset "
         "Building, 24/7 Brand Monitoring & Threat Detection, In-Depth "
         "Monthly Report",
     ],
