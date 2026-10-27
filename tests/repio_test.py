@@ -88,24 +88,26 @@ print("\nTHE TWO BUNDLES GO OVER SEPARATELY")
 check("reactive", h["search_protection_monthly"], 4650)
 # 5 keywords, 3 threats: $100 monitoring + $460 moat = $560 hard -> $2,500
 # partner (nearest $50), + 3 extra locations x $450 = $3,850 partner ->
-# $5,900 retail at 35%. (2026-10-26)
-check("proactive", h["brand_shield_monthly"], 5900)
+# $5,950 retail at 35%, rounded up. (2026-10-27)
+check("proactive", h["brand_shield_monthly"], 5950)
 check("and still sum to the budget",
       h["search_protection_monthly"] + h["brand_shield_monthly"],
       h["monthly_budget"])
-check("which is the Ski Barn figure", h["monthly_budget"], 10550)
+check("which is the Ski Barn figure", h["monthly_budget"], 10600)
 
 print("\nPROACTIVE FITS BRENDAN'S TWO APPROVED QUOTES")
 _rpm = R.price_shield(1, 0.35, keywords=5, threats=0)
-check("RPM retail", _rpm["total"], 2150)
+# Retail rounds UP (2026-10-27, Kiri): $1,400 / 0.65 = $2,153.85 -> $2,200.
+check("RPM retail", _rpm["total"], 2200)
 check("RPM partner", _rpm["hard_total"], 1400)
 _wh = R.price_shield(1, 0.35, keywords=5, threats=1)
-check("Wheeler retail", _wh["total"], 2750)
+# $1,800 / 0.65 = $2,769.23 -> $2,800 (Brendan sold it at $2,750).
+check("Wheeler retail", _wh["total"], 2800)
 check("Wheeler partner", _wh["hard_total"], 1800)
-# $1,800 + 2 x $450 = $2,700 partner; / 0.65 = $4,153.85 -> $4,150.
+# $1,800 + 2 x $450 = $2,700 partner; / 0.65 = $4,153.85 -> $4,200 (rounded up).
 _wh3 = R.price_shield(3, 0.35, keywords=5, threats=1)
 check("extra locations add $450 partner each", _wh3["hard_total"], 2700)
-check("3-location Wheeler retail", _wh3["total"], 4150)
+check("3-location Wheeler retail", _wh3["total"], 4200)
 _p = R.REP_CFG["proactive"]
 _was = _p["hard_pct_of_partner"]
 _p["hard_pct_of_partner"] = 0.6
