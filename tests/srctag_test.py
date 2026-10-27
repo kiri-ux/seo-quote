@@ -53,7 +53,9 @@ check("refine reads the posted tag",
       '"src": (x.get("src") or "")' in SRCTEXT, True)
 
 print("\nEVERY POOL SOURCE STILL STAMPS ONE")
-for tag in ("ideas", "suggest", "site", "geo", "gen", "claude", "grid"):
+# "suggest" is gone from the build (2026-10-27): keyword_suggestions never
+# returned anything. Its label stays for builds saved with the tag.
+for tag in ("ideas", "site", "geo", "gen", "claude", "grid"):
     check("%s is stamped" % tag, ('"src": "%s"' % tag) in SRCTEXT
           or ('r["src"] = "%s"' % tag) in SRCTEXT, True)
 

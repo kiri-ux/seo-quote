@@ -1113,16 +1113,6 @@ CFG = {
     # Google dropped num=100, and fourteen seconds cut most of them off.
     "serp_live_timeout_s": 50,
     # Long-tail sourcing
-    # HOW MANY SEEDS keyword_suggestions is asked about. It is one request each,
-    # so this is a real cost — but it was ALREADY capped, by a hardcoded
-    # seeds[:6] buried in the function, which is why the call count never looked
-    # like the seed count. What changes here is WHICH seeds: the slice took the
-    # first six in typing order, and this takes the BROADEST, fewest words first,
-    # because a broad seed has far more long-tail children than a specific one.
-    # "home for rent" yields pages of them; "rental homes with washer dryer"
-    # yields almost nothing and Amare was spending a call on it. The saving is
-    # one call; the point is which five. (2026-08-14)
-    "suggest_seed_cap": 5,
     # How many variants of one procedure the TOOL may propose — see
     # cap_service_family. Never applies to a term the operator typed.
     "service_family_cap": 3,
@@ -1366,7 +1356,6 @@ CFG = {
     # Reading the COMPETITORS' positions instead of the client's.
     "competitor_seed_limit": 200,      # ranked terms pulled per competitor
     "competitor_seed_max_domains": 10, # competitors read in one pass
-    "use_suggestions": True,           # pull keyword_suggestions for longer phrases
     "use_site_keywords": True,         # pull keywords_for_site from the client domain (Labs)
     "site_keywords_limit": 200,        # cap rows returned from keywords_for_site
     # keywords_for_site returns the domain's whole keyword profile, and for some
@@ -3344,51 +3333,6 @@ def is_longtail(kw):
     if words and words[0].lower() in CFG["longtail_prefixes"]:
         return True
     return False
-
-def fetch_suggestions(seeds, markets, state):
-    """keyword_suggestions returns queries CONTAINING the seed — structurally
-    longer than keyword_ideas. Calls run in parallel; failures are non-fatal.
-
-    Only the broadest few seeds are asked — see suggest_seed_cap. This was
-    already capped at six by a hardcoded slice; the cap is now named, config-
-    editable, and picks by BREADTH rather than by typing order. Fewest words
-    first, ties on the order they were typed, so two builds of the same list ask
-    the same questions. (2026-08-14)
-    """
-    out = []
-    if not CFG["use_suggestions"]:
-        return out
-    cap = int(CFG.get("suggest_seed_cap") or 0)
-    if cap > 0 and len(seeds or []) > cap:
-        _order = {s: i for i, s in enumerate(seeds)}
-        seeds = sorted(seeds, key=lambda s: (len(str(s).split()), _order[s]))[:cap]
-    loc = loc_string(markets, state)
-
-    def one(s):
-        try:
-            payload = [{"keyword": s, "location_name": loc,
-                        "language_code": "en", "limit": 150}]
-            data = dfs_post("/keywords_data/google_ads/keyword_suggestions/live", payload)
-            res = (data["tasks"][0]["result"] or [])
-            rows = []
-            for block in res:
-                for it in (block.get("items") or []):
-                    kw = it.get("keyword")
-                    if kw:
-                        ki = it.get("keyword_info") or {}
-                        # Measured AT THE CLIENT'S MARKET — see loc_string above. Tagged,
-                        # because the site-keyword pull below is measured across the
-                        # whole United States and the two are not comparable numbers.
-                        rows.append({"keyword": kw, "scope": "local",
-                                     "volume": ki.get("search_volume") or 0})
-            return rows
-        except Exception:
-            return []
-
-    with ThreadPoolExecutor(max_workers=min(len(seeds), CFG["rank_check_workers"]) or 1) as ex:
-        for rows in ex.map(one, seeds):
-            out.extend(rows)
-    return out
 
 def fetch_keywords_for_site(domain, markets, state):
     """Labs 'Keywords For Site' — keywords relevant to the client's domain,
@@ -9763,9 +9707,10 @@ def stage1_keyword_list(seeds, markets, state, brand, domain="", business_desc="
     raw = [{"keyword": it["keyword"], "volume": it.get("search_volume") or 0, "src": "ideas"}
            for it in items]
 
-    # Add keyword_suggestions (longer, seed-containing phrases) into the pool
-    for r in fetch_suggestions(seeds, markets, state):
-        r["src"] = "suggest"; raw.append(r)
+    # NO keyword_suggestions. The demo called a Google Ads path that does not
+    # exist (it lives under Labs), so it returned nothing on every quote and
+    # pricing was tuned without it. Left out rather than switched on, so the
+    # lists keep matching the quotes already priced. (2026-10-27, Kiri)
     # Add keywords_for_site (terms relevant to the client's domain) into the pool
     for r in fetch_keywords_for_site(domain, markets, state):
         r["src"] = "site"; raw.append(r)

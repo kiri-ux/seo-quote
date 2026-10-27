@@ -51,7 +51,6 @@ def run_pool(ideas, site):
     """Drive the real filter in stage1_keyword_list with the calls stubbed."""
     app.dfs_post = lambda path, payload, **k: {"tasks": [{"result": [
         {"keyword": kw, "search_volume": v} for kw, v in ideas]}]}
-    app.fetch_suggestions = lambda *a, **k: []
     app.fetch_keywords_for_site = lambda *a, **k: [
         {"keyword": kw, "volume": v} for kw, v in site]
     s1 = app.stage1_keyword_list(SEEDS, [], "", "Drainify", "drainify.io", "")
@@ -91,7 +90,6 @@ app.dfs_post = lambda path, payload, **k: {"tasks": [{"result": [
     {"keyword": "sewer inspection software", "search_volume": 10},
     {"keyword": "drainage field service management software", "search_volume": 20},
 ]}]}
-app.fetch_suggestions = lambda *a, **k: []
 app.fetch_keywords_for_site = lambda *a, **k: []
 f1 = app.stage1_keyword_list(FIELD_SEEDS, [], "", "Drainify", "drainify.io", "")
 f_kw = {r["keyword"] for r in f1["pool"]}
