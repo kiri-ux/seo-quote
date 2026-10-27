@@ -2197,6 +2197,7 @@ function renderCfg(c){
   h += cfgRow('Floor / Cap — hard $/mo', cfgIn('c_floor', c.bundle.floor)+' '+cfgIn('c_cap', c.bundle.cap));
   const pr = c.proactive || {};
   h += cfgHdr('Proactive · Brand Shield', 'one Monthly Budget off keywords tracked and page-one threats \u00b7 provisional, not signed off by Brendan', 'warn');
+  h += cfgRow('Keywords tracked (every quote)', cfgIn('c_pkw', pr.keywords_tracked ?? 5, 1));
   h += cfgRow('Monitoring — fixed + per keyword, hard $/mo',
               cfgIn('c_pmf', pr.monitor_fixed) + ' ' + cfgIn('c_pmk', pr.monitor_per_keyword, 1));
   h += cfgRow('Moat building — fixed + per page-one threat, hard $/mo',
@@ -2232,7 +2233,7 @@ $('cfgApply').onclick = async ()=>{
              included_negatives: v('c_incneg'),
              per_extra_phrase_hard: v('c_xphr'),
              floor: v('c_floor'), cap: v('c_cap')},
-    proactive: {monitor_fixed: v('c_pmf'), monitor_per_keyword: v('c_pmk'),
+    proactive: {keywords_tracked: v('c_pkw') || 5, monitor_fixed: v('c_pmf'), monitor_per_keyword: v('c_pmk'),
                 moat_fixed: v('c_pbf'), moat_per_threat: v('c_pmt'),
                 hard_pct_of_partner: (v('c_ppct') || 22.5) / 100,
                 min_partner_x_hard: v('c_pminx'),

@@ -211,8 +211,6 @@
              the toggle; it only implied you could buy the bundle without it.
              The per-tactic pricer that took the flag is still in rep_pricing
              for a hand-built blend. -->
-        <div class="f"><label>Execs &amp; Products <span class="i" data-tip="Named executives and products Proactive monitors" aria-label="Named executives and products Proactive monitors">i</span></label>
-          <input type="number" min="0" data-k="watch"></div>
         <div class="f"><label>Markup %</label><input type="text" data-k="markup"></div>
 
         <div class="f"><label>Multi-site discount <span class="i" data-tip="Monthly budget only. 1-9 sites: 5% off. 10-25: 10% off. 26+: 15% off." aria-label="Monthly budget only. 1-9 sites: 5% off. 10-25: 10% off. 26+: 15% off.">i</span></label>
@@ -1800,7 +1798,6 @@ const RUN_ORM = [
   ['brand', 'Brand name'], ['site', 'Client website'],
   ['strategy', 'Strategy'], ['reviews', 'Flagged reviews'],
   ['locations', '# of locations'], ['std', 'Flagged sites'],
-  ['watch', 'Execs & products monitored'],
   ['volume', 'Brand search volume'],
   ['geo', 'Geographic targeting'],
   ['markup', 'Markup %'],
@@ -5267,10 +5264,8 @@ async function generateOrm(){
              term_sets: 1, phrases: negPhrases(r).length,
              pages: pages.slice(0, 10).map(x => ({pos: x.pos, domain: x.domain,
                                                   url: x.url || '', title: x.title || ''}))},
+    // Keywords are a blanket 5, set server-side. (2026-10-27, Kiri)
     shield: {locations: +d.locations || 1,
-             // The brand, its execs and products, and every negative
-             // variant being watched. (2026-10-26, Kiri)
-             keywords: 1 + Math.max(0, +d.watch || 0) + negPhrases(r).length,
              threats: pages.length},
     // THE CONFIG BOXES, SENT. This was a literal {}, so the three ORM
     // overrides were saved and shown on the run but never priced: a monthly
