@@ -296,6 +296,13 @@ check("and the legend still ends on the slide",
 check("and the legend starts below the table's last row",
       len(legend) == 1
       and legend[0].top >= table[0].top + table[0].height, True)
+# Only the tags on the table get a definition (2026-10-27, Kiri): every row
+# here is a 3rd-party suppression, so Owned and site removal stay out.
+_lt = legend[0].text_frame.text if len(legend) == 1 else ""
+check("the legend lists only the tags on the table",
+      ("3rd party" in _lt, "suppression" in _lt, "Owned" in _lt,
+       "site removal" in _lt, "positive" in _lt),
+      (True, True, False, False, False))
 check("the rating column carries no vote count to wrap on",
       "(" in "".join(c.text for c in table[0].table.rows[1].cells), False)
 

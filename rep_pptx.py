@@ -568,6 +568,24 @@ def _name_rows(snap, page1, site=""):
     return out
 
 
+def _legend(page1):
+    """ONLY THE TAGS ON THE TABLE (2026-10-27, Kiri). A definition for a tag
+    no row carries is a line the partner has to explain away."""
+    tacs = [str(rep_scan.tactic_of(r)) for r in page1]
+    have = {
+        "Owned": any(r.get("owned") for r in page1),
+        "3rd party": any(not r.get("owned") and not r.get("lookalike")
+                         for r in page1),
+        "positive - leave": any(t.startswith("positive") for t in tacs),
+        "site removal": any(t.startswith("site removal") for t in tacs),
+        "suppression": any(t.startswith("suppression") for t in tacs),
+    }
+    out = [t for t in COPY["tactics"] if have.get(t[0])]
+    if any(r.get("lookalike") for r in page1):
+        out += [COPY["lookalike_tactic"], COPY["outrank_tactic"]]
+    return out
+
+
 def _results_block(slide, snap, brand="", site=""):
     """Page one, and what is to be done about each result.
 
@@ -584,10 +602,8 @@ def _results_block(slide, snap, brand="", site=""):
                          + (snap.get("forums") or [])) if isinstance(r, dict)]
     page1 = page1 + _name_rows(snap, page1, site)
     page1 = sorted(page1, key=lambda r: _int(r.get("pos")) or 99)
-    tactics = list(COPY["tactics"])
-    if any(r.get("lookalike") for r in page1):
-        tactics += [COPY["lookalike_tactic"], COPY["outrank_tactic"]]
-    lh = Inches(1.05) + Inches(0.17) * (len(tactics) - len(COPY["tactics"]))
+    tactics = _legend(page1)
+    lh = Inches(0.2) + Inches(0.17) * len(tactics) if tactics else 0
     top = Inches(1.7)
     room = RESULTS_FOOT - top - Inches(0.14) - lh
     row_h = Emu(min(Inches(0.3), int(room / (len(page1) + 1))))
@@ -651,8 +667,10 @@ def _results_block(slide, snap, brand="", site=""):
     # actually drawn, floored so it can never ride up into a table that grew.
     ltop = max(top + row_h * (len(page1) + 1) + Inches(0.14),
                Inches(3.0)) if page1 else Inches(2.2)
-    legend = _box(slide, x, ltop, w, lh, fill=WHITE, radius=0.03)
     foot = ltop + lh
+    if not tactics:
+        return foot
+    legend = _box(slide, x, ltop, w, lh, fill=WHITE, radius=0.03)
     tf = _txt(legend, size=7.5, space_after=0, line=1.1)
     for i, (name, text) in enumerate(tactics):
         p = tf.paragraphs[0] if i == 0 else _para(tf, size=7.5, space_before=2,
