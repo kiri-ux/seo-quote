@@ -211,6 +211,10 @@ REP_CFG = {
     # to the partner price (2026-10-26, Kiri: keep the old location charge). Every constant is
     # on the Config panel for that reason.
     "proactive": {
+        # BLANKET 5 KEYWORDS (2026-10-27, Kiri): every Proactive quote tracks
+        # the same 5, whatever the scan finds. Execs and products are not
+        # asked for.
+        "keywords_tracked": 5,
         "monitor_fixed": 40, "monitor_per_keyword": 12,
         "moat_fixed": 220, "moat_per_threat": 80,
         "hard_pct_of_partner": 0.225,
@@ -878,11 +882,11 @@ def proactive_units(keywords=1, threats=0):
 
 
 def price_shield(locations=1, margin_pct=None, hard_override=None,
-                 keywords=1, threats=0):
+                 keywords=None, threats=0):
     """Proactive ORM as one Monthly Budget, off the brand scan's own counts.
 
-    keywords: the brand, plus executives, products and the negative
-    autocomplete/related variants the scan flagged.
+    keywords: a blanket REP_CFG["proactive"]["keywords_tracked"] (5) unless a
+    caller passes its own count.
     threats:  non-owned results sitting on page one across those keywords.
     locations: each one past the first adds the shield's per-extra-location
     partner hard cost (REP_CFG["shield"], $450) on top of the formula's
@@ -890,7 +894,7 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
     """
     p = REP_CFG["proactive"]
     locations = max(1, int(locations or 1))
-    kw = max(1, int(keywords or 1))
+    kw = max(1, int(keywords or p.get("keywords_tracked") or 5))
     thr = max(0, int(threats or 0))
     links, assets = proactive_units(kw, thr)
     monitor = p["monitor_fixed"] + p["monitor_per_keyword"] * kw
@@ -1077,7 +1081,6 @@ def build_rep_quote(payload):
         phase2.append(price_shield(sh.get("locations", 1),
                                    payload.get("margin_pct"),
                                    hard_override=ov.get("shield_hard"),
-                                   keywords=sh.get("keywords", 1),
                                    threats=sh.get("threats", 0)))
 
     # ONE MONTHLY OVERRIDE, APPLIED ACROSS BOTH PHASES. It has to run after
@@ -1209,7 +1212,7 @@ def build_rep_quote(payload):
         "search_volume": int((payload.get("search") or {}).get("volume") or 0),
         "locations": max(1, int((payload.get("shield") or {}).get("locations") or 1)),
         # What Proactive is priced off (2026-10-26).
-        "proactive_keywords": max(1, int((payload.get("shield") or {}).get("keywords") or 1)),
+        "proactive_keywords": int(REP_CFG["proactive"].get("keywords_tracked") or 5),
         "proactive_threats": max(0, int((payload.get("shield") or {}).get("threats") or 0)),
         "margin_pct": (payload.get("margin_pct") if payload.get("margin_pct")
                        is not None else ART_CAL_MARGIN),

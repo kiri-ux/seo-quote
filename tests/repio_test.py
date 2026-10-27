@@ -130,9 +130,9 @@ print("\nPROACTIVE ONLY IS THE MIRROR")
 r2 = R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
                         "shield": {"locations": 4}})["handoff"]
 check("no search money", r2["search_protection_monthly"], 0)
-# No footprint given: one keyword, no threats -> $272 hard -> $1,200,
-# + 3 extra locations x $450 = $2,550 partner -> $3,900.
-check("shield money stands", r2["brand_shield_monthly"], 3900)
+# No footprint given: the blanket 5 keywords, no threats -> $320 hard ->
+# $1,400, + 3 extra locations x $450 = $2,750 partner -> $4,250.
+check("shield money stands", r2["brand_shield_monthly"], 4250)
 check("volume is zero, not absent", r2["search_volume"], 0)
 
 print("\nA REMOVALS-ONLY QUOTE HAS NO MONTHLY AT ALL")
@@ -151,10 +151,12 @@ check("proactive line", [l["service"] for l in q["lines"] if "Brand Shield" in l
 check("the shield detail is what it is priced off",
       [l["detail"] for l in q["lines"] if "Brand Shield" in l["service"]],
       ["5 keywords tracked \u00b7 3 page-one threats \u00b7 4 locations"])
-check("one keyword reads singular",
+# A blanket 5 keywords (2026-10-27, Kiri): a count sent with the quote
+# does not move it.
+check("keywords are a blanket 5",
       R.build_rep_quote({"campaign": "proactive", "margin_pct": 0.35,
-                         "shield": {"locations": 1}})["lines"][0]["detail"],
-      "1 keyword tracked \u00b7 0 page-one threats")
+                         "shield": {"locations": 1, "keywords": 12}})["lines"][0]["detail"],
+      "5 keywords tracked \u00b7 0 page-one threats")
 
 print("\nPARTNER COST FOR EVERY CLIENT FIGURE")
 # The margin can change on the order form after the quote is built, and every
