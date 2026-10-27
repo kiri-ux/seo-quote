@@ -196,13 +196,14 @@ REP_CFG = {
     #   moat         = $220 + $80 per page-one SERP threat
     #   partner      = (monitoring + moat) / 0.225, NEAREST $50
     #                  never under 2x that hard cost (50% margin floor)
-    #   retail       = partner / (1 - margin), NEAREST $50 (0.65 at 35%)
+    #   retail       = partner / (1 - margin), rounded UP to $50 (0.65 at 35%)
     #
     # "Partner" here is the spec's "Partner price (what SSG is paid)" -- the
     # same figure the rest of the tool calls partner hard cost -- and the 0.65
-    # is the Markup box. Fits both Brendan-approved quotes: RPM (5 kw, 0
-    # threats) $2,150 and Wheeler Digital (5 kw, 1 threat) $2,750. Nearest,
-    # not up, because up reads Wheeler at $2,800.
+    # is the Markup box. Retail rounds UP like every other ORM line
+    # (2026-10-27, Kiri), so RPM (5 kw, 0 threats) reads $2,200 -- its real
+    # retail -- and Wheeler Digital (5 kw, 1 threat) $2,800, $50 over its
+    # $2,750. The partner price still rounds to the nearest $50, per spec.
     #
     # \u26a0 PROVISIONAL, NOT SIGNED OFF BY BRENDAN. Both samples are 5 keywords,
     # 1 location, 0-1 threats: the per-keyword rate, the per-threat rate past
@@ -862,8 +863,8 @@ def price_video(count=0, per_video=5600):
 
 
 def n50(x):
-    """Round to the NEAREST $50 -- the Proactive spec's rule, and the only
-    one that lands both Brendan-approved samples (Wheeler reads $2,800 up)."""
+    """Round to the NEAREST $50 -- the Proactive spec's rule for the partner
+    price. Retail rounds up, as every ORM line does (2026-10-27, Kiri)."""
     import math
     return int(math.floor(round(x, 6) / 50.0 + 0.5) * 50)
 
@@ -915,7 +916,7 @@ def price_shield(locations=1, margin_pct=None, hard_override=None,
             floored = True
         base_partner = hard_total
         hard_total += loc_hard
-        total = n50(hard_total / (1 - m))
+        total = r50(hard_total / (1 - m))
     det = (f"{kw} keyword{'s' if kw != 1 else ''} tracked \u00b7 "
            f"{thr} page-one threat{'s' if thr != 1 else ''}"
            + (f" \u00b7 {locations} location{'s' if locations != 1 else ''}"
