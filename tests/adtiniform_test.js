@@ -351,7 +351,7 @@ const BASE = "http://127.0.0.1:5203";
       'Review Removals,Site/Article Removals,Reactive,Proactive'],
     'preview.opensConfig': [kw.previewOpensConfig, true],
     'preview.cfgFields': [kw.cfgFields.join(','),
-      'markup,min_term,addon_markets,ov_core,ov_ai,ov_addon,ov_reason'],
+      'markup,min_term,addon_markets,ov_core,ov_ai,ov_addon,ov_audit,ov_reason'],
     'adtini.opensForm': [kw.adtiniOpensForm, true],
     'kw.staysInModal': [kw.stayedPut, true],
     'kw.pane': [kw.kwPane, true],

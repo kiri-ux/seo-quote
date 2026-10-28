@@ -12532,7 +12532,7 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  goal="", pageone_rank=None, site_rebuild="", site_debt=None,
                  pageone_agg_share=None, pageone_agg_terms=None,
                  multisite_items=0, adder_basis=None, _formula_pass=False,
-                 national_off=False, website_audit=False):
+                 national_off=False, website_audit=False, audit_override=None):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
     # AI SEARCH IS ONLY SOLD WITH CORE SEO (2026-10-28, Kiri; story 3082). This
@@ -13085,7 +13085,11 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
     # Website Audit is never sold with AI Search. (2026-10-26, Kiri)
     if ai_search:
         website_audit = False
-    _audit_cost = float(CFG.get("website_audit_cost") or 0)
+    # THE PARTNER FEE COMES FROM THE RATE CARD (story 3082) and the planner can
+    # overwrite it, the same way the other partner overrides work. The CFG
+    # figure stands in for the rate card here. (2026-10-28, Kiri)
+    _audit_cost = (float(audit_override) if audit_override not in (None, "")
+                   else float(CFG.get("website_audit_cost") or 0))
     audit = {"sold": bool(website_audit),
              "fee": retail_of(_audit_cost) if _audit_cost else 0,
              "partner_cost": _audit_cost,
@@ -16631,7 +16635,8 @@ def api_price():
                      website_audit=bool(d.get("website_audit")
                                         or "website audit"
                                         in str(d.get("strategy") or "").lower())
-                     and not d.get("ai_search"))
+                     and not d.get("ai_search"),
+                     audit_override=d.get("audit_override"))
     return jsonify({"anchor": p["anchor"], "adder": adder,
                     "site_rebuild": p.get("site_rebuild", ""),
                     "rebuild_applied": p.get("rebuild_applied", False),
