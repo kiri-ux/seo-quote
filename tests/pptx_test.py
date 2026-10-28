@@ -193,16 +193,16 @@ check("and no split at all, because there is nothing to split",
       "Core SEO: $" in core[-1], False)
 check("and none of its bullets either",
       "AI model brand optimization" in core[-1], False)
-# A quote that buys AI Search alone prices THAT as the campaign rather than
-# printing a second line under a price that is not there.
+# AI Search is only sold with Core SEO (2026-10-28), so a quote asking for it
+# alone prices the pair and prints both lines.
 solo = app.stage4_price("single_city", 550, False, 0, 35, pct_not_ranking=100,
                         total_volume=9220, ai_search=True, core_seo=False)
 d = quote("AI Search")
 d["pricing"] = dict(solo, addon_markets=0, min_term_months=12)
 only_ai = slides(deck(d))[-1]
 check("an AI-only quote prices the AI campaign", "/ month" in only_ai, True)
-check("and carries no second price line under it",
-      "AI Search: $" in only_ai, False)
+check("and carries the AI Search line under it",
+      "AI Search: $" in only_ai, True)
 
 print("\nADD-ON MARKETS ONLY WHEN THEY ARE ON THE QUOTE")
 check("the count and the rate are printed",

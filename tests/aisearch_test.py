@@ -1,4 +1,7 @@
-"""AI SEARCH CAN BE QUOTED ON ITS OWN.
+"""AI SEARCH IS ITS OWN CHIP, BUT ONLY SOLD WITH CORE SEO.
+
+(2026-10-28, Kiri; story 3082) The solo price below is reversed: AI Search
+alone now prices the pair. The history is kept for why the chips split.
 
 Strategy offered three chips and one of them was "Core SEO + AI Search" -- a
 single option naming two products, so AI Search could only ever be bought
@@ -78,34 +81,18 @@ check("both chips price the pair",
 check("and Core SEO alone is unchanged by the split",
       core["package"], price(core_seo=True)["package"])
 
-# THE WHOLE POINT. Alone, AI Search costs what Core SEO costs.
-check("AI Search alone is priced as Core SEO",
-      solo["package"], core["package"])
-check("and not at the bundled rate",
-      solo["package"]["base"] == both["ai_search_price"]["base"], False)
-check("nor as the pair", solo["package"]["base"] == both["package"]["base"], False)
-check("the money is on the AI Search line", solo["ai_search_price"], solo["package"])
-check("at parity, not a discount", solo["ai_search_pct"], 100)
-# The discount is what bundling buys, and it only exists when bundled.
-check("the bundled leg is cheaper than the solo one",
-      both["ai_search_price"]["base"] < solo["package"]["base"], True)
-check("and the bundle rate is under parity", both["ai_search_pct"] < 100, True)
-
-# Nothing is being sold as Core SEO.
-check("the Core SEO line is empty on a solo quote",
-      set(solo["core_seo_price"].values()), {0})
-check("and it is flagged as not sold", solo["core_seo_sold"], False)
+# AI SEARCH IS ONLY SOLD WITH CORE SEO (2026-10-28, Kiri; story 3082). A
+# request for it alone prices the pair. This reverses the 2026-09-17 solo price.
+check("AI Search alone prices the pair", solo["package"], both["package"])
+check("and sells Core SEO with it", solo["core_seo_sold"], True)
+check("the bundle rate is under parity", both["ai_search_pct"] < 100, True)
 check("while the pair is", both["core_seo_sold"], True)
 check("and so is a Core SEO quote", core["core_seo_sold"], True)
 
 # ---------------------------------------------- what Billing is handed
 # Billing bills the line that was sold, and the job is the same size either way.
-check("Billing sees the whole job on the AI Search line",
-      solo["partner_hard_cost"], solo["partner_ai_search_cost"])
-check("and the Core SEO partner line is zero",
-      set(solo["partner_core_seo_cost"].values()), {0})
-check("at the same cost a Core SEO campaign would have run",
-      solo["partner_hard_cost"], core["partner_core_seo_cost"])
+check("Billing sees the pair on a solo request too",
+      solo["partner_hard_cost"], both["partner_hard_cost"])
 check("the pair still bills both legs",
       both["partner_hard_cost"]["base"],
       both["partner_core_seo_cost"]["base"] + both["partner_ai_search_cost"]["base"])

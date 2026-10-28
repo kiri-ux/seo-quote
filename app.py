@@ -12535,6 +12535,11 @@ def stage4_price(band, adder, zero_ranking, addon_markets=0, markup_pct=None,
                  national_off=False, website_audit=False):
     if markup_pct is None:
         markup_pct = CFG["default_markup_pct"]
+    # AI SEARCH IS ONLY SOLD WITH CORE SEO (2026-10-28, Kiri; story 3082). This
+    # reverses the 2026-09-17 call that priced it alone on the Core ladder, so
+    # a request for AI Search by itself prices the pair.
+    if ai_search:
+        core_seo = True
     # THE RANK CHECK MEASURED A SITE THAT IS BEING REPLACED. See the CFG note
     # on rebuild_new_domain_pct_not_ranking. Only a NEW DOMAIN moves the number
     # -- a same-domain rebuild keeps its rankings through redirects, so its
