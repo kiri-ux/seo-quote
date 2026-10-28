@@ -155,6 +155,13 @@ check("$2,950 at 35%", _a["website_audit"]["fee"], 2950)
 check("sent to the IO when sold", _a["handoff"]["website_audit_fee"], 2950)
 check("partner cost sent", _a["handoff"]["partner_website_audit_cost"], 1917.5)
 check("not in Package $", _a["handoff"]["package"], _a["client_tiers"])
+# The planner can overwrite the rate-card partner fee. (2026-10-28, Kiri)
+_o = app.stage4_price("single_city", 0, False, website_audit=True,
+                      audit_override=2275)
+check("an overwritten partner fee is sent", _o["handoff"]["partner_website_audit_cost"], 2275)
+check("and the client fee follows it", _o["handoff"]["website_audit_fee"], 3500)
+check("the route reads the override",
+      'audit_override=d.get("audit_override")' in open(SRC, encoding="utf-8").read(), True)
 check("zero on the IO when not sold",
       app.stage4_price("single_city", 0, False)["handoff"]["website_audit_fee"], 0)
 check("moves with the margin",

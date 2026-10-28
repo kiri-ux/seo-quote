@@ -2022,6 +2022,7 @@ function runSettings(r){
     overrides: [cfg.ov_core && `Core SEO ${money(cfg.ov_core)}`,
                 cfg.ov_ai && `AI Search ${money(cfg.ov_ai)}`,
                 cfg.ov_addon && `Add-on market ${money(cfg.ov_addon)}`,
+                cfg.ov_audit && `Website Audit ${money(cfg.ov_audit)}`,
                 cfg.ov_review && `Review removal ${money(cfg.ov_review)}`,
                 cfg.ov_monthly && `Monthly ${money(cfg.ov_monthly)}`,
                 cfg.ov_std && `Site removal ${money(cfg.ov_std)}`,
@@ -2825,6 +2826,7 @@ const CFG_SEO = [
   ['ov_core','Override partner Core SEO','number','formula'],
   ['ov_ai','Override partner AI Search','number','formula'],
   ['ov_addon','Override partner add-on market','number','formula'],
+  ['ov_audit','Override partner Website Audit fee','number','rate card'],
   ['ov_reason','Reason for the override','text','required with any override'],
 ];
 const CFG_ORM = [
@@ -5665,6 +5667,7 @@ async function generate(){
       base_override: r.cfg.ov_core || '',
       geo_override: r.cfg.ov_ai || '',
       addon_override: r.cfg.ov_addon || '',
+      audit_override: r.cfg.ov_audit || '',
       // The page-one median comes off the market signals pass, which this tab
       // does not run yet. Null, not a guess -- the SEO tab sends null too.
       // Site condition, banded in CFG.site_debt_tiers. Only sent when it was
@@ -5831,6 +5834,7 @@ async function reprice(){
       base_override: r.cfg.ov_core || '',
       geo_override: r.cfg.ov_ai || '',
       addon_override: r.cfg.ov_addon || '',
+      audit_override: r.cfg.ov_audit || '',
       // Strategy is read off the form as it stands, so adding AI Search to a
       // quote reprices it with the AI Search leg.
       ai_search: hasStrategy(r.data, 'ai search'),
@@ -6406,7 +6410,8 @@ async function recheckRanks(i){
       national_demand: band === 'nationwide', cfg: priceCfg(r),
       base_override: (r.cfg || {}).ov_core || '',
       geo_override: (r.cfg || {}).ov_ai || '',
-      addon_override: (r.cfg || {}).ov_addon || '', pageone_rank: null};
+      addon_override: (r.cfg || {}).ov_addon || '',
+      audit_override: (r.cfg || {}).ov_audit || '', pageone_rank: null};
     // THE ADD-ON COUNT IS READ AGAIN. It was taken once, off a rank check
     // that had mostly failed, and the recheck that filled the ranks in never
     // asked again -- so a run that measured nothing stayed at no add-ons.
