@@ -2274,13 +2274,29 @@ function chipbox(box, list){
 // list is long, so closing on every choice is the expensive part.
 const chipsOf = box => [...box.querySelectorAll('.chip')]
   .map(c => c.firstChild.textContent.trim());
-// WEBSITE AUDIT IS NEVER SOLD WITH AI SEARCH: picking one takes the other off
-// the list. (2026-10-26, Kiri)
-const STRAT_CLASH = {'website audit': 'ai search', 'ai search': 'website audit'};
+// WEBSITE AUDIT IS SOLD ALONE, and AI SEARCH ONLY WITH CORE SEO. With the
+// audit picked nothing else is offered, and with anything else picked the
+// audit is not; picking AI Search brings Core SEO with it, and taking Core SEO
+// off takes AI Search too. (2026-10-28, Kiri; matches story 3082)
+const AUDIT = 'website audit', AI = 'ai search', CORE = 'core seo';
 function pickBlocked(pick, taken, v){
   if (pick !== 'strategies') return false;
-  const other = STRAT_CLASH[String(v).toLowerCase()];
-  return !!other && taken.has(other);
+  const s = String(v).toLowerCase();
+  return s === AUDIT ? taken.size > 0 : taken.has(AUDIT);
+}
+// A saved list read under the same rules: the audit drops when anything else
+// is on it, and AI Search never stands without Core SEO.
+function stratFix(list){
+  const low = list.map(v => String(v).toLowerCase());
+  if (low.includes(AUDIT) && low.length > 1)
+    list = list.filter(v => String(v).toLowerCase() !== AUDIT);
+  const has = x => list.some(v => String(v).toLowerCase() === x);
+  if (has(AI) && !has(CORE)) {
+    const core = (LISTS.strategies || []).find(v => String(v).toLowerCase() === CORE)
+      || 'Core SEO';
+    list = [core].concat(list);
+  }
+  return list;
 }
 
 function picksDraw(inp){
@@ -2324,8 +2340,14 @@ function picksTake(inp, v){
   const box = inp.closest('.box');
   const have = new Set(chipsOf(box).map(c => c.toLowerCase()));
   if (!have.has(String(v).toLowerCase())
-      && !pickBlocked(inp.dataset.pick, have, v))
+      && !pickBlocked(inp.dataset.pick, have, v)) {
+    if (inp.dataset.pick === 'strategies' && String(v).toLowerCase() === AI
+        && !have.has(CORE))
+      inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(
+        (LISTS.strategies || []).find(x => String(x).toLowerCase() === CORE)
+        || 'Core SEO')} <b>&times;</b></span>`);
     inp.insertAdjacentHTML('beforebegin', `<span class="chip">${esc(v)} <b>&times;</b></span>`);
+  }
   inp.value = '';
   picksDraw(inp);          // stays open, minus what was just taken
   inp.focus();
@@ -2458,11 +2480,9 @@ function load(form, data){
   });
   form.querySelectorAll('[data-chips]').forEach(box => {
     let list = (data[box.dataset.chips] || []).slice();
-    // A quote saved with both AI Search and Website Audit opens with the audit
-    // off, which is how it prices. (2026-10-26, Kiri)
-    if (form === $('fseo') && box.dataset.chips === 'strategy'
-        && list.some(v => String(v).toLowerCase() === 'ai search'))
-      list = list.filter(v => String(v).toLowerCase() !== 'website audit');
+    // A saved quote opens under today's strategy rules (stratFix).
+    if (form === $('fseo') && box.dataset.chips === 'strategy')
+      list = stratFix(list);
     chipbox(box, list);
   });
   pastFields();
@@ -2642,6 +2662,12 @@ document.addEventListener('click', e => {
       delete (r.seedSrc || {})[t];
       SEED_SRC && delete SEED_SRC[t];
     }
+    // CORE SEO OFF TAKES AI SEARCH WITH IT: AI Search is only sold with it.
+    const sbox = chip.closest('#fseo [data-chips="strategy"]');
+    if (sbox && t === CORE)
+      [...sbox.querySelectorAll('.chip')]
+        .filter(c => c.firstChild.textContent.trim().toLowerCase() === AI)
+        .forEach(c => c.remove());
     chip.remove();
     if (ROW != null) {
       const sh = document.querySelector('#paneKw .seedhint');
