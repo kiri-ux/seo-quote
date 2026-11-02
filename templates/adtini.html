@@ -4166,6 +4166,25 @@ async function expandPass(r, d, sources){
     if (seenLow.has(k)) return false;
     seenLow.add(k); return true;
   }).sort((a, b) => b.vol - a.vol);
+  // ONE SUGGESTION PER WORDING. Vici Media got "scroll ad", "scroll ads" and
+  // "scrolling ads" as three chips, three of twenty slots on one service.
+  // Singular, plural and "-ing" forms share a key; the most searched one is
+  // kept, and a form of something already on the list is not offered at all.
+  // Matches the dev build. (2026-11-02, Kiri)
+  const formKey = t => words(t).map(w => w
+    .replace(/ing$/, w.length > 5 ? '' : 'ing')
+    .replace(/ies$/, 'y')
+    .replace(/([^s])s$/, '$1')).join(' ');
+  const onList = new Set((d.focus || []).concat(r.seedDrop || []).map(formKey));
+  const best = new Map();
+  rows.filter(x => !onList.has(formKey(x.term))).forEach(x => {
+    const k = formKey(x.term), cur = best.get(k);
+    if (!cur) { best.set(k, x); return; }
+    const win = x.vol > cur.vol ? x : cur;
+    best.set(k, Object.assign({}, win, {ranked: cur.ranked || x.ranked}));
+  });
+  rows.length = 0;
+  rows.push(...best.values());
   // Best first, and stop at the slot count -- a list longer than the grid is
   // terms nobody will quote.
   rows.sort((a, b) => (b.ranked - a.ranked) || (b.vol - a.vol));

@@ -6481,6 +6481,13 @@ def _name_tokens(text):
     return out
 
 
+# Words that describe any company, so "<their name> + one of these" is still a
+# search for the business itself, not for a service.
+_BRAND_FILLER = frozenset("""marketing media company co group agency inc llc
+services solutions digital reviews review login careers jobs contact phone
+address hours website site official""".split())
+
+
 def is_brand_term(term, brand, vocab=None):
     """Is this the client's OWN name?
 
@@ -6515,6 +6522,23 @@ def is_brand_term(term, brand, vocab=None):
     if vocab and tt and tt <= bt:
         _v = {t for w in vocab for t in _name_tokens(w)}
         if len([t for t in tt if t not in _v]) >= 2:
+            return True
+
+    # THEIR NAME WITH A GENERIC WORD SWAPPED IN. Vici Media was offered "vici
+    # marketing": half their name plus a word that describes any company, which
+    # every test above misses because "media" is absent. Fires only when a brand
+    # token is DISTINCTIVE (not one of their service words, not a US city, four+
+    # letters), at least one word is company filler that is NOT part of their
+    # name, and nothing else is in the term. "denver dental" for Denver Dental
+    # Group has no filler and is untouched; "denver marketing" for Denver
+    # Marketing Group is untouched too, because "marketing" is their own name.
+    # (2026-11-02, matches the dev build)
+    if vocab and tt:
+        _v = {t for w in vocab for t in _name_tokens(w)}
+        _filler = {_seed_stem(w) for w in _BRAND_FILLER}
+        _own = [t for t in tt if t in bt and t not in _v and len(t) >= 4]
+        _pad = [t for t in tt if t not in bt]
+        if _own and _pad and all(t in _filler for t in _pad):
             return True
 
     # PREFIX, NOT EQUALITY. The stemmer is crude by design — it strips a short
@@ -18192,6 +18216,13 @@ EVERY term as exactly one of:
                      the client could be HIRED, FUNDED or PARTNERED WITH off the
                      back of that search. "tribal epidemiology center" is a
                      service line; "double ball" is an article.
+                     INDUSTRY JARGON AND METRIC NAMES ARE "reference" too, even
+                     in the client's own field. A metric or a trade term is
+                     something they measure or explain, not something a client
+                     pays for. For an ad agency: "view through", "view-through
+                     conversions", "click through rate", "cpm", "digital buyer",
+                     "advertisers medium" are reference; "programmatic
+                     advertising" and "ott advertising" are services.
 
 Then, SEPARATELY, mark each term's vocabulary as "client" or "adjacent":
 
@@ -18211,7 +18242,8 @@ had typed. (2026-08-13)
 
 Rules:
 - Default to "service". These buckets are not balanced: most terms are
-  services; "item" and "reference" are the rare cases.
+  services; "item" and "reference" are the rare cases. The one exception is
+  jargon and metric names: those are "reference", not "service", when unsure.
 - THE SAME PHRASE GOES BOTH WAYS depending on the client, so decide from the
   business above, never from the words alone. Ask: would this searcher be happy
   to land on this client's website? If the client sells the object, yes - that
@@ -19132,7 +19164,8 @@ def api_expand_services():
 
 
 
-def _split_proposal_kinds(items, d, dom, pages=None, ecom=False, alias=None):
+def _split_proposal_kinds(items, d, dom, pages=None, ecom=False, alias=None,
+                          all_bad_means_broken=True):
     """Run claude_seed_kinds over PROPOSED chips and split them in two.
 
     A chip is a suggestion, so a wrong verdict costs nothing here — the operator
@@ -19181,8 +19214,11 @@ def _split_proposal_kinds(items, d, dom, pages=None, ecom=False, alias=None):
         else:
             good.append(x)
     # Every chip rejected means the classifier is what is wrong — a menu read that
-    # returns nothing is worse than a menu read with a caveat on it.
-    if not good:
+    # returns nothing is worse than a menu read with a caveat on it. Not so for
+    # what a site RANKS for: a blog-heavy site can rank for nothing but articles,
+    # and Vici Media's sixteen ranked suggestions were every one of them a blog
+    # topic. That caller opts out. (2026-11-02)
+    if not good and all_bad_means_broken:
         return list(items or []), []
     return good, bad
 
@@ -19400,7 +19436,23 @@ def api_ranked_keywords():
         # the caller can ask "is this one of them" and get a true answer.
         return jsonify({"owned": sorted({r["bare"] for r in rows if r.get("bare")}),
                         "total": len(rows)})
+    # A POSITION IS NOT A SERVICE. This source skipped the "is this something
+    # they sell?" check the site-menu terms go through, so Vici Media's blog
+    # came back as suggestions: "builtwith.com", "cookies on mobile phones",
+    # "why are you looking at my search history". Same classifier, same split,
+    # so the two sources cannot disagree. Matches the dev build (Rosalyn and
+    # kiri, 2026-10-30).
+    not_svc = []
+    if fresh:
+        _items = [dict(r, term=r["bare"]) for r in fresh]
+        _good, not_svc = _split_proposal_kinds(_items, d, dom,
+                                               all_bad_means_broken=False)
+        _ok = {x["bare"] for x in _good}
+        fresh = [r for r in fresh if r["bare"] in _ok]
+        not_svc = [{"term": x["bare"], "kind": x.get("kind"),
+                    "why": x.get("kind_why", "")} for x in not_svc]
     return jsonify({"keywords": fresh, "total": len(rows),
+                    "not_services": not_svc,
                     "brand_terms": brandy,
                     "family_capped": [{"term": t, "on": w} for t, w in _famdrop],
                     "already_seeded": len([r for r in rows
