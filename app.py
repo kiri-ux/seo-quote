@@ -7194,6 +7194,12 @@ def city_name_variants(name):
         return []
     head, rest = parts[0], " ".join(parts[1:])
     out = []
+    # USPS SPELLS SOME "MC" TOWNS WITH A SPACE. McCoy VA is "Mc Coy" in the ZIP
+    # data, so "McCoy, VA" missed and landed on McCoy TX, 1,189 miles from
+    # Roanoke, and was quoted as an add-on market on Build Smart Institute
+    # (Q-100244). It is 30 miles away. (2026-11-06, Kiri)
+    if head in ("mc", "mac") and parts[1:]:
+        out.append(head + rest)
     full = _CITY_ABBREV.get(head)
     if full:
         out.append(f"{full} {rest}")
@@ -7520,6 +7526,10 @@ def city_coords(market, state=""):
         hit = idx.get((city, abbr))
         if hit:
             return hit
+    # A STATE TYPED ON THE MARKET IS NOT A HINT. "McCoy, VA" that misses in
+    # Virginia is unplaced, not McCoy TX. (2026-11-06)
+    if abbr and "," in str(market or "") and parse_market(market, "")[1]:
+        return None
     # No usable state: accept a unique national match, never a guess between
     # several — there are Springfields in thirty states.
     hits = [v for (c, _s), v in idx.items() if c == city]
