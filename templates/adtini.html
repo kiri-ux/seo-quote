@@ -4138,8 +4138,14 @@ async function expandPass(r, d, sources){
     return negs.some(nt => a.some((_, i) =>
       nt.every((w, j) => a[i + j] === w)));
   };
+  // NEVER PROPOSE A NEAR-ME SEED. The build adds near-me rows on its own, and
+  // a near-me seed was crossed with the city and counted in the volume total
+  // -- Runza's "fast food near me" (14,800/mo) put it ~$750 over Brendan.
+  // Offer the base service instead. Matches the dev build. (2026-11-25, Kiri)
+  const nearMe = /\b(?:near\s*me|near\s*by|nearby|close\s+to\s+me|around\s+me)\b/gi;
   const take = (res, src) => (res.services || []).forEach(x => {
-    const term = String(x.term || '').trim();
+    const term = String(x.term || '').replace(nearMe, ' ')
+      .replace(/\s+/g, ' ').trim();
     if (!term || have.has(term.toLowerCase()) || echoesADrop(term)
         || tripsNegative(term)) return;
     const vol = Number(x.volume) || 0;
