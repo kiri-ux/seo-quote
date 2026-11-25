@@ -4126,7 +4126,8 @@ async function expandPass(r, d, sources){
   // at fourteen open slots every line of it became a seed. The site pass
   // measures now, and the floor here is the same for all three.
   const floor = Number(ind.floor) || Number(site.floor) || 20;
-  let under = 0;
+  let under = 0, byDrop = 0;
+  const droppedSet = new Set(dropped);
   const rows = [], low = [];
   // AND CHECKED HERE TOO, because this is where all three sources merge and
   // only one of them is the gap-finder. Whole words, never fragments -- the
@@ -4146,8 +4147,11 @@ async function expandPass(r, d, sources){
   const take = (res, src) => (res.services || []).forEach(x => {
     const term = String(x.term || '').replace(nearMe, ' ')
       .replace(/\s+/g, ' ').trim();
-    if (!term || have.has(term.toLowerCase()) || echoesADrop(term)
-        || tripsNegative(term)) return;
+    if (!term) return;
+    // COUNTED, so "added nothing" can say the removed list is why. Valor
+    // Roofing had 30 removed and every proposal was one of them. (2026-11-25)
+    if (droppedSet.has(term.toLowerCase()) || echoesADrop(term)) { byDrop++; return; }
+    if (have.has(term.toLowerCase()) || tripsNegative(term)) return;
     const vol = Number(x.volume) || 0;
     if (vol < floor) { under++; low.push({term, vol}); return; }
     have.add(term.toLowerCase());
@@ -4204,7 +4208,7 @@ async function expandPass(r, d, sources){
   return {added: kept.map(x => x.term), rows: kept, found, fails, floorInfo,
           dupes: rows.length === 0 && under === 0
                  && (found.site + found.industry + found.ranks) > 0,
-          held: Math.max(0, rows.length - kept.length)};
+          held: Math.max(0, rows.length - kept.length), byDrop};
 }
 
 // THE GAP PASS IS ONLY AS GOOD AS THE LIST IT IS GIVEN. It is asked which
@@ -4237,6 +4241,7 @@ async function expandSeeds(r, d){
                                                     === x.term.toLowerCase())))};
     got.held += more.held || 0;
     got.dupes = got.dupes && more.dupes;
+    got.byDrop = (got.byDrop || 0) + (more.byDrop || 0);
   }
   // The regions are read off the markets rather than the seeds, so they are
   // asked for once however many passes ran.
@@ -6661,8 +6666,11 @@ function expandWhy(note){
   const empty = Object.keys(names).filter(k => !bad[k] && !(f[k] > 0));
   const broke = Object.keys(names).filter(k => bad[k]);
   if (note.dupes)
-    return ' \u00b7 Expansion added nothing \u2014 everything it proposed is already'
-         + ' on the list.';
+    return note.byDrop
+      ? ` \u00b7 Expansion added nothing \u2014 ${note.byDrop} of what it proposed `
+        + 'was removed earlier. Refresh focus terms: Yes offers them again.'
+      : ' \u00b7 Expansion added nothing \u2014 everything it proposed is already'
+        + ' on the list.';
   // THE FLOOR IS THE USUAL ANSWER IN A SMALL MARKET, and it is a number the
   // planner can change in Config rather than a dead end.
   const fi = note.floorInfo || {};
