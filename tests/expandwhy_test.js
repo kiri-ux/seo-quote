@@ -30,6 +30,12 @@ say('failed.namesTheRightOne', /their site could not be read/.test(t), t);
 t = fn({added: [], found: {site: 5, industry: 2, ranks: 0}, fails: {}, dupes: true});
 say('dupes.saysSo', /already/.test(t), t);
 
+// All of it was on the REMOVED list (Valor Roofing, 30 removed): name that,
+// and point at the control that brings them back. (2026-11-25)
+t = fn({added: [], found: {site: 5, industry: 9, ranks: 4}, fails: {}, dupes: true, byDrop: 14});
+say('dupes.namesRemoved', /14 of what it proposed was removed/.test(t)
+    && /Refresh focus terms/.test(t), t);
+
 // THE FLOOR IS THE USUAL ANSWER IN A THIN MARKET, and it is a number the
 // planner can change rather than a dead end.
 t = fn({added: [], found: {site: 0, industry: 0, ranks: 0}, fails: {},
