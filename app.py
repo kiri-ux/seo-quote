@@ -4720,14 +4720,29 @@ def clean_seeds(seeds):
     out, seen = [], set()
     for s in (seeds or []):
         t = re.sub(r"\s+", " ", strip_placeholders(str(s or "").strip())).strip()
+        # A NEAR-ME SEED IS A SERVICE PLUS A PHRASE THE BUILD ADDS ON ITS OWN.
+        # Kept whole, "fast food near me" became a service: crossed with the
+        # city ("fast food near me lincoln ne") and summed into total_volume,
+        # where no other near-me row is counted. Runza's 14,800/mo near-me
+        # read was 64% of its 22,960 and bought the $450 volume add; Brendan
+        # put it ~$750 too high. Cut to the base service here; the near-me row
+        # comes back through the normal near-me pass. (2026-11-25, Kiri)
+        t = _NEAR_ME_SEED_RE.sub(" ", t)
+        t = re.sub(r"\s+", " ", t).strip(" ,-")
         if not t:
             continue
-        k = t.lower()
+        # "drive thru" and "drive-thru" are one service, not two 140s.
+        k = re.sub(r"[\s\-]+", " ", t.lower()).strip()
         if k in seen:
             continue
         seen.add(k)
         out.append(t)
     return out
+
+
+_NEAR_ME_SEED_RE = re.compile(
+    r"\b(?:near\s*me|near\s*by|nearby|close\s+to\s+me|around\s+me)\b",
+    re.I)
 
 
 def _topic_stem(t):
