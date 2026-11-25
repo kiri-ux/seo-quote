@@ -6612,6 +6612,100 @@ def is_brand_term(term, brand, vocab=None):
     return all(_hit(b) for b in bt)
 
 
+def names_brand_word(term, brand, domain="", vocab=None):
+    """Does this term carry the client's own distinctive NAME WORD?
+
+    Valor Roofing (roofingbyvalor.com) ranks for "valor restoration" and "valor
+    home services reviews" -- its own sister names -- and Expand offered both as
+    seeds, because is_brand_term wants every brand word and "roofing" was
+    absent. A word that is in the brand AND in their domain, is not one of
+    their service words, is not a US city and is four letters or more is their
+    name; a search carrying it is a search for them, with nothing to sell.
+    Needs the domain, so a one-word brand that doubles as a service cannot
+    swallow the list on the brand field alone. (2026-11-25, Kiri)
+    """
+    dom = re.sub(r"^https?://", "", (domain or "").lower()).strip("/")
+    dom = re.sub(r"^www\.", "", dom).split("/")[0]
+    dom = dom.rsplit(".", 1)[0] if "." in dom else dom
+    if not dom:
+        return False
+    words = lambda t: [w for w in re.split(r"[^a-z0-9]+", (t or "").lower()) if w]
+    voc = {_seed_stem(w) for v in (vocab or []) for w in words(v)}
+    cities = _us_city_names()
+    # THE LEAD WORD ONLY. Names lead and trades trail: "Valor Roofing",
+    # "Elite Gutters". Taking the trailing word too would let Gutter Pros'
+    # name swallow "gutter guards".
+    own = {w for w in words(brand)[:1]
+           if len(w) >= 4 and w in dom and _seed_stem(w) not in voc
+           and w not in cities and w not in _BRAND_FILLER
+           and w not in _SEED_SHAPE}
+    return bool(own) and any(w in own for w in words(term))
+
+
+_STRAY_PREP_RE = re.compile(r"^(?:(?:in|near|at|for|of|around|by|from)\s+)+"
+                            r"|(?:\s+(?:in|near|at|for|of|around|by|from))+$")
+
+
+def ranked_term_geo(kw, markets=None, state=""):
+    """A ranked phrase with its place taken out, wherever the place sits.
+
+    Returns (bare, elsewhere). _strip_markets only takes a TRAILING city, so
+    Valor Roofing's "knoxville roofing company" and "knoxville tn roofer" came
+    through whole and "roofer in knoxville tn" came through as "roofer in".
+    The city (with its state after it), the state name and a trailing state
+    code come out from any position, then any preposition left hanging.
+
+    `elsewhere` is a different city in the same state ("roofing maryville",
+    "sevierville roofers"): a seed is crossed with the quote's own market, so
+    that one would read "roofing maryville knoxville tn". Those are add-on
+    markets, not services. (2026-11-25, Kiri)
+    """
+    k = (kw or "").lower().strip()
+    markets = list(markets or [])
+    states = set()
+    if state:
+        states.add(state.strip().lower())
+    for m in markets:
+        st = market_state(m, state)
+        if st:
+            states.add(st.strip().lower())
+    names = {s for s in states if s in STATE_ABBREV}
+    abbrs = {STATE_ABBREV[s] for s in names}
+    st_alt = "|".join(re.escape(x) for x in sorted(names | abbrs, key=len,
+                                                     reverse=True))
+    for c in sorted({(market_city(m, state) or "").lower() for m in markets},
+                    key=len, reverse=True):
+        if not c:
+            continue
+        pat = r"\b" + re.escape(c) + r"\b"
+        if st_alt:
+            pat += r"(?:\s+(?:" + st_alt + r")\b)?"
+        k = re.sub(pat, " ", k)
+    for n in sorted(names, key=len, reverse=True):
+        k = re.sub(r"\b" + re.escape(n) + r"\b", " ", k)
+    k = re.sub(r"\s+", " ", k).strip()
+    for a in abbrs:
+        if k.endswith(" " + a):
+            k = k[: -(len(a) + 1)].strip()
+    k = _STRAY_PREP_RE.sub("", k).strip()
+    bare = seed_norm(k, markets, state) or k
+    elsewhere = ""
+    if abbrs and bare:
+        try:
+            import zipcodes
+            pool = set()
+            for a in abbrs:
+                pool |= {str(r.get("city", "")).lower()
+                         for r in zipcodes.filter_by(state=a.upper())}
+        except Exception:                                 # noqa: BLE001
+            pool = set()
+        for c in sorted(pool, key=len, reverse=True):
+            if c and re.search(r"\b" + re.escape(c) + r"\b", bare):
+                elsewhere = c
+                break
+    return bare, elsewhere
+
+
 def drop_suggested_nonservices(seeds, suggested, kinds, brand,
                                markets=None, state="", ranked=None, rivals=None):
     """Terms the TOOL proposed do not get the operator's exemption.
@@ -9658,7 +9752,11 @@ def widen_offer(rows, floor=None, share_at=None):
             v = int(r.get("vol", r.get("volume", 0)) or 0)
         except (TypeError, ValueError):
             v = 0
-        if kw and v > 0:
+        # NEAR-ME ROWS ARE SHOWN, NOT COUNTED. total_volume leaves them out,
+        # so the header read 630/mo and this footer read 1,350/mo on the same
+        # Valor Roofing list -- "roofing near me" (720) was the difference.
+        # (2026-11-25, Kiri)
+        if kw and v > 0 and not _NEAR_ME_SEED_RE.search(kw):
             pairs.append((kw, v))
     total = sum(v for _, v in pairs)
     if not pairs:
@@ -19399,8 +19497,9 @@ def fetch_ranked_keywords(domain, markets=None, state="", limit=None):
             seen.add(kw)
             se = ((it.get("ranked_serp_element") or {}).get("serp_item") or {})
             pos = se.get("rank_group") or se.get("rank_absolute")
-            bare = seed_norm(kw, markets or [], state) or kw
-            out.append({"term": kw, "bare": bare,
+            bare, elsewhere = ranked_term_geo(kw, markets or [], state)
+            bare = bare or kw
+            out.append({"term": kw, "bare": bare, "elsewhere": elsewhere,
                         "position": int(pos) if pos else None,
                         "volume": int(((kd.get("keyword_info") or {})
                                        .get("search_volume")) or 0),
@@ -19436,8 +19535,20 @@ def api_ranked_keywords():
     def _is_brand(term):
         return bool(_brand_in) and is_brand_term(term, _brand_in,
                                                  vocab=d.get("seeds") or [])
-    fresh = [r for r in rows if r["bare"] not in have and not _is_brand(r["bare"])]
-    brandy = [r["bare"] for r in rows if _is_brand(r["bare"])]
+    _seed_vocab = (d.get("seeds") or []) + [d.get("industry") or ""]
+    def _is_name(term):
+        return _is_brand(term) or names_brand_word(term, _brand_in, dom,
+                                                   vocab=_seed_vocab)
+    # ANOTHER TOWN IS AN ADD-ON MARKET, NOT A SERVICE. See ranked_term_geo.
+    elsewhere = sorted({r["elsewhere"] for r in rows if r.get("elsewhere")})
+    fresh = [r for r in rows if r["bare"] not in have and not _is_name(r["bare"])
+             and not r.get("elsewhere")]
+    # One chip per phrase: "knoxville roofing company" and "roofing company
+    # knoxville" now both read "roofing company".
+    _seen_bare = set()
+    fresh = [r for r in fresh
+             if not (r["bare"] in _seen_bare or _seen_bare.add(r["bare"]))]
+    brandy = [r["bare"] for r in rows if _is_name(r["bare"])]
     # NINE OVERLAY VARIANTS, ALL OF THEM REAL POSITIONS. This is the source the
     # family cap was missing, and it is the worst place to miss it: a position is
     # treated as proof of ownership, so these chips sort AHEAD of everything the
@@ -19479,6 +19590,7 @@ def api_ranked_keywords():
     return jsonify({"keywords": fresh, "total": len(rows),
                     "not_services": not_svc,
                     "brand_terms": brandy,
+                    "other_markets": elsewhere,
                     "family_capped": [{"term": t, "on": w} for t, w in _famdrop],
                     "already_seeded": len([r for r in rows
                                            if r["bare"] in have]),
